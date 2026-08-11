@@ -41,6 +41,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Tag,
+  HeartHandshake,
   Pencil,
   FlaskConical,
   Coins,
@@ -326,6 +327,11 @@ export default function PatientDesk({
 
   // Form states for Appointments
   const [showFollowUpConfirmModal, setShowFollowUpConfirmModal] = useState<boolean>(false);
+  const [showFocFeeDetailsModal, setShowFocFeeDetailsModal] = useState<boolean>(false);
+  const [focWaivedOpdFee, setFocWaivedOpdFee] = useState<number | string>('500');
+  const [focWaivedClinicalFee, setFocWaivedClinicalFee] = useState<number | string>('0');
+  const [focWaivedFileCardFee, setFocWaivedFileCardFee] = useState<number | string>('0');
+  const [focReason, setFocReason] = useState<string>('Deserving / Needy Patient');
   const [selectedPatientId, setSelectedPatientId] = useState('');
   const [appDate, setAppDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [futureBookingModal, setFutureBookingModal] = useState<{
@@ -794,6 +800,7 @@ export default function PatientDesk({
   const [gridViewStartDate, setGridViewStartDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [gridViewEndDate, setGridViewEndDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [gridViewGenderFilter, setGridViewGenderFilter] = useState<string>('all');
+  const [gridViewFocOnly, setGridViewFocOnly] = useState<boolean>(false);
 
   // States for Token Issue for NEW Patient
   const [isOpdTokenModalOpen, setIsOpdTokenModalOpen] = useState<boolean>(false);
@@ -4312,7 +4319,11 @@ Healing Naturally. Restoring Balance.`;
     setTimeout(() => setPvSaveSuccess(''), 3000);
   };
 
-  const executeSavePatientVisit = (isFollowUp: boolean = false) => {
+  const executeSavePatientVisit = (
+    isFollowUp: boolean = false,
+    isFoc: boolean = false,
+    focCustomData?: { opd: number; clin: number; fileCard: number; reason: string }
+  ) => {
     setIsSavingVisit(true);
     try {
       const validClinical = pvClinicalItems.filter((i) => i.medicineName.trim() || i.dosage.trim());
@@ -4328,25 +4339,40 @@ Healing Naturally. Restoring Balance.`;
       const targetVisitId = editingVisitId || `VIS-${Date.now()}`;
       const clinicalTextWithExp = `${clinicalMedicineDosage.trim()}${pvClinicalMedicineExpireDate.trim() ? ` (EXP: ${pvClinicalMedicineExpireDate.trim()})` : ''}`;
 
-      const chargesRemarkText = isFollowUp
+      const focOpdVal = focCustomData ? focCustomData.opd : (Number(focWaivedOpdFee) || 0);
+      const focClinVal = focCustomData ? focCustomData.clin : (Number(focWaivedClinicalFee) || 0);
+      const focFileCardVal = focCustomData ? focCustomData.fileCard : (Number(focWaivedFileCardFee) || 0);
+      const focReasonVal = focCustomData ? focCustomData.reason : (focReason || 'Deserving Patient');
+      const totalWaivedVal = focOpdVal + focClinVal + focFileCardVal;
+
+      const chargesRemarkText = isFoc
+        ? `Charges: 0 PKR (FOC Case - Waived Value: PKR ${totalWaivedVal} [OPD:${focOpdVal}, Meds:${focClinVal}, Card:${focFileCardVal}] | Reason: ${focReasonVal})`
+        : isFollowUp
         ? `Charges: 0 PKR (Follow-up Visit)`
         : `Charges: OPD Fee PKR ${pvOpdFeePkr || 0}, Clinical Meds PKR ${pvClinicalMedicinePkr || 0}, File PKR ${pvFilePkr || 0}, Card PKR ${pvCardPkr || 0} (Total PKR ${totalPkr})`;
+
+      const baseRemarks = pvRemarks.trim() ? pvRemarks.trim() : `Clinical: ${clinicalTextWithExp} | Patent: ${patientMedicineDosage} | Medical Reports: ${pvMedicalReportResult.trim() || 'N/A'} | Lab Tests: ${pvLabTestAdvice || 'None'}`;
 
       const newVisit: Visit = {
         VisitID: targetVisitId,
         PatientID: pvSelectedPatientId,
         VisitDate: pvVisitDate || new Date().toISOString().split('T')[0],
-        SymptomsDiagnosis: pvSymptomsDiagnosis || (isFollowUp ? 'Follow-up Consultation' : 'Routine Consultation'),
+        SymptomsDiagnosis: pvSymptomsDiagnosis || (isFoc ? 'FOC Consultation (Free of Charge)' : isFollowUp ? 'Follow-up Consultation' : 'Routine Consultation'),
         MedicalReportResult: pvMedicalReportResult.trim() || 'N/A',
         LabTestAdvice: pvLabTestAdvice || 'None',
         PatientAdvice: pvLabTestAdvice || 'Take medicines regularly.',
-        VisitRemarks: `Clinical: ${clinicalTextWithExp} | Patent: ${patientMedicineDosage} | Medical Reports: ${pvMedicalReportResult.trim() || 'N/A'} | Lab Tests: ${pvLabTestAdvice || 'None'} | ${chargesRemarkText}`,
+        VisitRemarks: `${baseRemarks} | ${chargesRemarkText}`,
         Status: 2,
-        ConsultationFee: Number(pvOpdFeePkr) || 0,
-        ClinicalMedicinePayment: pvClinicalMedicinePkr || '0',
-        FileFee: pvFilePkr || '0',
-        CardFee: pvCardPkr || '0',
-        CardsPayment: String((Number(pvFilePkr) || 0) + (Number(pvCardPkr) || 0))
+        FocWaivedOpdFee: isFoc ? focOpdVal : 0,
+        FocWaivedClinicalFee: isFoc ? focClinVal : 0,
+        FocWaivedFileCardFee: isFoc ? focFileCardVal : 0,
+        FocReason: isFoc ? focReasonVal : '',
+        ConsultationFee: isFoc ? 0 : isFollowUp ? 0 : Number(pvOpdFeePkr) || 0,
+        ClinicalMedicinePayment: isFoc ? 0 : isFollowUp ? 0 : pvClinicalMedicinePkr || '0',
+        FileFee: isFoc ? 0 : isFollowUp ? 0 : pvFilePkr || '0',
+        CardFee: isFoc ? 0 : isFollowUp ? 0 : pvCardPkr || '0',
+        CardsPayment: isFoc ? '0' : isFollowUp ? '0' : String((Number(pvFilePkr) || 0) + (Number(pvCardPkr) || 0)),
+        ConsultationPaymentOption: isFoc ? 'FOC' : isFollowUp ? 'Follow-Up' : 'Cash Paid'
       };
 
       const newVisitMedicines: VisitMedicine[] = [];
@@ -8427,7 +8453,7 @@ Healing Naturally. Restoring Balance.`;
         };
 
         // Filter patients
-        const rawFilteredPatients = patients.filter((pt) => {
+        let rawFilteredPatients = patients.filter((pt) => {
           const ptVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
           const ptVisitIds = new Set(ptVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
           const ptVisitDates = new Set(ptVisits.map(v => v.VisitDate ? v.VisitDate.split('T')[0] : '').filter(Boolean));
@@ -8503,6 +8529,23 @@ Healing Naturally. Restoring Balance.`;
             matchedSymptoms
           );
         });
+
+        if (gridViewFocOnly) {
+          rawFilteredPatients = rawFilteredPatients.filter(pt => {
+            const pVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
+            const pNhc = (pvNhcHistory || []).filter(nhc => isSamePatient(nhc.PatientID, pt.PatientID));
+            const hasFocVisit = pVisits.some(v =>
+              v.ConsultationPaymentOption === 'FOC' ||
+              (v.VisitRemarks && (v.VisitRemarks.includes('FOC') || v.VisitRemarks.includes('Free of Charge')))
+            );
+            const hasFocNhc = pNhc.some(nhc =>
+              (nhc as any).ConsultationPaymentOption === 'FOC' ||
+              ((nhc as any).VisitRemarks && ((nhc as any).VisitRemarks.includes('FOC') || (nhc as any).VisitRemarks.includes('Free of Charge'))) ||
+              ((nhc as any).symptoms && (nhc as any).symptoms.includes('FOC'))
+            );
+            return hasFocVisit || hasFocNhc;
+          });
+        }
 
         // Helper to get latest activity date for sorting & deduplication
         const getPtLatestActivityDate = (p: typeof patients[0]) => {
@@ -8696,6 +8739,21 @@ Healing Naturally. Restoring Balance.`;
                     <option value="Other">Other</option>
                   </select>
                 </div>
+
+                {/* FOC Cases Filter Toggle Button */}
+                <button
+                  type="button"
+                  onClick={() => setGridViewFocOnly(!gridViewFocOnly)}
+                  className={`px-3 py-2 text-xs font-extrabold rounded-lg transition shadow-2xs flex items-center space-x-1.5 cursor-pointer border ${
+                    gridViewFocOnly
+                      ? 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-400 font-black'
+                      : 'bg-purple-900/90 hover:bg-purple-800 text-purple-200 border-purple-700'
+                  }`}
+                  title="Filter Grid-View to show only Free of Charge (FOC) Cases"
+                >
+                  <HeartHandshake className={`w-3.5 h-3.5 ${gridViewFocOnly ? 'text-white' : 'text-purple-300'}`} />
+                  <span>FOC Cases {gridViewFocOnly ? '✓' : ''}</span>
+                </button>
               </div>
             </div>
 
@@ -9055,7 +9113,10 @@ Healing Naturally. Restoring Balance.`;
                         const ptStorePayment = ptInvoices.reduce((acc, inv) => acc + (Number(inv.NetAmount) || 0), 0);
                         const clinicalAndOpdTotal = appOpdTotal;
                         const grandTotalPayment = appOpdTotal + clinMedsTotal + ptStorePayment;
-                        const paymentOpt = latestVisit?.ConsultationPaymentOption || 'Cash Paid';
+                        const rawOpt = latestVisit?.ConsultationPaymentOption || '';
+                        const remStr = latestVisit?.VisitRemarks || '';
+                        const isFocCase = rawOpt === 'FOC' || remStr.includes('FOC') || remStr.includes('Free of Charge') || (grandTotalPayment === 0 && rawOpt !== 'Follow-Up');
+                        const paymentOpt = isFocCase ? 'FOC' : (rawOpt === 'Follow-Up' || remStr.includes('Follow-up')) ? 'Follow-Up' : (rawOpt || 'Cash Paid');
 
                         return (
                           <tr
@@ -9124,8 +9185,14 @@ Healing Naturally. Restoring Balance.`;
                               <div className="font-extrabold text-slate-950 text-[10.5px] font-mono" title={`Grand Total Payment: Clin Meds (PKR ${clinMedsTotal}) + App/OPD (PKR ${clinicalAndOpdTotal}) + Store (PKR ${ptStorePayment})`}>
                                 PKR {grandTotalPayment.toLocaleString()}
                               </div>
-                              <span className={`text-[8px] font-extrabold px-1 py-0.2 rounded border uppercase inline-block text-center ${
-                                paymentOpt === 'Cash Paid' ? 'bg-emerald-100 text-emerald-900 border-emerald-300' : 'bg-rose-100 text-rose-900 border-rose-300'
+                              <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded border uppercase inline-block text-center ${
+                                paymentOpt === 'FOC'
+                                  ? 'bg-purple-100 text-purple-900 border-purple-300 font-black'
+                                  : paymentOpt === 'Follow-Up'
+                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
+                                  : paymentOpt === 'Cash Paid' || paymentOpt === 'Paid' || paymentOpt === 'Paid - Cash'
+                                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
+                                  : 'bg-rose-100 text-rose-900 border-rose-300'
                               }`}>
                                 {paymentOpt}
                               </span>
@@ -11247,29 +11314,165 @@ Healing Naturally. Restoring Balance.`;
             {/* Body */}
             <div className="p-5 space-y-3.5 text-slate-800">
               <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-950 leading-relaxed shadow-2xs">
-                Payment of Patient is not Enter. Is this a follow-up Patient?
+                Payment of Patient is not entered. Is this a Follow-up Patient or FOC (Free of Charge) Case?
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                Visit Charges & Fees (Clinical Med, File, Card) are currently empty or 0. If the patient came for follow-up advice or change of medicine, select <strong>Yes</strong> to save as a follow-up visit. Otherwise, select <strong>No</strong> to close this message and enter payment charges in the textboxes.
+                Visit Charges & Fees (OPD Fee, Clinical Med, File, Card) are currently empty or 0. Select <strong>Follow-up Patient</strong> for follow-up consultation, <strong>FOC Case</strong> for free treatment, or <strong>No</strong> to return and enter payment charges.
               </p>
             </div>
 
             {/* Footer Buttons */}
-            <div className="bg-slate-50 p-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-end gap-2.5">
+            <div className="bg-slate-50 p-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-end gap-2 text-xs">
               <button
                 type="button"
                 onClick={() => setShowFollowUpConfirmModal(false)}
-                className="w-full sm:w-auto px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-extrabold text-xs rounded-xl transition cursor-pointer"
+                className="w-full sm:w-auto px-3 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-extrabold rounded-xl transition cursor-pointer"
               >
                 No (Enter Payment)
               </button>
               <button
                 type="button"
-                onClick={() => executeSavePatientVisit(true)}
-                className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition cursor-pointer flex items-center justify-center space-x-1.5"
+                onClick={() => executeSavePatientVisit(true, false)}
+                className="w-full sm:w-auto px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl shadow-md transition cursor-pointer flex items-center justify-center space-x-1"
+              >
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                <span>Yes (Follow-up)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFollowUpConfirmModal(false);
+                  setShowFocFeeDetailsModal(true);
+                }}
+                className="w-full sm:w-auto px-3.5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl shadow-md transition cursor-pointer flex items-center justify-center space-x-1"
+              >
+                <HeartHandshake className="w-3.5 h-3.5" />
+                <span>FOC Case</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FOC Waived Charges Entry Secondary Modal Popup */}
+      {showFocFeeDetailsModal && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-purple-200 overflow-hidden animate-scaleUp">
+            {/* Header */}
+            <div className="bg-purple-700 px-5 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <HeartHandshake className="w-5 h-5 text-purple-200 shrink-0" />
+                <div>
+                  <h3 className="font-extrabold text-sm">Enter FOC Waived Value (Reporting Record)</h3>
+                  <p className="text-[10px] text-purple-200">Patient bill will be PKR 0 (Free of Charge)</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowFocFeeDetailsModal(false)}
+                className="text-white hover:text-purple-200 font-bold text-lg leading-none cursor-pointer"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-4 text-xs text-slate-800">
+              <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-purple-950 font-medium leading-relaxed">
+                Enter the standard fees being waived for this Free of Charge (FOC) visit to generate accurate financial welfare reports in Reporting Desk.
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Waived OPD Fee (PKR)
+                  </label>
+                  <input
+                    type="number"
+                    value={focWaivedOpdFee}
+                    onChange={(e) => setFocWaivedOpdFee(e.target.value)}
+                    placeholder="500"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Waived Clinical Meds (PKR)
+                  </label>
+                  <input
+                    type="number"
+                    value={focWaivedClinicalFee}
+                    onChange={(e) => setFocWaivedClinicalFee(e.target.value)}
+                    placeholder="0"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500 font-mono"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Waived File / Card (PKR)
+                  </label>
+                  <input
+                    type="number"
+                    value={focWaivedFileCardFee}
+                    onChange={(e) => setFocWaivedFileCardFee(e.target.value)}
+                    placeholder="0"
+                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                  FOC Category / Reason
+                </label>
+                <select
+                  value={focReason}
+                  onChange={(e) => setFocReason(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500"
+                >
+                  <option value="Deserving / Needy Patient">Deserving / Needy Patient</option>
+                  <option value="Staff / Doctor Relative">Staff / Doctor Relative</option>
+                  <option value="Welfare / Zakat Fund">Welfare / Zakat Fund</option>
+                  <option value="Free OPD Camp">Free OPD Camp</option>
+                  <option value="Doctor Courtesy / Special Waiver">Doctor Courtesy / Special Waiver</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
+
+              <div className="bg-slate-100 p-2.5 rounded-lg flex items-center justify-between font-mono text-xs">
+                <span className="font-bold text-slate-600">Total Waived Financial Value:</span>
+                <strong className="text-purple-900 font-extrabold text-sm">
+                  PKR {((Number(focWaivedOpdFee) || 0) + (Number(focWaivedClinicalFee) || 0) + (Number(focWaivedFileCardFee) || 0)).toLocaleString()}
+                </strong>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 p-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-end gap-2 text-xs">
+              <button
+                type="button"
+                onClick={() => setShowFocFeeDetailsModal(false)}
+                className="w-full sm:w-auto px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowFocFeeDetailsModal(false);
+                  executeSavePatientVisit(false, true, {
+                    opd: Number(focWaivedOpdFee) || 0,
+                    clin: Number(focWaivedClinicalFee) || 0,
+                    fileCard: Number(focWaivedFileCardFee) || 0,
+                    reason: focReason || 'Deserving Patient'
+                  });
+                }}
+                className="w-full sm:w-auto px-5 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-extrabold rounded-xl shadow-md transition cursor-pointer flex items-center justify-center space-x-1.5"
               >
                 <CheckCircle2 className="w-4 h-4" />
-                <span>Yes (Follow-up Patient)</span>
+                <span>Confirm & Save FOC Visit</span>
               </button>
             </div>
           </div>

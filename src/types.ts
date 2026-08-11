@@ -98,7 +98,11 @@ export interface Visit {
   VisitRemarks: string;
   Status: 1 | 2; // 1 = New, 2 = Posted (Read Only)
   ConsultationFee?: number;
-  ConsultationPaymentOption?: string; // 'Cash Paid', 'Unpaid', 'Panel Claim'
+  ConsultationPaymentOption?: string; // 'Cash Paid', 'Unpaid', 'Panel Claim', 'FOC'
+  FocWaivedOpdFee?: number | string;
+  FocWaivedClinicalFee?: number | string;
+  FocWaivedFileCardFee?: number | string;
+  FocReason?: string;
   CardsPayment?: string;
   FileFee?: string;
   CardFee?: string;

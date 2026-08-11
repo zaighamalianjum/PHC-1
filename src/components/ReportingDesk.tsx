@@ -21,7 +21,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   RefreshCw,
-  Info
+  Info,
+  HeartHandshake
 } from 'lucide-react';
 
 import {
@@ -45,7 +46,8 @@ export type ReportType =
   | 'minimum_stock'
   | 'required_stock'
   | 'pnl_summary'
-  | 'shift_collection_summary';
+  | 'shift_collection_summary'
+  | 'foc_cases_summary';
 
 interface ReportingDeskProps {
   vendors?: ErpVendor[];
@@ -90,6 +92,7 @@ export default function ReportingDesk({
   posSales = [],
   invoices = [],
   visits = [],
+  patients = [],
   currentUser,
   clinicSettings
 }: ReportingDeskProps) {
@@ -577,6 +580,79 @@ export default function ReportingDesk({
     return shiftCollectionData.dailyRows.filter(r => r.date.toLowerCase().includes(q));
   }, [shiftCollectionData.dailyRows, searchQuery]);
 
+  // Report 10: FOC (Free of Charge) Cases Summary
+  const focReportData = useMemo(() => {
+    const allVisits = visits.length > 0 ? visits : patientVisits;
+    const focVisits = allVisits.filter(v => {
+      if (!isWithinDateRange(v.VisitDate)) return false;
+      const opt = v.ConsultationPaymentOption || '';
+      const rem = v.VisitRemarks || '';
+      return (
+        opt === 'FOC' ||
+        rem.includes('FOC') ||
+        rem.includes('Free of Charge') ||
+        v.FocReason ||
+        (Number(v.FocWaivedOpdFee) || 0) > 0
+      );
+    });
+
+    let totalOpdWaived = 0;
+    let totalClinWaived = 0;
+    let totalFileCardWaived = 0;
+
+    const rows = focVisits.map(v => {
+      const opd = Number(v.FocWaivedOpdFee) || (v.ConsultationFee ? Number(v.ConsultationFee) : 500);
+      const clin = Number(v.FocWaivedClinicalFee) || 0;
+      const fc = Number(v.FocWaivedFileCardFee) || 0;
+      const totalWaived = opd + clin + fc;
+
+      totalOpdWaived += opd;
+      totalClinWaived += clin;
+      totalFileCardWaived += fc;
+
+      const ptList = (patients as any[]) || [];
+      const pt = ptList.find(p => p.PatientID === v.PatientID) || {};
+
+      return {
+        visitId: v.VisitID || 'VIS',
+        date: v.VisitDate ? v.VisitDate.split('T')[0] : 'N/A',
+        patientId: v.PatientID || 'N/A',
+        patientName: pt.PatientName || v.PatientName || 'Patient',
+        phone: pt.PhoneNumber || pt.Phone || 'N/A',
+        symptoms: v.SymptomsDiagnosis || 'FOC Consultation',
+        opdWaived: opd,
+        clinWaived: clin,
+        fileCardWaived: fc,
+        totalWaived,
+        reason: v.FocReason || (v.VisitRemarks?.includes('Reason:') ? v.VisitRemarks.split('Reason:')[1]?.replace(')', '').trim() : 'Deserving / Needy Patient')
+      };
+    });
+
+    const grandTotalWaived = totalOpdWaived + totalClinWaived + totalFileCardWaived;
+
+    return {
+      rows,
+      totalCount: focVisits.length,
+      totalOpdWaived,
+      totalClinWaived,
+      totalFileCardWaived,
+      grandTotalWaived
+    };
+  }, [visits, patientVisits, patients, startDate, endDate, datePreset]);
+
+  const filteredFocRows = useMemo(() => {
+    if (!searchQuery.trim()) return focReportData.rows;
+    const q = searchQuery.toLowerCase();
+    return focReportData.rows.filter(r =>
+      r.patientName.toLowerCase().includes(q) ||
+      r.patientId.toLowerCase().includes(q) ||
+      r.phone.toLowerCase().includes(q) ||
+      r.symptoms.toLowerCase().includes(q) ||
+      r.reason.toLowerCase().includes(q) ||
+      r.date.includes(q)
+    );
+  }, [focReportData.rows, searchQuery]);
+
   // Available Item Categories
   const categoriesList = useMemo(() => {
     const set = new Set<string>();
@@ -691,6 +767,46 @@ export default function ReportingDesk({
         shiftCollectionData.totalEvening,
         shiftCollectionData.grandTotal
       ]);
+    } else if (activeReport === 'foc_cases_summary') {
+      headers = [
+        'Visit ID',
+        'Date',
+        'Patient ID',
+        'Patient Name',
+        'Phone',
+        'Diagnosis / Symptoms',
+        'Waived OPD Fee (Rs.)',
+        'Waived Clinical Meds (Rs.)',
+        'Waived File/Card (Rs.)',
+        'Total Waived Value (Rs.)',
+        'FOC Category / Reason'
+      ];
+      rows = focReportData.rows.map(r => [
+        r.visitId,
+        r.date,
+        r.patientId,
+        r.patientName,
+        r.phone,
+        r.symptoms,
+        r.opdWaived,
+        r.clinWaived,
+        r.fileCardWaived,
+        r.totalWaived,
+        r.reason
+      ]);
+      rows.push([
+        'TOTALS',
+        '',
+        '',
+        `${focReportData.totalCount} Visits`,
+        '',
+        '',
+        focReportData.totalOpdWaived,
+        focReportData.totalClinWaived,
+        focReportData.totalFileCardWaived,
+        focReportData.grandTotalWaived,
+        ''
+      ]);
     }
 
     const csvContent = 'data:text/csv;charset=utf-8,' +
@@ -730,7 +846,8 @@ export default function ReportingDesk({
       minimum_stock: 'Low Stock & Minimum Inventory Threshold Alert Report',
       required_stock: 'Required Stock Requisition & Procurement Calculation Report',
       pnl_summary: 'Executive Profit & Loss Financial Summary Statement',
-      shift_collection_summary: 'Shift-Wise Collection & Revenue Summary Statement'
+      shift_collection_summary: 'Shift-Wise Collection & Revenue Summary Statement',
+      foc_cases_summary: 'Free of Charge (FOC) Cases & Welfare Waiver Report'
     };
 
     const recordCountText =
@@ -741,6 +858,7 @@ export default function ReportingDesk({
       activeReport === 'minimum_stock' ? `${minimumStockData.length} Alert Items` :
       activeReport === 'required_stock' ? `${requiredStockData.length} Requisition Items` :
       activeReport === 'pnl_summary' ? 'Executive Financial Summary' :
+      activeReport === 'foc_cases_summary' ? `${focReportData.totalCount} FOC Patients` :
       activeReport === 'shift_collection_summary' ? `${shiftCollectionData.dailyRows.length} Daily Records` : `${poData.length} Purchase Orders`;
 
     let tableHtml = '';
@@ -1053,6 +1171,51 @@ export default function ReportingDesk({
               <td style="text-align: right;">Rs. ${shiftCollectionData.totalEveningStore.toLocaleString()}</td>
               <td style="text-align: right; color: #fde047;">Rs. ${shiftCollectionData.totalEvening.toLocaleString()}</td>
               <td style="text-align: right; font-size: 13px; color: #34d399;">Rs. ${shiftCollectionData.grandTotal.toLocaleString()}</td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+    } else if (activeReport === 'foc_cases_summary') {
+      tableHtml = `
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Patient ID</th>
+              <th>Patient Name</th>
+              <th>Contact Phone</th>
+              <th>Diagnosis / Symptoms</th>
+              <th style="text-align: right">Waived OPD Fee</th>
+              <th style="text-align: right">Waived Clinical Meds</th>
+              <th style="text-align: right">Waived File/Card</th>
+              <th style="text-align: right">Total Waived (Rs.)</th>
+              <th>FOC Category / Reason</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${focReportData.rows.map(r => `
+              <tr>
+                <td><b>${r.date}</b></td>
+                <td>${r.patientId}</td>
+                <td><b>${r.patientName}</b></td>
+                <td>${r.phone}</td>
+                <td>${r.symptoms}</td>
+                <td style="text-align: right">Rs. ${r.opdWaived.toLocaleString()}</td>
+                <td style="text-align: right">Rs. ${r.clinWaived.toLocaleString()}</td>
+                <td style="text-align: right">Rs. ${r.fileCardWaived.toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold; color: #7e22ce;">Rs. ${r.totalWaived.toLocaleString()}</td>
+                <td><span class="badge" style="background: #f3e8ff; color: #6b21a8; font-weight: 800;">${r.reason}</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background: #581c87; color: white; font-weight: bold;">
+              <td colspan="5">GRAND TOTALS (${focReportData.totalCount} FOC PATIENTS)</td>
+              <td style="text-align: right">Rs. ${focReportData.totalOpdWaived.toLocaleString()}</td>
+              <td style="text-align: right">Rs. ${focReportData.totalClinWaived.toLocaleString()}</td>
+              <td style="text-align: right">Rs. ${focReportData.totalFileCardWaived.toLocaleString()}</td>
+              <td style="text-align: right; font-size: 13px; color: #f3e8ff; font-weight: 900;">Rs. ${focReportData.grandTotalWaived.toLocaleString()}</td>
+              <td></td>
             </tr>
           </tfoot>
         </table>
@@ -1496,13 +1659,14 @@ export default function ReportingDesk({
         </div>
 
         {/* REPORT TYPE SELECTOR BUTTONS */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-9 gap-2 mt-6 pt-5 border-t border-slate-800">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-10 gap-2 mt-6 pt-5 border-t border-slate-800">
           {[
             { id: 'pending_payments', label: 'Pending Vendor Payments', icon: Building2, badge: pendingPaymentsSummary.vendorsWithDues },
             { id: 'payroll_disbursement', label: 'Salary Disbursement', icon: Users, badge: payrollSummary.recordCount },
             { id: 'expense_analysis', label: 'Expense Analysis', icon: DollarSign, badge: expenseSummary.count },
             { id: 'purchase_orders', label: 'Purchase Orders', icon: ShoppingCart, badge: poSummary.totalPos },
-            { id: 'shift_collection_summary', label: 'Shift-Wise Collection', icon: PieChart },
+            { id: 'shift_collection_summary', label: 'Shift Collection', icon: PieChart },
+            { id: 'foc_cases_summary', label: 'FOC Cases', icon: HeartHandshake, badge: focReportData.totalCount },
             { id: 'current_stock', label: 'Current Stock', icon: Boxes, badge: currentStockSummary.totalItems },
             { id: 'minimum_stock', label: 'Minimum Stock Alert', icon: AlertTriangle, badge: minimumStockSummary.totalLowStock, isAlert: true },
             { id: 'required_stock', label: 'Required Requisition', icon: PackagePlus, badge: requiredStockSummary.totalItemsToOrder },
@@ -2431,6 +2595,126 @@ export default function ReportingDesk({
                       <td className="p-3 text-right font-black text-emerald-400 bg-slate-950 text-sm">
                         Rs. {shiftCollectionData.grandTotal.toLocaleString()}
                       </td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* REPORT TABLE 10: FOC CASES SUMMARY */}
+        {activeReport === 'foc_cases_summary' && (
+          <div className="space-y-6 pt-2">
+            {/* KPI SUMMARY CARDS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-purple-600 uppercase tracking-wider">Total FOC Patients</div>
+                  <div className="text-2xl font-black text-purple-900 mt-1">{focReportData.totalCount} Visits</div>
+                  <div className="text-[11px] font-medium text-purple-700 mt-0.5">Free consultations & waivers</div>
+                </div>
+                <HeartHandshake className="w-8 h-8 text-purple-500 opacity-80" />
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-amber-600 uppercase tracking-wider">Waived OPD Fees</div>
+                  <div className="text-2xl font-black text-amber-900 mt-1">Rs. {focReportData.totalOpdWaived.toLocaleString()}</div>
+                  <div className="text-[11px] font-medium text-amber-700 mt-0.5">Consultation fees exempted</div>
+                </div>
+                <Users className="w-8 h-8 text-amber-500 opacity-80" />
+              </div>
+
+              <div className="bg-blue-50 border border-blue-200 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-blue-600 uppercase tracking-wider">Waived Medicine / Cards</div>
+                  <div className="text-2xl font-black text-blue-900 mt-1">Rs. {(focReportData.totalClinWaived + focReportData.totalFileCardWaived).toLocaleString()}</div>
+                  <div className="text-[11px] font-medium text-blue-700 mt-0.5">Meds (Rs. {focReportData.totalClinWaived.toLocaleString()}) + Card/File</div>
+                </div>
+                <Boxes className="w-8 h-8 text-blue-500 opacity-80" />
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Total Financial Waived</div>
+                  <div className="text-2xl font-black text-emerald-900 mt-1">Rs. {focReportData.grandTotalWaived.toLocaleString()}</div>
+                  <div className="text-[11px] font-medium text-emerald-700 mt-0.5">Total welfare assistance provided</div>
+                </div>
+                <DollarSign className="w-8 h-8 text-emerald-500 opacity-80" />
+              </div>
+            </div>
+
+            {/* DETAILED FOC PATIENTS TABLE */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 bg-purple-900 text-white flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-sm text-white">Free of Charge (FOC) Patient Visits Register</h4>
+                  <p className="text-xs text-purple-200">Detailed list of free consultations, waived fees, and reasons recorded during the selected period</p>
+                </div>
+                <span className="text-xs font-bold text-purple-200 bg-purple-800 px-3 py-1 rounded-full border border-purple-700">
+                  {filteredFocRows.length} Records Found
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-800 font-extrabold border-b border-slate-300 text-[11px] uppercase">
+                      <th className="p-3 border-r border-slate-200">Date</th>
+                      <th className="p-3 border-r border-slate-200">Patient ID</th>
+                      <th className="p-3 border-r border-slate-200">Patient Name</th>
+                      <th className="p-3 border-r border-slate-200">Phone</th>
+                      <th className="p-3 border-r border-slate-200">Diagnosis / Symptoms</th>
+                      <th className="p-3 text-right border-r border-slate-200">Waived OPD</th>
+                      <th className="p-3 text-right border-r border-slate-200">Waived Meds</th>
+                      <th className="p-3 text-right border-r border-slate-200">Waived File/Card</th>
+                      <th className="p-3 text-right border-r border-slate-200 text-purple-900 font-black">Total Waived</th>
+                      <th className="p-3">Category / Reason</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 font-medium text-slate-800">
+                    {filteredFocRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={10} className="p-8 text-center text-slate-400 italic">
+                          No FOC Case visits recorded for the selected date range.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredFocRows.map((r, idx) => (
+                        <tr key={r.visitId + idx} className={idx % 2 === 0 ? 'bg-white hover:bg-slate-50/80' : 'bg-slate-50/50 hover:bg-slate-100/50'}>
+                          <td className="p-3 font-bold text-slate-900 border-r border-slate-100">{r.date}</td>
+                          <td className="p-3 font-mono font-bold text-slate-600 border-r border-slate-100">{r.patientId}</td>
+                          <td className="p-3 font-bold text-slate-900 border-r border-slate-100">{r.patientName}</td>
+                          <td className="p-3 text-slate-600 border-r border-slate-100 font-mono">{r.phone}</td>
+                          <td className="p-3 text-slate-700 border-r border-slate-100">{r.symptoms}</td>
+                          <td className="p-3 text-right text-slate-700 font-mono">Rs. {r.opdWaived.toLocaleString()}</td>
+                          <td className="p-3 text-right text-slate-700 font-mono">Rs. {r.clinWaived.toLocaleString()}</td>
+                          <td className="p-3 text-right text-slate-700 font-mono">Rs. {r.fileCardWaived.toLocaleString()}</td>
+                          <td className="p-3 text-right font-black text-purple-900 bg-purple-50/50 border-r border-slate-100 font-mono">
+                            Rs. {r.totalWaived.toLocaleString()}
+                          </td>
+                          <td className="p-3">
+                            <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-purple-100 text-purple-800 border border-purple-200 inline-block">
+                              {r.reason}
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-purple-950 text-white font-extrabold text-xs">
+                      <td className="p-3 uppercase tracking-wider" colSpan={5}>
+                        Grand Totals ({focReportData.totalCount} FOC Patients)
+                      </td>
+                      <td className="p-3 text-right text-purple-200 font-mono">Rs. {focReportData.totalOpdWaived.toLocaleString()}</td>
+                      <td className="p-3 text-right text-purple-200 font-mono">Rs. {focReportData.totalClinWaived.toLocaleString()}</td>
+                      <td className="p-3 text-right text-purple-200 font-mono">Rs. {focReportData.totalFileCardWaived.toLocaleString()}</td>
+                      <td className="p-3 text-right font-black text-amber-300 bg-purple-900 font-mono text-sm">
+                        Rs. {focReportData.grandTotalWaived.toLocaleString()}
+                      </td>
+                      <td></td>
                     </tr>
                   </tfoot>
                 </table>
