@@ -2684,7 +2684,7 @@ Healing Naturally. Restoring Balance.`;
       const mCmed = visitsForDate.filter(v => getVisShift(v) === 1).reduce((sum, v) => sum + getVisFees(v).clin, 0);
       const mCards = visitsForDate.filter(v => getVisShift(v) === 1).reduce((sum, v) => sum + getVisFees(v).card, 0);
       const mFile = visitsForDate.filter(v => getVisShift(v) === 1).reduce((sum, v) => sum + getVisFees(v).file, 0);
-      const mStore = invoicesForDate.filter(inv => (inv.shift || (inv as any).Shift || 1) === 1).reduce((sum, inv) => sum + (inv.NetAmount || 0), 0);
+      const mStore = invoicesForDate.filter(inv => (inv.shift || (inv as any).Shift || 1) === 1).reduce((sum, inv) => sum + (Number(inv.NetAmount || (inv as any).NetPayable || (inv as any).GrandTotal || (inv as any).GAmount || (inv as any).totalAmount) || 0), 0);
       const mTotal = mApp + mCmed + mCards + mFile + mStore;
 
       // EVENING (Shift 2)
@@ -2699,7 +2699,7 @@ Healing Naturally. Restoring Balance.`;
       const eCmed = visitsForDate.filter(v => getVisShift(v) === 2).reduce((sum, v) => sum + getVisFees(v).clin, 0);
       const eCards = visitsForDate.filter(v => getVisShift(v) === 2).reduce((sum, v) => sum + getVisFees(v).card, 0);
       const eFile = visitsForDate.filter(v => getVisShift(v) === 2).reduce((sum, v) => sum + getVisFees(v).file, 0);
-      const eStore = invoicesForDate.filter(inv => (inv.shift || (inv as any).Shift || 1) === 2).reduce((sum, inv) => sum + (inv.NetAmount || 0), 0);
+      const eStore = invoicesForDate.filter(inv => (inv.shift || (inv as any).Shift || 1) === 2).reduce((sum, inv) => sum + (Number(inv.NetAmount || (inv as any).NetPayable || (inv as any).GrandTotal || (inv as any).GAmount || (inv as any).totalAmount) || 0), 0);
       const eTotal = eApp + eCmed + eCards + eFile + eStore;
 
       const dayTotal = mTotal + eTotal;
