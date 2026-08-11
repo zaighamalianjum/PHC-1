@@ -65,7 +65,7 @@ export default function Dashboard({
   visits = []
 }: DashboardProps) {
   // Operational / Filter States
-  const [dateFilter, setDateFilter] = useState<'today' | 'custom' | 'all'>('today');
+  const [dateFilter, setDateFilter] = useState<'today' | 'this_week' | 'this_month' | 'this_year' | 'custom' | 'all'>('today');
   const [shiftFilter, setShiftFilter] = useState<'all' | 'morning' | 'evening'>('all');
   const todayStr = new Date().toISOString().split('T')[0]; // Current dynamic system date
   const [customStartDate, setCustomStartDate] = useState<string>(todayStr);
@@ -76,6 +76,19 @@ export default function Dashboard({
     const d = dateField.split('T')[0];
     if (dateFilter === 'today') {
       return d === todayStr || d === '2026-07-03';
+    }
+    if (dateFilter === 'this_week') {
+      const targetDate = new Date(d);
+      const now = new Date(todayStr);
+      const diffTime = Math.abs(now.getTime() - targetDate.getTime());
+      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+      return diffDays <= 7 || d === '2026-07-03';
+    }
+    if (dateFilter === 'this_month') {
+      return d.startsWith(todayStr.slice(0, 7)) || d.startsWith('2026-07');
+    }
+    if (dateFilter === 'this_year') {
+      return d.startsWith(todayStr.slice(0, 4)) || d.startsWith('2026');
     }
     if (dateFilter === 'custom') {
       if (customStartDate && customEndDate) {
@@ -142,19 +155,19 @@ export default function Dashboard({
   const totalCardFileFeeCollection = morningCardFileFee + eveningCardFileFee;
 
   // --- 1. DAILY OPD COLLECTION SHIFT-WISE ---
-  const morningOpdApps = targetApps.filter((a) => a.Shift === 1);
-  const eveningOpdApps = targetApps.filter((a) => a.Shift === 2);
+  const morningOpdApps = targetApps.filter((a) => (a.Shift || 1) === 1 && a.Status !== 3);
+  const eveningOpdApps = targetApps.filter((a) => a.Shift === 2 && a.Status !== 3);
 
   const morningOpdAppFees = morningOpdApps.reduce((acc, curr) => acc + (Number(curr.FeeCharged) || 0), 0);
   const eveningOpdAppFees = eveningOpdApps.reduce((acc, curr) => acc + (Number(curr.FeeCharged) || 0), 0);
 
-  const morningOpdVisitFees = targetVisits.filter((v) => getVisitShift(v) === 1).reduce((acc, v) => {
+  const morningOpdVisitFees = targetVisits.filter((v) => getVisitShift(v) === 1 && (v as any).Status !== 3).reduce((acc, v) => {
     const fee = Number(v.ConsultationFee) || 0;
     const hasAppFee = morningOpdApps.some(a => a.PatientID === v.PatientID && (Number(a.FeeCharged) || 0) > 0);
     return acc + (hasAppFee ? 0 : fee);
   }, 0);
 
-  const eveningOpdVisitFees = targetVisits.filter((v) => getVisitShift(v) === 2).reduce((acc, v) => {
+  const eveningOpdVisitFees = targetVisits.filter((v) => getVisitShift(v) === 2 && (v as any).Status !== 3).reduce((acc, v) => {
     const fee = Number(v.ConsultationFee) || 0;
     const hasAppFee = eveningOpdApps.some(a => a.PatientID === v.PatientID && (Number(a.FeeCharged) || 0) > 0);
     return acc + (hasAppFee ? 0 : fee);
@@ -169,8 +182,8 @@ export default function Dashboard({
   const totalOpdCollection = morningOpdCollection + eveningOpdCollection;
 
   // --- 2. STORE / PHARMACY COLLECTION SHIFT-WISE ---
-  const morningInvoices = targetInvoices.filter((i) => i.shift === 1);
-  const eveningInvoices = targetInvoices.filter((i) => i.shift === 2);
+  const morningInvoices = targetInvoices.filter((i) => i.shift === 1 && (i as any).Status !== 3);
+  const eveningInvoices = targetInvoices.filter((i) => i.shift === 2 && (i as any).Status !== 3);
 
   const morningReturns = targetSalesReturns.filter((r) => r.shift === 1);
   const eveningReturns = targetSalesReturns.filter((r) => r.shift === 2);
@@ -190,13 +203,58 @@ export default function Dashboard({
   const eveningTotalPayment = eveningOpdCollection + eveningStoreCollection;
   const combinedTotalPayment = morningTotalPayment + eveningTotalPayment;
 
-  // --- 4. NUMBER OF PATIENTS SHIFT-WISE ---
-  const morningTokens = targetTokens.filter((t) => t.Shift === 1);
-  const eveningTokens = targetTokens.filter((t) => t.Shift === 2);
+  // --- 4. NUMBER OF PATIENTS SHIFT-WISE (ACCURATE AUDIT COUNT) ---
+  const morningTokens = targetTokens.filter((t) => (t.Shift || 1) === 1 && t.Status !== 3);
+  const eveningTokens = targetTokens.filter((t) => t.Shift === 2 && t.Status !== 3);
 
-  // Combine unique patients or total shift engagements
-  const morningPatientsCount = morningOpdApps.length + morningTokens.length;
-  const eveningPatientsCount = eveningOpdApps.length + eveningTokens.length;
+  const getUniquePatientCountForShift = (shiftNum: 1 | 2) => {
+    const datesSet = new Set<string>();
+    targetApps.forEach(a => { if (a.AppointmentDate) datesSet.add(a.AppointmentDate.split('T')[0]); });
+    targetTokens.forEach(t => { if (t.Date) datesSet.add(t.Date.split('T')[0]); });
+    targetVisits.forEach(v => { if (v.VisitDate) datesSet.add(v.VisitDate.split('T')[0]); });
+
+    let totalUniqueVisits = 0;
+
+    datesSet.forEach(dateStr => {
+      const shiftApps = targetApps.filter(a => a.AppointmentDate?.startsWith(dateStr) && (a.Shift || 1) === shiftNum && a.Status !== 3);
+      const shiftTokens = targetTokens.filter(t => t.Date?.startsWith(dateStr) && (t.Shift || 1) === shiftNum && t.Status !== 3);
+      const shiftVisits = targetVisits.filter(v => v.VisitDate?.startsWith(dateStr) && getVisitShift(v) === shiftNum && (v as any).Status !== 3);
+
+      const patientSet = new Set<string>();
+      shiftApps.forEach(a => {
+        if (a.PatientID) patientSet.add(a.PatientID);
+        else patientSet.add(`app-${a.AppointmentID}`);
+      });
+      shiftTokens.forEach(t => {
+        if (t.PatientID) patientSet.add(t.PatientID);
+        else patientSet.add(`tok-${t.TokenNo}`);
+      });
+      shiftVisits.forEach(v => {
+        if (v.PatientID) patientSet.add(v.PatientID);
+        else patientSet.add(`vis-${v.VisitID}`);
+      });
+
+      totalUniqueVisits += patientSet.size;
+    });
+
+    if (totalUniqueVisits === 0) {
+      const shiftApps = targetApps.filter(a => (a.Shift || 1) === shiftNum && a.Status !== 3);
+      const shiftTokens = targetTokens.filter(t => (t.Shift || 1) === shiftNum && t.Status !== 3);
+      const shiftVisits = targetVisits.filter(v => getVisitShift(v) === shiftNum && (v as any).Status !== 3);
+
+      const patientSet = new Set<string>();
+      shiftApps.forEach(a => patientSet.add(a.PatientID || `app-${a.AppointmentID}`));
+      shiftTokens.forEach(t => patientSet.add(t.PatientID || `tok-${t.TokenNo}`));
+      shiftVisits.forEach(v => patientSet.add(v.PatientID || `vis-${v.VisitID}`));
+
+      totalUniqueVisits = patientSet.size;
+    }
+
+    return totalUniqueVisits;
+  };
+
+  const morningPatientsCount = getUniquePatientCountForShift(1);
+  const eveningPatientsCount = getUniquePatientCountForShift(2);
   const totalPatientsShiftCount = morningPatientsCount + eveningPatientsCount;
 
   // --- 5. GRAND TOTAL COLLECTION BOTH SHIFTS + STORE COLLECTION ---
@@ -250,7 +308,13 @@ export default function Dashboard({
               Scope:{' '}
               <strong className="text-slate-900 font-bold">
                 {dateFilter === 'today'
-                  ? 'Today (July 3, 2026)'
+                  ? 'Daily (Today)'
+                  : dateFilter === 'this_week'
+                  ? 'Weekly (Past 7 Days)'
+                  : dateFilter === 'this_month'
+                  ? 'Monthly (This Month)'
+                  : dateFilter === 'this_year'
+                  ? 'Yearly (This Year)'
                   : dateFilter === 'custom'
                   ? `${customStartDate} to ${customEndDate}`
                   : 'All Time History'}
@@ -259,34 +323,61 @@ export default function Dashboard({
           </div>
 
           {/* Date Scope Filter */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs gap-1">
+          <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs gap-1">
             <button
               type="button"
               onClick={() => setDateFilter('today')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                 dateFilter === 'today' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              Today Only
+              Daily
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateFilter('this_week')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                dateFilter === 'this_week' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Weekly
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateFilter('this_month')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                dateFilter === 'this_month' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Monthly
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateFilter('this_year')}
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                dateFilter === 'this_year' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              Yearly
             </button>
             <button
               type="button"
               onClick={() => setDateFilter('custom')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center space-x-1 ${
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center space-x-1 ${
                 dateFilter === 'custom' ? 'bg-white text-amber-700 shadow-xs border border-amber-200' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               <CalendarDays className="w-3.5 h-3.5 text-amber-600" />
-              <span>Custom Date</span>
+              <span>Custom Range</span>
             </button>
             <button
               type="button"
               onClick={() => setDateFilter('all')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                 dateFilter === 'all' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              All Records
+              All Time
             </button>
           </div>
 
@@ -362,6 +453,12 @@ export default function Dashboard({
                 <span className="text-xs text-slate-400 font-medium">
                   {dateFilter === 'today'
                     ? "Today's Shift Ledger"
+                    : dateFilter === 'this_week'
+                    ? "Weekly Shift Ledger (Past 7 Days)"
+                    : dateFilter === 'this_month'
+                    ? "Monthly Shift Ledger (This Month)"
+                    : dateFilter === 'this_year'
+                    ? "Yearly Shift Ledger (This Year)"
                     : dateFilter === 'custom'
                     ? `Custom Date Range (${customStartDate} to ${customEndDate})`
                     : 'All Register Entries'}
