@@ -355,6 +355,13 @@ export default function PatientDesk({
     if (currentUser?.AssignedShift === 2) return 2;
     return 1;
   }); // 1 = Morning, 2 = Evening
+
+  // Keep active shift automatically synchronized with the logged-in user's assigned shift
+  useEffect(() => {
+    const userShift = currentUser?.AssignedShift === 2 ? 2 : 1;
+    setShift(userShift);
+    setFormShift(userShift);
+  }, [currentUser?.UserID, currentUser?.AssignedShift]);
   const [remarks, setRemarks] = useState('');
   const [appError, setAppError] = useState('');
   const [appSuccess, setAppSuccess] = useState('');
@@ -828,7 +835,7 @@ export default function PatientDesk({
     setFormPhoneMobile('');
     setPatientSearchQuery('');
     setFormAppDate(new Date().toISOString().split('T')[0]);
-    setFormShift(1);
+    setFormShift(currentUser?.AssignedShift === 2 ? 2 : 1);
     setFormFeeCharged('500');
     setFormRemarks('');
     setIsAddAppModalOpen(true);
@@ -4568,10 +4575,12 @@ Healing Naturally. Restoring Balance.`;
     setModalFilePkr(filePkr && filePkr !== '0' ? filePkr : '');
     setModalCardPkr(cardPkr && cardPkr !== '0' ? cardPkr : '');
 
-    if ('ConsultationFee' in v && v.ConsultationFee) {
+    if ('ConsultationFee' in v && v.ConsultationFee !== undefined && v.ConsultationFee !== null) {
       setModalConsultationFee(v.ConsultationFee);
+    } else if ('fee' in v && (v as any).fee !== undefined && (v as any).fee !== null) {
+      setModalConsultationFee((v as any).fee);
     } else {
-      setModalConsultationFee(clinicSettings?.OPDFee || 1500);
+      setModalConsultationFee('');
     }
 
     if ('ConsultationPaymentOption' in v && v.ConsultationPaymentOption) {
@@ -4681,7 +4690,7 @@ Healing Naturally. Restoring Balance.`;
       setModalLabTestAdvice('');
       setModalClinicalItems([{ id: '1', medicineName: '', dosage: '' }]);
       setModalPatentItems([{ id: '1', medicineName: '', dosage: '' }]);
-      setModalConsultationFee(clinicSettings?.OPDFee || 1500);
+      setModalConsultationFee('');
       setModalClinicalMedicinePkr('');
       setModalFilePkr('');
       setModalCardPkr('');
@@ -4735,7 +4744,7 @@ Healing Naturally. Restoring Balance.`;
       return [{
         date: todayStr,
         symptoms: 'Fresh Consultation Visit',
-        fee: clinicSettings?.OPDFee || 1500,
+        fee: 0,
         summary: 'New Visit Record'
       }];
     }
@@ -12347,15 +12356,16 @@ Healing Naturally. Restoring Balance.`;
                           const sx = 'SymptomsDiagnosis' in v ? v.SymptomsDiagnosis : ('symptoms' in v ? (v as any).symptoms : 'Routine Consultation');
                           const labAdv = 'LabTestAdvice' in v ? v.LabTestAdvice : 'None';
                           let clinFee = Number((v as any).ClinicalMedicinePayment) || 0;
-                          let fileFee = Number((v as any).FileFee) || Number((v as any).ConsultationFee) || 0;
+                          let fileFee = Number((v as any).FileFee) || 0;
                           let cardFee = Number((v as any).CardFee) || Number((v as any).CardsPayment) || 0;
+                          let opdFee = Number((v as any).ConsultationFee) || Number((v as any).fee) || 0;
                           const remText = (v as any).VisitRemarks || (v as any).Remarks || '';
                           if (remText) {
                             if (!clinFee) { const cPkr = remText.match(/Clinical Meds PKR\s*(\d+)/); if (cPkr) clinFee = Number(cPkr[1]); }
                             if (!fileFee) { const fPkr = remText.match(/File PKR\s*(\d+)/); if (fPkr) fileFee = Number(fPkr[1]); }
                             if (!cardFee) { const kPkr = remText.match(/Card PKR\s*(\d+)/); if (kPkr) cardFee = Number(kPkr[1]); }
                           }
-                          const fee = clinFee + fileFee + cardFee;
+                          const fee = clinFee + fileFee + cardFee + opdFee;
                           const isSelected = modalEditingVisitId === vId;
 
                           return (

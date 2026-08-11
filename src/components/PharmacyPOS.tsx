@@ -1551,14 +1551,21 @@ export default function PharmacyPOS({
 
   // Active Billing Form
   const [selectedPatientId, setSelectedPatientId] = useState('');
-  const [billingShift, setBillingShift] = useState<1 | 2>(1);
+  const [billingShift, setBillingShift] = useState<1 | 2>(() => currentUser?.AssignedShift === 2 ? 2 : 1);
   const [discountInput, setDiscountInput] = useState<number>(0);
   const [showPatentSourcingModal, setShowPatentSourcingModal] = useState(false);
   const [patientSourcingOption, setPatientSourcingOption] = useState<'Clinic' | 'Outside'>('Clinic');
   
   // Store Medicine State
   const [storePatientId, setStorePatientId] = useState('');
-  const [storeShift, setStoreShift] = useState<1 | 2>(1);
+  const [storeShift, setStoreShift] = useState<1 | 2>(() => currentUser?.AssignedShift === 2 ? 2 : 1);
+
+  // Sync shifts with active logged-in user assigned shift
+  useEffect(() => {
+    const userShift = currentUser?.AssignedShift === 2 ? 2 : 1;
+    setBillingShift(userShift);
+    setStoreShift(userShift);
+  }, [currentUser?.UserID, currentUser?.AssignedShift]);
   const [storeDiscountInput, setStoreDiscountInput] = useState<number | string>('');
   const [storeBasket, setStoreBasket] = useState<{ ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[]>([]);
   const [storeRowItemId, setStoreRowItemId] = useState('');
@@ -3483,11 +3490,11 @@ export default function PharmacyPOS({
                       if (app && (app.Shift === 1 || app.Shift === 2)) {
                         setStoreShift(app.Shift as 1 | 2);
                       } else {
-                        setStoreShift(1);
+                        setStoreShift(currentUser?.AssignedShift === 2 ? 2 : 1);
                       }
                     }
                   } else {
-                    setStoreShift(1);
+                    setStoreShift(currentUser?.AssignedShift === 2 ? 2 : 1);
                   }
                 }}
                 className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
