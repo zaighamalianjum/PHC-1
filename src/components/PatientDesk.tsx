@@ -52,7 +52,8 @@ import {
   Save,
   Download,
   Filter,
-  Check
+  Check,
+  User as UserIcon
 } from 'lucide-react';
 import {
   Patient,
@@ -744,6 +745,7 @@ export default function PatientDesk({
   // States for Edit Recent Visit Record Popup Modal
   const [isRecentVisitsModalOpen, setIsRecentVisitsModalOpen] = useState(false);
   const [recentModalSearch, setRecentModalSearch] = useState('');
+  const [recentModalPatientOnly, setRecentModalPatientOnly] = useState<boolean>(true);
 
   // States for New Patient Search Token / Patient ID Popup Modal
   const [isNewPatientSearchModalOpen, setIsNewPatientSearchModalOpen] = useState(false);
@@ -4641,6 +4643,7 @@ Healing Naturally. Restoring Balance.`;
     setModalSaveError('');
     const pId = targetPatientId || pvSelectedPatientId;
     if (pId) {
+      setRecentModalPatientOnly(true);
       const pVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pId));
       const sortedVisits = [...pVisits].sort((a, b) => {
         const dA = parseCleanVisitDate(a.VisitDate);
@@ -4769,6 +4772,7 @@ Healing Naturally. Restoring Balance.`;
     if (gridSelectorMode === 'EDIT') {
       setIsGridVisitSelectorModalOpen(false);
       setIsRecentVisitsModalOpen(true);
+      setRecentModalPatientOnly(true);
       setModalSaveSuccess('');
       setModalSaveError('');
 
@@ -12213,16 +12217,36 @@ Healing Naturally. Restoring Balance.`;
               {/* TOP SECTION: GRID-VIEW OF RECENT PATIENTS */}
               <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                  <span className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
-                    <Table className="w-4 h-4 text-amber-600" />
-                    <span>Select Recent Patient Visit Record to Edit:</span>
-                  </span>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
+                      <Table className="w-4 h-4 text-amber-600" />
+                      <span>Select Recent Patient Visit Record to Edit:</span>
+                    </span>
 
-                  <div className="relative min-w-[240px]">
+                    {modalPatientId && (
+                      <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-bold px-2 py-0.5 rounded-lg shadow-2xs">
+                        <UserIcon className="w-3.5 h-3.5 text-amber-600" />
+                        <span>
+                          {recentModalPatientOnly
+                            ? `Filtered for: ${modalPatientName || modalPatientId} (${modalPatientId})`
+                            : `Showing All Patients`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => setRecentModalPatientOnly(!recentModalPatientOnly)}
+                          className="ml-1 px-1.5 py-0.5 bg-amber-200 hover:bg-amber-300 rounded text-[10px] font-black text-amber-950 transition cursor-pointer"
+                        >
+                          {recentModalPatientOnly ? 'Show All Patients' : `Show Only ${modalPatientName || modalPatientId}`}
+                        </button>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="relative min-w-[200px]">
                     <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
                     <input
                       type="text"
-                      placeholder=""
+                      placeholder="Search date, symptoms..."
                       value={recentModalSearch}
                       onChange={(e) => setRecentModalSearch(e.target.value)}
                       className="w-full text-xs border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-slate-50"
@@ -12258,30 +12282,37 @@ Healing Naturally. Restoring Balance.`;
                           return idB - idA;
                         });
 
-                        const seenKeys = new Set<string>();
-                        const seenPatientIds = new Set<string>();
-                        const allRecentVisits: (Visit | NhcPatientHistory)[] = [];
+                        let allRecentVisits: (Visit | NhcPatientHistory)[] = [];
 
-                        for (const v of sortedRecentVisits) {
-                          const vId = ('VisitID' in v && v.VisitID) ? v.VisitID : ('date' in v ? `NHC-${v.date}` : '');
-                          const pId = String(v.PatientID || '').trim();
-                          const vDate = 'VisitDate' in v && v.VisitDate ? v.VisitDate.split('T')[0] : ('date' in v ? (v as any).date : '');
-                          const key = vId || (pId && vDate ? `${pId}_${vDate}` : '');
+                        if (recentModalPatientOnly && modalPatientId) {
+                          // Show ALL visit records for the selected patient
+                          allRecentVisits = sortedRecentVisits.filter((v) => isSamePatient(v.PatientID, modalPatientId));
+                        } else {
+                          // Show all recent patients (one latest per patient)
+                          const seenKeys = new Set<string>();
+                          const seenPatientIds = new Set<string>();
 
-                          if (pId) {
-                            // Show only the latest record for each individual patient
-                            if (!seenPatientIds.has(pId)) {
-                              seenPatientIds.add(pId);
-                              if (key) seenKeys.add(key);
-                              allRecentVisits.push(v);
-                            }
-                          } else {
-                            if (!key || !seenKeys.has(key)) {
-                              if (key) seenKeys.add(key);
-                              allRecentVisits.push(v);
+                          for (const v of sortedRecentVisits) {
+                            const vId = ('VisitID' in v && v.VisitID) ? v.VisitID : ('date' in v ? `NHC-${v.date}` : '');
+                            const pId = String(v.PatientID || '').trim();
+                            const vDate = 'VisitDate' in v && v.VisitDate ? v.VisitDate.split('T')[0] : ('date' in v ? (v as any).date : '');
+                            const key = vId || (pId && vDate ? `${pId}_${vDate}` : '');
+
+                            if (pId) {
+                              if (!seenPatientIds.has(pId)) {
+                                seenPatientIds.add(pId);
+                                if (key) seenKeys.add(key);
+                                allRecentVisits.push(v);
+                              }
+                            } else {
+                              if (!key || !seenKeys.has(key)) {
+                                if (key) seenKeys.add(key);
+                                allRecentVisits.push(v);
+                              }
                             }
                           }
                         }
+
                         const filteredRecent = allRecentVisits.filter((v) => {
                           if (!recentModalSearch.trim()) return true;
                           const term = recentModalSearch.toLowerCase();
@@ -12302,7 +12333,7 @@ Healing Naturally. Restoring Balance.`;
                           return (
                             <tr>
                               <td colSpan={6} className="p-4 text-center text-slate-500 italic">
-                                No recent visit records found.
+                                No visit records found for {recentModalPatientOnly && modalPatientId ? `patient (${modalPatientName || modalPatientId})` : 'recent visits'}.
                               </td>
                             </tr>
                           );

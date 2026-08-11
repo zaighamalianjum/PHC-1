@@ -65,51 +65,54 @@ export default function Dashboard({
   visits = []
 }: DashboardProps) {
   // Operational / Filter States
-  const [dateFilter, setDateFilter] = useState<'all' | 'today'>('today');
+  const [dateFilter, setDateFilter] = useState<'today' | 'custom' | 'all'>('today');
   const [shiftFilter, setShiftFilter] = useState<'all' | 'morning' | 'evening'>('all');
   const todayStr = new Date().toISOString().split('T')[0]; // Current dynamic system date
+  const [customStartDate, setCustomStartDate] = useState<string>(todayStr);
+  const [customEndDate, setCustomEndDate] = useState<string>(todayStr);
 
-  const isTodayDate = (dateField?: string) => {
+  const isInDateRange = (dateField?: string) => {
     if (!dateField) return false;
     const d = dateField.split('T')[0];
-    return d === todayStr || d === '2026-07-03';
+    if (dateFilter === 'today') {
+      return d === todayStr || d === '2026-07-03';
+    }
+    if (dateFilter === 'custom') {
+      if (customStartDate && customEndDate) {
+        return d >= customStartDate && d <= customEndDate;
+      }
+      if (customStartDate) return d >= customStartDate;
+      if (customEndDate) return d <= customEndDate;
+      return true;
+    }
+    return true; // 'all'
   };
 
   // Filtered dataset references
   const targetApps = useMemo(() => {
-    if (dateFilter === 'today') {
-      return appointments.filter((a) => isTodayDate(a.AppointmentDate));
-    }
-    return appointments;
-  }, [appointments, dateFilter, todayStr]);
+    if (dateFilter === 'all') return appointments;
+    return appointments.filter((a) => isInDateRange(a.AppointmentDate));
+  }, [appointments, dateFilter, todayStr, customStartDate, customEndDate]);
 
   const targetTokens = useMemo(() => {
-    if (dateFilter === 'today') {
-      return tokens.filter((t) => isTodayDate(t.Date));
-    }
-    return tokens;
-  }, [tokens, dateFilter, todayStr]);
+    if (dateFilter === 'all') return tokens;
+    return tokens.filter((t) => isInDateRange(t.Date));
+  }, [tokens, dateFilter, todayStr, customStartDate, customEndDate]);
 
   const targetInvoices = useMemo(() => {
-    if (dateFilter === 'today') {
-      return invoices.filter((i) => isTodayDate(i.InvoiceDate));
-    }
-    return invoices;
-  }, [invoices, dateFilter, todayStr]);
+    if (dateFilter === 'all') return invoices;
+    return invoices.filter((i) => isInDateRange(i.InvoiceDate));
+  }, [invoices, dateFilter, todayStr, customStartDate, customEndDate]);
 
   const targetSalesReturns = useMemo(() => {
-    if (dateFilter === 'today') {
-      return salesReturns.filter((r) => isTodayDate(r.ReturnDate));
-    }
-    return salesReturns;
-  }, [salesReturns, dateFilter, todayStr]);
+    if (dateFilter === 'all') return salesReturns;
+    return salesReturns.filter((r) => isInDateRange(r.ReturnDate));
+  }, [salesReturns, dateFilter, todayStr, customStartDate, customEndDate]);
 
   const targetVisits = useMemo(() => {
-    if (dateFilter === 'today') {
-      return visits.filter((v) => isTodayDate(v.VisitDate));
-    }
-    return visits;
-  }, [visits, dateFilter, todayStr]);
+    if (dateFilter === 'all') return visits;
+    return visits.filter((v) => isInDateRange(v.VisitDate));
+  }, [visits, dateFilter, todayStr, customStartDate, customEndDate]);
 
   // Helper to determine shift for visit if not directly set
   const getVisitShift = (v: Visit): 1 | 2 => {
@@ -243,50 +246,98 @@ export default function Dashboard({
           {/* Operational Date Indicator */}
           <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600">
             <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-            <span>Date: <strong className="text-slate-900 font-bold">July 3, 2026</strong></span>
+            <span>
+              Scope:{' '}
+              <strong className="text-slate-900 font-bold">
+                {dateFilter === 'today'
+                  ? 'Today (July 3, 2026)'
+                  : dateFilter === 'custom'
+                  ? `${customStartDate} to ${customEndDate}`
+                  : 'All Time History'}
+              </strong>
+            </span>
           </div>
 
           {/* Date Scope Filter */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs gap-1">
             <button
-              onClick={() => setDateFilter('all')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all ${
-                dateFilter === 'all' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              All Records
-            </button>
-            <button
+              type="button"
               onClick={() => setDateFilter('today')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all ${
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                 dateFilter === 'today' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
               }`}
             >
               Today Only
             </button>
+            <button
+              type="button"
+              onClick={() => setDateFilter('custom')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center space-x-1 ${
+                dateFilter === 'custom' ? 'bg-white text-amber-700 shadow-xs border border-amber-200' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              <CalendarDays className="w-3.5 h-3.5 text-amber-600" />
+              <span>Custom Date</span>
+            </button>
+            <button
+              type="button"
+              onClick={() => setDateFilter('all')}
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
+                dateFilter === 'all' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              }`}
+            >
+              All Records
+            </button>
           </div>
+
+          {/* Custom Date Inputs (shown when dateFilter === 'custom') */}
+          {dateFilter === 'custom' && (
+            <div className="flex items-center space-x-2 bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-xl text-xs shadow-2xs">
+              <div className="flex items-center space-x-1">
+                <span className="text-[10px] font-extrabold text-amber-900 uppercase">From:</span>
+                <input
+                  type="date"
+                  value={customStartDate}
+                  onChange={(e) => setCustomStartDate(e.target.value)}
+                  className="bg-white text-slate-900 font-bold text-xs rounded-lg px-2 py-1 border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                />
+              </div>
+              <div className="flex items-center space-x-1">
+                <span className="text-[10px] font-extrabold text-amber-900 uppercase">To:</span>
+                <input
+                  type="date"
+                  value={customEndDate}
+                  onChange={(e) => setCustomEndDate(e.target.value)}
+                  className="bg-white text-slate-900 font-bold text-xs rounded-lg px-2 py-1 border border-amber-300 focus:outline-none focus:ring-2 focus:ring-amber-500 cursor-pointer"
+                />
+              </div>
+            </div>
+          )}
 
           {/* Shift Filter */}
           <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
             <button
+              type="button"
               onClick={() => setShiftFilter('all')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all ${
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                 shiftFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
               }`}
             >
               Both Shifts
             </button>
             <button
+              type="button"
               onClick={() => setShiftFilter('morning')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all ${
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                 shiftFilter === 'morning' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600'
               }`}
             >
               Morning
             </button>
             <button
+              type="button"
               onClick={() => setShiftFilter('evening')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all ${
+              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
                 shiftFilter === 'evening' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-600'
               }`}
             >
@@ -309,7 +360,11 @@ export default function Dashboard({
                   Unified Financial Summary
                 </span>
                 <span className="text-xs text-slate-400 font-medium">
-                  {dateFilter === 'today' ? 'Today\'s Shift Ledger' : 'All Register Entries'}
+                  {dateFilter === 'today'
+                    ? "Today's Shift Ledger"
+                    : dateFilter === 'custom'
+                    ? `Custom Date Range (${customStartDate} to ${customEndDate})`
+                    : 'All Register Entries'}
                 </span>
               </div>
               <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-2">

@@ -2281,46 +2281,51 @@ export default function App() {
               
               <div className="hidden lg:block h-6 w-[1px] bg-blue-700"></div>
 
-              {/* Role Swap dropdown inside Top Header */}
+              {/* Role Swap dropdown inside Top Header - Collapsed by default, expands on hover */}
               {currentUser.Role === 'Administrator' && (
-                <div className="hidden sm:flex items-center space-x-1 bg-blue-800/90 px-1.5 sm:px-2 py-1 rounded-md border border-blue-700 shadow-xs shrink-0">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="hidden xl:inline text-[9px] font-extrabold text-blue-200 uppercase tracking-wider">Role Swap:</span>
-                  <select
-                    value={currentUser.UserID}
-                    onChange={(e) => {
-                      const selected = usersList.find((u) => u.UserID === e.target.value);
-                      if (selected) {
-                        setCurrentUser(selected);
-                        
-                        // Validate authorizations for new switched user
-                        const isAdmin = selected.Role === 'Administrator';
-                        const isAccountant = selected.Role === 'Accountant';
-                        const canAccessReports = isAdmin || isAccountant;
-                        
-                        const fallbackDesk = selected.Role === 'Pharmacist' ? 'pharmacy' : selected.Role === 'Accountant' ? 'reports' : 'patients';
-                        if (activeTab === 'dashboard' && !isAdmin) {
-                          handleTabChange(fallbackDesk);
-                        } else if (activeTab === 'settings' && !isAdmin) {
-                          handleTabChange(fallbackDesk);
-                        } else if (activeTab === 'uploads' && !isAdmin) {
-                          handleTabChange(fallbackDesk);
-                        } else if (activeTab === 'reports' && !canAccessReports) {
-                          handleTabChange(fallbackDesk);
+                <div 
+                  className="hidden sm:flex items-center space-x-1 bg-blue-900/40 hover:bg-blue-800/90 px-1.5 sm:px-2 py-1 rounded-md border border-blue-800 hover:border-blue-700 shadow-xs shrink-0 group transition-all duration-300 cursor-pointer"
+                  title="Hover to swap user role"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-400/60 group-hover:text-emerald-400 shrink-0 transition-colors" />
+                  <div className="max-w-0 overflow-hidden group-hover:max-w-[260px] focus-within:max-w-[260px] transition-all duration-300 ease-in-out flex items-center space-x-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                    <span className="hidden xl:inline text-[9px] font-extrabold text-blue-200 uppercase tracking-wider whitespace-nowrap">Role Swap:</span>
+                    <select
+                      value={currentUser.UserID}
+                      onChange={(e) => {
+                        const selected = usersList.find((u) => u.UserID === e.target.value);
+                        if (selected) {
+                          setCurrentUser(selected);
+                          
+                          // Validate authorizations for new switched user
+                          const isAdmin = selected.Role === 'Administrator';
+                          const isAccountant = selected.Role === 'Accountant';
+                          const canAccessReports = isAdmin || isAccountant;
+                          
+                          const fallbackDesk = selected.Role === 'Pharmacist' ? 'pharmacy' : selected.Role === 'Accountant' ? 'reports' : 'patients';
+                          if (activeTab === 'dashboard' && !isAdmin) {
+                            handleTabChange(fallbackDesk);
+                          } else if (activeTab === 'settings' && !isAdmin) {
+                            handleTabChange(fallbackDesk);
+                          } else if (activeTab === 'uploads' && !isAdmin) {
+                            handleTabChange(fallbackDesk);
+                          } else if (activeTab === 'reports' && !canAccessReports) {
+                            handleTabChange(fallbackDesk);
+                          }
                         }
-                      }
-                    }}
-                    className="bg-blue-950 text-white font-bold text-[9.5px] sm:text-[10px] rounded px-1 py-0.5 border border-blue-600 focus:outline-none focus:ring-1 focus:ring-emerald-400 cursor-pointer max-w-[80px] xs:max-w-[110px] sm:max-w-none truncate"
-                    id="top-role-selector"
-                  >
-                    {usersList
-                      .filter((usr) => canUserAccessTargetUser(usr))
-                      .map((usr) => (
-                        <option key={usr.UserID} value={usr.UserID} className="bg-slate-900 text-white">
-                          {usr.FullName} ({usr.Role})
-                        </option>
-                      ))}
-                  </select>
+                      }}
+                      className="bg-blue-950 text-white font-bold text-[9.5px] sm:text-[10px] rounded px-1 py-0.5 border border-blue-600 focus:outline-none focus:ring-1 focus:ring-emerald-400 cursor-pointer max-w-[120px] sm:max-w-none truncate"
+                      id="top-role-selector"
+                    >
+                      {usersList
+                        .filter((usr) => canUserAccessTargetUser(usr))
+                        .map((usr) => (
+                          <option key={usr.UserID} value={usr.UserID} className="bg-slate-900 text-white">
+                            {usr.FullName} ({usr.Role})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
                 </div>
               )}
 
@@ -2483,7 +2488,7 @@ export default function App() {
                 <span className="text-emerald-400 font-bold">Shift {currentUser.AssignedShift === 1 ? '1 (Morning)' : currentUser.AssignedShift === 2 ? '2 (Evening)' : 'Both'}</span>
               </div>
               {currentUser.Role === 'Administrator' && (
-                <div className="flex items-center justify-between bg-slate-900 p-2 rounded-xl border border-slate-800">
+                <div className="flex items-center justify-between bg-slate-900/60 hover:bg-slate-900 p-2 rounded-xl border border-slate-800/80 hover:border-slate-700 opacity-40 hover:opacity-100 focus-within:opacity-100 transition-all duration-300">
                   <span className="text-[11px] font-extrabold text-blue-300 uppercase">Role Swap:</span>
                   <select
                     value={currentUser.UserID}
@@ -2494,7 +2499,7 @@ export default function App() {
                         setIsMobileMenuOpen(false);
                       }
                     }}
-                    className="bg-slate-950 text-emerald-300 font-bold text-xs rounded px-2 py-1 border border-slate-700 focus:outline-none"
+                    className="bg-slate-950 text-emerald-300 font-bold text-xs rounded px-2 py-1 border border-slate-700 focus:outline-none cursor-pointer"
                   >
                     {usersList.filter((usr) => canUserAccessTargetUser(usr)).map((usr) => (
                       <option key={usr.UserID} value={usr.UserID}>
