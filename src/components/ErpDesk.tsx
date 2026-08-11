@@ -703,7 +703,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             <div class="clinic-brand">
               <div class="clinic-title">${cName}</div>
               <div class="clinic-tagline">${cTag}</div>
-              <div class="doc-details">${cDoc ? `${cDoc} ${cDocSub ? `<span style="font-weight: 400; color: #64748b;">(${cDocSub})</span>` : ''}` : ''}</div>
               <div class="contact-line">📍 ${cAddr} &nbsp;|&nbsp; 📞 ${cPhone}</div>
             </div>
             <div style="width: 70px; text-align: right;">
