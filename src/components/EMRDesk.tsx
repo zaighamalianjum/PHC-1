@@ -78,16 +78,22 @@ interface EMRDeskProps {
 function formatShortDate(dateStr: string | undefined | null): string {
   if (!dateStr || dateStr === 'N/A' || dateStr === '—') return dateStr || 'N/A';
   try {
-    const cleanStr = dateStr.trim();
-    if (cleanStr.length <= 10) return cleanStr;
-    const d = new Date(cleanStr);
-    if (isNaN(d.getTime())) return cleanStr;
+    const cleanStr = String(dateStr).trim().split('T')[0].split(' ')[0];
+    const parts = cleanStr.split('-');
+    if (parts.length === 3 && parts[0].length === 4) {
+      return `${parts[2]}-${parts[1]}-${parts[0]}`; // DD-MM-YYYY
+    }
+    if (parts.length === 3 && parts[2].length === 4) {
+      return cleanStr; // already DD-MM-YYYY
+    }
+    const d = new Date(String(dateStr).trim());
+    if (isNaN(d.getTime())) return String(dateStr);
     const yyyy = d.getFullYear();
     const mm = String(d.getMonth() + 1).padStart(2, '0');
     const dd = String(d.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
+    return `${dd}-${mm}-${yyyy}`;
   } catch {
-    return dateStr;
+    return String(dateStr || 'N/A');
   }
 }
 

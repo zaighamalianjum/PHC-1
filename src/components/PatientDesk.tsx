@@ -894,7 +894,7 @@ export default function PatientDesk({
         CityID: 1,
         Country: 'Pakistan',
         PhoneMobile: formPhoneMobile.trim() || '03000000000',
-        RegistrationDate: new Date().toISOString()
+        RegistrationDate: new Date().toISOString().split('T')[0]
       };
       if (onAddPatient) {
         onAddPatient(newPat);
@@ -5240,7 +5240,7 @@ Healing Naturally. Restoring Balance.`;
         Country: 'Pakistan',
         PhoneMobile: cleanPhone,
         Email: email || undefined,
-        RegistrationDate: existingPatient?.RegistrationDate || new Date().toISOString()
+        RegistrationDate: existingPatient?.RegistrationDate || new Date().toISOString().split('T')[0]
       };
 
       if (onUpdatePatient) {
@@ -5273,7 +5273,7 @@ Healing Naturally. Restoring Balance.`;
         Country: 'Pakistan',
         PhoneMobile: cleanPhone,
         Email: email || undefined,
-        RegistrationDate: new Date().toISOString()
+        RegistrationDate: new Date().toISOString().split('T')[0]
       };
 
       onAddPatient(newPatient);
@@ -5861,7 +5861,7 @@ Healing Naturally. Restoring Balance.`;
                         </div>
 
                         <div className="pt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 mt-2">
-                          <span className="text-[10px] text-slate-400">Reg: {p.RegistrationDate ? p.RegistrationDate.split('T')[0] : 'N/A'}</span>
+                          <span className="text-[10px] text-slate-400">Reg: {formatDisplayDate(p.RegistrationDate)}</span>
                           
                           <div className="flex items-center space-x-2">
                             <button
@@ -5944,7 +5944,7 @@ Healing Naturally. Restoring Balance.`;
                                 CityID: 1, // Lahore
                                 Country: 'Pakistan',
                                 PhoneMobile: p.PhoneMobile || '03000000000',
-                                RegistrationDate: p.RegistrationDate || new Date().toISOString()
+                                RegistrationDate: p.RegistrationDate || new Date().toISOString().split('T')[0]
                               };
                               onAddPatient(newPatient);
                               setSelectedPatientId(p.PatientID);
@@ -6296,7 +6296,7 @@ Healing Naturally. Restoring Balance.`;
                     </div>
                   </div>
                   <div className="text-[10px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
-                    City: <span className="font-bold text-slate-800">{cities.find(c => c.CityID === selectedPvPatient.CityID)?.CityName || 'Lahore'}</span> | Reg: <span className="font-bold text-slate-800">{selectedPvPatient.RegistrationDate ? selectedPvPatient.RegistrationDate.split('T')[0] : 'N/A'}</span>
+                    City: <span className="font-bold text-slate-800">{cities.find(c => c.CityID === selectedPvPatient.CityID)?.CityName || 'Lahore'}</span> | Reg: <span className="font-bold text-slate-800">{formatDisplayDate(selectedPvPatient.RegistrationDate)}</span>
                   </div>
                 </div>
               );
@@ -8985,9 +8985,10 @@ Healing Naturally. Restoring Balance.`;
 
                         const latestRecord = isVisitNewer ? latestVisit : (latestNhc || latestVisit);
 
-                        const visitDateDisplay = isVisitNewer && latestVisit?.VisitDate
-                          ? latestVisit.VisitDate.split('T')[0]
-                          : (latestNhc ? (latestNhc.date || (latestNhc as any).VisitDate) : (pt.RegistrationDate ? pt.RegistrationDate.split('T')[0] : 'N/A'));
+                        const rawVisitDateDisplay = isVisitNewer && latestVisit?.VisitDate
+                          ? latestVisit.VisitDate
+                          : (latestNhc ? (latestNhc.date || (latestNhc as any).VisitDate) : (pt.RegistrationDate || 'N/A'));
+                        const visitDateDisplay = formatDisplayDate(rawVisitDateDisplay);
 
                         const symptomsDisplay = isVisitNewer ? (latestVisit?.SymptomsDiagnosis || 'N/A') : (latestNhc?.symptoms || 'N/A');
                         const labAdviceDisplay = latestVisit?.LabTestAdvice || 'None';
@@ -9921,7 +9922,7 @@ Healing Naturally. Restoring Balance.`;
                                               CityID: 1,
                                               Country: 'Pakistan',
                                               PhoneMobile: p.PhoneMobile || '03000000000',
-                                              RegistrationDate: new Date().toISOString()
+                                              RegistrationDate: new Date().toISOString().split('T')[0]
                                             };
                                             if (onAddPatient) {
                                               onAddPatient(importedPat);

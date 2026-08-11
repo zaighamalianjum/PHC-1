@@ -13,6 +13,7 @@ import {
   AlertTriangle
 } from 'lucide-react';
 import { Token, Patient, NhcPatientHistory, City, Visit, Appointment } from '../../types';
+import { formatDisplayDate } from './patientDeskUtils';
 
 interface InstantTokenIssueViewProps {
   tokens: Token[];
@@ -232,7 +233,7 @@ export default function InstantTokenIssueView({
                     </div>
 
                     <div className="pt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 mt-2">
-                      <span className="text-[10px] text-slate-400">Reg: {p.RegistrationDate ? p.RegistrationDate.split('T')[0] : 'N/A'}</span>
+                      <span className="text-[10px] text-slate-400">Reg: {formatDisplayDate(p.RegistrationDate)}</span>
                       
                       <div className="flex items-center space-x-2">
                         <button

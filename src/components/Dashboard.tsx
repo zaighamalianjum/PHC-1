@@ -24,7 +24,8 @@ import {
   PieChart,
   BarChart3,
   Pill,
-  CreditCard
+  CreditCard,
+  Stethoscope
 } from 'lucide-react';
 import {
   Patient,
@@ -508,7 +509,7 @@ export default function Dashboard({
       </div>
 
       {/* Core Requirement Metrics Cards Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-7 gap-4">
         
         {/* Requirement 1: Total Daily OPD Collection Shift-wise */}
         {(shiftFilter === 'all' || shiftFilter === 'morning' || shiftFilter === 'evening') && (
@@ -543,6 +544,44 @@ export default function Dashboard({
                   <span>Evening:</span>
                 </span>
                 <strong className="font-mono text-slate-900">Rs. {eveningOpdCollection.toLocaleString()}</strong>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* OPD & Appointment Consultant Fees Card */}
+        {(shiftFilter === 'all' || shiftFilter === 'morning' || shiftFilter === 'evening') && (
+          <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition duration-200 flex flex-col justify-between space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="p-2.5 bg-indigo-50 text-indigo-600 border border-indigo-100 rounded-xl">
+                <Stethoscope className="w-4 h-4" />
+              </div>
+              <span className="text-[9px] font-extrabold uppercase tracking-wider bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full border border-indigo-100">
+                Consult Fees
+              </span>
+            </div>
+
+            <div>
+              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">OPD / App Consult Fees</p>
+              <h3 className="text-lg font-extrabold text-slate-900 mt-0.5 font-mono">
+                Rs. {(shiftFilter === 'morning' ? morningOpdConsultation : shiftFilter === 'evening' ? eveningOpdConsultation : totalOpdConsultation).toLocaleString()}
+              </h3>
+            </div>
+
+            <div className="border-t border-slate-100 pt-2 space-y-1 text-xxs">
+              <div className="flex justify-between items-center text-slate-600">
+                <span className="flex items-center space-x-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-indigo-500" />
+                  <span>Morning:</span>
+                </span>
+                <strong className="font-mono text-slate-900">Rs. {morningOpdConsultation.toLocaleString()}</strong>
+              </div>
+              <div className="flex justify-between items-center text-slate-600">
+                <span className="flex items-center space-x-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+                  <span>Evening:</span>
+                </span>
+                <strong className="font-mono text-slate-900">Rs. {eveningOpdConsultation.toLocaleString()}</strong>
               </div>
             </div>
           </div>
