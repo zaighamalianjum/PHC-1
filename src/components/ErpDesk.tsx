@@ -92,8 +92,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [posSales, setPosSales] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Cash Book Filter States
-  const [cashBookDateFilter, setCashBookDateFilter] = useState<'today' | 'this_week' | 'this_month' | 'all_time'>('today');
+  // Cash Book & Financial Period Filter States
+  const [cashBookDateFilter, setCashBookDateFilter] = useState<'today' | 'this_week' | 'this_month' | 'this_year' | 'custom' | 'all_time'>('today');
+  const [cashBookStartDate, setCashBookStartDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [cashBookEndDate, setCashBookEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
   const [cashBookCategoryFilter, setCashBookCategoryFilter] = useState<'ALL' | 'INFLOW' | 'OUTFLOW'>('ALL');
   const [cashBookSearch, setCashBookSearch] = useState<string>('');
 
@@ -492,6 +494,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         if (diffDays > 7) return false;
       } else if (cashBookDateFilter === 'this_month') {
         if (!e.date.startsWith(todayStr.slice(0, 7))) return false;
+      } else if (cashBookDateFilter === 'this_year') {
+        if (!e.date.startsWith(todayStr.slice(0, 4))) return false;
+      } else if (cashBookDateFilter === 'custom') {
+        if (cashBookStartDate && e.date < cashBookStartDate) return false;
+        if (cashBookEndDate && e.date > cashBookEndDate) return false;
       }
 
       if (cashBookCategoryFilter === 'INFLOW' && e.type !== 'INFLOW') return false;
@@ -508,7 +515,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
       return true;
     });
-  }, [cashBookEntries, cashBookDateFilter, cashBookCategoryFilter, cashBookSearch]);
+  }, [cashBookEntries, cashBookDateFilter, cashBookStartDate, cashBookEndDate, cashBookCategoryFilter, cashBookSearch]);
 
   const cashBookMetrics = useMemo(() => {
     let totalInflow = 0;
@@ -525,7 +532,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     let medicinePurchasesOutflow = 0;
     let miscOutflow = 0;
 
+    const uniqueDates = new Set<string>();
+
     filteredCashBookEntries.forEach(e => {
+      if (e.date) uniqueDates.add(e.date);
+
       if (e.type === 'INFLOW') {
         totalInflow += e.amount;
         if (e.category.includes('OPD')) opdInflow += e.amount;
@@ -546,6 +557,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const netBalance = totalInflow - totalOutflow;
     const marginPercent = totalInflow > 0 ? ((netBalance / totalInflow) * 100).toFixed(1) : '0';
 
+    const activeDaysCount = Math.max(1, uniqueDates.size);
+    const dailyAvgInflow = Math.round(totalInflow / activeDaysCount);
+    const dailyAvgOutflow = Math.round(totalOutflow / activeDaysCount);
+    const dailyAvgNet = Math.round(netBalance / activeDaysCount);
+
     return {
       totalInflow,
       totalOutflow,
@@ -559,7 +575,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       rentOutflow,
       billsOutflow,
       medicinePurchasesOutflow,
-      miscOutflow
+      miscOutflow,
+      activeDaysCount,
+      dailyAvgInflow,
+      dailyAvgOutflow,
+      dailyAvgNet
     };
   }, [filteredCashBookEntries]);
 
@@ -647,9 +667,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cPhone = clinicSettings?.PhoneMobile || '+92 300 1234567';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
-    const dateLabel = cashBookDateFilter === 'today' ? `Today (${new Date().toLocaleDateString('en-GB')})` :
-                      cashBookDateFilter === 'this_week' ? 'Past 7 Days' :
-                      cashBookDateFilter === 'this_month' ? `Month of ${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })}` : 'All Time Records';
+    const dateLabel = cashBookDateFilter === 'today' ? `Daily (${new Date().toLocaleDateString('en-GB')})` :
+                      cashBookDateFilter === 'this_week' ? 'Weekly (Past 7 Days)' :
+                      cashBookDateFilter === 'this_month' ? `Monthly (${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })})` :
+                      cashBookDateFilter === 'this_year' ? `Yearly (Year ${new Date().getFullYear()})` :
+                      cashBookDateFilter === 'custom' ? `Custom Period (${cashBookStartDate} to ${cashBookEndDate})` : 'All Time Records';
 
     const rowsHtml = filteredCashBookEntries.map((e, idx) => `
       <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px; page-break-inside: avoid;">
@@ -3590,6 +3612,86 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       {/* TAB 1: OVERVIEW DASHBOARD */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
+          {/* FINANCIAL TIMEFRAME SELECTOR BAR */}
+          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2.5 bg-indigo-50 text-indigo-700 rounded-xl">
+                  <Calendar className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-sm font-extrabold text-slate-900">Financial Timeframe Scope</h3>
+                  <p className="text-xs text-slate-500 font-medium">Filter Dashboard Metrics by Daily, Weekly, Monthly, Yearly or Custom Date Range</p>
+                </div>
+              </div>
+
+              {/* Timeframe Scope Buttons */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
+                {[
+                  { id: 'today', label: '☀️ Daily (Today)' },
+                  { id: 'this_week', label: '📅 Weekly (Past 7 Days)' },
+                  { id: 'this_month', label: '📊 Monthly (This Month)' },
+                  { id: 'this_year', label: '📈 Yearly (This Year)' },
+                  { id: 'custom', label: '📆 Custom Period' },
+                  { id: 'all_time', label: '🌐 All Time' }
+                ].map(p => (
+                  <button
+                    key={p.id}
+                    onClick={() => setCashBookDateFilter(p.id as any)}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                      cashBookDateFilter === p.id
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Custom Range Date Pickers */}
+            {cashBookDateFilter === 'custom' && (
+              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-3">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-slate-700">From Date:</span>
+                  <input
+                    type="date"
+                    value={cashBookStartDate}
+                    onChange={(e) => setCashBookStartDate(e.target.value)}
+                    className="text-xs font-bold p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-slate-700">To Date:</span>
+                  <input
+                    type="date"
+                    value={cashBookEndDate}
+                    onChange={(e) => setCashBookEndDate(e.target.value)}
+                    className="text-xs font-bold p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Active Scope Badge */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs bg-indigo-50/70 border border-indigo-100 rounded-xl px-3.5 py-2 gap-2">
+              <span className="font-bold text-indigo-950 flex items-center">
+                <BarChart3 className="w-4 h-4 text-indigo-600 mr-1.5 shrink-0" />
+                Active Timeframe Scope: {
+                  cashBookDateFilter === 'today' ? `Daily Operations (${new Date().toLocaleDateString('en-GB')})` :
+                  cashBookDateFilter === 'this_week' ? 'Weekly Performance (Past 7 Days)' :
+                  cashBookDateFilter === 'this_month' ? `Monthly P&L Ledger (${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })})` :
+                  cashBookDateFilter === 'this_year' ? `Yearly Annual P&L (Year ${new Date().getFullYear()})` :
+                  cashBookDateFilter === 'custom' ? `Custom Range (${cashBookStartDate} to ${cashBookEndDate})` : 'All Time Historical Data'
+                }
+              </span>
+              <span className="text-[11px] font-extrabold text-indigo-800 bg-white px-2.5 py-0.5 rounded-full border border-indigo-200 self-start sm:self-auto">
+                {cashBookMetrics.activeDaysCount} Active Operational {cashBookMetrics.activeDaysCount === 1 ? 'Day' : 'Days'} Records
+              </span>
+            </div>
+          </div>
+
           {/* KPI CARDS */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -3646,6 +3748,125 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               </div>
               <div className="p-3 bg-slate-100 text-slate-700 rounded-xl">
                 <Boxes className="w-6 h-6" />
+              </div>
+            </div>
+          </div>
+
+          {/* REVENUE & EXPENSE STRUCTURE BREAKDOWN */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Income Stream Composition */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center">
+                  <TrendingUp className="w-4 h-4 text-emerald-600 mr-1.5" />
+                  Income Streams Composition ({cashBookDateFilter === 'today' ? 'Daily' : cashBookDateFilter === 'this_week' ? 'Weekly' : cashBookDateFilter === 'this_month' ? 'Monthly' : cashBookDateFilter === 'this_year' ? 'Yearly' : 'Selected Scope'})
+                </h3>
+                <span className="text-xs font-black font-mono text-emerald-700">Rs. {cashBookMetrics.totalInflow.toLocaleString()}</span>
+              </div>
+
+              <div className="space-y-2.5 text-xs font-medium">
+                <div>
+                  <div className="flex justify-between text-slate-700 mb-1">
+                    <span>OPD Consultation Tokens</span>
+                    <span className="font-bold font-mono">Rs. {cashBookMetrics.opdInflow.toLocaleString()} ({cashBookMetrics.totalInflow > 0 ? ((cashBookMetrics.opdInflow / cashBookMetrics.totalInflow) * 100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="bg-emerald-500 h-2 rounded-full transition-all duration-300" style={{ width: `${cashBookMetrics.totalInflow > 0 ? (cashBookMetrics.opdInflow / cashBookMetrics.totalInflow) * 100 : 0}%` }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-slate-700 mb-1">
+                    <span>Clinical Formulated Medicines</span>
+                    <span className="font-bold font-mono">Rs. {cashBookMetrics.clinicalInflow.toLocaleString()} ({cashBookMetrics.totalInflow > 0 ? ((cashBookMetrics.clinicalInflow / cashBookMetrics.totalInflow) * 100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="bg-teal-500 h-2 rounded-full transition-all duration-300" style={{ width: `${cashBookMetrics.totalInflow > 0 ? (cashBookMetrics.clinicalInflow / cashBookMetrics.totalInflow) * 100 : 0}%` }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-slate-700 mb-1">
+                    <span>Pharmacy Store Sales</span>
+                    <span className="font-bold font-mono">Rs. {cashBookMetrics.storeInflow.toLocaleString()} ({cashBookMetrics.totalInflow > 0 ? ((cashBookMetrics.storeInflow / cashBookMetrics.totalInflow) * 100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="bg-indigo-500 h-2 rounded-full transition-all duration-300" style={{ width: `${cashBookMetrics.totalInflow > 0 ? (cashBookMetrics.storeInflow / cashBookMetrics.totalInflow) * 100 : 0}%` }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-slate-700 mb-1">
+                    <span>Registration & Card Fees</span>
+                    <span className="font-bold font-mono">Rs. {cashBookMetrics.regInflow.toLocaleString()} ({cashBookMetrics.totalInflow > 0 ? ((cashBookMetrics.regInflow / cashBookMetrics.totalInflow) * 100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="bg-amber-500 h-2 rounded-full transition-all duration-300" style={{ width: `${cashBookMetrics.totalInflow > 0 ? (cashBookMetrics.regInflow / cashBookMetrics.totalInflow) * 100 : 0}%` }}></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 bg-emerald-50/50 p-2.5 rounded-xl font-medium">
+                <span>Daily Average Revenue Rate:</span>
+                <span className="font-black font-mono text-emerald-800">Rs. {cashBookMetrics.dailyAvgInflow.toLocaleString()} / Day</span>
+              </div>
+            </div>
+
+            {/* Outflows & Overheads Structure */}
+            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs space-y-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                <h3 className="text-sm font-extrabold text-slate-900 flex items-center">
+                  <TrendingDown className="w-4 h-4 text-rose-600 mr-1.5" />
+                  Outflows & Overheads Structure ({cashBookDateFilter === 'today' ? 'Daily' : cashBookDateFilter === 'this_week' ? 'Weekly' : cashBookDateFilter === 'this_month' ? 'Monthly' : cashBookDateFilter === 'this_year' ? 'Yearly' : 'Selected Scope'})
+                </h3>
+                <span className="text-xs font-black font-mono text-rose-700">Rs. {cashBookMetrics.totalOutflow.toLocaleString()}</span>
+              </div>
+
+              <div className="space-y-2.5 text-xs font-medium">
+                <div>
+                  <div className="flex justify-between text-slate-700 mb-1">
+                    <span>Staff Salary & Payroll</span>
+                    <span className="font-bold font-mono">Rs. {cashBookMetrics.salariesOutflow.toLocaleString()} ({cashBookMetrics.totalOutflow > 0 ? ((cashBookMetrics.salariesOutflow / cashBookMetrics.totalOutflow) * 100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="bg-rose-500 h-2 rounded-full transition-all duration-300" style={{ width: `${cashBookMetrics.totalOutflow > 0 ? (cashBookMetrics.salariesOutflow / cashBookMetrics.totalOutflow) * 100 : 0}%` }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-slate-700 mb-1">
+                    <span>Building Rent & Upkeep</span>
+                    <span className="font-bold font-mono">Rs. {cashBookMetrics.rentOutflow.toLocaleString()} ({cashBookMetrics.totalOutflow > 0 ? ((cashBookMetrics.rentOutflow / cashBookMetrics.totalOutflow) * 100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="bg-purple-500 h-2 rounded-full transition-all duration-300" style={{ width: `${cashBookMetrics.totalOutflow > 0 ? (cashBookMetrics.rentOutflow / cashBookMetrics.totalOutflow) * 100 : 0}%` }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-slate-700 mb-1">
+                    <span>Electricity & Utility Bills</span>
+                    <span className="font-bold font-mono">Rs. {cashBookMetrics.billsOutflow.toLocaleString()} ({cashBookMetrics.totalOutflow > 0 ? ((cashBookMetrics.billsOutflow / cashBookMetrics.totalOutflow) * 100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="bg-amber-500 h-2 rounded-full transition-all duration-300" style={{ width: `${cashBookMetrics.totalOutflow > 0 ? (cashBookMetrics.billsOutflow / cashBookMetrics.totalOutflow) * 100 : 0}%` }}></div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-slate-700 mb-1">
+                    <span>Medicine Purchases & Vendor Invoices</span>
+                    <span className="font-bold font-mono">Rs. {cashBookMetrics.medicinePurchasesOutflow.toLocaleString()} ({cashBookMetrics.totalOutflow > 0 ? ((cashBookMetrics.medicinePurchasesOutflow / cashBookMetrics.totalOutflow) * 100).toFixed(0) : 0}%)</span>
+                  </div>
+                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                    <div className="bg-blue-500 h-2 rounded-full transition-all duration-300" style={{ width: `${cashBookMetrics.totalOutflow > 0 ? (cashBookMetrics.medicinePurchasesOutflow / cashBookMetrics.totalOutflow) * 100 : 0}%` }}></div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="pt-2.5 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600 bg-rose-50/50 p-2.5 rounded-xl font-medium">
+                <span>Daily Average Expense Rate:</span>
+                <span className="font-black font-mono text-rose-800">Rs. {cashBookMetrics.dailyAvgOutflow.toLocaleString()} / Day</span>
               </div>
             </div>
           </div>
@@ -3961,22 +4182,24 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
           {/* Filter Toolbar & Ledger Controls */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-            <div className="flex flex-col sm:flex-row items-center justify-between gap-3">
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
               {/* Period Quick Filters */}
-              <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto">
+              <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full xl:w-auto">
                 {[
-                  { id: 'today', label: 'Today' },
-                  { id: 'this_week', label: 'Past 7 Days' },
-                  { id: 'this_month', label: 'This Month' },
-                  { id: 'all_time', label: 'All Time' }
+                  { id: 'today', label: '☀️ Daily' },
+                  { id: 'this_week', label: '📅 Weekly' },
+                  { id: 'this_month', label: '📊 Monthly' },
+                  { id: 'this_year', label: '📈 Yearly' },
+                  { id: 'custom', label: '📆 Custom Range' },
+                  { id: 'all_time', label: '🌐 All Time' }
                 ].map(p => (
                   <button
                     key={p.id}
                     onClick={() => setCashBookDateFilter(p.id as any)}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer flex-1 sm:flex-none ${
+                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
                       cashBookDateFilter === p.id
                         ? 'bg-purple-900 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
                     }`}
                   >
                     {p.label}
@@ -3984,29 +4207,30 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 ))}
               </div>
 
-              {/* Type Category Filter */}
-              <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto">
-                {[
-                  { id: 'ALL', label: 'All Transactions' },
-                  { id: 'INFLOW', label: 'Inflows Only' },
-                  { id: 'OUTFLOW', label: 'Outflows Only' }
-                ].map(c => (
-                  <button
-                    key={c.id}
-                    onClick={() => setCashBookCategoryFilter(c.id as any)}
-                    className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer flex-1 sm:flex-none ${
-                      cashBookCategoryFilter === c.id
-                        ? 'bg-slate-800 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    {c.label}
-                  </button>
-                ))}
-              </div>
+              <div className="flex flex-col sm:flex-row items-center gap-2 w-full xl:w-auto">
+                {/* Type Category Filter */}
+                <div className="flex items-center space-x-1 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full sm:w-auto">
+                  {[
+                    { id: 'ALL', label: 'All Transactions' },
+                    { id: 'INFLOW', label: 'Inflows Only' },
+                    { id: 'OUTFLOW', label: 'Outflows Only' }
+                  ].map(c => (
+                    <button
+                      key={c.id}
+                      onClick={() => setCashBookCategoryFilter(c.id as any)}
+                      className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer flex-1 sm:flex-none ${
+                        cashBookCategoryFilter === c.id
+                          ? 'bg-slate-800 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      {c.label}
+                    </button>
+                  ))}
+                </div>
 
-              {/* Search Box */}
-              <div className="relative w-full sm:w-64">
+                {/* Search Box */}
+                <div className="relative w-full sm:w-64">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
                 <input
                   type="text"
@@ -4015,6 +4239,51 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   onChange={(e) => setCashBookSearch(e.target.value)}
                   className="w-full text-xs font-medium pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl focus:ring-2 focus:ring-purple-500"
                 />
+              </div>
+            </div>
+          </div>
+
+            {/* Custom Range Date Pickers */}
+            {cashBookDateFilter === 'custom' && (
+              <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-3">
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-slate-700">From Date:</span>
+                  <input
+                    type="date"
+                    value={cashBookStartDate}
+                    onChange={(e) => setCashBookStartDate(e.target.value)}
+                    className="text-xs font-bold p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-slate-700">To Date:</span>
+                  <input
+                    type="date"
+                    value={cashBookEndDate}
+                    onChange={(e) => setCashBookEndDate(e.target.value)}
+                    className="text-xs font-bold p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500"
+                  />
+                </div>
+              </div>
+            )}
+
+            {/* Period Operational Stats Pill Bar */}
+            <div className="pt-2 border-t border-slate-100 grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-medium">
+              <div className="bg-purple-50/70 border border-purple-100 p-2 rounded-xl text-center">
+                <span className="text-[10px] font-bold text-purple-800 uppercase block">Operating Days</span>
+                <span className="text-sm font-black text-purple-950 font-mono">{cashBookMetrics.activeDaysCount} Days</span>
+              </div>
+              <div className="bg-emerald-50/70 border border-emerald-100 p-2 rounded-xl text-center">
+                <span className="text-[10px] font-bold text-emerald-800 uppercase block">Daily Avg Inflow</span>
+                <span className="text-sm font-black text-emerald-900 font-mono">Rs. {cashBookMetrics.dailyAvgInflow.toLocaleString()}</span>
+              </div>
+              <div className="bg-rose-50/70 border border-rose-100 p-2 rounded-xl text-center">
+                <span className="text-[10px] font-bold text-rose-800 uppercase block">Daily Avg Outflow</span>
+                <span className="text-sm font-black text-rose-900 font-mono">Rs. {cashBookMetrics.dailyAvgOutflow.toLocaleString()}</span>
+              </div>
+              <div className="bg-indigo-50/70 border border-indigo-100 p-2 rounded-xl text-center">
+                <span className="text-[10px] font-bold text-indigo-800 uppercase block">Daily Net Retention</span>
+                <span className="text-sm font-black text-indigo-950 font-mono">Rs. {cashBookMetrics.dailyAvgNet.toLocaleString()}</span>
               </div>
             </div>
           </div>
