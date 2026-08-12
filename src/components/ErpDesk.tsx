@@ -1414,11 +1414,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
   // HANDLERS FOR PURCHASE ORDERS & STOCK REQUISITION
   const getRequiredQty = (item: any) => {
-    const cStock = item.CStock ?? item.Stock ?? 0;
-    const minStock = item.MinStock ?? 100;
-    const targetStock = minStock * 2;
-    const deficit = targetStock - cStock;
-    return Math.max(50, Math.max(0, deficit));
+    return 0;
   };
 
   const isMedicineSelectedInPo = (itemId: string, itemName: string) => {
@@ -1434,7 +1430,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       }));
     } else {
       const reqQty = getRequiredQty(med);
-      const unitPrice = med.PurchasePrice || med.Price || 10;
+      const unitPrice = med.PurchasePrice ?? med.Price ?? 0;
       const cat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
       setPoForm(prev => ({
         ...prev,
@@ -1465,7 +1461,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       ItemName: med.ItemName,
       Category: med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule'),
       Qty: getRequiredQty(med),
-      UnitPrice: med.PurchasePrice || med.Price || 10,
+      UnitPrice: med.PurchasePrice ?? med.Price ?? 0,
       BatchNo: med.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
     }));
 
@@ -1478,7 +1474,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const handleAddPoItem = () => {
     setPoForm(prev => ({
       ...prev,
-      Items: [...prev.Items, { ItemID: `ITM-${Date.now().toString().slice(-3)}`, ItemName: '', Category: 'Tablet / Capsule', Qty: 10, UnitPrice: 100, BatchNo: `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}` }]
+      Items: [...prev.Items, { ItemID: `ITM-${Date.now().toString().slice(-3)}`, ItemName: '', Category: 'Tablet / Capsule', Qty: 0, UnitPrice: 100, BatchNo: `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}` }]
     }));
   };
 
@@ -5796,7 +5792,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                               <div className="flex justify-between">
                                 <span>Purchase Rate:</span>
                                 <span className="font-bold text-slate-900">
-                                  Rs. {med.PurchasePrice || med.Price || 10}
+                                  Rs. {med.PurchasePrice ?? med.Price ?? 0}
                                 </span>
                               </div>
                             </div>
@@ -5813,8 +5809,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   <label className="text-[10px] text-slate-500 font-bold">Qty:</label>
                                   <input
                                     type="number"
-                                    min="1"
-                                    value={currentPoItem?.Qty || reqQty}
+                                    min="0"
+                                    value={currentPoItem?.Qty ?? reqQty}
                                     onChange={e => {
                                       const val = Number(e.target.value);
                                       setPoForm(prev => ({
@@ -5932,7 +5928,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                               <td className="p-2">
                                 <input
                                   type="number"
-                                  min="1"
+                                  min="0"
                                   placeholder=""
                                   value={item.Qty}
                                   onChange={e => handleUpdatePoItem(idx, 'Qty', Number(e.target.value))}
