@@ -363,6 +363,44 @@ export default function PharmacyPOS({
       });
   };
 
+  // Helper to auto-generate next sequential numeric Item ID (base 1443)
+  const getAutoNextItemId = (itemList: Item[] = []) => {
+    let maxNum = 1443;
+    (itemList || []).forEach(i => {
+      if (i && i.ItemID) {
+        const rawDigits = String(i.ItemID).replace(/\D/g, '');
+        if (rawDigits) {
+          const num = parseInt(rawDigits, 10);
+          if (!isNaN(num) && num > maxNum) {
+            maxNum = num;
+          }
+        }
+      }
+    });
+    return String(maxNum + 1);
+  };
+
+  // Open modal for adding a brand new medicine
+  const handleOpenAddMedicineModal = () => {
+    setEditingItem(null);
+    const nextAutoId = getAutoNextItemId(items);
+    setItemFormId(nextAutoId);
+    setItemFormName('');
+    setItemFormRetailPrice('');
+    setItemFormPurchasePrice('');
+    setItemFormCStock('');
+    setItemFormMinStock('');
+    setItemFormReorderQty('');
+    setItemFormUnit('Tab');
+    setItemFormMedicineType('P');
+    setItemFormVendorBarcode('');
+    setItemFormBatchNo('');
+    setItemFormMfgDate('');
+    setItemFormExpDate('');
+    setInvErrorMsg('');
+    setIsAddMedicineModalOpen(true);
+  };
+
   // Reset Item Form
   const resetItemForm = () => {
     setEditingItem(null);
@@ -416,7 +454,9 @@ export default function PharmacyPOS({
       return;
     }
 
-    if (!itemFormId.trim()) {
+    const finalItemId = (itemFormId.trim() || (!editingItem ? getAutoNextItemId(items) : '')).trim();
+
+    if (!finalItemId) {
       setInvErrorMsg('Item ID is required.');
       return;
     }
@@ -441,7 +481,7 @@ export default function PharmacyPOS({
         if (itm.ItemID === editingItem.ItemID) {
           return {
             ...itm,
-            ItemID: itemFormId.trim(),
+            ItemID: finalItemId,
             ItemName: itemFormName.trim(),
             Price: rPrice,
             PurchasePrice: pPrice,
@@ -462,15 +502,15 @@ export default function PharmacyPOS({
       resetItemForm();
     } else {
       // Check if ItemID already exists
-      const idExists = items.some(itm => itm.ItemID.toLowerCase() === itemFormId.trim().toLowerCase());
+      const idExists = items.some(itm => itm.ItemID.toLowerCase() === finalItemId.toLowerCase());
       if (idExists) {
-        setInvErrorMsg(`Item ID "${itemFormId.trim()}" already exists in inventory!`);
+        setInvErrorMsg(`Item ID "${finalItemId}" already exists in inventory!`);
         return;
       }
 
       // Add new item
       const newItem: Item = {
-        ItemID: itemFormId.trim(),
+        ItemID: finalItemId,
         ItemName: itemFormName.trim(),
         Price: rPrice,
         PurchasePrice: pPrice,
@@ -486,7 +526,7 @@ export default function PharmacyPOS({
       };
 
       setItems(prev => [...prev, newItem]);
-      setInvSuccessMsg(`New medicine "${itemFormName.trim()}" added successfully!`);
+      setInvSuccessMsg(`New medicine "${itemFormName.trim()}" (ID: ${finalItemId}) added successfully!`);
       resetItemForm();
     }
 
@@ -4468,10 +4508,7 @@ export default function PharmacyPOS({
 
                   <button
                     type="button"
-                    onClick={() => {
-                      resetItemForm();
-                      setIsAddMedicineModalOpen(true);
-                    }}
+                    onClick={handleOpenAddMedicineModal}
                     className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center transition cursor-pointer font-bold text-xs shadow-sm"
                   >
                     <PlusCircle className="w-4 h-4 mr-1.5" />
@@ -5922,12 +5959,11 @@ export default function PharmacyPOS({
                     <button
                       type="button"
                       onClick={() => {
-                        const nextId = `ITM-${String(items.length + 1).padStart(3, '0')}`;
-                        setItemFormId(nextId);
+                        setItemFormId(getAutoNextItemId(items));
                       }}
                       className="text-[9px] text-indigo-600 font-extrabold mt-1 hover:underline text-left block"
                     >
-                      + Generate ID
+                      + Auto-Generate ID ({getAutoNextItemId(items)})
                     </button>
                   )}
                 </div>

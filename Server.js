@@ -2925,17 +2925,82 @@ app.post('/api/erp/grn/approve', async (req, res) => {
       { $set: { Status: newPoStatus } }
     );
 
-    // 3. Increment stock levels in items collection
+    // 3. Increment stock levels, update Unit Cost (PurchasePrice), & auto-add new GRN items to Medicine Master (starting ID > 1443)
     if (Array.isArray(grn.Items)) {
+      const existingItems = await db.collection('items').find({}).toArray();
+
+      // Find highest existing numeric ID (default minimum base: 1443)
+      let maxNumericId = 1443;
+      for (const ex of existingItems) {
+        if (ex && ex.ItemID) {
+          const rawDigits = ex.ItemID.toString().replace(/\D/g, '');
+          if (rawDigits) {
+            const num = parseInt(rawDigits, 10);
+            if (!isNaN(num) && num > maxNumericId) {
+              maxNumericId = num;
+            }
+          }
+        }
+      }
+
       for (const item of grn.Items) {
         const qtyReceived = parseInt(item.ReceivedQty) || parseInt(item.Qty) || 0;
-        if (qtyReceived > 0) {
-          // Match item by ItemID or ItemName
-          const filter = item.ItemID ? { ItemID: item.ItemID } : { ItemName: item.ItemName };
+        const unitPrice = parseFloat(item.UnitPrice) || 0;
+        const rawItemName = (item.ItemName || '').trim();
+
+        if (!rawItemName) continue;
+
+        // Try matching existing medicine in items collection by ItemID or ItemName
+        const matchedItem = existingItems.find(ex =>
+          (item.ItemID && ex.ItemID && ex.ItemID.toString().toLowerCase() === item.ItemID.toString().toLowerCase()) ||
+          (ex.ItemName && ex.ItemName.toString().trim().toLowerCase() === rawItemName.toLowerCase())
+        );
+
+        if (matchedItem) {
+          // 1. Existing Item: Update Unit Cost (PurchasePrice) & Increment CStock
+          const setFields = {};
+          if (unitPrice > 0) {
+            setFields.PurchasePrice = unitPrice;
+          }
+          if ((!matchedItem.Price || matchedItem.Price <= 0) && unitPrice > 0) {
+            setFields.Price = Math.round(unitPrice * 1.2);
+          }
+
+          const updatePayload = {
+            $inc: { CStock: qtyReceived }
+          };
+          if (Object.keys(setFields).length > 0) {
+            updatePayload.$set = setFields;
+          }
+
           await db.collection('items').updateOne(
-            filter,
-            { $inc: { CStock: qtyReceived } }
+            { _id: matchedItem._id },
+            updatePayload
           );
+
+          // Keep local existingItem copy updated
+          matchedItem.CStock = (matchedItem.CStock || 0) + qtyReceived;
+          if (unitPrice > 0) matchedItem.PurchasePrice = unitPrice;
+        } else {
+          // 2. New Item: Generate auto-increment ID starting after 1443 (e.g. 1444, 1445)
+          maxNumericId++;
+          const generatedItemId = String(maxNumericId);
+          item.ItemID = generatedItemId;
+
+          const newItemDoc = {
+            ItemID: generatedItemId,
+            ItemName: rawItemName,
+            Price: unitPrice > 0 ? Math.round(unitPrice * 1.2) : 100,
+            PurchasePrice: unitPrice, // Unit Cost (Rs.)
+            CStock: qtyReceived,
+            MinStock: 10,
+            Unit: item.Category || item.Unit || 'Tab',
+            MedicineType: 'P',
+            ReorderQty: 0
+          };
+
+          await db.collection('items').insertOne(newItemDoc);
+          existingItems.push(newItemDoc);
         }
       }
     }
@@ -3002,6 +3067,140 @@ app.post('/api/erp/grn/approve', async (req, res) => {
       message: `GRN ${grn.GRNID} approved! Inventory stock replenished and General Ledger updated with Accounts Payable posting.`,
       GRNID: grn.GRNID
     });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete GRN and automatically revert inventory stock, vendor balance, transactions & PO status
+app.post('/api/erp/grn/delete', async (req, res) => {
+  try {
+    const { id, grnId } = req.body;
+    const filter = id ? { _id: id } : { GRNID: grnId };
+
+    let grn = await db.collection('erp_grn').findOne(filter);
+    if (!grn && grnId) {
+      grn = await db.collection('erp_grn').findOne({ GRNID: grnId });
+    }
+
+    if (grn) {
+      const targetGrnId = grn.GRNID;
+
+      // 1. Revert Inventory Stock (CStock) for each GRN Item
+      if (Array.isArray(grn.Items) && grn.Items.length > 0) {
+        for (const item of grn.Items) {
+          const qtyRec = parseInt(item.ReceivedQty) || parseInt(item.Qty) || 0;
+          if (qtyRec <= 0) continue;
+
+          const rawItemName = (item.ItemName || '').trim();
+
+          let matchedItem = null;
+          if (item.ItemID) {
+            matchedItem = await db.collection('items').findOne({
+              $or: [
+                { ItemID: item.ItemID },
+                { ItemID: String(item.ItemID) }
+              ]
+            });
+          }
+          if (!matchedItem && rawItemName) {
+            const escapedName = rawItemName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            matchedItem = await db.collection('items').findOne({
+              ItemName: { $regex: `^${escapedName}$`, $options: 'i' }
+            });
+          }
+
+          if (matchedItem) {
+            const currentStock = parseInt(matchedItem.CStock) || parseInt(matchedItem.Stock) || 0;
+            const newStock = Math.max(0, currentStock - qtyRec);
+            await db.collection('items').updateOne(
+              { _id: matchedItem._id },
+              { $set: { CStock: newStock, Stock: newStock } }
+            );
+          }
+        }
+      }
+
+      // 2. Revert Vendor Balance
+      const totalAmount = parseFloat(grn.TotalAmount) || 0;
+      if (totalAmount > 0 && (grn.VendorID || grn.VendorName)) {
+        let vendorDoc = null;
+        if (grn.VendorID) {
+          vendorDoc = await db.collection('erp_vendors').findOne({
+            $or: [{ VendorID: grn.VendorID }, { VendorID: String(grn.VendorID) }]
+          });
+        }
+        if (!vendorDoc && grn.VendorName) {
+          const escapedVendorName = grn.VendorName.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+          vendorDoc = await db.collection('erp_vendors').findOne({
+            VendorName: { $regex: `^${escapedVendorName}$`, $options: 'i' }
+          });
+        }
+
+        if (vendorDoc) {
+          const newBal = Math.max(0, (parseFloat(vendorDoc.Balance) || 0) - totalAmount);
+          await db.collection('erp_vendors').updateOne(
+            { _id: vendorDoc._id },
+            { $set: { Balance: newBal } }
+          );
+        }
+      }
+
+      // 3. Delete matching transactions from erp_transactions
+      await db.collection('erp_transactions').deleteMany({
+        $or: [
+          { ReferenceNo: targetGrnId },
+          { Description: { $regex: targetGrnId, $options: 'i' } }
+        ]
+      });
+
+      // 4. Update PO Status if linked to PO
+      if (grn.POID) {
+        const remainingGrns = await db.collection('erp_grn').find({
+          POID: grn.POID,
+          GRNID: { $ne: targetGrnId },
+          Status: 'Approved'
+        }).toArray();
+
+        const poRecord = await db.collection('erp_purchase_orders').findOne({ POID: grn.POID });
+        if (poRecord) {
+          let newPoStatus = 'Approved';
+          if (remainingGrns.length > 0 && Array.isArray(poRecord.Items) && poRecord.Items.length > 0) {
+            let isFullyReceived = true;
+            let isPartiallyReceived = false;
+
+            for (const poItem of poRecord.Items) {
+              let totalRec = 0;
+              const orderedQty = parseInt(poItem.Qty) || 0;
+
+              for (const rg of remainingGrns) {
+                if (Array.isArray(rg.Items)) {
+                  const matchedGrnItem = rg.Items.find(gi =>
+                    (gi.ItemID && gi.ItemID === poItem.ItemID) ||
+                    (gi.ItemName && gi.ItemName === poItem.ItemName)
+                  );
+                  if (matchedGrnItem) {
+                    totalRec += (parseInt(matchedGrnItem.ReceivedQty) || 0);
+                  }
+                }
+              }
+              if (totalRec < orderedQty) isFullyReceived = false;
+              if (totalRec > 0) isPartiallyReceived = true;
+            }
+            newPoStatus = isFullyReceived ? 'Received' : (isPartiallyReceived ? 'Partially Received' : 'Approved');
+          }
+          await db.collection('erp_purchase_orders').updateOne(
+            { POID: grn.POID },
+            { $set: { Status: newPoStatus } }
+          );
+        }
+      }
+
+      // 5. Delete GRN record
+      await db.collection('erp_grn').deleteOne({ _id: grn._id });
+    }
+
+    res.json({ success: true, message: 'GRN deleted and stock reverted successfully!' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

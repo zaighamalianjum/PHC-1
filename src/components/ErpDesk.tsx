@@ -440,45 +440,33 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       const tAmt = Number(tx.Amount) || 0;
       if (tAmt > 0) {
         const typeUpper = (tx.Type || '').toUpperCase();
-        const catLower = (tx.Category || '').toLowerCase();
-        const descLower = (tx.Description || '').toLowerCase();
-        const hasVendor = !!(tx.VendorID || tx.VendorName);
 
-        // Explicitly check if transaction relates to Vendor, Outflow, Expense, Payroll, Asset, etc.
-        const isVendorOrOutflow =
+        // Cash Book is a Cash Flow ledger (Cash Inflows vs Cash Outflows).
+        // GRN stock receipts on credit create Accounts Payable vendor liabilities, NOT cash outflows.
+        // Outflows are ONLY recorded when an actual cash/bank payment is made (VendorPayment, Expense, PayrollPayment, AssetPurchase).
+        const isActualOutflow =
           typeUpper === 'EXPENSE' ||
           typeUpper === 'VENDORPAYMENT' ||
-          typeUpper === 'VENDORPAYABLE' ||
           typeUpper === 'VENDOR_PAYMENT' ||
-          typeUpper === 'VENDOR BILL' ||
-          typeUpper === 'ASSETPURCHASE' ||
           typeUpper === 'PAYROLLPAYMENT' ||
-          typeUpper === 'PURCHASE' ||
-          typeUpper === 'GRN' ||
-          hasVendor ||
-          catLower.includes('vendor') ||
-          catLower.includes('payable') ||
-          catLower.includes('supplier') ||
-          catLower.includes('purchase') ||
-          catLower.includes('bill') ||
-          catLower.includes('expense') ||
-          catLower.includes('payroll') ||
-          catLower.includes('salary') ||
-          descLower.includes('vendor') ||
-          descLower.includes('payable') ||
-          descLower.includes('supplier');
+          typeUpper === 'ASSETPURCHASE';
 
-        const isExplicitIncome =
-          (typeUpper === 'INCOME' || typeUpper === 'CUSTOMERRECEIPT' || typeUpper === 'INFLOW' ||
-           catLower.includes('income') || catLower.includes('receipt') || catLower.includes('sales') || catLower.includes('consultation') || catLower.includes('fee')) &&
-          !isVendorOrOutflow;
+        const isActualInflow =
+          typeUpper === 'INCOME' ||
+          typeUpper === 'CUSTOMERRECEIPT' ||
+          typeUpper === 'INFLOW';
 
-        const isOut = !isExplicitIncome;
+        if (!isActualOutflow && !isActualInflow) {
+          // Non-cash transactions (e.g. unpaid GRN goods receiving or credit accruals) are excluded from Cash Outflows & Inflows
+          return;
+        }
+
+        const isOut = isActualOutflow;
         const rawTxId = (tx.TransactionID || tx._id || '').toString();
         const rawRefNo = (tx.ReferenceNo || '').toString();
         const cleanRef = rawTxId ? (rawTxId.startsWith('TXN-') ? rawTxId : `TXN-${rawTxId}`) : `TXN-${Math.random()}`;
 
-        // Check if this transaction is ALREADY covered by Expenses, Payroll, GRNs, or prior entries
+        // Check if this transaction is ALREADY covered by Expenses, Payroll, or prior entries
         const isAlreadyIn = entries.some(e => {
           if (rawTxId && (e.id === rawTxId || e.ref === rawTxId)) return true;
           if (rawRefNo && (e.id === rawRefNo || e.ref === rawRefNo || e.id === `EXP-${rawRefNo.replace(/^EXP-/, '')}`)) return true;
@@ -1769,20 +1757,42 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   };
 
   const handleDeletePo = async (po: ErpPurchaseOrder) => {
-    if (!confirm(`Delete Purchase Order ${po.POID}? This will also remove linked Goods Received Notes.`)) return;
+    if (!confirm(`Delete Purchase Order ${po.POID}? This will also remove linked Goods Received Notes and revert inventory stock.`)) return;
     const targetId = po._id || po.POID;
-    await deleteFromDatabase('erp_purchase_orders', targetId);
 
-    // Also delete linked GRNs
+    // Delete linked GRNs on server and revert stock / vendor balances
     const matchGrns = grns.filter(g => g.POID === po.POID);
     for (const g of matchGrns) {
-      await deleteFromDatabase('erp_grn', g._id || g.GRNID);
+      await fetch('/api/erp/grn/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: g._id, grnId: g.GRNID })
+      });
+
+      if (Array.isArray(g.Items) && g.Items.length > 0) {
+        setInventoryItems(prev => prev.map((inv: any) => {
+          const matchedItemInGrn = g.Items.find(gi =>
+            (gi.ItemID && inv.ItemID && String(inv.ItemID).toLowerCase() === String(gi.ItemID).toLowerCase()) ||
+            (gi.ItemName && inv.ItemName && String(inv.ItemName).trim().toLowerCase() === String(gi.ItemName).trim().toLowerCase())
+          );
+          if (matchedItemInGrn) {
+            const qtyRec = Number(matchedItemInGrn.ReceivedQty) || Number(matchedItemInGrn.Qty) || 0;
+            const currentStock = Number(inv.CStock) || Number(inv.Stock) || 0;
+            const newStock = Math.max(0, currentStock - qtyRec);
+            return { ...inv, CStock: newStock, Stock: newStock };
+          }
+          return inv;
+        }));
+      }
     }
     setGrns(prev => prev.filter(g => g.POID !== po.POID));
 
+    await deleteFromDatabase('erp_purchase_orders', targetId);
     setPurchaseOrders(prev => prev.filter(p => (p._id ? p._id !== po._id : p.POID !== po.POID)));
+
     setSyncMessage('Purchase Order and linked GRNs deleted successfully!');
     setTimeout(() => setSyncMessage(null), 3000);
+    window.dispatchEvent(new CustomEvent('phc_db_updated'));
   };
 
   // HANDLERS FOR GOODS RECEIVED NOTE (GRN) & PARTIAL BATCH RECEIVING
@@ -2004,20 +2014,91 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   };
 
   const handleDeleteGrn = async (grn: ErpGrn) => {
-    if (!confirm(`Delete Goods Received Note ${grn.GRNID}?`)) return;
-    const targetId = grn._id || grn.GRNID;
-    await deleteFromDatabase('erp_grn', targetId);
+    if (!confirm(`Are you sure you want to delete Goods Received Note ${grn.GRNID}? This will remove the GRN record, deduct the vendor outstanding balance, revert stock levels, remove linked financial entries, and revert Purchase Order status.`)) return;
 
-    // Delete matching transaction if exists
-    const matchTxn = transactions.find(t => t.ReferenceNo === grn.GRNID || t.ReferenceNo === grn.POID);
-    if (matchTxn) {
-      await deleteFromDatabase('erp_transactions', matchTxn._id || matchTxn.TransactionID);
-      setTransactions(prev => prev.filter(t => t.TransactionID !== matchTxn.TransactionID && t._id !== matchTxn._id));
+    try {
+      // 1. Call backend server endpoint for complete database rollback
+      await fetch('/api/erp/grn/delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: grn._id, grnId: grn.GRNID })
+      });
+
+      // 2. Revert Inventory Stock (CStock) locally for instant UI update
+      if (Array.isArray(grn.Items) && grn.Items.length > 0) {
+        setInventoryItems(prev => prev.map((inv: any) => {
+          const matchedGrnItem = grn.Items.find(gi =>
+            (gi.ItemID && inv.ItemID && String(inv.ItemID).toLowerCase() === String(gi.ItemID).toLowerCase()) ||
+            (gi.ItemName && inv.ItemName && String(inv.ItemName).trim().toLowerCase() === String(gi.ItemName).trim().toLowerCase())
+          );
+
+          if (matchedGrnItem) {
+            const qtyRec = Number(matchedGrnItem.ReceivedQty) || Number(matchedGrnItem.Qty) || 0;
+            const currentStock = Number(inv.CStock) || Number(inv.Stock) || 0;
+            const newStock = Math.max(0, currentStock - qtyRec);
+            return { ...inv, CStock: newStock, Stock: newStock };
+          }
+          return inv;
+        }));
+      }
+
+      // 3. Deduct Vendor Outstanding Balance locally
+      const grnTotal = Number(grn.TotalAmount) || 0;
+      if (grnTotal > 0 && (grn.VendorID || grn.VendorName)) {
+        setVendors(prev => prev.map(v => {
+          const isMatch = (grn.VendorID && (v.VendorID === grn.VendorID || v._id === grn.VendorID)) ||
+                          (grn.VendorName && v.VendorName && v.VendorName.trim().toLowerCase() === grn.VendorName.trim().toLowerCase());
+          if (isMatch) {
+            const newBalance = Math.max(0, Number(v.Balance || 0) - grnTotal);
+            return { ...v, Balance: newBalance };
+          }
+          return v;
+        }));
+      }
+
+      // 4. Remove linked transactions locally
+      setTransactions(prev => prev.filter(t =>
+        t.ReferenceNo !== grn.GRNID &&
+        t.ReferenceNo !== grn.POID &&
+        (!t.Description || !t.Description.includes(grn.GRNID))
+      ));
+
+      // 5. Update PO status if linked to a PO
+      if (grn.POID) {
+        const remainingGrns = grns.filter(g => (g._id ? g._id !== grn._id : g.GRNID !== grn.GRNID) && g.POID === grn.POID);
+        let newPoStatus: 'Pending' | 'Approved' | 'Partially Received' | 'Received' = 'Approved';
+        
+        if (remainingGrns.length > 0) {
+          const linkedPo = purchaseOrders.find(p => p.POID === grn.POID);
+          if (linkedPo) {
+            let isFullyReceived = true;
+            let isPartiallyReceived = false;
+            (linkedPo.Items || []).forEach(pItem => {
+              let totalRec = 0;
+              remainingGrns.forEach(rg => {
+                const matchedInGrn = (rg.Items || []).find(gi => gi.ItemID === pItem.ItemID || gi.ItemName === pItem.ItemName);
+                if (matchedInGrn) totalRec += Number(matchedInGrn.ReceivedQty || 0);
+              });
+              if (totalRec < pItem.Qty) isFullyReceived = false;
+              if (totalRec > 0) isPartiallyReceived = true;
+            });
+            newPoStatus = isFullyReceived ? 'Received' : (isPartiallyReceived ? 'Partially Received' : 'Approved');
+          }
+        }
+
+        setPurchaseOrders(prev => prev.map(p => p.POID === grn.POID ? { ...p, Status: newPoStatus } : p));
+      }
+
+      // 6. Remove from GRNs state & notify
+      setGrns(prev => prev.filter(g => (g._id ? g._id !== grn._id : g.GRNID !== grn.GRNID)));
+
+      setSyncMessage(`GRN ${grn.GRNID} deleted! Inventory stock level reverted and vendor balance updated.`);
+      setTimeout(() => setSyncMessage(null), 3000);
+      window.dispatchEvent(new CustomEvent('phc_db_updated'));
+    } catch (err: any) {
+      console.error('Error deleting GRN:', err);
+      alert(`Error deleting GRN: ${err.message || 'Unknown error'}`);
     }
-
-    setGrns(prev => prev.filter(g => (g._id ? g._id !== grn._id : g.GRNID !== grn.GRNID)));
-    setSyncMessage('GRN deleted successfully!');
-    setTimeout(() => setSyncMessage(null), 3000);
   };
 
   const handlePrintGrn = (grn: ErpGrn) => {
@@ -5420,15 +5501,26 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                           </div>
                         </td>
                         <td className="p-3 text-center">
-                          <button
-                            type="button"
-                            onClick={() => handlePrintGrn(grn)}
-                            className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded transition cursor-pointer flex items-center space-x-1 mx-auto font-bold border border-slate-200 text-[11px]"
-                            title="Print Official GRN Voucher"
-                          >
-                            <Printer className="w-3.5 h-3.5 text-slate-600" />
-                            <span>Print GRN</span>
-                          </button>
+                          <div className="flex items-center justify-center space-x-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handlePrintGrn(grn)}
+                              className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded transition cursor-pointer flex items-center space-x-1 font-bold border border-slate-200 text-[11px]"
+                              title="Print Official GRN Voucher"
+                            >
+                              <Printer className="w-3.5 h-3.5 text-slate-600" />
+                              <span>Print GRN</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteGrn(grn)}
+                              className="px-2 py-1 text-rose-700 hover:bg-rose-50 rounded transition cursor-pointer flex items-center space-x-1 font-bold border border-rose-200 text-[11px]"
+                              title="Delete Goods Received Note (GRN)"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                              <span>Delete</span>
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))

@@ -329,6 +329,17 @@ export default function UploadingDesk({
       startIndex = 1; // skip header line
     }
     
+    let maxNumericId = 1443;
+    (items || []).forEach(itm => {
+      if (itm && itm.ItemID) {
+        const rawDigits = String(itm.ItemID).replace(/\D/g, '');
+        if (rawDigits) {
+          const num = parseInt(rawDigits, 10);
+          if (!isNaN(num) && num > maxNumericId) maxNumericId = num;
+        }
+      }
+    });
+
     for (let i = startIndex; i < lines.length; i++) {
       const line = lines[i];
       if (!line.trim()) continue;
@@ -339,7 +350,11 @@ export default function UploadingDesk({
       if (cols.length < 2) cols = line.split(';');
       
       if (cols.length >= 2) {
-        const itemid = cols[0]?.trim() || `ITM-${Math.floor(1000 + Math.random() * 9000)}`;
+        let itemid = cols[0]?.trim();
+        if (!itemid) {
+          maxNumericId++;
+          itemid = String(maxNumericId);
+        }
         const name = cols[1]?.trim() || 'Unnamed Medicine';
         const price = parseFloat(cols[2]?.trim() || '0') || 10;
         const purchasePrice = parseFloat(cols[3]?.trim() || '0') || (price > 0 ? price * 0.8 : 8);
