@@ -843,6 +843,23 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [showQrScannerModal, setShowQrScannerModal] = useState(false);
   const [showQrGeneratorModal, setShowQrGeneratorModal] = useState(false);
 
+  // Bulk PO Upload Modal State
+  const [showUploadBulkPoModal, setShowUploadBulkPoModal] = useState(false);
+  const [bulkPoRawText, setBulkPoRawText] = useState('');
+  const [bulkPoParsedItems, setBulkPoParsedItems] = useState<{
+    ItemID: string;
+    ItemName: string;
+    Category: string;
+    Qty: number;
+    UnitPrice: number;
+    BatchNo: string;
+    isMatched: boolean;
+    stockInHand?: number;
+  }[]>([]);
+  const [bulkPoDragActive, setBulkPoDragActive] = useState(false);
+  const [bulkPoFileError, setBulkPoFileError] = useState('');
+  const bulkPoFileInputRef = React.useRef<HTMLInputElement>(null);
+
   // Pay Vendor Popup Modal State
   const [payVendorModalData, setPayVendorModalData] = useState<{
     vendor: ErpVendor;
@@ -1469,6 +1486,194 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       ...prev,
       Items: newPoItems
     }));
+  };
+
+  // BULK PO EXCEL & TEXT PARSING HANDLERS
+  const parseAndMatchBulkPoData = (rows: { name: string; qty: number; price?: number }[]) => {
+    const result: {
+      ItemID: string;
+      ItemName: string;
+      Category: string;
+      Qty: number;
+      UnitPrice: number;
+      BatchNo: string;
+      isMatched: boolean;
+      stockInHand?: number;
+    }[] = [];
+
+    rows.forEach((row) => {
+      const cleanName = String(row.name || '').trim();
+      if (!cleanName) return;
+
+      const qty = Math.max(0, Number(row.qty) || 0);
+      const customPrice = row.price !== undefined && row.price !== null && !isNaN(Number(row.price)) ? Number(row.price) : undefined;
+
+      const matched = (inventoryItems || []).find((inv: any) => {
+        const invName = String(inv.ItemName || inv.Name || '').toLowerCase().trim();
+        const searchName = cleanName.toLowerCase();
+        return invName === searchName || invName.replace(/[^a-z0-9]/g, '') === searchName.replace(/[^a-z0-9]/g, '');
+      });
+
+      if (matched) {
+        const unitPrice = (customPrice !== undefined && customPrice >= 0)
+          ? customPrice
+          : (matched.PurchasePrice ?? matched.Price ?? 0);
+
+        const cat = matched.Category || (matched.MedicineType === 'C' ? 'Clinical / Compounded' : matched.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
+
+        result.push({
+          ItemID: matched.ItemID || matched._id || `ITM-${Math.floor(100 + Math.random() * 900)}`,
+          ItemName: matched.ItemName || matched.Name || cleanName,
+          Category: cat,
+          Qty: qty,
+          UnitPrice: unitPrice,
+          BatchNo: matched.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+          isMatched: true,
+          stockInHand: matched.CStock ?? matched.Stock ?? 0
+        });
+      } else {
+        const unitPrice = (customPrice !== undefined && customPrice >= 0) ? customPrice : 0;
+        result.push({
+          ItemID: `ITM-${Math.floor(100 + Math.random() * 900)}`,
+          ItemName: cleanName,
+          Category: 'Tablet / Capsule',
+          Qty: qty,
+          UnitPrice: unitPrice,
+          BatchNo: `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+          isMatched: false,
+          stockInHand: 0
+        });
+      }
+    });
+
+    setBulkPoParsedItems(result);
+  };
+
+  const handleBulkPoExcelRead = (file: File) => {
+    if (!file) return;
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    if (fileExt !== 'xlsx' && fileExt !== 'xls' && fileExt !== 'csv') {
+      setBulkPoFileError('Invalid file format. Please upload an Excel (.xlsx, .xls) or CSV (.csv) file.');
+      return;
+    }
+    setBulkPoFileError('');
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        import('xlsx').then((XLSX) => {
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+          if (!rawData || rawData.length === 0) {
+            setBulkPoFileError('The uploaded sheet is empty.');
+            return;
+          }
+
+          let nameIdx = 0;
+          let qtyIdx = 1;
+          let priceIdx = 2;
+          let startRow = 0;
+
+          const firstRow = rawData[0].map(c => String(c || '').toLowerCase().trim());
+          const hasHeader = firstRow.some(c => c.includes('item') || c.includes('name') || c.includes('qty') || c.includes('quantity') || c.includes('price') || c.includes('rate'));
+
+          if (hasHeader) {
+            startRow = 1;
+            const foundName = firstRow.findIndex(c => c.includes('item') || c.includes('name') || c.includes('medicine') || c.includes('desc'));
+            const foundQty = firstRow.findIndex(c => c.includes('qty') || c.includes('quantity') || c.includes('po') || c.includes('required'));
+            const foundPrice = firstRow.findIndex(c => c.includes('price') || c.includes('rate') || c.includes('cost') || c.includes('unit'));
+
+            if (foundName >= 0) nameIdx = foundName;
+            if (foundQty >= 0) qtyIdx = foundQty;
+            if (foundPrice >= 0) priceIdx = foundPrice;
+          }
+
+          const parsedRows: { name: string; qty: number; price?: number }[] = [];
+          for (let i = startRow; i < rawData.length; i++) {
+            const row = rawData[i];
+            if (!row || row.length === 0) continue;
+            const nameStr = String(row[nameIdx] || '').trim();
+            if (!nameStr) continue;
+
+            const qtyVal = parseFloat(String(row[qtyIdx] || '0')) || 0;
+            const priceRaw = row[priceIdx] !== undefined && row[priceIdx] !== null ? parseFloat(String(row[priceIdx])) : NaN;
+            const priceVal = !isNaN(priceRaw) ? priceRaw : undefined;
+
+            parsedRows.push({ name: nameStr, qty: qtyVal, price: priceVal });
+          }
+
+          parseAndMatchBulkPoData(parsedRows);
+        });
+      } catch (err: any) {
+        setBulkPoFileError('Failed to read Excel file: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleParseBulkPoText = (text: string) => {
+    setBulkPoRawText(text);
+    if (!text.trim()) {
+      setBulkPoParsedItems([]);
+      return;
+    }
+
+    const lines = text.split(/\r?\n/);
+    const parsedRows: { name: string; qty: number; price?: number }[] = [];
+
+    lines.forEach((line, idx) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      let parts = trimmed.split('\t');
+      if (parts.length < 2) parts = trimmed.split(',');
+      if (parts.length < 2) parts = trimmed.split(';');
+
+      if (parts.length >= 1) {
+        const col0 = parts[0].trim();
+        if (idx === 0 && (col0.toLowerCase().includes('item') || col0.toLowerCase().includes('name') || col0.toLowerCase().includes('medicine'))) {
+          return;
+        }
+
+        const col1Val = parts.length >= 2 ? parseFloat(parts[1].trim()) : 0;
+        const col2Val = parts.length >= 3 ? parseFloat(parts[2].trim()) : NaN;
+
+        parsedRows.push({
+          name: col0,
+          qty: !isNaN(col1Val) ? col1Val : 0,
+          price: !isNaN(col2Val) ? col2Val : undefined
+        });
+      }
+    });
+
+    parseAndMatchBulkPoData(parsedRows);
+  };
+
+  const handleApplyBulkPoToForm = () => {
+    if (bulkPoParsedItems.length === 0) return;
+
+    const poItems = bulkPoParsedItems.map(item => ({
+      ItemID: item.ItemID,
+      ItemName: item.ItemName,
+      Category: item.Category,
+      Qty: item.Qty,
+      UnitPrice: item.UnitPrice,
+      BatchNo: item.BatchNo
+    }));
+
+    setPoForm(prev => ({
+      ...prev,
+      Items: poItems
+    }));
+
+    setShowUploadBulkPoModal(false);
+    setShowPoModal(true);
+    setSyncMessage(`${poItems.length} Bulk items loaded into Purchase Order form!`);
+    setTimeout(() => setSyncMessage(null), 4000);
   };
 
   const handleAddPoItem = () => {
@@ -4821,16 +5026,32 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 </p>
               </div>
             </div>
-            <button
-              onClick={() => {
-                handleSelectAllLowStockMedicines();
-                setShowPoModal(true);
-              }}
-              className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition shadow-xs flex items-center space-x-1.5 cursor-pointer whitespace-nowrap"
-            >
-              <CheckCircle2 className="w-4 h-4" />
-              <span>Auto-Create PO for Low Stock Items</span>
-            </button>
+            <div className="flex items-center space-x-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  handleSelectAllLowStockMedicines();
+                  setShowPoModal(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs transition shadow-xs flex items-center space-x-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Auto-Create PO for Low Stock Items</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkPoRawText('');
+                  setBulkPoParsedItems([]);
+                  setBulkPoFileError('');
+                  setShowUploadBulkPoModal(true);
+                }}
+                className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition shadow-xs flex items-center space-x-1.5 cursor-pointer whitespace-nowrap"
+              >
+                <FileSpreadsheet className="w-4 h-4" />
+                <span>Upload Bulk PO</span>
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-4">
@@ -5632,6 +5853,19 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   <div className="flex items-center space-x-2">
                     <button
                       type="button"
+                      onClick={() => {
+                        setBulkPoRawText('');
+                        setBulkPoParsedItems([]);
+                        setBulkPoFileError('');
+                        setShowUploadBulkPoModal(true);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition shadow-xs flex items-center space-x-1 cursor-pointer"
+                    >
+                      <FileSpreadsheet className="w-3.5 h-3.5" />
+                      <span>Upload Bulk PO</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={handleSelectAllLowStockMedicines}
                       className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white font-bold text-xs transition shadow-xs flex items-center space-x-1 cursor-pointer"
                       title="Auto-select all items where CStock <= MinStock"
@@ -6000,6 +6234,270 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 </div>
               </div>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* UPLOAD BULK PO POPUP MODAL (Paste or Upload Excel Bulk PO) */}
+      {showUploadBulkPoModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50">
+          <div className="bg-white rounded-2xl max-w-5xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-indigo-50 text-indigo-600 rounded-xl font-bold">
+                  <FileSpreadsheet className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base">
+                    Upload Bulk Purchase Order (Excel / Paste)
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Upload an Excel spreadsheet (.xlsx, .csv) or paste rows containing 3 columns: <span className="font-bold text-indigo-700">Item Name</span>, <span className="font-bold text-indigo-700">PO Quantity</span>, and <span className="font-bold text-indigo-700">Item Price</span>.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUploadBulkPoModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 cursor-pointer text-lg"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Error banner if any */}
+            {bulkPoFileError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-rose-700 text-xs font-bold flex items-center space-x-2">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                <span>{bulkPoFileError}</span>
+              </div>
+            )}
+
+            {/* Main Split Grid */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+              {/* Left Column: Dropzone & Paste Text Area (5 cols) */}
+              <div className="lg:col-span-5 space-y-4">
+                {/* Excel File Dropzone */}
+                <div
+                  onDragEnter={(e) => { e.preventDefault(); e.stopPropagation(); setBulkPoDragActive(true); }}
+                  onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setBulkPoDragActive(true); }}
+                  onDragLeave={(e) => { e.preventDefault(); e.stopPropagation(); setBulkPoDragActive(false); }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setBulkPoDragActive(false);
+                    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                      handleBulkPoExcelRead(e.dataTransfer.files[0]);
+                    }
+                  }}
+                  onClick={() => bulkPoFileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-2xl p-5 text-center cursor-pointer transition flex flex-col items-center justify-center space-y-2 ${
+                    bulkPoDragActive
+                      ? 'border-indigo-500 bg-indigo-50/80 scale-[0.99]'
+                      : 'border-indigo-200 bg-indigo-50/30 hover:bg-indigo-50/70 hover:border-indigo-400'
+                  }`}
+                >
+                  <input
+                    ref={bulkPoFileInputRef}
+                    type="file"
+                    accept=".xlsx,.xls,.csv"
+                    className="hidden"
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        handleBulkPoExcelRead(e.target.files[0]);
+                      }
+                    }}
+                  />
+                  <div className="w-10 h-10 rounded-full bg-indigo-100 text-indigo-600 flex items-center justify-center">
+                    <FileSpreadsheet className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-black text-slate-800 block">Drop Excel (.xlsx, .csv) File Here</span>
+                    <span className="text-[10px] text-slate-500 block mt-0.5">or click to browse from device</span>
+                  </div>
+                </div>
+
+                <div className="relative flex py-1 items-center">
+                  <div className="flex-grow border-t border-slate-200"></div>
+                  <span className="shrink mx-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">OR PASTE DATA BELOW</span>
+                  <div className="flex-grow border-t border-slate-200"></div>
+                </div>
+
+                {/* Direct Paste Area */}
+                <div className="space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 flex items-center space-x-1">
+                      <FileText className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>Paste Raw Excel / Text Data</span>
+                    </label>
+                    <span className="text-[10px] text-slate-400">3 Cols: Name, Qty, Price</span>
+                  </div>
+                  <textarea
+                    rows={7}
+                    value={bulkPoRawText}
+                    onChange={(e) => handleParseBulkPoText(e.target.value)}
+                    placeholder={`Paste 3-column rows from Excel or Notepad:\nItem Name\tPO Quantity\tItem Price\nParacetamol 500mg\t100\t15\nAmoxicillin 250mg\t50\t45\nIbuprofen 400mg\t200\t25`}
+                    className="w-full p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
+                  />
+                </div>
+              </div>
+
+              {/* Right Column: Parsed Items Preview & Summary (7 cols) */}
+              <div className="lg:col-span-7 bg-slate-50/70 border border-slate-200 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <div>
+                      <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
+                        Parsed PO Items Preview ({bulkPoParsedItems.length})
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        {bulkPoParsedItems.filter(i => i.isMatched).length} Matched in Inventory • {bulkPoParsedItems.filter(i => !i.isMatched).length} New / Unmatched
+                      </p>
+                    </div>
+
+                    {bulkPoParsedItems.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkPoParsedItems([]);
+                          setBulkPoRawText('');
+                        }}
+                        className="text-[11px] font-bold text-rose-600 hover:text-rose-800 hover:underline cursor-pointer"
+                      >
+                        Clear Items
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Summary Bar */}
+                  {bulkPoParsedItems.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 bg-white p-2.5 rounded-xl border border-slate-200 text-center shadow-2xs">
+                      <div>
+                        <span className="text-[10px] text-slate-500 block">Total Items</span>
+                        <span className="text-xs font-black text-indigo-900">{bulkPoParsedItems.length}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 block">Total Qty</span>
+                        <span className="text-xs font-black text-amber-700">
+                          {bulkPoParsedItems.reduce((acc, curr) => acc + (curr.Qty || 0), 0)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 block">Est. Subtotal</span>
+                        <span className="text-xs font-black text-emerald-700">
+                          Rs. {bulkPoParsedItems.reduce((acc, curr) => acc + ((curr.Qty || 0) * (curr.UnitPrice || 0)), 0).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Items Scrollable Table */}
+                  <div className="max-h-64 overflow-y-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+                    {bulkPoParsedItems.length === 0 ? (
+                      <div className="p-10 text-center text-slate-400 space-y-1">
+                        <FileSpreadsheet className="w-8 h-8 mx-auto text-slate-300" />
+                        <p className="text-xs font-bold text-slate-600">No items loaded yet</p>
+                        <p className="text-[11px]">Upload an Excel spreadsheet or paste 3-column rows on the left to preview.</p>
+                      </div>
+                    ) : (
+                      <table className="w-full text-left text-xs">
+                        <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase font-extrabold sticky top-0 border-b border-slate-200">
+                          <tr>
+                            <th className="p-2 w-8 text-center">#</th>
+                            <th className="p-2">Item Name</th>
+                            <th className="p-2 w-20 text-center">Status</th>
+                            <th className="p-2 w-16 text-center">Qty</th>
+                            <th className="p-2 w-20 text-right">Price (Rs.)</th>
+                            <th className="p-2 w-20 text-right">Total</th>
+                            <th className="p-2 w-8 text-center"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {bulkPoParsedItems.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50/80">
+                              <td className="p-2 text-center text-[10px] text-slate-400 font-bold">{idx + 1}</td>
+                              <td className="p-2">
+                                <span className="font-bold text-slate-800 block text-xs">{item.ItemName}</span>
+                                <span className="text-[10px] text-slate-400">{item.Category}</span>
+                              </td>
+                              <td className="p-2 text-center">
+                                {item.isMatched ? (
+                                  <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded font-bold text-[9px]">
+                                    Matched
+                                  </span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded font-bold text-[9px]">
+                                    New Item
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-2 text-center">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.Qty}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setBulkPoParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, Qty: val } : it));
+                                  }}
+                                  className="w-14 p-1 border border-slate-200 rounded text-center text-xs font-bold bg-white"
+                                />
+                              </td>
+                              <td className="p-2 text-right">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.UnitPrice}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setBulkPoParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, UnitPrice: val } : it));
+                                  }}
+                                  className="w-16 p-1 border border-slate-200 rounded text-right text-xs font-bold bg-white"
+                                />
+                              </td>
+                              <td className="p-2 text-right font-extrabold text-slate-900 text-xs">
+                                Rs. {(item.Qty * item.UnitPrice).toLocaleString()}
+                              </td>
+                              <td className="p-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => setBulkPoParsedItems(prev => prev.filter((_, i) => i !== idx))}
+                                  className="text-slate-400 hover:text-rose-600 font-bold p-0.5 rounded cursor-pointer"
+                                  title="Remove Item"
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+
+                {/* Modal Actions */}
+                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowUploadBulkPoModal(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkPoParsedItems.length === 0}
+                    onClick={handleApplyBulkPoToForm}
+                    className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs shadow-md transition flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <ShoppingCart className="w-4 h-4" />
+                    <span>Create Purchase Order ({bulkPoParsedItems.length} Items)</span>
+                  </button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
       )}
