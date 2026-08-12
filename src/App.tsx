@@ -542,6 +542,29 @@ export default function App() {
     }
   };
 
+  // Delete Patient profile
+  const handleDeletePatient = (patientId: string) => {
+    setPatients((prev) => prev.filter(p => p.PatientID !== patientId));
+    if (mongoDbSettings.SyncEnabled) {
+      const bridgeUrl = mongoDbSettings.BridgeUrl || 'http://localhost:5000';
+      fetch(`${bridgeUrl}/api/patients/${patientId}`, {
+        method: 'DELETE'
+      }).catch(err => console.error('Failed to delete patient from MongoDB:', err.message));
+    }
+  };
+
+  // Delete Visit
+  const handleDeleteVisit = (visitId: string) => {
+    setVisits((prev) => prev.filter(v => v.VisitID !== visitId));
+    setVisitMedicines((prev) => prev.filter(m => m.VisitID !== visitId));
+    if (mongoDbSettings.SyncEnabled) {
+      const bridgeUrl = mongoDbSettings.BridgeUrl || 'http://localhost:5000';
+      fetch(`${bridgeUrl}/api/visits/${visitId}`, {
+        method: 'DELETE'
+      }).catch(err => console.error('Failed to delete visit from MongoDB:', err.message));
+    }
+  };
+
   // Book OPD Consultation Appointment
   const handleAddAppointment = (newApp: Appointment) => {
     setAppointments((prev) => [...prev, newApp]);
@@ -2620,6 +2643,8 @@ export default function App() {
                 onAddSbpCertificate={handleAddSbpCertificate}
                 mongoDbSettings={mongoDbSettings}
                 onUpdatePatient={handleUpdatePatient}
+                onDeletePatient={handleDeletePatient}
+                onDeleteVisit={handleDeleteVisit}
                 items={items}
                 currentUser={currentUser}
                 labTests={labTests}
@@ -2683,6 +2708,8 @@ export default function App() {
                 onAddSbpCertificate={handleAddSbpCertificate}
                 mongoDbSettings={mongoDbSettings}
                 onUpdatePatient={handleUpdatePatient}
+                onDeletePatient={handleDeletePatient}
+                onDeleteVisit={handleDeleteVisit}
                 items={items}
                 currentUser={currentUser}
                 labTests={labTests}

@@ -1,0 +1,1297 @@
+{
+  "system_init": [
+    {
+      "_id": "INIT_FLAG",
+      "seeded": true,
+      "initializedAt": "2026-08-12T14:11:06.151Z"
+    }
+  ],
+  "users": [
+    {
+      "UserID": "USR-001",
+      "LoginName": "admin",
+      "FullName": "Dr. Zaigham Ali Anjum",
+      "PasswordHash": "123456",
+      "Role": "Administrator",
+      "AssignedShift": "Both",
+      "_id": "h2zooslml"
+    },
+    {
+      "UserID": "USR-002",
+      "LoginName": "doctor",
+      "FullName": "Dr. Amna Malik",
+      "PasswordHash": "doctor123",
+      "Role": "Doctor",
+      "AssignedShift": 1,
+      "_id": "5ev8nnzw7"
+    },
+    {
+      "UserID": "USR-003",
+      "LoginName": "pharmacist",
+      "FullName": "M. Kashif Qadri",
+      "PasswordHash": "pharmacy123",
+      "Role": "Pharmacist",
+      "AssignedShift": "Both",
+      "_id": "akjd9bn56"
+    },
+    {
+      "UserID": "USR-004",
+      "LoginName": "reception",
+      "FullName": "Ayesha Bibi",
+      "PasswordHash": "rec123",
+      "Role": "Receptionist",
+      "AssignedShift": 1,
+      "_id": "2phqemfly"
+    },
+    {
+      "UserID": "USR-005",
+      "LoginName": "accountant",
+      "FullName": "Naveed Ahmad Sheikh",
+      "PasswordHash": "acct123",
+      "Role": "Accountant",
+      "AssignedShift": "Both",
+      "_id": "5x8hdr2it"
+    }
+  ],
+  "patients": [
+    {
+      "PatientID": "PAT-001",
+      "PatientName": "Zubair Ahmad Qureshi",
+      "Father_husband": "Muhammad Ishaq",
+      "AgeYears": 42,
+      "Sex": "Male",
+      "MaritalStatus": "Married",
+      "Occupation": "Government Servant",
+      "Address": "House 42, Block C, Model Town",
+      "CityID": 1,
+      "Country": "Pakistan",
+      "PhoneMobile": "0300-4567891",
+      "PhoneRes": "042-35851234",
+      "Email": "zubair.qureshi@gmail.com",
+      "RegistrationDate": "2026-06-15T09:30:00.000Z",
+      "_id": "yqf8ca5au"
+    },
+    {
+      "PatientID": "PAT-002",
+      "PatientName": "Saima Parveen",
+      "Father_husband": "Tariq Mahmood",
+      "AgeYears": 29,
+      "Sex": "Female",
+      "MaritalStatus": "Married",
+      "Occupation": "Housewife",
+      "Address": "St 4, Mohallah Sharifpura",
+      "CityID": 2,
+      "Country": "Pakistan",
+      "PhoneMobile": "0321-7654321",
+      "PhoneRes": "041-8812345",
+      "Email": "saima.tariq@yahoo.com",
+      "RegistrationDate": "2026-06-20T17:15:00.000Z",
+      "_id": "bio0n2o2i"
+    },
+    {
+      "PatientID": "PAT-003",
+      "PatientName": "Haris Ali SBP",
+      "Father_husband": "Liaqat Ali",
+      "AgeYears": 35,
+      "Sex": "Male",
+      "MaritalStatus": "Single",
+      "Occupation": "SBP Officer",
+      "Address": "State Bank Officers Colony, G-9",
+      "CityID": 10,
+      "Country": "Pakistan",
+      "PhoneMobile": "0333-5511223",
+      "PhoneOff": "051-9201234",
+      "Email": "haris.ali@sbp.org.pk",
+      "RegistrationDate": "2026-07-01T10:00:00.000Z",
+      "_id": "e7bsz2igp"
+    }
+  ],
+  "items": [
+    {
+      "ItemID": "ITM-001",
+      "ItemName": "Panadol 500mg (Paracetamol)",
+      "Price": 3.5,
+      "PurchasePrice": 2.8,
+      "CStock": 1200,
+      "MinStock": 200,
+      "Unit": "Tab",
+      "_id": "0jigrke84"
+    },
+    {
+      "ItemID": "ITM-002",
+      "ItemName": "Augmentin 625mg (Co-Amoxiclav)",
+      "Price": 45,
+      "PurchasePrice": 38,
+      "CStock": 450,
+      "MinStock": 50,
+      "Unit": "Tab",
+      "_id": "fxvyopt44"
+    },
+    {
+      "ItemID": "ITM-003",
+      "ItemName": "Lofnac 50mg (Diclofenac Sodium)",
+      "Price": 8,
+      "PurchasePrice": 6.2,
+      "CStock": 800,
+      "MinStock": 100,
+      "Unit": "Tab",
+      "_id": "t1f5guwgx"
+    },
+    {
+      "ItemID": "ITM-004",
+      "ItemName": "Arinac Forte (Ibuprofen / Pseudoephedrine)",
+      "Price": 12,
+      "PurchasePrice": 9.5,
+      "CStock": 600,
+      "MinStock": 100,
+      "Unit": "Tab",
+      "_id": "2w8m3px89"
+    },
+    {
+      "ItemID": "ITM-005",
+      "ItemName": "Surbex-Z (Multivitamins & Zinc)",
+      "Price": 15,
+      "PurchasePrice": 12,
+      "CStock": 350,
+      "MinStock": 50,
+      "Unit": "Tab",
+      "_id": "1f04bcxds"
+    }
+  ],
+  "cities": [
+    {
+      "CityID": 1,
+      "CityName": "Lahore",
+      "_id": "n2bf0dpxn"
+    },
+    {
+      "CityID": 2,
+      "CityName": "Faisalabad",
+      "_id": "g9ld5g9xr"
+    },
+    {
+      "CityID": 3,
+      "CityName": "Rawalpindi",
+      "_id": "ny1k66e1a"
+    },
+    {
+      "CityID": 4,
+      "CityName": "Multan",
+      "_id": "izjq8hhmw"
+    },
+    {
+      "CityID": 5,
+      "CityName": "Gujranwala",
+      "_id": "n6ov75hrf"
+    },
+    {
+      "CityID": 6,
+      "CityName": "Sialkot",
+      "_id": "7u03ml2ne"
+    },
+    {
+      "CityID": 7,
+      "CityName": "Sargodha",
+      "_id": "7362ih0vp"
+    },
+    {
+      "CityID": 8,
+      "CityName": "Bahawalpur",
+      "_id": "jx9p5qz2n"
+    },
+    {
+      "CityID": 9,
+      "CityName": "Sahiwal",
+      "_id": "ivndi9wv0"
+    },
+    {
+      "CityID": 10,
+      "CityName": "Islamabad",
+      "_id": "b107d9yju"
+    }
+  ],
+  "appointments": [],
+  "tokens": [],
+  "visits": [
+    {
+      "VisitID": "VIS-1786546304881",
+      "PatientID": "PAT-003",
+      "VisitDate": "2026-08-12",
+      "SymptomsDiagnosis": "ADSADS",
+      "MedicalReportResult": "ADSASDASD",
+      "LabTestAdvice": "None",
+      "PatientAdvice": "Take medicines regularly.",
+      "VisitRemarks": "Clinical: ASDADS - ASDAD (EXP: 2026-09-02) | Patent: ASDADS - ASDASDSD | Medical Reports: ADSASDASD | Lab Tests: None | Charges: OPD Fee PKR 2222, Clinical Meds PKR 1500, File PKR 022, Card PKR 222 (Total PKR 3966)",
+      "Status": 2,
+      "FocWaivedOpdFee": 0,
+      "FocWaivedClinicalFee": 0,
+      "FocWaivedFileCardFee": 0,
+      "FocReason": "",
+      "ConsultationFee": 2222,
+      "ClinicalMedicinePayment": "1500",
+      "FileFee": "022",
+      "CardFee": "222",
+      "CardsPayment": "244",
+      "ConsultationPaymentOption": "Cash Paid",
+      "_id": "yhm4hj6w0"
+    }
+  ],
+  "visit_medicines": [
+    {
+      "VisitID": "VIS-1786546304881",
+      "ItemID": "CLIN-1",
+      "MedicineType": "C",
+      "MedicineDetail": "ASDADS",
+      "Dosage": "ASDAD",
+      "Qty": 1,
+      "ExpireDate": "2026-09-02",
+      "_id": "60716ad6c"
+    },
+    {
+      "VisitID": "VIS-1786546304881",
+      "ItemID": "PAT-1",
+      "MedicineType": "P",
+      "MedicineDetail": "ASDADS",
+      "Dosage": "ASDASDSD",
+      "Qty": 1,
+      "_id": "j2fasae3u"
+    }
+  ],
+  "lab_tests": [
+    {
+      "TID": "TST-001",
+      "TestName": "Complete Blood Count (CBC)",
+      "Cost": 650,
+      "_id": "p4g5lcge0"
+    },
+    {
+      "TID": "TST-002",
+      "TestName": "Blood Sugar Fasting / Random",
+      "Cost": 150,
+      "_id": "u8kka6fh8"
+    },
+    {
+      "TID": "TST-003",
+      "TestName": "Urine Routine Examination",
+      "Cost": 300,
+      "_id": "2x5oef7rn"
+    }
+  ],
+  "med_certs": [],
+  "sbp_certs": [],
+  "invoice_headers": [],
+  "invoice_details": [],
+  "sales_returns": [],
+  "grns": [],
+  "grn_details": [],
+  "accounts": [
+    {
+      "FLID": 1,
+      "SLID": 101,
+      "TLID": 101001,
+      "TLName": "Dr. Cash-in-Hand (Morning Shift)",
+      "AcBalance": 48966,
+      "_id": "n7r64edsh"
+    },
+    {
+      "FLID": 1,
+      "SLID": 101,
+      "TLID": 101002,
+      "TLName": "Dr. Cash-in-Hand (Evening Shift)",
+      "AcBalance": 125000,
+      "_id": "ir39gm7cy"
+    },
+    {
+      "FLID": 1,
+      "SLID": 101,
+      "TLID": 101003,
+      "TLName": "Appointment Cash Desk",
+      "AcBalance": 15000,
+      "_id": "kxvii2uas"
+    },
+    {
+      "FLID": 1,
+      "SLID": 101,
+      "TLID": 101004,
+      "TLName": "Bank Al-Falah (Current Account)",
+      "AcBalance": 450000,
+      "_id": "tzwhoeosw"
+    },
+    {
+      "FLID": 1,
+      "SLID": 102,
+      "TLID": 102001,
+      "TLName": "SBP Panel Employee Receivables",
+      "AcBalance": 68000,
+      "_id": "rnr1tlcyq"
+    },
+    {
+      "FLID": 1,
+      "SLID": 103,
+      "TLID": 103001,
+      "TLName": "Pharmacy Pharmacy Stock Ledger",
+      "AcBalance": 245000,
+      "_id": "abm6vdd69"
+    },
+    {
+      "FLID": 2,
+      "SLID": 201,
+      "TLID": 201001,
+      "TLName": "Payable to Standipharm Pakistan",
+      "AcBalance": -15000,
+      "_id": "d7xrno8sa"
+    },
+    {
+      "FLID": 2,
+      "SLID": 201,
+      "TLID": 201002,
+      "TLName": "Payable to Getz Pharma",
+      "AcBalance": -28000,
+      "_id": "tw5g6zle3"
+    },
+    {
+      "FLID": 3,
+      "SLID": 301,
+      "TLID": 301001,
+      "TLName": "Owner Capital Equity Account",
+      "AcBalance": -800000,
+      "_id": "0pwjkrgvu"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "TLID": 401001,
+      "TLName": "Appointment OPD Ticket Revenue",
+      "AcBalance": -35000,
+      "_id": "2g9k65kkw"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "TLID": 401002,
+      "TLName": "Lab & Diagnostics Revenue",
+      "AcBalance": -18000,
+      "_id": "jk6amxhln"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "TLID": 401101,
+      "TLName": "Morning Shift: Appointment Revenue",
+      "AcBalance": 2222,
+      "_id": "z23finf0e"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "TLID": 401102,
+      "TLName": "Morning Shift: Clinical Medicine Revenue",
+      "AcBalance": 1500,
+      "_id": "ujtm6c0ol"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "TLID": 401103,
+      "TLName": "Morning Shift: Patent Medicine Revenue",
+      "AcBalance": 0,
+      "_id": "wc1478urk"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "TLID": 401104,
+      "TLName": "Morning Shift: Store Medicine Revenue",
+      "AcBalance": 0,
+      "_id": "ktx3qdr3y"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "TLID": 401201,
+      "TLName": "Evening Shift: Appointment Revenue",
+      "AcBalance": 0,
+      "_id": "7yq8z6u9s"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "TLID": 401202,
+      "TLName": "Evening Shift: Clinical Medicine Revenue",
+      "AcBalance": 0,
+      "_id": "jg7gxytwx"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "TLID": 401203,
+      "TLName": "Evening Shift: Patent Medicine Revenue",
+      "AcBalance": 0,
+      "_id": "hmvue2prz"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "TLID": 401204,
+      "TLName": "Evening Shift: Store Medicine Revenue",
+      "AcBalance": 0,
+      "_id": "2v28trkr1"
+    },
+    {
+      "FLID": 4,
+      "SLID": 402,
+      "TLID": 402001,
+      "TLName": "Pharmacy Store Cash Sales",
+      "AcBalance": -185000,
+      "_id": "7xw1r9la6"
+    },
+    {
+      "FLID": 5,
+      "SLID": 501,
+      "TLID": 501001,
+      "TLName": "Pharmacy Cost of Goods Sold (COGS)",
+      "AcBalance": 110000,
+      "_id": "zier1twkv"
+    },
+    {
+      "FLID": 5,
+      "SLID": 501,
+      "TLID": 501002,
+      "TLName": "Pharmacy Customer Discounts Allowed",
+      "AcBalance": 7500,
+      "_id": "p23xqc9m2"
+    },
+    {
+      "FLID": 5,
+      "SLID": 501,
+      "TLID": 501003,
+      "TLName": "Pharmacy Sales Return Debit A/C",
+      "AcBalance": 4000,
+      "_id": "ygqws62r8"
+    },
+    {
+      "FLID": 5,
+      "SLID": 501,
+      "TLID": 501004,
+      "TLName": "Pharmacy Sales Return Disc Reversal",
+      "AcBalance": -500,
+      "_id": "eutklln2a"
+    },
+    {
+      "FLID": 5,
+      "SLID": 502,
+      "TLID": 502001,
+      "TLName": "Clinic Rent & Lease Expense",
+      "AcBalance": 30000,
+      "_id": "fdhyur8nm"
+    },
+    {
+      "FLID": 5,
+      "SLID": 502,
+      "TLID": 502002,
+      "TLName": "Electricity & Water Utility Bills",
+      "AcBalance": 12000,
+      "_id": "oiyldrjgx"
+    },
+    {
+      "FLID": 5,
+      "SLID": 502,
+      "TLID": 502003,
+      "TLName": "Doctor Consultation Sharing Pay",
+      "AcBalance": 15000,
+      "_id": "mdg1tcb3x"
+    }
+  ],
+  "vouchers": [
+    {
+      "VchNo": "CRV-OPD-WALK-0001",
+      "_id": "vhnpkn2l3"
+    },
+    {
+      "VchNo": "CRV-EMR-CLIN-0001",
+      "_id": "vwut3l1km"
+    },
+    {
+      "VchNo": "CRV-EMR-CARD-0001",
+      "_id": "isqi9f3kr"
+    }
+  ],
+  "voucher_details": [
+    {
+      "VchNo": "CRV-OPD-WALK-0001",
+      "TLID": 101001,
+      "Debit": 2222,
+      "Credit": 0,
+      "Description": "Walk-in Consultation Ticket cash collected",
+      "_id": "4fo469d69"
+    },
+    {
+      "VchNo": "CRV-OPD-WALK-0001",
+      "TLID": 401101,
+      "Debit": 0,
+      "Credit": 2222,
+      "Description": "Walk-in OPD Ticket Revenue posted",
+      "_id": "8dj8d42tc"
+    },
+    {
+      "VchNo": "CRV-EMR-CLIN-0001",
+      "TLID": 101001,
+      "Debit": 1500,
+      "Credit": 0,
+      "Description": "Clinical compounding medicine payment cash collected (Shift 1)",
+      "_id": "0wa9ctai4"
+    },
+    {
+      "VchNo": "CRV-EMR-CLIN-0001",
+      "TLID": 401102,
+      "Debit": 0,
+      "Credit": 1500,
+      "Description": "Clinical compounding medicine revenue mapped",
+      "_id": "5enxh597n"
+    },
+    {
+      "VchNo": "CRV-EMR-CARD-0001",
+      "TLID": 101001,
+      "Debit": 244,
+      "Credit": 0,
+      "Description": "File & Card fee cash collected (Shift 1)",
+      "_id": "zzg73vkfq"
+    },
+    {
+      "VchNo": "CRV-EMR-CARD-0001",
+      "TLID": 401105,
+      "Debit": 0,
+      "Credit": 244,
+      "Description": "File & Card fee revenue mapped (File PKR 22, Card PKR 222)",
+      "_id": "chbk34xtp"
+    }
+  ],
+  "config": [
+    {
+      "ConfigID": 0,
+      "ClinicCIH_": 101001,
+      "StoreCIH_": 101002,
+      "StoreSale_": 402001,
+      "StoreDisc_": 501002,
+      "StoreSR_": 501003,
+      "StoreSRdisc_": 501004,
+      "AppCIH_": 101003,
+      "AppSale_": 401001,
+      "_id": "0477ktp3f"
+    }
+  ],
+  "clinic": [
+    {
+      "ClinicName": "Punjab Homeopathic Clinic",
+      "ClinicLogoText": "PHC",
+      "DoctorName": "Dr. Ejaz Ahmad, D.H.M.S (Pak)",
+      "DoctorSignatureText": "Dr. Ejaz Ahmad, D.H.M.S (Pak) • Registered Homeopathic Medical Practitioner No: 48776",
+      "ClinicAddress": "10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan",
+      "PhoneMobile": "+92-300-4208323",
+      "RegistrationNo": "Registered Homeopathic Medical Practitioner No: 48776",
+      "OPDFee": 1500,
+      "_id": "jw0h14kb4"
+    }
+  ],
+  "sms": [
+    {
+      "Provider": "twilio",
+      "Enabled": false,
+      "ApiUrl": "https://api.twilio.com",
+      "ApiKey": "AC-DEMO-API-KEY-FOR-SMS",
+      "SenderID": "PK-CLINIC",
+      "BookingTemplate": "Dear {name}, your appointment is booked. Token: {token}.",
+      "RepeatTemplate": "Dear {name}, follow-up is scheduled.",
+      "_id": "alqaca8me"
+    }
+  ],
+  "ac_ledger": [
+    {
+      "ACLedgerID": "LG-CRV-OPD-WALK-0001-1",
+      "VchNo": "CRV-OPD-WALK-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 101001,
+      "Debit": 2222,
+      "Credit": 0,
+      "Remarks": "Walk-in Consultation Ticket cash collected",
+      "_id": "5mhdcslqo"
+    },
+    {
+      "ACLedgerID": "LG-CRV-OPD-WALK-0001-2",
+      "VchNo": "CRV-OPD-WALK-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 401101,
+      "Debit": 0,
+      "Credit": 2222,
+      "Remarks": "Walk-in OPD Ticket Revenue posted",
+      "_id": "7iojw8r89"
+    },
+    {
+      "ACLedgerID": "LG-CRV-EMR-CLIN-0001-1",
+      "VchNo": "CRV-EMR-CLIN-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 101001,
+      "Debit": 1500,
+      "Credit": 0,
+      "Remarks": "Clinical compounding medicine payment cash collected (Shift 1)",
+      "_id": "iscqx6pvn"
+    },
+    {
+      "ACLedgerID": "LG-CRV-EMR-CLIN-0001-2",
+      "VchNo": "CRV-EMR-CLIN-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 401102,
+      "Debit": 0,
+      "Credit": 1500,
+      "Remarks": "Clinical compounding medicine revenue mapped",
+      "_id": "7vmep88zy"
+    },
+    {
+      "ACLedgerID": "LG-CRV-EMR-CARD-0001-1",
+      "VchNo": "CRV-EMR-CARD-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 101001,
+      "Debit": 244,
+      "Credit": 0,
+      "Remarks": "File & Card fee cash collected (Shift 1)",
+      "_id": "59dowaegv"
+    },
+    {
+      "ACLedgerID": "LG-CRV-EMR-CARD-0001-2",
+      "VchNo": "CRV-EMR-CARD-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 401105,
+      "Debit": 0,
+      "Credit": 244,
+      "Remarks": "File & Card fee revenue mapped (File PKR 22, Card PKR 222)",
+      "_id": "pgp248ag2"
+    },
+    {
+      "ACLedgerID": "GL-POST-BHNH003LM",
+      "_id": "s66uy7pfg"
+    },
+    {
+      "ACLedgerID": "GL-POST-E8SL7ZX0C",
+      "_id": "82y5s47x6"
+    },
+    {
+      "ACLedgerID": "GL-POST-A2UXAP1T3",
+      "_id": "ica41hmfa"
+    },
+    {
+      "ACLedgerID": "GL-POST-5ZFT0Y3W0",
+      "_id": "um9chbret"
+    },
+    {
+      "ACLedgerID": "GL-POST-ABVGJAAGM",
+      "_id": "qpaq4wplt"
+    },
+    {
+      "ACLedgerID": "GL-POST-OISHRPOR4",
+      "_id": "48ng8av4c"
+    },
+    {
+      "ACLedgerID": "GL-POST-8G3ZYU0KV",
+      "_id": "qe8q7r9is"
+    },
+    {
+      "ACLedgerID": "GL-POST-EE50OL01M",
+      "_id": "fel2lxvnr"
+    },
+    {
+      "ACLedgerID": "GL-POST-ZW1157KEW",
+      "_id": "v5m1aums7"
+    },
+    {
+      "ACLedgerID": "GL-POST-47RSGW403",
+      "_id": "ti0hg9b0k"
+    },
+    {
+      "ACLedgerID": "GL-POST-DCN0JMEIA",
+      "_id": "kv3v17mfp"
+    },
+    {
+      "ACLedgerID": "GL-POST-EUI6BX8MW",
+      "_id": "b1ryg74mh"
+    }
+  ],
+  "nhc_patient_history": [
+    {
+      "PatientID": "NHC-1001",
+      "PatientName": "Kashif Jameel",
+      "AgeYears": 45,
+      "Sex": "Male",
+      "PhoneMobile": "0321-4455667",
+      "Father_husband": "Muhammad Jameel",
+      "RegistrationDate": "2025-05-12",
+      "VisitDate": "2026-03-10",
+      "Symptoms": "Mild headache, dry cough, low grade fever",
+      "Diagnosis": "Acute viral bronchopneumonia, tension headache",
+      "MedicineDetail": "Syp. Hydryllin DM 2 tsp tid x 5 days",
+      "Dosage": "2 tsp tid",
+      "MedicineType": "P",
+      "LabTests": "Chest X-Ray PA View, CBC",
+      "Address": "Model Town, Block D, Lahore",
+      "_id": "yjlh1gpaz"
+    },
+    {
+      "PatientID": "NHC-1001",
+      "PatientName": "Kashif Jameel",
+      "AgeYears": 45,
+      "Sex": "Male",
+      "PhoneMobile": "0321-4455667",
+      "Father_husband": "Muhammad Jameel",
+      "RegistrationDate": "2025-05-12",
+      "VisitDate": "2026-03-10",
+      "Symptoms": "Mild headache, dry cough, low grade fever",
+      "Diagnosis": "Acute viral bronchopneumonia, tension headache",
+      "MedicineDetail": "Tab. Panadol 500mg tid x 5 days",
+      "Dosage": "1 tab tid",
+      "MedicineType": "P",
+      "LabTests": "Chest X-Ray PA View, CBC",
+      "Address": "Model Town, Block D, Lahore",
+      "_id": "yfh5foqak"
+    },
+    {
+      "PatientID": "NHC-1002",
+      "PatientName": "Zoya Fatima",
+      "AgeYears": 23,
+      "Sex": "Female",
+      "PhoneMobile": "0300-8899001",
+      "Father_husband": "Syed Ali Naqvi",
+      "RegistrationDate": "2025-08-15",
+      "VisitDate": "2026-04-12",
+      "Symptoms": "Severe joint pain, lethargy, skin rash",
+      "Diagnosis": "Suspicion of Rheumatic / Connective tissue disorder",
+      "MedicineDetail": "Tab. Lofnac 50mg bid x 7 days",
+      "Dosage": "1 tab bid",
+      "MedicineType": "P",
+      "LabTests": "RA Factor, Anti-CCP, CBC",
+      "Address": "Gulberg III, Lahore",
+      "_id": "8hfwpy9xe"
+    },
+    {
+      "PatientID": "NHC-1003",
+      "PatientName": "Abid Hussain",
+      "AgeYears": 55,
+      "Sex": "Male",
+      "PhoneMobile": "0345-1122334",
+      "Father_husband": "Hussain Ahmad",
+      "RegistrationDate": "2025-02-20",
+      "VisitDate": "2026-05-02",
+      "Symptoms": "Polyuria, polydipsia, burning micturition",
+      "Diagnosis": "Type 2 Diabetes Mellitus, Mild UTI",
+      "MedicineDetail": "Tab. Panadol 500mg tid x 3 days",
+      "Dosage": "1 tab tid",
+      "MedicineType": "P",
+      "LabTests": "HbA1c, Urine RE & Culture, Blood Sugar Random",
+      "Address": "Allama Iqbal Town, Lahore",
+      "_id": "9jg7qn5jo"
+    }
+  ],
+  "financial_grid_reports": [],
+  "suppliers": [
+    {
+      "SID": "SUP-001",
+      "SupplierName": "Standipharm Pakistan Ltd",
+      "Phone": "042-35112233",
+      "Address": "Industrial Area, Kot Lakhpat, Lahore",
+      "_id": "adqr7vr57"
+    },
+    {
+      "SID": "SUP-002",
+      "SupplierName": "Getz Pharma Pakistan",
+      "Phone": "021-111111555",
+      "Address": "Korangi Industrial Area, Karachi",
+      "_id": "4xnhkt6oy"
+    },
+    {
+      "SID": "SUP-003",
+      "SupplierName": "GSK Pakistan",
+      "Phone": "021-32315431",
+      "Address": "Dockyard Road, West Wharf, Karachi",
+      "_id": "z6kuphp5p"
+    },
+    {
+      "SID": "SUP-004",
+      "SupplierName": "Searle Company Limited",
+      "Phone": "042-35789123",
+      "Address": "Gulberg III, Lahore",
+      "_id": "hliore9cy"
+    }
+  ],
+  "smart_locator_medicines": [
+    {
+      "Symptoms": "fever, headache, body ache, high temperature, pain",
+      "MedicineName": "Paracetamol",
+      "Dosage": "1-0-1",
+      "Composition": "Paracetamol 500mg",
+      "_id": "axcklx7k8"
+    },
+    {
+      "Symptoms": "throat infection, cough, dry cough, sore throat, bronchitis",
+      "MedicineName": "Acefyl Cough Syrup",
+      "Dosage": "1-1-1",
+      "Composition": "Acefylline Piperazine",
+      "_id": "gn1gq8dcb"
+    },
+    {
+      "Symptoms": "heartburn, acidity, GERD, gastric, stomach pain, reflux",
+      "MedicineName": "Omeprazole",
+      "Dosage": "1-0-0",
+      "Composition": "Omeprazole 20mg",
+      "_id": "acqzjq8xz"
+    },
+    {
+      "Symptoms": "allergic rhinitis, sneezing, runny nose, allergy, itching",
+      "MedicineName": "Loratadine",
+      "Dosage": "0-0-1",
+      "Composition": "Loratadine 10mg",
+      "_id": "fy0p4dwb1"
+    },
+    {
+      "Symptoms": "bacterial infection, fever, throat infection, tonsillitis",
+      "MedicineName": "Co-Amoxiclav",
+      "Dosage": "1-0-1",
+      "Composition": "Amoxicillin + Clavulanic Acid",
+      "_id": "k6jv5xcjm"
+    },
+    {
+      "Symptoms": "diarrhea, loose motions, dehydration, stomach bug",
+      "MedicineName": "Flagyl",
+      "Dosage": "1-1-1",
+      "Composition": "Metronidazole 400mg",
+      "_id": "zzrpnx01z"
+    },
+    {
+      "Symptoms": "vomiting, nausea, motion sickness, stomach upset",
+      "MedicineName": "Gravinate",
+      "Dosage": "1-0-1",
+      "Composition": "Dimenhydrinate 50mg",
+      "_id": "k7atwzehg"
+    },
+    {
+      "Symptoms": "muscle spasm, pain, backache, neck pain, stiffness",
+      "MedicineName": "Nuberol Forte",
+      "Dosage": "1-0-1",
+      "Composition": "Paracetamol + Orphenadrine",
+      "_id": "iu9vn7rpn"
+    }
+  ],
+  "medicine_barcode_mappings": [],
+  "erp_vendors": [
+    {
+      "VendorID": "VND-001",
+      "VendorName": "High-Tech Pharma Distributors Ltd",
+      "ContactPerson": "Mr. Tariq Mahmood",
+      "Phone": "0300-1112223",
+      "Email": "sales@hitechpharma.pk",
+      "Address": "Brandreth Road, Lahore",
+      "TaxID": "NTN-8912301",
+      "Balance": 45000,
+      "Status": "Active",
+      "_id": "vwrmd8by5"
+    },
+    {
+      "VendorID": "VND-002",
+      "VendorName": "MedCare Global Supplies",
+      "ContactPerson": "Sheikh Usman Ali",
+      "Phone": "0312-4445556",
+      "Email": "info@medcare.pk",
+      "Address": "Nishtar Road, Multan",
+      "TaxID": "NTN-7612344",
+      "Balance": 18500,
+      "Status": "Active",
+      "_id": "dvfs8x7p9"
+    },
+    {
+      "VendorID": "VND-003",
+      "VendorName": "Homeo Care Labs Pakistan",
+      "ContactPerson": "Dr. Salman Akram",
+      "Phone": "0333-7778889",
+      "Email": "orders@homeocare.pk",
+      "Address": "Circular Road, Rawalpindi",
+      "TaxID": "NTN-5544332",
+      "Balance": 0,
+      "Status": "Active",
+      "_id": "pgxjqw6og"
+    }
+  ],
+  "erp_purchase_orders": [
+    {
+      "POID": "PO-1001",
+      "VendorID": "VND-001",
+      "VendorName": "High-Tech Pharma Distributors Ltd",
+      "OrderDate": "2026-07-28",
+      "ExpectedDeliveryDate": "2026-08-05",
+      "TotalAmount": 85000,
+      "PaidAmount": 40000,
+      "Status": "Sent",
+      "Notes": "Urgent stock for dispensary antibiotics",
+      "Items": [
+        {
+          "ItemID": "ITM-001",
+          "ItemName": "Panadol Extra 500mg",
+          "Qty": 200,
+          "UnitPrice": 120,
+          "LineTotal": 24000
+        },
+        {
+          "ItemID": "ITM-002",
+          "ItemName": "Augmentin 625mg",
+          "Qty": 100,
+          "UnitPrice": 610,
+          "LineTotal": 61000
+        }
+      ],
+      "_id": "539397cbm"
+    },
+    {
+      "POID": "PO-1002",
+      "VendorID": "VND-002",
+      "VendorName": "MedCare Global Supplies",
+      "OrderDate": "2026-07-30",
+      "ExpectedDeliveryDate": "2026-08-02",
+      "TotalAmount": 32000,
+      "PaidAmount": 32000,
+      "Status": "Received",
+      "Notes": "Syrup stock replenishment",
+      "Items": [
+        {
+          "ItemID": "ITM-003",
+          "ItemName": "Syp Brufen 120ml",
+          "Qty": 150,
+          "UnitPrice": 140,
+          "LineTotal": 21000
+        },
+        {
+          "ItemID": "ITM-004",
+          "ItemName": "Flygyl 400mg Tab",
+          "Qty": 110,
+          "UnitPrice": 100,
+          "LineTotal": 11000
+        }
+      ],
+      "_id": "pv902c92f"
+    }
+  ],
+  "erp_transactions": [
+    {
+      "TransactionID": "TXN-8001",
+      "Type": "Income",
+      "Category": "Patient Consultation & Medicine Sales",
+      "Description": "Daily Dispensary POS Cash Inflow",
+      "Amount": 145000,
+      "PaymentMethod": "Cash",
+      "ReferenceNo": "POS-BATCH-20260801",
+      "Date": "2026-08-01",
+      "CreatedBy": "Admin",
+      "_id": "01026gzge"
+    },
+    {
+      "TransactionID": "TXN-8002",
+      "Type": "Expense",
+      "Category": "Pharmacy Electricity Utility Bill",
+      "Description": "LESCO Electricity Bill for July 2026",
+      "Amount": 38500,
+      "PaymentMethod": "Bank",
+      "ReferenceNo": "LESCO-99214",
+      "Date": "2026-08-01",
+      "CreatedBy": "Accountant",
+      "_id": "vgut0b762"
+    },
+    {
+      "TransactionID": "TXN-8003",
+      "Type": "VendorPayment",
+      "Category": "Vendor Balance Settlement",
+      "Description": "Partial payment to High-Tech Pharma",
+      "Amount": 40000,
+      "PaymentMethod": "Bank",
+      "ReferenceNo": "CHQ-448102",
+      "Date": "2026-07-29",
+      "CreatedBy": "Accountant",
+      "_id": "6m11pzw1b"
+    },
+    {
+      "TransactionID": "TXN-8004",
+      "Type": "PayrollPayment",
+      "Category": "Monthly Staff Salary Disbursement",
+      "Description": "Staff Payroll Disbursement for July 2026",
+      "Amount": 180000,
+      "PaymentMethod": "Bank",
+      "ReferenceNo": "PAY-JUL26",
+      "Date": "2026-08-01",
+      "CreatedBy": "Admin",
+      "_id": "wuigj5tpr"
+    }
+  ],
+  "erp_employees": [
+    {
+      "EmployeeID": "EMP-101",
+      "FullName": "Dr. Zaigham Ali Anjum",
+      "Role": "Chief Consultant Doctor",
+      "Department": "Medical & EMR",
+      "Phone": "0300-8889991",
+      "Email": "doctor@clinic.pk",
+      "JoiningDate": "2020-01-15",
+      "Salary": 250000,
+      "Status": "Active",
+      "CNIC": "35202-1234567-1",
+      "BankAccount": "PK36MEZN000102030405",
+      "_id": "ylklxcw9z"
+    },
+    {
+      "EmployeeID": "EMP-102",
+      "FullName": "M. Kashif Qadri",
+      "Role": "Chief Pharmacist",
+      "Department": "Pharmacy & Store",
+      "Phone": "0321-7776665",
+      "Email": "kashif@pharmacy.pk",
+      "JoiningDate": "2021-03-01",
+      "Salary": 85000,
+      "Status": "Active",
+      "CNIC": "35201-9876543-3",
+      "BankAccount": "PK12HABB000987654321",
+      "_id": "tmtbjx1ny"
+    },
+    {
+      "EmployeeID": "EMP-103",
+      "FullName": "Ayesha Bibi",
+      "Role": "Senior Receptionist",
+      "Department": "Administration",
+      "Phone": "0311-2223334",
+      "Email": "ayesha@clinic.pk",
+      "JoiningDate": "2022-06-10",
+      "Salary": 45000,
+      "Status": "Active",
+      "CNIC": "35202-5554443-2",
+      "BankAccount": "PK90MCBB000112233445",
+      "_id": "9z60ojeuj"
+    },
+    {
+      "EmployeeID": "EMP-104",
+      "FullName": "Muhammad Rizwan",
+      "Role": "Inventory & Store Officer",
+      "Department": "Logistics",
+      "Phone": "0345-3332211",
+      "Email": "rizwan@store.pk",
+      "JoiningDate": "2023-09-01",
+      "Salary": 50000,
+      "Status": "Active",
+      "CNIC": "35203-1122334-5",
+      "BankAccount": "PK45UBL000223344556",
+      "_id": "qwigc3g07"
+    }
+  ],
+  "erp_payroll": [
+    {
+      "PayrollID": "PAY-2026-07-101",
+      "EmployeeID": "EMP-101",
+      "EmployeeName": "Dr. Zaigham Ali Anjum",
+      "MonthYear": "2026-07",
+      "BasicSalary": 250000,
+      "Allowances": 15000,
+      "Deductions": 5000,
+      "NetSalary": 260000,
+      "PaymentStatus": "Paid",
+      "PaymentDate": "2026-08-01",
+      "PaymentMethod": "Bank",
+      "_id": "ww05wm01p"
+    },
+    {
+      "PayrollID": "PAY-2026-07-102",
+      "EmployeeID": "EMP-102",
+      "EmployeeName": "M. Kashif Qadri",
+      "MonthYear": "2026-07",
+      "BasicSalary": 85000,
+      "Allowances": 5000,
+      "Deductions": 2000,
+      "NetSalary": 88000,
+      "PaymentStatus": "Paid",
+      "PaymentDate": "2026-08-01",
+      "PaymentMethod": "Bank",
+      "_id": "1veczo1o8"
+    },
+    {
+      "PayrollID": "PAY-2026-07-103",
+      "EmployeeID": "EMP-103",
+      "EmployeeName": "Ayesha Bibi",
+      "MonthYear": "2026-07",
+      "BasicSalary": 45000,
+      "Allowances": 2000,
+      "Deductions": 1000,
+      "NetSalary": 46000,
+      "PaymentStatus": "Paid",
+      "PaymentDate": "2026-08-01",
+      "PaymentMethod": "Cash",
+      "_id": "g48jv7o8g"
+    }
+  ],
+  "erp_expenses": [
+    {
+      "ExpenseID": "EXP-501",
+      "Category": "Utilities",
+      "Description": "LESCO Electricity Monthly Bill",
+      "Amount": 38500,
+      "ExpenseDate": "2026-08-01",
+      "PaymentMethod": "Bank",
+      "ReceiptRef": "LESCO-99214",
+      "_id": "1yphg0poo"
+    },
+    {
+      "ExpenseID": "EXP-502",
+      "Category": "Rent",
+      "Description": "Clinic & Pharmacy Premises Monthly Rent",
+      "Amount": 120000,
+      "ExpenseDate": "2026-08-01",
+      "PaymentMethod": "Bank",
+      "ReceiptRef": "RENT-AUG26",
+      "_id": "zerh278nt"
+    },
+    {
+      "ExpenseID": "EXP-503",
+      "Category": "Refreshment",
+      "Description": "Tea, Coffee & Water Refreshments for Patients and Staff",
+      "Amount": 6500,
+      "ExpenseDate": "2026-07-31",
+      "PaymentMethod": "Cash",
+      "ReceiptRef": "CASH-PETTY-09",
+      "_id": "4fg5upwl0"
+    },
+    {
+      "ExpenseID": "EXP-504",
+      "Category": "Maintenance",
+      "Description": "Air Conditioner Service & Refrigeration Gas Refill",
+      "Amount": 14500,
+      "ExpenseDate": "2026-07-25",
+      "PaymentMethod": "Cash",
+      "ReceiptRef": "INV-AC-88",
+      "_id": "w5bba1wde"
+    }
+  ],
+  "erp_assets": [
+    {
+      "AssetID": "AST-101",
+      "AssetName": "Haier Medical Refrigerator (Insulin & Cold Storage)",
+      "Category": "Equipment",
+      "PurchaseDate": "2023-05-10",
+      "PurchaseCost": 185000,
+      "CurrentValue": 150000,
+      "DepreciationRate": 10,
+      "Status": "Active",
+      "_id": "9g5jk21f2"
+    },
+    {
+      "AssetID": "AST-102",
+      "AssetName": "Thermal Receipt Printer & Barcode Scanner System",
+      "Category": "IT Hardware",
+      "PurchaseDate": "2024-01-20",
+      "PurchaseCost": 65000,
+      "CurrentValue": 52000,
+      "DepreciationRate": 15,
+      "Status": "Active",
+      "_id": "hm11y6ebl"
+    },
+    {
+      "AssetID": "AST-103",
+      "AssetName": "Doctor Consultation Desk & Ergonomic Executive Chairs",
+      "Category": "Furniture",
+      "PurchaseDate": "2022-11-15",
+      "PurchaseCost": 120000,
+      "CurrentValue": 90000,
+      "DepreciationRate": 10,
+      "Status": "Active",
+      "_id": "71asgqeh3"
+    }
+  ],
+  "erp_grn": [],
+  "fl_accounts": [
+    {
+      "FLID": 1,
+      "FLName": "Assets",
+      "_id": "xny6800mp"
+    },
+    {
+      "FLID": 2,
+      "FLName": "Liabilities",
+      "_id": "yv9u5bu5n"
+    },
+    {
+      "FLID": 3,
+      "FLName": "Equity",
+      "_id": "sqdj553b2"
+    },
+    {
+      "FLID": 4,
+      "FLName": "Revenue",
+      "_id": "kmkrksp7r"
+    },
+    {
+      "FLID": 5,
+      "FLName": "Expenses",
+      "_id": "hs0ey580i"
+    }
+  ],
+  "sl_accounts": [
+    {
+      "FLID": 1,
+      "SLID": 101,
+      "SLName": "Cash & Bank Balances",
+      "_id": "cy4loutor"
+    },
+    {
+      "FLID": 1,
+      "SLID": 102,
+      "SLName": "Receivables & Advances",
+      "_id": "efv7k37h5"
+    },
+    {
+      "FLID": 1,
+      "SLID": 103,
+      "SLName": "Inventory Accounts",
+      "_id": "fq4ds6qou"
+    },
+    {
+      "FLID": 2,
+      "SLID": 201,
+      "SLName": "Accounts Payable",
+      "_id": "9j5v2hq1c"
+    },
+    {
+      "FLID": 2,
+      "SLID": 202,
+      "SLName": "Accrued Liabilities",
+      "_id": "4fvrjm5i1"
+    },
+    {
+      "FLID": 3,
+      "SLID": 301,
+      "SLName": "Capital Accounts",
+      "_id": "tms7uye2t"
+    },
+    {
+      "FLID": 4,
+      "SLID": 401,
+      "SLName": "Clinical Services Income",
+      "_id": "nfjdia7kt"
+    },
+    {
+      "FLID": 4,
+      "SLID": 402,
+      "SLName": "Pharmacy Sales Income",
+      "_id": "nn972qp3n"
+    },
+    {
+      "FLID": 5,
+      "SLID": 501,
+      "SLName": "Pharmacy Costs & Discounts",
+      "_id": "o58wqdjh5"
+    },
+    {
+      "FLID": 5,
+      "SLID": 502,
+      "SLName": "Operating & Admin Expenses",
+      "_id": "fp8ux5c4u"
+    }
+  ]
+}
