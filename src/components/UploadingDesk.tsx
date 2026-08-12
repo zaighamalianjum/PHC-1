@@ -359,7 +359,7 @@ export default function UploadingDesk({
         const price = parseFloat(cols[2]?.trim() || '0') || 10;
         const purchasePrice = parseFloat(cols[3]?.trim() || '0') || (price > 0 ? price * 0.8 : 8);
         const cStock = parseInt(cols[4]?.trim() || '0', 10) || 0;
-        const minStock = parseInt(cols[5]?.trim() || '0', 10) || 10;
+        const minStock = parseInt(cols[5]?.trim() || '0', 10) || 1;
         const rawUnit = cols[6]?.trim() || '';
         const unit = normalizeCategory(rawUnit, name);
         const rawType = cols[7]?.trim().toUpperCase() || 'P';

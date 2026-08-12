@@ -389,7 +389,7 @@ export default function PharmacyPOS({
     setItemFormRetailPrice('');
     setItemFormPurchasePrice('');
     setItemFormCStock('');
-    setItemFormMinStock('');
+    setItemFormMinStock(1);
     setItemFormReorderQty('');
     setItemFormUnit('Tab');
     setItemFormMedicineType('P');
@@ -409,7 +409,7 @@ export default function PharmacyPOS({
     setItemFormRetailPrice('');
     setItemFormPurchasePrice('');
     setItemFormCStock('');
-    setItemFormMinStock('');
+    setItemFormMinStock(1);
     setItemFormReorderQty('');
     setItemFormUnit('Tab');
     setItemFormMedicineType('P');
@@ -429,7 +429,7 @@ export default function PharmacyPOS({
     setItemFormRetailPrice(itm.Price);
     setItemFormPurchasePrice(itm.PurchasePrice);
     setItemFormCStock(itm.CStock);
-    setItemFormMinStock(itm.MinStock);
+    setItemFormMinStock((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1);
     setItemFormReorderQty(itm.ReorderQty !== undefined ? itm.ReorderQty : '');
     setItemFormUnit(itm.Unit || 'Tab');
     setItemFormMedicineType(itm.MedicineType || 'P');
@@ -468,7 +468,7 @@ export default function PharmacyPOS({
     const rPrice = itemFormRetailPrice === '' ? 0 : Number(itemFormRetailPrice);
     const pPrice = itemFormPurchasePrice === '' ? 0 : Number(itemFormPurchasePrice);
     const stock = (editingItem && !canEditStock) ? editingItem.CStock : (itemFormCStock === '' ? 0 : Number(itemFormCStock));
-    const minS = itemFormMinStock === '' ? 0 : Number(itemFormMinStock);
+    const minS = itemFormMinStock === '' ? 1 : Number(itemFormMinStock);
     const reorderQ = itemFormReorderQty === '' ? undefined : Number(itemFormReorderQty);
     const vendorBarcodeVal = itemFormVendorBarcode.trim() || undefined;
     const batchNoVal = itemFormBatchNo.trim() || undefined;
@@ -639,7 +639,7 @@ export default function PharmacyPOS({
       return acc + rq;
     }, 0);
 
-    const lowStockCount = catItems.filter((itm) => itm.CStock <= (itm.MinStock || 10)).length;
+    const lowStockCount = catItems.filter((itm) => itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)).length;
 
     return { catItemsCount: catItems.length, totalReqQty, lowStockCount };
   }, [items]);
@@ -744,7 +744,7 @@ export default function PharmacyPOS({
     const qtyMap: Record<string, number> = { ...customOrderQtyMap };
 
     items.forEach(itm => {
-      const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 10;
+      const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1;
       if (itm.CStock <= minStock) {
         lowStockSet.add(itm.ItemID);
       }
@@ -778,7 +778,7 @@ export default function PharmacyPOS({
   const handleSelectAllLowStock = () => {
     const lowStockSet = new Set<string>();
     items.forEach(itm => {
-      const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 10;
+      const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1;
       if (itm.CStock <= minStock) {
         lowStockSet.add(itm.ItemID);
       }
@@ -824,7 +824,7 @@ export default function PharmacyPOS({
   const getFilteredPoItems = useCallback((itemsList: Item[], catFilter: string, lowStockOnly: boolean) => {
     return itemsList.filter((itm) => {
       // 1. Stock threshold check
-      const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 10;
+      const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1;
       if (lowStockOnly && itm.CStock > minStock) {
         return false;
       }
@@ -4546,7 +4546,7 @@ export default function PharmacyPOS({
                     <span className={`ml-1.5 px-1.5 py-0.2 text-[10px] font-black rounded-full ${
                       invLowStockFilter ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'
                     }`}>
-                      {items.filter(itm => itm.CStock <= (itm.MinStock || 10)).length}
+                      {items.filter(itm => itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)).length}
                     </span>
                   </button>
                 </div>
@@ -4572,7 +4572,7 @@ export default function PharmacyPOS({
                 <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Filtered Items</span>
                 <span className="text-sm font-black text-slate-900 font-mono block mt-0.5">
                   {items.filter((itm) => {
-                    if (invLowStockFilter && itm.CStock > (itm.MinStock || 10)) return false;
+                    if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
                     if (invCategoryFilter !== 'ALL') {
                       if (invCategoryFilter === 'C') {
                         if (itm.MedicineType !== 'C') return false;
@@ -4622,7 +4622,7 @@ export default function PharmacyPOS({
                 <span className={`text-sm font-black font-mono block mt-0.5 ${
                   invLowStockFilter ? 'text-white' : 'text-rose-700'
                 }`}>
-                  {items.filter(itm => itm.CStock <= (itm.MinStock || 10)).length} Items
+                  {items.filter(itm => itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)).length} Items
                 </span>
               </button>
 
@@ -4678,7 +4678,7 @@ export default function PharmacyPOS({
                 </thead>
                 <tbody className="divide-y divide-slate-150 bg-white text-slate-800">
                   {items.filter((itm) => {
-                    if (invLowStockFilter && itm.CStock > (itm.MinStock || 10)) return false;
+                    if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
                     if (invCategoryFilter !== 'ALL') {
                       if (invCategoryFilter === 'C') {
                         if (itm.MedicineType !== 'C') return false;
@@ -4709,7 +4709,7 @@ export default function PharmacyPOS({
                     </tr>
                   ) : (
                     items.filter((itm) => {
-                      if (invLowStockFilter && itm.CStock > (itm.MinStock || 10)) return false;
+                      if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
                       if (invCategoryFilter !== 'ALL') {
                         if (invCategoryFilter === 'C') {
                           if (itm.MedicineType !== 'C') return false;
@@ -4731,7 +4731,7 @@ export default function PharmacyPOS({
                       }
                       return true;
                     }).map((itm, idx) => {
-                      const isLowStock = itm.CStock <= (itm.MinStock || 10);
+                      const isLowStock = itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1);
                       const isClinical = itm.MedicineType === 'C';
                       const reorderQty = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
                         ? itm.ReorderQty
@@ -4807,13 +4807,13 @@ export default function PharmacyPOS({
                               </span>
                               {isLowStock && (
                                 <span className="text-[9px] font-extrabold text-rose-600 mt-0.5">
-                                  Below Reorder Level ({itm.MinStock || 10})
+                                  Below Reorder Level ({(itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1})
                                 </span>
                               )}
                             </div>
                           </td>
                           <td className="px-3 py-2.5 text-right font-mono text-slate-600 font-semibold">
-                            {itm.MinStock || 10} {itm.Unit || 'Tab'}s
+                            {(itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1} {itm.Unit || 'Tab'}s
                           </td>
                           <td className="px-3 py-2 text-right font-mono text-indigo-700 font-bold bg-indigo-50/20">
                             <div className="flex items-center justify-end space-x-1">
@@ -6196,7 +6196,7 @@ export default function PharmacyPOS({
       {isPOGridModalOpen && (() => {
         // Calculations for PO Builder Tab
         const filteredGridItems = items.filter(itm => {
-          const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 10;
+          const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1;
           if (poStockFilterScope === 'THRESHOLD' && itm.CStock > minStock) return false;
           if (poStockFilterScope === 'OUT_OF_STOCK' && itm.CStock > 0) return false;
           if (poStockFilterScope === 'SELECTED_ONLY' && !selectedPoItemIds.has(itm.ItemID)) return false;
@@ -6223,7 +6223,7 @@ export default function PharmacyPOS({
         });
 
         // Summary calculations for PO Builder
-        const lowStockCount = items.filter(i => i.CStock <= ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 10)).length;
+        const lowStockCount = items.filter(i => i.CStock <= ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1)).length;
         const selectedItemsList = items.filter(itm => selectedPoItemIds.has(itm.ItemID));
         const totalSelectedUnits = selectedItemsList.reduce((acc, itm) => {
           const qty = customOrderQtyMap[itm.ItemID] !== undefined
@@ -6515,7 +6515,7 @@ export default function PharmacyPOS({
                           ) : (
                             filteredGridItems.map((itm, idx) => {
                               const isChecked = selectedPoItemIds.has(itm.ItemID);
-                              const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 10;
+                              const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1;
                               const isLowStock = itm.CStock <= minStock;
                               const deficit = Math.max(0, minStock - itm.CStock);
                               

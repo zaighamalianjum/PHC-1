@@ -1489,7 +1489,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   };
 
   const handleSelectAllLowStockMedicines = () => {
-    const lowStockItems = inventoryItems.filter(med => (med.CStock ?? 0) <= (med.MinStock ?? 100));
+    const lowStockItems = inventoryItems.filter(med => (med.CStock ?? 0) <= ((med.MinStock !== undefined && med.MinStock !== null) ? med.MinStock : 1));
     if (lowStockItems.length === 0) {
       alert('All medicine stock levels are currently adequate!');
       return;
@@ -5136,7 +5136,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 <h3 className="text-xs font-extrabold text-amber-900 uppercase tracking-wider">Inventory Stock Requisition Status</h3>
                 <p className="text-xs text-amber-800 mt-0.5">
                   <span className="font-extrabold text-amber-900">
-                    {inventoryItems.filter(med => (med.CStock ?? 0) <= (med.MinStock ?? 100)).length} Medicines
+                    {inventoryItems.filter(med => (med.CStock ?? 0) <= ((med.MinStock !== undefined && med.MinStock !== null) ? med.MinStock : 1)).length} Medicines
                   </span> currently below minimum stock level and require purchase order replenishment.
                 </p>
               </div>
@@ -6065,7 +6065,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                         medicineFilterMode === 'lowStock' ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 border'
                       }`}
                     >
-                      Low Stock ({inventoryItems.filter(i => (i.CStock ?? 0) <= (i.MinStock ?? 100)).length})
+                      Low Stock ({inventoryItems.filter(i => (i.CStock ?? 0) <= ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1)).length})
                     </button>
                     <button
                       type="button"
@@ -6089,7 +6089,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                           med.ItemID?.toLowerCase().includes(medicineSearchTerm.toLowerCase()) ||
                                           medCat.toLowerCase().includes(medicineSearchTerm.toLowerCase());
                       const cStock = med.CStock ?? med.Stock ?? 0;
-                      const minStock = med.MinStock ?? 100;
+                      const minStock = (med.MinStock !== undefined && med.MinStock !== null) ? med.MinStock : 1;
                       if (!matchSearch || !matchCategory) return false;
                       if (medicineFilterMode === 'lowStock') return cStock <= minStock;
                       if (medicineFilterMode === 'selected') return isMedicineSelectedInPo(med.ItemID, med.ItemName);
@@ -6097,7 +6097,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                     })
                     .map((med, idx) => {
                       const cStock = med.CStock ?? med.Stock ?? 0;
-                      const minStock = med.MinStock ?? 100;
+                      const minStock = (med.MinStock !== undefined && med.MinStock !== null) ? med.MinStock : 1;
                       const isLow = cStock <= minStock;
                       const reqQty = getRequiredQty(med);
                       const isSelected = isMedicineSelectedInPo(med.ItemID, med.ItemName);

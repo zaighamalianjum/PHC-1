@@ -297,7 +297,7 @@ export default function ReportingDesk({
     return inventoryItems
       .filter(item => {
         const cStock = Number(item.CStock) || 0;
-        const minStock = Number(item.MinStock) || 10;
+        const minStock = (item.MinStock !== undefined && item.MinStock !== null) ? Number(item.MinStock) : 1;
         return cStock <= minStock;
       })
       .filter(item => {
@@ -319,7 +319,7 @@ export default function ReportingDesk({
     return inventoryItems
       .map(item => {
         const cStock = Number(item.CStock) || 0;
-        const minStock = Number(item.MinStock) || 10;
+        const minStock = (item.MinStock !== undefined && item.MinStock !== null) ? Number(item.MinStock) : 1;
         const reorderTarget = Number(item.ReorderQty) || (minStock * 2);
         const requiredQty = Math.max(0, reorderTarget - cStock);
         const unitCost = Number(item.PurchasePrice) || Number(item.Price) || 0;
@@ -707,8 +707,8 @@ export default function ReportingDesk({
         i.ItemName || i.name,
         i.Category || i.category || 'General',
         i.CStock || 0,
-        i.MinStock || 10,
-        Math.max(0, (i.MinStock || 10) - (i.CStock || 0))
+        (i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1,
+        Math.max(0, ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1) - (i.CStock || 0))
       ]);
     } else if (activeReport === 'required_stock') {
       headers = ['Item ID', 'Medicine Name', 'Category', 'Current Stock', 'Min Stock', 'Target Reorder Qty', 'Required Qty to Order', 'Unit Cost (Rs.)', 'Est Total Cost (Rs.)'];
@@ -1032,7 +1032,7 @@ export default function ReportingDesk({
           <tbody>
             ${minimumStockData.map(i => {
               const cStock = Number(i.CStock) || 0;
-              const minStock = Number(i.MinStock) || 10;
+              const minStock = (i.MinStock !== undefined && i.MinStock !== null) ? Number(i.MinStock) : 1;
               const deficit = Math.max(0, minStock - cStock);
               const isOut = cStock === 0;
               return `
@@ -2285,7 +2285,7 @@ export default function ReportingDesk({
                 ) : (
                   minimumStockData.map((i, idx) => {
                     const cStock = Number(i.CStock) || 0;
-                    const minStock = Number(i.MinStock) || 10;
+                    const minStock = (i.MinStock !== undefined && i.MinStock !== null) ? Number(i.MinStock) : 1;
                     const deficit = Math.max(0, minStock - cStock);
                     const isOut = cStock === 0;
                     return (

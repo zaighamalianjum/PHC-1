@@ -274,7 +274,7 @@ export default function Dashboard({
   const totalCashAndBank = clinicCash + storeCash + appCash + bankBal;
 
   // Inventory & Vouchers
-  const lowStockItems = items.filter((item) => item.CStock <= item.MinStock);
+  const lowStockItems = items.filter((item) => item.CStock <= ((item.MinStock !== undefined && item.MinStock !== null) ? item.MinStock : 1));
   const postedVchCount = vouchers.filter((v) => v.Status === 2).length;
 
   // Ratios for visual progress bars
@@ -1043,7 +1043,7 @@ export default function Dashboard({
                     <span className="text-xs font-bold font-mono text-red-600 bg-red-50 px-2 py-0.5 rounded">
                       {item.CStock} {item.Unit}s left
                     </span>
-                    <p className="text-xxs text-slate-400 font-semibold mt-1">Min. Threshold: {item.MinStock}</p>
+                    <p className="text-xxs text-slate-400 font-semibold mt-1">Min. Threshold: {(item.MinStock !== undefined && item.MinStock !== null) ? item.MinStock : 1}</p>
                   </div>
                 </div>
               ))
