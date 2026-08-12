@@ -6,24 +6,35 @@ import { Patient } from '../types';
  * @param date Registration date (defaults to current date)
  */
 export const generatePatientId = (existingPatients: Patient[] = [], date: Date = new Date()): string => {
-  const yyyy = date.getFullYear();
-  const mm = String(date.getMonth() + 1).padStart(2, '0');
-  const dd = String(date.getDate()).padStart(2, '0');
-  const datePrefix = `${yyyy}${mm}${dd}`;
+  const prefix = 'PUN-';
 
-  // Count existing patient IDs starting with datePrefix-
-  const matchingToday = (existingPatients || []).filter(p => {
-    if (!p || !p.PatientID) return false;
-    return p.PatientID.startsWith(`${datePrefix}-`);
+  // Find all existing sequence numbers from patient IDs in PUN-XXXXXX format or numbers
+  let maxSeq = 0;
+
+  (existingPatients || []).forEach(p => {
+    if (!p || !p.PatientID) return;
+    const pid = String(p.PatientID).trim();
+    if (pid.toUpperCase().startsWith(prefix)) {
+      const numStr = pid.substring(prefix.length);
+      const num = parseInt(numStr, 10);
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
+    } else {
+      const num = parseInt(pid, 10);
+      if (!isNaN(num) && num > maxSeq) {
+        maxSeq = num;
+      }
+    }
   });
 
-  let seqNum = matchingToday.length + 1;
-  let candidateId = `${datePrefix}-${String(seqNum).padStart(3, '0')}`;
+  let nextSeq = maxSeq + 1;
+  let candidateId = `${prefix}${String(nextSeq).padStart(6, '0')}`;
 
   // Safety check to ensure complete uniqueness
-  while ((existingPatients || []).some(p => p && p.PatientID === candidateId)) {
-    seqNum++;
-    candidateId = `${datePrefix}-${String(seqNum).padStart(3, '0')}`;
+  while ((existingPatients || []).some(p => p && String(p.PatientID).trim().toLowerCase() === candidateId.toLowerCase())) {
+    nextSeq++;
+    candidateId = `${prefix}${String(nextSeq).padStart(6, '0')}`;
   }
 
   return candidateId;

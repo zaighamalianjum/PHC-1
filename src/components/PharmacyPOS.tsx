@@ -593,9 +593,9 @@ export default function PharmacyPOS({
     });
 
     const totalReqQty = catItems.reduce((acc, itm) => {
-      const rq = (itm.ReorderQty !== undefined && itm.ReorderQty > 0)
+      const rq = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
         ? itm.ReorderQty
-        : Math.max((itm.MinStock || 10) * 2 - itm.CStock, 10);
+        : 0;
       return acc + rq;
     }, 0);
 
@@ -709,9 +709,9 @@ export default function PharmacyPOS({
         lowStockSet.add(itm.ItemID);
       }
       if (!qtyMap[itm.ItemID]) {
-        const calcQty = (itm.ReorderQty && itm.ReorderQty > 0)
+        const calcQty = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
           ? itm.ReorderQty
-          : Math.max((minStock * 2) - itm.CStock, 10);
+          : 0;
         qtyMap[itm.ItemID] = calcQty;
       }
     });
@@ -945,7 +945,9 @@ export default function PharmacyPOS({
     let totalCostSum = 0;
 
     const getCustomQty = (itm: Item) => {
-      return customOrderQtyMap[itm.ItemID] || (itm.ReorderQty && itm.ReorderQty > 0 ? itm.ReorderQty : Math.max((itm.MinStock || 10) * 2 - itm.CStock, 10));
+      return customOrderQtyMap[itm.ItemID] !== undefined
+        ? customOrderQtyMap[itm.ItemID]
+        : (itm.ReorderQty !== undefined && itm.ReorderQty !== null ? itm.ReorderQty : 0);
     };
 
     selectedItemsList.forEach(itm => {
@@ -1280,9 +1282,9 @@ export default function PharmacyPOS({
             ${poRows.map((row) => {
               const getQtyStr = (itm: Item | null) => {
                 if (!itm) return '';
-                return (itm.ReorderQty !== undefined && itm.ReorderQty > 0)
+                return (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
                   ? itm.ReorderQty
-                  : Math.max((itm.MinStock || 10) * 2 - itm.CStock, 10);
+                  : 0;
               };
               return `
                 <tr>
@@ -1313,9 +1315,9 @@ export default function PharmacyPOS({
           </thead>
           <tbody>
             ${filteredItems.map((itm, idx) => {
-              const reorderQty = (itm.ReorderQty !== undefined && itm.ReorderQty > 0)
+              const reorderQty = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
                 ? itm.ReorderQty
-                : Math.max((itm.MinStock || 10) * 2 - itm.CStock, 10);
+                : 0;
               return `
                 <tr>
                   <td style="text-align: center; font-weight: bold; color: #555;">${idx + 1}</td>
@@ -4694,9 +4696,9 @@ export default function PharmacyPOS({
                     }).map((itm, idx) => {
                       const isLowStock = itm.CStock <= (itm.MinStock || 10);
                       const isClinical = itm.MedicineType === 'C';
-                      const reorderQty = (itm.ReorderQty !== undefined && itm.ReorderQty > 0)
+                      const reorderQty = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
                         ? itm.ReorderQty
-                        : Math.max((itm.MinStock || 10) * 2 - itm.CStock, 10);
+                        : 0;
                       return (
                         <tr 
                           key={`${itm.ItemID}-${idx}`} 
@@ -6188,12 +6190,16 @@ export default function PharmacyPOS({
         const lowStockCount = items.filter(i => i.CStock <= ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 10)).length;
         const selectedItemsList = items.filter(itm => selectedPoItemIds.has(itm.ItemID));
         const totalSelectedUnits = selectedItemsList.reduce((acc, itm) => {
-          const qty = customOrderQtyMap[itm.ItemID] || (itm.ReorderQty && itm.ReorderQty > 0 ? itm.ReorderQty : Math.max(((itm.MinStock || 10) * 2) - itm.CStock, 10));
+          const qty = customOrderQtyMap[itm.ItemID] !== undefined
+            ? customOrderQtyMap[itm.ItemID]
+            : (itm.ReorderQty !== undefined && itm.ReorderQty !== null ? itm.ReorderQty : 0);
           return acc + qty;
         }, 0);
 
         const totalEstCost = selectedItemsList.reduce((acc, itm) => {
-          const qty = customOrderQtyMap[itm.ItemID] || (itm.ReorderQty && itm.ReorderQty > 0 ? itm.ReorderQty : Math.max(((itm.MinStock || 10) * 2) - itm.CStock, 10));
+          const qty = customOrderQtyMap[itm.ItemID] !== undefined
+            ? customOrderQtyMap[itm.ItemID]
+            : (itm.ReorderQty !== undefined && itm.ReorderQty !== null ? itm.ReorderQty : 0);
           return acc + (qty * (itm.PurchasePrice || 0));
         }, 0);
 
@@ -6477,9 +6483,9 @@ export default function PharmacyPOS({
                               const isLowStock = itm.CStock <= minStock;
                               const deficit = Math.max(0, minStock - itm.CStock);
                               
-                              const defaultCalcQty = (itm.ReorderQty && itm.ReorderQty > 0)
+                              const defaultCalcQty = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
                                 ? itm.ReorderQty
-                                : Math.max((minStock * 2) - itm.CStock, 10);
+                                : 0;
                               
                               const currentOrderQty = customOrderQtyMap[itm.ItemID] !== undefined ? customOrderQtyMap[itm.ItemID] : defaultCalcQty;
                               const lineCost = currentOrderQty * (itm.PurchasePrice || 0);
@@ -7205,9 +7211,9 @@ export default function PharmacyPOS({
                         {poRows.map((row, rIdx) => {
                           const getQtyStr = (itm: Item | null) => {
                             if (!itm) return '';
-                            return (itm.ReorderQty !== undefined && itm.ReorderQty > 0)
+                            return (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
                               ? itm.ReorderQty
-                              : Math.max((itm.MinStock || 10) * 2 - itm.CStock, 10);
+                              : 0;
                           };
                           return (
                             <tr key={rIdx}>
@@ -7245,9 +7251,9 @@ export default function PharmacyPOS({
                       </thead>
                       <tbody>
                         {filteredPoItems.map((itm, idx) => {
-                          const reorderQty = (itm.ReorderQty !== undefined && itm.ReorderQty > 0)
+                          const reorderQty = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
                             ? itm.ReorderQty
-                            : Math.max((itm.MinStock || 10) * 2 - itm.CStock, 10);
+                            : 0;
                           return (
                             <tr key={`${itm.ItemID}-${idx}`}>
                               <td className="border border-black px-2 py-1 text-center font-bold text-slate-500">{idx + 1}</td>

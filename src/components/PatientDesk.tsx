@@ -34,6 +34,7 @@ import {
   Edit3,
   Ticket,
   AlertCircle,
+  AlertTriangle,
   X,
   Trash2,
   Eye,
@@ -101,6 +102,7 @@ interface PatientDeskProps {
   patients: Patient[];
   onAddPatient: (p: Patient) => void;
   onUpdatePatient?: (p: Patient) => void;
+  onDeletePatient?: (patientId: string) => void;
   appointments: Appointment[];
   onAddAppointment: (app: Appointment) => void;
   onUpdateAppointment?: (app: Appointment) => void;
@@ -119,6 +121,7 @@ interface PatientDeskProps {
   visitMedicines?: VisitMedicine[];
   onAddVisit?: (v: Visit, medicines: VisitMedicine[], testIds: string[]) => void;
   onUpdateVisit?: (v: Visit, medicines: VisitMedicine[], testIds: string[]) => void;
+  onDeleteVisit?: (visitId: string) => void;
   medicalCertificates?: MedicalCertificate[];
   onAddCertificate?: (c: MedicalCertificate) => void;
   sbpCertificates?: MedicalCertificateSBP[];
@@ -139,6 +142,7 @@ export default function PatientDesk({
   patients,
   onAddPatient,
   onUpdatePatient,
+  onDeletePatient,
   appointments,
   onAddAppointment,
   onUpdateAppointment,
@@ -157,6 +161,7 @@ export default function PatientDesk({
   visitMedicines = [],
   onAddVisit,
   onUpdateVisit,
+  onDeleteVisit,
   medicalCertificates = [],
   onAddCertificate,
   sbpCertificates = [],
@@ -333,6 +338,10 @@ export default function PatientDesk({
   const [focWaivedFileCardFee, setFocWaivedFileCardFee] = useState<number | string>('0');
   const [focReason, setFocReason] = useState<string>('Deserving / Needy Patient');
   const [selectedPatientId, setSelectedPatientId] = useState('');
+
+  // Delete Patient Confirm Modal State
+  const [deletePatientModalData, setDeletePatientModalData] = useState<{ isOpen: boolean; pt: Patient | null }>({ isOpen: false, pt: null });
+
   const [appDate, setAppDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [futureBookingModal, setFutureBookingModal] = useState<{
     isOpen: boolean;
@@ -5327,6 +5336,52 @@ Healing Naturally. Restoring Balance.`;
     setTimeout(() => setSuccessMsg(''), 6000);
   };
 
+  const executeDeletePatientRecord = (targetPt: Patient) => {
+    const targetId = targetPt.PatientID;
+    if (!targetId) return;
+
+    // 1. Delete patient profile
+    if (onDeletePatient) {
+      onDeletePatient(targetId);
+    }
+
+    // 2. Cascading delete all visits of this patient
+    const ptVisits = (visits || []).filter(v => isSamePatient(v.PatientID, targetId));
+    ptVisits.forEach(v => {
+      if (v.VisitID && onDeleteVisit) {
+        onDeleteVisit(v.VisitID);
+      }
+    });
+
+    // 3. Cascading delete all tokens of this patient
+    const ptTokens = (tokens || []).filter(t => isSamePatient(t.PatientID, targetId));
+    ptTokens.forEach(t => {
+      if (onDeleteToken) {
+        onDeleteToken(t.TokenNo, t.Shift as 1 | 2);
+      }
+    });
+
+    // 4. Cascading delete all appointments of this patient
+    const ptAppointments = (appointments || []).filter(a => isSamePatient(a.PatientID, targetId));
+    ptAppointments.forEach(a => {
+      if (a.AppointmentID && onDeleteAppointment) {
+        onDeleteAppointment(a.AppointmentID);
+      }
+    });
+
+    // Reset selected patient state if deleting active patient
+    if (pvSelectedPatientId === targetId) {
+      setPvSelectedPatientId('');
+    }
+    if (selectedPatientId === targetId) {
+      setSelectedPatientId('');
+    }
+
+    setDeletePatientModalData({ isOpen: false, pt: null });
+    setPvSaveSuccess(`Patient ${targetPt.PatientName} (${targetId}) and all associated records permanently deleted!`);
+    setTimeout(() => setPvSaveSuccess(''), 3500);
+  };
+
   // Appointment Booking & Token Issuance Handler
   const handleBookAppointment = (e: React.FormEvent) => {
     e.preventDefault();
@@ -9240,17 +9295,12 @@ Healing Naturally. Restoring Balance.`;
 
                               <button
                                 type="button"
-                                onClick={() => {
-                                  setPvSelectedPatientId(pt.PatientID);
-                                  if (latestRecord) {
-                                    handleEditVisit(latestRecord);
-                                  }
-                                  setActiveSubTab('patient_visit');
-                                }}
-                                className="w-full px-1.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-250 font-bold text-[9px] rounded transition flex items-center justify-center space-x-0.5 cursor-pointer"
+                                onClick={() => setDeletePatientModalData({ isOpen: true, pt })}
+                                className="w-full px-1.5 py-0.5 bg-red-50 hover:bg-red-100 text-red-900 border border-red-250 font-bold text-[9px] rounded transition flex items-center justify-center space-x-0.5 cursor-pointer"
+                                title="Delete Patient and all associated records"
                               >
-                                <Stethoscope className="w-2.5 h-2.5 text-blue-700" />
-                                <span>Visit</span>
+                                <Trash2 className="w-2.5 h-2.5 text-red-700" />
+                                <span>Delete</span>
                               </button>
 
                               <button
@@ -11502,6 +11552,64 @@ Healing Naturally. Restoring Balance.`;
               >
                 <CheckCircle2 className="w-4 h-4" />
                 <span>Confirm & Save FOC Visit</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Patient Permanent Confirmation Modal */}
+      {deletePatientModalData.isOpen && deletePatientModalData.pt && (
+        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-red-200 overflow-hidden animate-scaleUp">
+            {/* Header */}
+            <div className="bg-red-600 px-5 py-4 text-white flex items-center justify-between">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="w-5 h-5 text-red-200 shrink-0" />
+                <h3 className="font-extrabold text-sm">Delete Patient Record Permanently</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeletePatientModalData({ isOpen: false, pt: null })}
+                className="text-white hover:text-red-200 font-bold text-lg leading-none cursor-pointer"
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="p-5 space-y-3 text-xs text-slate-800">
+              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-900 font-bold leading-relaxed">
+                Are you sure you want to permanently delete patient <span className="underline font-black">{deletePatientModalData.pt.PatientName}</span> (ID: <span className="font-mono font-black">{deletePatientModalData.pt.PatientID}</span>)?
+              </div>
+
+              <p className="text-slate-600 leading-normal font-medium">
+                This action cannot be undone. Deleting this patient will also permanently remove:
+              </p>
+
+              <ul className="list-disc list-inside space-y-1 text-slate-700 font-bold pl-2">
+                <li>All Consultation Visits & Prescriptions History</li>
+                <li>All Queue Tokens & Appointments</li>
+                <li>All Billing & Payment Records</li>
+              </ul>
+            </div>
+
+            {/* Footer */}
+            <div className="bg-slate-50 p-4 border-t border-slate-200 flex items-center justify-end space-x-2">
+              <button
+                type="button"
+                onClick={() => setDeletePatientModalData({ isOpen: false, pt: null })}
+                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={() => executeDeletePatientRecord(deletePatientModalData.pt!)}
+                className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-4 h-4" />
+                <span>Yes, Delete Everything</span>
               </button>
             </div>
           </div>
