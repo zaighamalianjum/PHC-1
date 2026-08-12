@@ -439,7 +439,41 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     (transactions || []).forEach((tx: any) => {
       const tAmt = Number(tx.Amount) || 0;
       if (tAmt > 0) {
-        const isOut = tx.Type === 'Expense' || tx.Type === 'VendorPayment' || tx.Type === 'AssetPurchase';
+        const typeUpper = (tx.Type || '').toUpperCase();
+        const catLower = (tx.Category || '').toLowerCase();
+        const descLower = (tx.Description || '').toLowerCase();
+        const hasVendor = !!(tx.VendorID || tx.VendorName);
+
+        // Explicitly check if transaction relates to Vendor, Outflow, Expense, Payroll, Asset, etc.
+        const isVendorOrOutflow =
+          typeUpper === 'EXPENSE' ||
+          typeUpper === 'VENDORPAYMENT' ||
+          typeUpper === 'VENDORPAYABLE' ||
+          typeUpper === 'VENDOR_PAYMENT' ||
+          typeUpper === 'VENDOR BILL' ||
+          typeUpper === 'ASSETPURCHASE' ||
+          typeUpper === 'PAYROLLPAYMENT' ||
+          typeUpper === 'PURCHASE' ||
+          typeUpper === 'GRN' ||
+          hasVendor ||
+          catLower.includes('vendor') ||
+          catLower.includes('payable') ||
+          catLower.includes('supplier') ||
+          catLower.includes('purchase') ||
+          catLower.includes('bill') ||
+          catLower.includes('expense') ||
+          catLower.includes('payroll') ||
+          catLower.includes('salary') ||
+          descLower.includes('vendor') ||
+          descLower.includes('payable') ||
+          descLower.includes('supplier');
+
+        const isExplicitIncome =
+          (typeUpper === 'INCOME' || typeUpper === 'CUSTOMERRECEIPT' || typeUpper === 'INFLOW' ||
+           catLower.includes('income') || catLower.includes('receipt') || catLower.includes('sales') || catLower.includes('consultation') || catLower.includes('fee')) &&
+          !isVendorOrOutflow;
+
+        const isOut = !isExplicitIncome;
         const rawTxId = (tx.TransactionID || tx._id || '').toString();
         const rawRefNo = (tx.ReferenceNo || '').toString();
         const cleanRef = rawTxId ? (rawTxId.startsWith('TXN-') ? rawTxId : `TXN-${rawTxId}`) : `TXN-${Math.random()}`;

@@ -363,7 +363,7 @@ export default function ReportingDesk({
       .reduce((sum, s) => sum + (Number(s.NetPayable || s.GrandTotal || s.totalAmount) || 0), 0);
 
     const otherIncome = transactions
-      .filter(t => isWithinDateRange(t.Date) && t.Type === 'Income')
+      .filter(t => isWithinDateRange(t.Date) && t.Type === 'Income' && !t.VendorID && !t.VendorName && !t.Category?.toLowerCase().includes('vendor') && !t.Category?.toLowerCase().includes('payable') && !t.Category?.toLowerCase().includes('supplier'))
       .reduce((sum, t) => sum + (Number(t.Amount) || 0), 0);
 
     const totalIncome = apptFees + posIncome + otherIncome;
