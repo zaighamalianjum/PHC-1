@@ -1990,7 +1990,26 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           safeFetchJson('/api/query/items'),
           safeFetchJson('/api/query/erp_vendors')
         ]);
-        if (Array.isArray(itemsRes) && itemsRes.length > 0) setInventoryItems(itemsRes);
+        if (Array.isArray(itemsRes) && itemsRes.length > 0) {
+          setInventoryItems(itemsRes);
+        } else {
+          setInventoryItems(prev => prev.map(inv => {
+            const matched = receivingItems.find(i => 
+              (i.ItemID && inv.ItemID && String(i.ItemID).toLowerCase() === String(inv.ItemID).toLowerCase()) ||
+              (i.ItemName && inv.ItemName && String(i.ItemName).trim().toLowerCase() === String(inv.ItemName).trim().toLowerCase())
+            );
+            if (matched) {
+              const qtyRec = Number(matched.ReceivedQty) || 0;
+              const uPrice = Number(matched.UnitPrice) || 0;
+              return {
+                ...inv,
+                CStock: (Number(inv.CStock) || 0) + qtyRec,
+                PurchasePrice: uPrice > 0 ? uPrice : inv.PurchasePrice
+              };
+            }
+            return inv;
+          }));
+        }
         if (Array.isArray(vendorsRes) && vendorsRes.length > 0) {
           setVendors(vendorsRes);
         } else if (payload.VendorID || payload.VendorName) {
@@ -6833,7 +6852,27 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   className="w-20 p-1 border border-emerald-300 rounded-lg text-xs text-center font-black bg-emerald-50 text-emerald-900 focus:outline-hidden"
                                 />
                               </td>
-                              <td className="p-2.5 text-right font-semibold text-slate-700">Rs. {item.UnitPrice}</td>
+                              <td className="p-2.5 text-right font-semibold text-slate-700">
+                                <div className="flex items-center justify-end space-x-1">
+                                  <span className="text-slate-400 font-bold">Rs.</span>
+                                  <input
+                                    type="number"
+                                    min="0"
+                                    step="0.01"
+                                    value={item.UnitPrice}
+                                    onChange={e => {
+                                      const val = Number(e.target.value);
+                                      setGrnForm(prev => {
+                                        const updated = [...prev.Items];
+                                        updated[idx] = { ...updated[idx], UnitPrice: val, LineTotal: (updated[idx].ReceivedQty || 0) * val };
+                                        return { ...prev, Items: updated };
+                                      });
+                                    }}
+                                    className="w-20 p-1 border border-slate-300 rounded-lg text-xs text-right font-bold bg-white text-slate-900 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                                    title="Edit Unit Cost for Inward Stock"
+                                  />
+                                </div>
+                              </td>
                               <td className="p-2.5 text-right font-bold text-slate-900">Rs. {subtotal.toLocaleString()}</td>
                               <td className="p-2.5 text-center">
                                 <button

@@ -2993,7 +2993,7 @@ app.post('/api/erp/grn/approve', async (req, res) => {
             Price: unitPrice > 0 ? Math.round(unitPrice * 1.2) : 100,
             PurchasePrice: unitPrice, // Unit Cost (Rs.)
             CStock: qtyReceived,
-            MinStock: 10,
+            MinStock: 1,
             Unit: item.Category || item.Unit || 'Tab',
             MedicineType: 'P',
             ReorderQty: 0
