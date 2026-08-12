@@ -8452,17 +8452,37 @@ Healing Naturally. Restoring Balance.`;
           return `${year}-${month}-${day}`;
         };
 
+        const parseDateToISOKey = (dateStr?: string | null): string => {
+          if (!dateStr || dateStr === 'N/A' || dateStr === '—') return '';
+          const clean = String(dateStr).trim().split('T')[0].split(' ')[0];
+          const parts = clean.split('-');
+          if (parts.length === 3) {
+            if (parts[0].length === 4) {
+              return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+            }
+            if (parts[2].length === 4) {
+              return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+            }
+          }
+          const d = new Date(String(dateStr).trim());
+          if (isNaN(d.getTime())) return clean;
+          const yyyy = d.getFullYear();
+          const mm = String(d.getMonth() + 1).padStart(2, '0');
+          const dd = String(d.getDate()).padStart(2, '0');
+          return `${yyyy}-${mm}-${dd}`;
+        };
+
         // Filter patients
         let rawFilteredPatients = patients.filter((pt) => {
           const ptVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
           const ptVisitIds = new Set(ptVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
-          const ptVisitDates = new Set(ptVisits.map(v => v.VisitDate ? v.VisitDate.split('T')[0] : '').filter(Boolean));
+          const ptVisitDates = new Set(ptVisits.map(v => v.VisitDate ? parseDateToISOKey(v.VisitDate) : '').filter(Boolean));
           const ptNhc = (pvNhcHistory || []).filter(nhc => {
             if (!isSamePatient(nhc.PatientID, pt.PatientID)) return false;
             const nhcId = String(nhc.VisitID || '').trim().toLowerCase();
             if (nhcId && ptVisitIds.has(nhcId)) return false;
             const nhcDate = nhc.date || (nhc as any).VisitDate || '';
-            if (nhcDate && ptVisitDates.has(nhcDate.split('T')[0])) return false;
+            if (nhcDate && ptVisitDates.has(parseDateToISOKey(nhcDate))) return false;
             return true;
           });
           const allPtVisits = [...ptVisits, ...ptNhc];
@@ -8495,15 +8515,27 @@ Healing Naturally. Restoring Balance.`;
           }
 
           if (effStart || effEnd) {
-            const ptRegDate = pt.RegistrationDate ? pt.RegistrationDate.split('T')[0] : '';
+            const ptRegDate = parseDateToISOKey(pt.RegistrationDate);
             const matchesRegDate = ptRegDate && (!effStart || ptRegDate >= effStart) && (!effEnd || ptRegDate <= effEnd);
             
             const matchesVisitDate = allPtVisits.some(v => {
-              const vDate = ('VisitDate' in v && v.VisitDate) ? v.VisitDate.split('T')[0] : ('date' in v ? (v as any).date : '');
+              const rawV = ('VisitDate' in v && v.VisitDate) ? v.VisitDate : ('date' in v ? (v as any).date : '');
+              const vDate = parseDateToISOKey(rawV);
               return vDate && (!effStart || vDate >= effStart) && (!effEnd || vDate <= effEnd);
             });
 
-            if (!matchesRegDate && !matchesVisitDate) return false;
+            const ptApps = (appointments || []).filter(a => isSamePatient(a.PatientID, pt.PatientID) && a.Status !== 3);
+            const matchesAppDate = ptApps.some(a => {
+              const aDate = parseDateToISOKey(a.AppointmentDate);
+              return aDate && (!effStart || aDate >= effStart) && (!effEnd || aDate <= effEnd);
+            });
+
+            // Only show by Reg Date if patient is newly registered with ZERO visits yet
+            const isNewRegInDate = matchesRegDate && allPtVisits.length === 0;
+
+            if (!matchesVisitDate && !matchesAppDate && !isNewRegInDate) {
+              return false;
+            }
           }
 
           if (gridViewGenderFilter !== 'all' && pt.Sex !== gridViewGenderFilter) return false;
@@ -8551,17 +8583,14 @@ Healing Naturally. Restoring Balance.`;
         const getPtLatestActivityDate = (p: typeof patients[0]) => {
           const pVisits = (visits || []).filter(v => isSamePatient(v.PatientID, p.PatientID));
           const pNhc = (pvNhcHistory || []).filter(nhc => isSamePatient(nhc.PatientID, p.PatientID));
-          let maxDate = p.RegistrationDate ? p.RegistrationDate.split('T')[0] : '';
+          let maxDate = parseDateToISOKey(p.RegistrationDate);
           pVisits.forEach(v => {
-            const vD = v.VisitDate ? v.VisitDate.split('T')[0] : '';
+            const vD = parseDateToISOKey(v.VisitDate);
             if (vD && vD > maxDate) maxDate = vD;
           });
           pNhc.forEach(nhc => {
-            const nD = nhc.date || (nhc as any).VisitDate || '';
-            if (nD) {
-              const cleanD = nD.split('T')[0];
-              if (cleanD > maxDate) maxDate = cleanD;
-            }
+            const nD = parseDateToISOKey(nhc.date || (nhc as any).VisitDate);
+            if (nD && nD > maxDate) maxDate = nD;
           });
           return maxDate || '1970-01-01';
         };
@@ -9017,15 +9046,15 @@ Healing Naturally. Restoring Balance.`;
                         const allPtVisits = [...ptVisits, ...ptNhc];
 
                         const sortedPtVisits = [...ptVisits].sort((a, b) => {
-                          const dA = a.VisitDate ? a.VisitDate.split('T')[0] : '';
-                          const dB = b.VisitDate ? b.VisitDate.split('T')[0] : '';
+                          const dA = parseDateToISOKey(a.VisitDate);
+                          const dB = parseDateToISOKey(b.VisitDate);
                           if (dA !== dB) return dB.localeCompare(dA);
                           return (Number(b.VisitID) || 0) - (Number(a.VisitID) || 0);
                         });
 
                         const sortedPtNhc = [...ptNhc].sort((a, b) => {
-                          const dA = a.date || (a as any).VisitDate || '';
-                          const dB = b.date || (b as any).VisitDate || '';
+                          const dA = parseDateToISOKey(a.date || (a as any).VisitDate);
+                          const dB = parseDateToISOKey(b.date || (b as any).VisitDate);
                           return dB.localeCompare(dA);
                         });
 
@@ -9034,8 +9063,8 @@ Healing Naturally. Restoring Balance.`;
 
                         let isVisitNewer = true;
                         if (latestVisit && latestNhc) {
-                          const vDate = latestVisit.VisitDate ? latestVisit.VisitDate.split('T')[0] : '';
-                          const nDate = latestNhc.date || (latestNhc as any).VisitDate || '';
+                          const vDate = parseDateToISOKey(latestVisit.VisitDate);
+                          const nDate = parseDateToISOKey(latestNhc.date || (latestNhc as any).VisitDate);
                           if (nDate > vDate) isVisitNewer = false;
                         } else if (!latestVisit && latestNhc) {
                           isVisitNewer = false;
