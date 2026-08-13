@@ -2963,18 +2963,24 @@ app.post('/api/erp/grn/approve', async (req, res) => {
 
       for (const item of grn.Items) {
         const qtyReceived = parseInt(item.ReceivedQty) || parseInt(item.Qty) || 0;
-        const unitPrice = parseFloat(item.UnitPrice) || 0;
+        const unitPrice = parseFloat(item.UnitPrice) || parseFloat(item.UnitCost) || parseFloat(item.PurchasePrice) || parseFloat(item.Rate) || 0;
         const rawItemName = (item.ItemName || '').trim();
 
         if (!rawItemName) continue;
 
+        const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
         // Try matching existing medicine in items collection by ItemID or ItemName
         const matchedItem = existingItems.find(ex =>
-          (item.ItemID && ex.ItemID && ex.ItemID.toString().toLowerCase() === item.ItemID.toString().toLowerCase()) ||
-          (ex.ItemName && ex.ItemName.toString().trim().toLowerCase() === rawItemName.toLowerCase())
+          (item.ItemID && ex.ItemID && String(ex.ItemID).trim().toLowerCase() === String(item.ItemID).trim().toLowerCase()) ||
+          (ex.ItemName && rawItemName && norm(ex.ItemName) === norm(rawItemName))
         );
 
         if (matchedItem) {
+          // Sync real ItemID on GRN item
+          if (matchedItem.ItemID) {
+            item.ItemID = matchedItem.ItemID;
+          }
           // 1. Existing Item: Update Unit Cost (PurchasePrice) & Increment CStock
           const setFields = {};
           if (unitPrice > 0) {

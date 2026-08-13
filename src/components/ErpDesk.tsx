@@ -1903,8 +1903,17 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         }
       });
       const pending = Math.max(0, ordered - alreadyReceived);
+
+      const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      const matchedInv = (inventoryItems || []).find((inv: any) =>
+        (i.ItemID && inv.ItemID && String(inv.ItemID).trim().toLowerCase() === String(i.ItemID).trim().toLowerCase()) ||
+        (i.ItemName && inv.ItemName && norm(inv.ItemName) === norm(i.ItemName))
+      );
+
+      const displayItemId = matchedInv?.ItemID || i.ItemID;
+
       return {
-        ItemID: i.ItemID,
+        ItemID: displayItemId,
         ItemName: i.ItemName,
         OrderedQty: ordered,
         AlreadyReceivedQty: alreadyReceived,
@@ -2058,14 +2067,15 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         if (Array.isArray(itemsRes) && itemsRes.length > 0) {
           setInventoryItems(itemsRes);
         } else {
+          const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
           setInventoryItems(prev => prev.map(inv => {
             const matched = receivingItems.find(i => 
-              (i.ItemID && inv.ItemID && String(i.ItemID).toLowerCase() === String(inv.ItemID).toLowerCase()) ||
-              (i.ItemName && inv.ItemName && String(i.ItemName).trim().toLowerCase() === String(inv.ItemName).trim().toLowerCase())
+              (i.ItemID && inv.ItemID && String(i.ItemID).trim().toLowerCase() === String(inv.ItemID).trim().toLowerCase()) ||
+              (i.ItemName && inv.ItemName && norm(i.ItemName) === norm(inv.ItemName))
             );
             if (matched) {
-              const qtyRec = Number(matched.ReceivedQty) || 0;
-              const uPrice = Number(matched.UnitPrice) || 0;
+              const qtyRec = Number(matched.ReceivedQty) || Number(matched.Qty) || 0;
+              const uPrice = Number(matched.UnitPrice) || Number(matched.UnitCost) || Number(matched.PurchasePrice) || 0;
               return {
                 ...inv,
                 CStock: (Number(inv.CStock) || 0) + qtyRec,
