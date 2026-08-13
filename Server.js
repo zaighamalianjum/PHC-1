@@ -2893,21 +2893,35 @@ app.post('/api/erp/grn/approve', async (req, res) => {
       let isFullyReceived = true;
       let isPartiallyReceived = false;
 
-      for (const poItem of poRecord.Items) {
+      let totalOrderedSum = 0;
+      let totalReceivedSum = 0;
+
+      for (let idx = 0; idx < poRecord.Items.length; idx++) {
+        const poItem = poRecord.Items[idx];
         const orderedQty = parseInt(poItem.Qty) || 0;
+        totalOrderedSum += orderedQty;
         let totalReceivedForItem = 0;
 
         for (const g of allPoGrns) {
           if (Array.isArray(g.Items)) {
-            const matchedGrnItem = g.Items.find(gi => 
-              (gi.ItemID && gi.ItemID === poItem.ItemID) || 
-              (gi.ItemName && gi.ItemName === poItem.ItemName)
-            );
+            let matchedGrnItem = null;
+            if (poItem.ItemID && String(poItem.ItemID).trim() !== '') {
+              matchedGrnItem = g.Items.find(gi => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(poItem.ItemID).trim().toLowerCase());
+            }
+            if (!matchedGrnItem && poItem.ItemName && String(poItem.ItemName).trim() !== '') {
+              matchedGrnItem = g.Items.find(gi => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(poItem.ItemName).trim().toLowerCase());
+            }
+            if (!matchedGrnItem && g.Items[idx]) {
+              matchedGrnItem = g.Items[idx];
+            }
+
             if (matchedGrnItem) {
-              totalReceivedForItem += (parseInt(matchedGrnItem.ReceivedQty) || 0);
+              totalReceivedForItem += (parseInt(matchedGrnItem.ReceivedQty) || parseInt(matchedGrnItem.Qty) || 0);
             }
           }
         }
+
+        totalReceivedSum += totalReceivedForItem;
 
         if (totalReceivedForItem < orderedQty) {
           isFullyReceived = false;
@@ -2915,6 +2929,10 @@ app.post('/api/erp/grn/approve', async (req, res) => {
         if (totalReceivedForItem > 0) {
           isPartiallyReceived = true;
         }
+      }
+
+      if (totalOrderedSum > 0 && totalReceivedSum >= totalOrderedSum) {
+        isFullyReceived = true;
       }
 
       newPoStatus = isFullyReceived ? 'Received' : (isPartiallyReceived ? 'Partially Received' : 'Approved');
@@ -3169,24 +3187,44 @@ app.post('/api/erp/grn/delete', async (req, res) => {
             let isFullyReceived = true;
             let isPartiallyReceived = false;
 
-            for (const poItem of poRecord.Items) {
+            let totalOrderedSum = 0;
+            let totalReceivedSum = 0;
+
+            for (let idx = 0; idx < poRecord.Items.length; idx++) {
+              const poItem = poRecord.Items[idx];
               let totalRec = 0;
               const orderedQty = parseInt(poItem.Qty) || 0;
+              totalOrderedSum += orderedQty;
 
               for (const rg of remainingGrns) {
                 if (Array.isArray(rg.Items)) {
-                  const matchedGrnItem = rg.Items.find(gi =>
-                    (gi.ItemID && gi.ItemID === poItem.ItemID) ||
-                    (gi.ItemName && gi.ItemName === poItem.ItemName)
-                  );
+                  let matchedGrnItem = null;
+                  if (poItem.ItemID && String(poItem.ItemID).trim() !== '') {
+                    matchedGrnItem = rg.Items.find(gi => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(poItem.ItemID).trim().toLowerCase());
+                  }
+                  if (!matchedGrnItem && poItem.ItemName && String(poItem.ItemName).trim() !== '') {
+                    matchedGrnItem = rg.Items.find(gi => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(poItem.ItemName).trim().toLowerCase());
+                  }
+                  if (!matchedGrnItem && rg.Items[idx]) {
+                    matchedGrnItem = rg.Items[idx];
+                  }
+
                   if (matchedGrnItem) {
-                    totalRec += (parseInt(matchedGrnItem.ReceivedQty) || 0);
+                    totalRec += (parseInt(matchedGrnItem.ReceivedQty) || parseInt(matchedGrnItem.Qty) || 0);
                   }
                 }
               }
+
+              totalReceivedSum += totalRec;
+
               if (totalRec < orderedQty) isFullyReceived = false;
               if (totalRec > 0) isPartiallyReceived = true;
             }
+
+            if (totalOrderedSum > 0 && totalReceivedSum >= totalOrderedSum) {
+              isFullyReceived = true;
+            }
+
             newPoStatus = isFullyReceived ? 'Received' : (isPartiallyReceived ? 'Partially Received' : 'Approved');
           }
           await db.collection('erp_purchase_orders').updateOne(

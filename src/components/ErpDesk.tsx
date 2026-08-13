@@ -1255,8 +1255,20 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       ]);
 
       if (Array.isArray(vRes)) setVendors(vRes);
-      if (Array.isArray(poRes)) setPurchaseOrders(poRes);
       if (Array.isArray(grnRes)) setGrns(grnRes);
+      if (Array.isArray(poRes)) {
+        const loadedGrns = Array.isArray(grnRes) ? grnRes : [];
+        const normalizedPos = poRes.map((po: any) => {
+          const currentComputedStatus = calculatePoStatus(po, loadedGrns);
+          if (currentComputedStatus !== po.Status) {
+            const updatedPo = { ...po, Status: currentComputedStatus };
+            saveToDatabase('erp_purchase_orders', updatedPo);
+            return updatedPo;
+          }
+          return po;
+        });
+        setPurchaseOrders(normalizedPos);
+      }
       if (Array.isArray(txRes)) setTransactions(txRes);
       if (Array.isArray(empRes)) setEmployees(empRes);
       if (Array.isArray(payRes)) setPayrolls(payRes);
@@ -1795,17 +1807,98 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     window.dispatchEvent(new CustomEvent('phc_db_updated'));
   };
 
+  const calculatePoStatus = (po: ErpPurchaseOrder, grnsList: ErpGrn[], extraReceivingItems?: any[]): 'Received' | 'Partially Received' | 'Approved' | 'Sent' | 'Draft' => {
+    if (!po || !Array.isArray(po.Items) || po.Items.length === 0) return (po?.Status as any) || 'Approved';
+    
+    const approvedGrns = grnsList.filter(g => g.POID === po.POID && (g.Status === 'Approved' || !g.Status));
+    
+    let isFullyReceived = true;
+    let isPartiallyReceived = false;
+
+    let totalOrderedSum = 0;
+    let totalReceivedSum = 0;
+
+    po.Items.forEach((poItem, idx) => {
+      const ordered = Number(poItem.Qty) || 0;
+      totalOrderedSum += ordered;
+      let cumulativeReceived = 0;
+
+      approvedGrns.forEach(g => {
+        if (Array.isArray(g.Items)) {
+          let matched = null;
+          if (poItem.ItemID && String(poItem.ItemID).trim() !== '') {
+            matched = g.Items.find((gi: any) => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(poItem.ItemID).trim().toLowerCase());
+          }
+          if (!matched && poItem.ItemName && String(poItem.ItemName).trim() !== '') {
+            matched = g.Items.find((gi: any) => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(poItem.ItemName).trim().toLowerCase());
+          }
+          if (!matched && g.Items[idx]) {
+            matched = g.Items[idx];
+          }
+          if (matched) {
+            cumulativeReceived += Number(matched.ReceivedQty) || Number(matched.Qty) || 0;
+          }
+        }
+      });
+
+      if (extraReceivingItems && extraReceivingItems.length > 0) {
+        let currentGrnItem = null;
+        if (poItem.ItemID && String(poItem.ItemID).trim() !== '') {
+          currentGrnItem = extraReceivingItems.find((gi: any) => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(poItem.ItemID).trim().toLowerCase());
+        }
+        if (!currentGrnItem && poItem.ItemName && String(poItem.ItemName).trim() !== '') {
+          currentGrnItem = extraReceivingItems.find((gi: any) => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(poItem.ItemName).trim().toLowerCase());
+        }
+        if (!currentGrnItem && extraReceivingItems[idx]) {
+          currentGrnItem = extraReceivingItems[idx];
+        }
+        if (currentGrnItem) {
+          cumulativeReceived += Number(currentGrnItem.ReceivedQty) || Number(currentGrnItem.Qty) || 0;
+        }
+      }
+
+      totalReceivedSum += cumulativeReceived;
+
+      if (cumulativeReceived < ordered) {
+        isFullyReceived = false;
+      }
+      if (cumulativeReceived > 0) {
+        isPartiallyReceived = true;
+      }
+    });
+
+    if (totalOrderedSum > 0 && totalReceivedSum >= totalOrderedSum) {
+      isFullyReceived = true;
+    }
+
+    if (approvedGrns.length > 0 || (extraReceivingItems && extraReceivingItems.length > 0)) {
+      if (isFullyReceived) return 'Received';
+      if (isPartiallyReceived) return 'Partially Received';
+    }
+
+    return (po.Status && po.Status !== 'Received' && po.Status !== 'Partially Received') ? (po.Status as any) : 'Approved';
+  };
+
   // HANDLERS FOR GOODS RECEIVED NOTE (GRN) & PARTIAL BATCH RECEIVING
   const getPoItemsReceiptInfo = (po: ErpPurchaseOrder) => {
-    const approvedGrns = grns.filter(g => g.POID === po.POID && g.Status === 'Approved');
-    const items = po.Items.map(i => {
+    const approvedGrns = grns.filter(g => g.POID === po.POID && (g.Status === 'Approved' || !g.Status));
+    const items = po.Items.map((i, idx) => {
       const ordered = Number(i.Qty) || 0;
       let alreadyReceived = 0;
       approvedGrns.forEach(g => {
         if (Array.isArray(g.Items)) {
-          const matched = g.Items.find(gi => gi.ItemID === i.ItemID || gi.ItemName === i.ItemName);
+          let matched = null;
+          if (i.ItemID && String(i.ItemID).trim() !== '') {
+            matched = g.Items.find(gi => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(i.ItemID).trim().toLowerCase());
+          }
+          if (!matched && i.ItemName && String(i.ItemName).trim() !== '') {
+            matched = g.Items.find(gi => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(i.ItemName).trim().toLowerCase());
+          }
+          if (!matched && g.Items[idx]) {
+            matched = g.Items[idx];
+          }
           if (matched) {
-            alreadyReceived += Number(matched.ReceivedQty) || 0;
+            alreadyReceived += Number(matched.ReceivedQty) || Number(matched.Qty) || 0;
           }
         }
       });
@@ -1926,35 +2019,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         let calculatedPoStatus: 'Received' | 'Partially Received' | 'Approved' = 'Received';
 
         if (targetPo) {
-          const approvedGrns = grns.filter(g => g.POID === grnForm.POID && g.Status === 'Approved');
-          let isFullyReceived = true;
-          let isPartiallyReceived = false;
-
-          targetPo.Items.forEach(poItem => {
-            const ordered = Number(poItem.Qty) || 0;
-            let cumulativeReceived = 0;
-            
-            approvedGrns.forEach(g => {
-              if (Array.isArray(g.Items)) {
-                const matched = g.Items.find(gi => gi.ItemID === poItem.ItemID || gi.ItemName === poItem.ItemName);
-                if (matched) cumulativeReceived += Number(matched.ReceivedQty) || 0;
-              }
-            });
-
-            const currentGrnItem = receivingItems.find(gi => gi.ItemID === poItem.ItemID || gi.ItemName === poItem.ItemName);
-            if (currentGrnItem) {
-              cumulativeReceived += Number(currentGrnItem.ReceivedQty) || 0;
-            }
-
-            if (cumulativeReceived < ordered) {
-              isFullyReceived = false;
-            }
-            if (cumulativeReceived > 0) {
-              isPartiallyReceived = true;
-            }
-          });
-
-          calculatedPoStatus = isFullyReceived ? 'Received' : (isPartiallyReceived ? 'Partially Received' : 'Approved');
+          calculatedPoStatus = calculatePoStatus(targetPo, grns, receivingItems) as any;
         }
 
         setPurchaseOrders(prev => prev.map(p => p.POID === grnForm.POID ? { ...p, Status: calculatedPoStatus } : p));
@@ -2085,27 +2150,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       // 5. Update PO status if linked to a PO
       if (grn.POID) {
         const remainingGrns = grns.filter(g => (g._id ? g._id !== grn._id : g.GRNID !== grn.GRNID) && g.POID === grn.POID);
-        let newPoStatus: 'Pending' | 'Approved' | 'Partially Received' | 'Received' = 'Approved';
-        
-        if (remainingGrns.length > 0) {
-          const linkedPo = purchaseOrders.find(p => p.POID === grn.POID);
-          if (linkedPo) {
-            let isFullyReceived = true;
-            let isPartiallyReceived = false;
-            (linkedPo.Items || []).forEach(pItem => {
-              let totalRec = 0;
-              remainingGrns.forEach(rg => {
-                const matchedInGrn = (rg.Items || []).find(gi => gi.ItemID === pItem.ItemID || gi.ItemName === pItem.ItemName);
-                if (matchedInGrn) totalRec += Number(matchedInGrn.ReceivedQty || 0);
-              });
-              if (totalRec < pItem.Qty) isFullyReceived = false;
-              if (totalRec > 0) isPartiallyReceived = true;
-            });
-            newPoStatus = isFullyReceived ? 'Received' : (isPartiallyReceived ? 'Partially Received' : 'Approved');
-          }
-        }
+        const linkedPo = purchaseOrders.find(p => p.POID === grn.POID);
+        const newPoStatus = linkedPo ? calculatePoStatus(linkedPo, remainingGrns) : 'Approved';
 
-        setPurchaseOrders(prev => prev.map(p => p.POID === grn.POID ? { ...p, Status: newPoStatus } : p));
+        setPurchaseOrders(prev => prev.map(p => p.POID === grn.POID ? { ...p, Status: newPoStatus as any } : p));
       }
 
       // 6. Remove from GRNs state & notify
