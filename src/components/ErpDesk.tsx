@@ -2186,16 +2186,35 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
-    const itemsRows = grn.Items.map((item, idx) => `
+    let totalOrderedQty = 0;
+    let totalReceivedQty = 0;
+    let totalGrnAmount = 0;
+
+    const itemsRows = grn.Items.map((item, idx) => {
+      const ordQty = Number(item.OrderedQty) || 0;
+      const recQty = Number(item.ReceivedQty) || 0;
+      const uPrice = Number(item.UnitPrice) || 0;
+      const lineSubtotal = item.LineTotal || (recQty * uPrice);
+
+      totalOrderedQty += ordQty;
+      totalReceivedQty += recQty;
+      totalGrnAmount += lineSubtotal;
+
+      return `
       <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
         <td style="text-align: center; padding: 7px 6px; font-weight: bold; font-family: monospace; color: #64748b;">${idx + 1}</td>
         <td style="padding: 7px 6px; font-family: monospace; font-weight: bold; color: #475569;">${item.ItemID}</td>
         <td style="padding: 7px 6px; font-weight: bold; color: #0f172a;">${item.ItemName}</td>
         <td style="text-align: center; padding: 7px 6px; font-family: monospace; font-weight: bold; color: #b45309; background: #fffbeb;">${item.BatchNo || 'N/A'}</td>
-        <td style="text-align: center; padding: 7px 6px; font-weight: bold; color: #475569;">${item.OrderedQty}</td>
-        <td style="text-align: center; padding: 7px 6px; font-weight: 800; color: #15803d; background: #f0fdf4;">${item.ReceivedQty}</td>
+        <td style="text-align: center; padding: 7px 6px; font-weight: bold; color: #475569;">${ordQty}</td>
+        <td style="text-align: center; padding: 7px 6px; font-weight: 800; color: #15803d; background: #f0fdf4;">${recQty}</td>
+        <td style="text-align: right; padding: 7px 6px; font-weight: 700; color: #334155; font-family: monospace;">Rs. ${uPrice.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td style="text-align: right; padding: 7px 6px; font-weight: 800; color: #0f172a; font-family: monospace; background: #f8fafc;">Rs. ${lineSubtotal.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
       </tr>
-    `).join('');
+    `;
+    }).join('');
+
+    const calculatedGrandTotal = grn.TotalAmount || totalGrnAmount;
 
     printWin.document.write(`
       <!DOCTYPE html>
@@ -2508,17 +2527,53 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             <thead>
               <tr>
                 <th style="width: 30px; text-align: center;">#</th>
-                <th style="width: 100px;">Item Code</th>
+                <th style="width: 85px;">Item Code</th>
                 <th>Medicine Description & Category</th>
-                <th style="width: 110px; text-align: center;">Batch No.</th>
-                <th style="width: 85px; text-align: center;">Ordered Qty</th>
-                <th style="width: 95px; text-align: center;">Received Qty</th>
+                <th style="width: 100px; text-align: center;">Batch No.</th>
+                <th style="width: 75px; text-align: center;">Ordered</th>
+                <th style="width: 80px; text-align: center;">Received</th>
+                <th style="width: 95px; text-align: right;">Unit Price</th>
+                <th style="width: 110px; text-align: right;">Sub Total</th>
               </tr>
             </thead>
             <tbody>
               ${itemsRows}
             </tbody>
+            <tfoot>
+              <tr style="background: #f1f5f9; font-weight: 800; font-size: 11px; border-top: 2px solid #0f172a;">
+                <td colspan="4" style="padding: 8px 10px; text-align: right; text-transform: uppercase; color: #475569; font-weight: 800;">
+                  Total Batch Quantity / Inward Summary:
+                </td>
+                <td style="padding: 8px 6px; text-align: center; font-weight: 800; color: #475569; font-family: monospace;">
+                  ${totalOrderedQty}
+                </td>
+                <td style="padding: 8px 6px; text-align: center; font-weight: 900; color: #15803d; background: #dcfce7; font-family: monospace;">
+                  ${totalReceivedQty}
+                </td>
+                <td style="padding: 8px 10px; text-align: right; font-weight: 800; color: #334155; text-transform: uppercase;">
+                  SUB TOTAL:
+                </td>
+                <td style="padding: 8px 10px; text-align: right; font-weight: 900; color: #0f172a; font-family: monospace; font-size: 11.5px; background: #e2e8f0;">
+                  Rs. ${calculatedGrandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                </td>
+              </tr>
+            </tfoot>
           </table>
+
+          <!-- Grand Total Summary Card -->
+          <div style="margin-top: 12px; display: flex; justify-content: flex-end;">
+            <div style="background: #0f172a; color: #ffffff; border-radius: 8px; padding: 10px 16px; min-width: 290px; text-align: right; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+              <div style="font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.8px; color: #94a3b8;">
+                GRAND TOTAL (OFFICIAL INWARD BILL AMOUNT)
+              </div>
+              <div style="font-size: 18px; font-weight: 900; font-family: monospace; color: #34d399; margin-top: 2px;">
+                Rs. ${calculatedGrandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+              <div style="font-size: 9px; font-weight: 700; color: #cbd5e1; margin-top: 2px;">
+                Total Items: ${grn.Items.length} &nbsp;|&nbsp; Received Qty: ${totalReceivedQty} Units
+              </div>
+            </div>
+          </div>
 
           <div style="margin-top: 12px; padding: 10px 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 11px;">
             <strong>Remarks / Physical Inspection Note:</strong> ${grn.Remarks || 'All received medicines verified for physical condition, batch integrity & quantity.'}
