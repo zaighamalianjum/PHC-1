@@ -2364,11 +2364,11 @@ export default function SettingsDesk({
                   </div>
                   <div>
                     <h4 className="font-bold text-sm text-white uppercase tracking-wide flex items-center gap-2">
-                      <span>Manual MongoDB Database Backup & JSON Export</span>
-                      <span className="text-xxs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">JSON Snapshot</span>
+                      <span>Manual MongoDB Database Backup & High-Ratio ZIP Archive</span>
+                      <span className="text-xxs font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-2 py-0.5 rounded">.ZIP / .JSON</span>
                     </h4>
                     <p className="text-slate-300 text-xs mt-1 leading-normal">
-                      Instantly aggregate all live records from your MongoDB collections (Patients, EMR Consultations, OPD Tokens, Pharmacy POS Inventory, Sales Bills, and Financial Ledgers) into a single downloadable JSON backup file.
+                      Instantly aggregate all live records from your MongoDB collections (Patients, EMR Consultations, OPD Tokens, Pharmacy POS Inventory, Sales Bills, and Financial Ledgers) into an ultra-compressed downloadable ZIP archive (reduces ~250MB raw JSON down to ~15MB).
                     </p>
                   </div>
                 </div>
@@ -2384,7 +2384,7 @@ export default function SettingsDesk({
                   ) : (
                     <Download className="w-4 h-4 text-white" />
                   )}
-                  <span>{downloadingBackup ? 'Generating Snapshot...' : 'Trigger Manual Backup (.JSON)'}</span>
+                  <span>{downloadingBackup ? 'Generating Snapshot...' : 'Trigger Manual Backup (.ZIP)'}</span>
                 </button>
               </div>
 

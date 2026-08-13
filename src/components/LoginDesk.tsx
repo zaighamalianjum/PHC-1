@@ -45,6 +45,8 @@ export default function LoginDesk({ usersList, onLoginSuccess, onUserUpdated, cl
   });
   const [errorMessage, setErrorMessage] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [pendingUser, setPendingUser] = useState<UserType | null>(null);
+  const [showShiftModal, setShowShiftModal] = useState<boolean>(false);
 
   // View Mode: 'login' | 'verify' | 'reset' | 'success'
   const [viewMode, setViewMode] = useState<'login' | 'verify' | 'reset' | 'success'>('login');
@@ -88,11 +90,23 @@ export default function LoginDesk({ usersList, onLoginSuccess, onUserUpdated, cl
       }
 
       setIsSubmitting(false);
-      onLoginSuccess({
-        ...foundUser,
-        AssignedShift: selectedShift
-      }, selectedShift);
-    }, 600);
+      const defShift: 1 | 2 | 'Both' = (foundUser.AssignedShift === 1 || foundUser.AssignedShift === 2 || foundUser.AssignedShift === 'Both')
+        ? foundUser.AssignedShift
+        : (new Date().getHours() < 15 ? 1 : 2);
+      setSelectedShift(defShift);
+      setPendingUser(foundUser);
+      setShowShiftModal(true);
+    }, 500);
+  };
+
+  const handleConfirmShift = (shiftToSet: 1 | 2 | 'Both') => {
+    if (!pendingUser) return;
+    onLoginSuccess({
+      ...pendingUser,
+      AssignedShift: shiftToSet
+    }, shiftToSet);
+    setShowShiftModal(false);
+    setPendingUser(null);
   };
 
   // Helper to normalize strings (remove non-alphanumeric chars, convert to lowercase)
@@ -315,21 +329,7 @@ export default function LoginDesk({ usersList, onLoginSuccess, onUserUpdated, cl
 
                 {/* Password Input */}
                 <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">Password</label>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setViewMode('verify');
-                        setVerifyError('');
-                        if (username.trim()) setVerifyUsername(username.trim());
-                      }}
-                      className="text-[11px] font-extrabold text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer transition flex items-center space-x-1"
-                    >
-                      <KeyRound className="w-3 h-3 mr-0.5" />
-                      <span>Forgot Password?</span>
-                    </button>
-                  </div>
+                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">Password</label>
                   <div className="relative">
                     <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400">
                       <Lock className="w-4 h-4" />
@@ -352,35 +352,19 @@ export default function LoginDesk({ usersList, onLoginSuccess, onUserUpdated, cl
                       {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                     </button>
                   </div>
-                </div>
-
-                {/* Shift Selector Input */}
-                <div className="space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">Working Shift *</label>
-                    <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-md border border-emerald-200">
-                      {selectedShift === 1 ? '☀️ Morning Shift' : selectedShift === 2 ? '🌙 Evening Shift' : '⚡ Both Shifts'}
-                    </span>
-                  </div>
-                  <div className="relative">
-                    <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 text-slate-400 pointer-events-none">
-                      <Calendar className="w-4 h-4 text-emerald-600" />
-                    </span>
-                    <select
-                      value={selectedShift}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setSelectedShift(val === '1' ? 1 : val === '2' ? 2 : 'Both');
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setViewMode('verify');
+                        setVerifyError('');
+                        if (username.trim()) setVerifyUsername(username.trim());
                       }}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-2xl py-3 pl-10 pr-8 text-xs font-bold text-slate-900 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none transition cursor-pointer appearance-none"
+                      className="text-[11px] font-extrabold text-emerald-600 hover:text-emerald-700 hover:underline cursor-pointer transition flex items-center space-x-1"
                     >
-                      <option value={1}>Morning Shift (1) — [08:00 AM - 03:00 PM]</option>
-                      <option value={2}>Evening Shift (2) — [03:00 PM - 10:00 PM]</option>
-                      <option value="Both">Both Shifts (Full Day Access)</option>
-                    </select>
-                    <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-slate-400">
-                      <ChevronDown className="w-4 h-4" />
-                    </div>
+                      <KeyRound className="w-3 h-3 mr-0.5" />
+                      <span>Forgot Password?</span>
+                    </button>
                   </div>
                 </div>
 
@@ -388,12 +372,12 @@ export default function LoginDesk({ usersList, onLoginSuccess, onUserUpdated, cl
                 <button
                   type="submit"
                   disabled={isSubmitting}
-                  className="w-full mt-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs py-3 rounded-2xl shadow-md shadow-emerald-600/20 transition-all duration-200 flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
+                  className="w-full mt-4 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-bold text-xs py-3 rounded-2xl shadow-md shadow-emerald-600/20 transition-all duration-200 flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-50"
                 >
                   {isSubmitting ? (
                     <>
                       <Activity className="w-4 h-4 animate-spin text-white" />
-                      <span>Authenticating...</span>
+                      <span>Authenticating Credentials...</span>
                     </>
                   ) : (
                     <span>Sign In to Terminal</span>
@@ -661,6 +645,154 @@ export default function LoginDesk({ usersList, onLoginSuccess, onUserUpdated, cl
           <span className="text-slate-700 font-bold">{clinicName || 'Punjab Homeopathic Clinic'}</span>
         </div>
       </div>
+
+      {/* WORKING SHIFT SELECTION POPUP MODAL */}
+      {showShiftModal && pendingUser && (
+        <div className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-md flex items-center justify-center p-4 animate-fadeIn">
+          <div className="bg-white rounded-3xl max-w-md w-full border border-slate-200 shadow-2xl p-6 md:p-8 space-y-6 animate-scaleUp">
+            
+            {/* Modal Header */}
+            <div className="text-center space-y-2">
+              <div className="w-16 h-16 bg-gradient-to-tr from-emerald-500 to-teal-600 rounded-2xl flex items-center justify-center mx-auto text-white shadow-lg shadow-emerald-500/30">
+                <Sparkles className="w-8 h-8" />
+              </div>
+              <div>
+                <span className="inline-block px-3 py-0.5 bg-emerald-100 text-emerald-800 text-[10px] font-black rounded-full uppercase tracking-wider mb-1">
+                  Credentials Verified
+                </span>
+                <h2 className="text-xl font-black text-slate-900 tracking-tight">Select Working Shift</h2>
+                <p className="text-xs text-slate-500 font-medium mt-1">
+                  Welcome, <strong className="text-slate-900 font-black">{pendingUser.FullName}</strong> ({pendingUser.Role})
+                </p>
+              </div>
+            </div>
+
+            {/* Shift Option Cards */}
+            <div className="space-y-3">
+              {/* Morning Shift */}
+              <button
+                type="button"
+                onClick={() => setSelectedShift(1)}
+                className={`w-full p-4 rounded-2xl border-2 text-left transition-all duration-200 flex items-center justify-between cursor-pointer ${
+                  selectedShift === 1
+                    ? 'bg-amber-50/90 border-amber-500 ring-4 ring-amber-500/15 shadow-md scale-[1.01]'
+                    : 'bg-slate-50 border-slate-200 hover:border-amber-300 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center space-x-3.5">
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-lg shrink-0 ${
+                    selectedShift === 1 ? 'bg-amber-500 text-white shadow-sm font-bold' : 'bg-amber-100 text-amber-800'
+                  }`}>
+                    ☀️
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-black text-slate-900">Morning Shift (Shift 1)</span>
+                      {selectedShift === 1 && (
+                        <span className="px-2 py-0.5 bg-amber-500 text-white text-[9px] font-black rounded-md uppercase">Active</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-500 mt-0.5">08:00 AM – 03:00 PM</p>
+                  </div>
+                </div>
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  selectedShift === 1 ? 'border-amber-500 bg-amber-500 text-white' : 'border-slate-300'
+                }`}>
+                  {selectedShift === 1 && <CheckCircle2 className="w-4 h-4 text-white" />}
+                </div>
+              </button>
+
+              {/* Evening Shift */}
+              <button
+                type="button"
+                onClick={() => setSelectedShift(2)}
+                className={`w-full p-4 rounded-2xl border-2 text-left transition-all duration-200 flex items-center justify-between cursor-pointer ${
+                  selectedShift === 2
+                    ? 'bg-indigo-50/90 border-indigo-500 ring-4 ring-indigo-500/15 shadow-md scale-[1.01]'
+                    : 'bg-slate-50 border-slate-200 hover:border-indigo-300 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center space-x-3.5">
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-lg shrink-0 ${
+                    selectedShift === 2 ? 'bg-indigo-600 text-white shadow-sm font-bold' : 'bg-indigo-100 text-indigo-800'
+                  }`}>
+                    🌙
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-black text-slate-900">Evening Shift (Shift 2)</span>
+                      {selectedShift === 2 && (
+                        <span className="px-2 py-0.5 bg-indigo-600 text-white text-[9px] font-black rounded-md uppercase">Active</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-500 mt-0.5">03:00 PM – 10:00 PM</p>
+                  </div>
+                </div>
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  selectedShift === 2 ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300'
+                }`}>
+                  {selectedShift === 2 && <CheckCircle2 className="w-4 h-4 text-white" />}
+                </div>
+              </button>
+
+              {/* Both Shifts */}
+              <button
+                type="button"
+                onClick={() => setSelectedShift('Both')}
+                className={`w-full p-4 rounded-2xl border-2 text-left transition-all duration-200 flex items-center justify-between cursor-pointer ${
+                  selectedShift === 'Both'
+                    ? 'bg-emerald-50/90 border-emerald-500 ring-4 ring-emerald-500/15 shadow-md scale-[1.01]'
+                    : 'bg-slate-50 border-slate-200 hover:border-emerald-300 hover:bg-slate-100/80'
+                }`}
+              >
+                <div className="flex items-center space-x-3.5">
+                  <div className={`w-11 h-11 rounded-xl flex items-center justify-center text-lg shrink-0 ${
+                    selectedShift === 'Both' ? 'bg-emerald-600 text-white shadow-sm font-bold' : 'bg-emerald-100 text-emerald-800'
+                  }`}>
+                    ⚡
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-black text-slate-900">Both Shifts (Full Access)</span>
+                      {selectedShift === 'Both' && (
+                        <span className="px-2 py-0.5 bg-emerald-600 text-white text-[9px] font-black rounded-md uppercase">Active</span>
+                      )}
+                    </div>
+                    <p className="text-[11px] font-bold text-slate-500 mt-0.5">Full Day Combined Shifts</p>
+                  </div>
+                </div>
+                <div className={`w-5 h-5 rounded-full border-2 flex items-center justify-center shrink-0 ${
+                  selectedShift === 'Both' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300'
+                }`}>
+                  {selectedShift === 'Both' && <CheckCircle2 className="w-4 h-4 text-white" />}
+                </div>
+              </button>
+            </div>
+
+            {/* Action Controls */}
+            <div className="flex items-center space-x-3 pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowShiftModal(false);
+                  setPendingUser(null);
+                }}
+                className="w-1/3 py-3 border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold text-xs rounded-2xl transition cursor-pointer"
+              >
+                Back
+              </button>
+              <button
+                type="button"
+                onClick={() => handleConfirmShift(selectedShift)}
+                className="w-2/3 py-3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-extrabold text-xs rounded-2xl shadow-lg shadow-emerald-600/25 transition cursor-pointer flex items-center justify-center space-x-2"
+              >
+                <span>Confirm & Enter Terminal &rarr;</span>
+              </button>
+            </div>
+
+          </div>
+        </div>
+      )}
 
     </div>
   );

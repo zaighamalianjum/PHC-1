@@ -75,7 +75,8 @@ import {
   InvoiceHeader,
   MedicalCertificate,
   MedicalCertificateSBP,
-  MongoDbSettings
+  MongoDbSettings,
+  MultiPatientSearchResult
 } from '../types';
 import {
   formatDisplayDate,
@@ -386,6 +387,12 @@ export default function PatientDesk({
   const [pvSelectedPatientId, setPvSelectedPatientId] = useState('');
   const [pvVisitDate, setPvVisitDate] = useState(() => new Date().toISOString().split('T')[0]);
   const [pvSymptomsDiagnosis, setPvSymptomsDiagnosis] = useState('');
+
+  // Multiple Patient Matches Popup Modal States
+  const [isMultiPatientModalOpen, setIsMultiPatientModalOpen] = useState<boolean>(false);
+  const [multiPatientSearchResults, setMultiPatientSearchResults] = useState<MultiPatientSearchResult[]>([]);
+  const [multiPatientSearchQuery, setMultiPatientSearchQuery] = useState<string>('');
+  const [multiPatientModalFilter, setMultiPatientModalFilter] = useState<string>('');
 
   // Structured Excel Sheet Grid items for Clinical & Patent Medicines
   const [pvClinicalItems, setPvClinicalItems] = useState<Array<{ id: string; medicineName: string; dosage: string }>>([
@@ -1246,6 +1253,55 @@ Healing Naturally. Restoring Balance.`;
     return digits;
   };
 
+  // Helper to check if a search query starts with any Pakistani mobile network prefix
+  const isPakistaniMobilePrefix = (str: string): boolean => {
+    const raw = str.trim().toLowerCase();
+    if (!raw) return false;
+    const digits = raw.replace(/\D/g, '');
+    if (!digits) return false;
+
+    // Check raw string prefix or digits prefix for Pakistani mobile network codes:
+    // Jazz: 0300-0309, 0320-0327
+    // Zong: 0310-0319
+    // Ufone: 0330-0339
+    // Telenor: 0340-0349
+    // SCO/Onic/Others: 0355, 0370
+    return (
+      raw.startsWith('030') || raw.startsWith('031') || raw.startsWith('032') || raw.startsWith('033') || raw.startsWith('034') || raw.startsWith('035') || raw.startsWith('037') ||
+      raw.startsWith('30') || raw.startsWith('31') || raw.startsWith('32') || raw.startsWith('33') || raw.startsWith('34') || raw.startsWith('35') || raw.startsWith('37') ||
+      raw.startsWith('+9230') || raw.startsWith('+9231') || raw.startsWith('+9232') || raw.startsWith('+9233') || raw.startsWith('+9234') || raw.startsWith('+9235') || raw.startsWith('+9237') ||
+      raw.startsWith('9230') || raw.startsWith('9231') || raw.startsWith('9232') || raw.startsWith('9233') || raw.startsWith('9234') || raw.startsWith('9235') || raw.startsWith('9237')
+    );
+  };
+
+  // Helper function to match ONLY Patient ID, MR#, Name or Address (EXCLUDING phone number match)
+  const matchPatientIdOrNameOnly = (p: { PatientName?: string, PatientID?: string, Address?: string }, query: string): boolean => {
+    const normalizedQuery = query.toLowerCase().trim();
+    if (!normalizedQuery) return false;
+    const terms = normalizedQuery.split(/\s+/).filter(Boolean);
+    if (terms.length === 0) return false;
+    
+    const name = String(p.PatientName || '').toLowerCase();
+    const address = String(p.Address || '').toLowerCase();
+    const patIdVar = getIdVariants(p.PatientID);
+
+    return terms.every(term => {
+      const termIdVar = getIdVariants(term);
+      
+      // 1. Direct substring match on Patient Name or Address
+      if (name.includes(term) || address.includes(term)) return true;
+      
+      // 2. Patient ID Matching (raw, clean alphanumeric, or digits with leading zero handling)
+      if (patIdVar.raw && (patIdVar.raw === term || patIdVar.raw.includes(term) || term.includes(patIdVar.raw))) return true;
+      if (termIdVar.clean && patIdVar.clean && (patIdVar.clean === termIdVar.clean || patIdVar.clean.includes(termIdVar.clean) || termIdVar.clean.includes(patIdVar.clean))) return true;
+      if (termIdVar.strippedDigits && patIdVar.strippedDigits) {
+        if (patIdVar.strippedDigits === termIdVar.strippedDigits || patIdVar.strippedDigits.includes(termIdVar.strippedDigits) || termIdVar.strippedDigits.includes(patIdVar.strippedDigits)) return true;
+      }
+      
+      return false;
+    });
+  };
+
   // Helper function for extremely robust, multi-word, normalized patient search
   const matchPatientRecord = (p: { PatientName?: string, PatientID?: string, PhoneMobile?: string | number, Address?: string }, query: string): boolean => {
     const normalizedQuery = query.toLowerCase().trim();
@@ -1460,9 +1516,33 @@ Healing Naturally. Restoring Balance.`;
     });
   })();
 
+  const handleSelectPatientFromMultiModal = (targetPatId: string, patObj?: any) => {
+    setIsMultiPatientModalOpen(false);
+    resetPvConsultationFields(targetPatId);
+
+    if (targetPatId) {
+      setPvSelectedPatientId(targetPatId);
+      
+      const p = patObj || patients.find(pt => pt.PatientID === targetPatId) 
+        || [...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory].find(pt => pt.PatientID === targetPatId);
+      
+      const displayName = p ? `${p.PatientName} (${targetPatId})` : targetPatId;
+      setPvPatientSearch(displayName);
+      setPvSelectedHistoryDate('ALL');
+      loadPvPatientHistory(targetPatId, false);
+      checkAndPromptDirectVisitToken(targetPatId);
+
+      const tok = (tokens || []).find((t) => t.PatientID === targetPatId);
+      const msg = `Selected Patient: ${p ? p.PatientName : targetPatId} (MR#: ${targetPatId})${tok ? ` - Token #${tok.TokenNo}` : ''}`;
+      setPvSaveSuccess(msg);
+      setTimeout(() => setPvSaveSuccess(''), 5000);
+    }
+  };
+
   const handleExecutePatientSearch = () => {
     setIsSearchLoadingModal(true);
-    const query = pvPatientSearch.trim().toLowerCase();
+    const rawQuery = pvPatientSearch.trim();
+    const query = rawQuery.toLowerCase();
     const cleanNum = query.replace(/\D/g, '');
     
     if (!query) {
@@ -1470,52 +1550,40 @@ Healing Naturally. Restoring Balance.`;
       resetPvConsultationFields('');
       setPvNhcHistory([]);
       setPvSelectedHistoryDate('ALL');
+      setIsMultiPatientModalOpen(false);
       setTimeout(() => setIsSearchLoadingModal(false), 200);
       return;
     }
 
-    let targetPatId = '';
+    // Check if query matches Pakistani mobile network prefixes (0300-0309, 0310-0319, 0320-0327, 0330-0339, 0340-0349, 0355, 0370, +923)
+    const isMobilePattern = isPakistaniMobilePrefix(rawQuery);
+    const allPatsForSearch = [...patients, ...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory];
 
-    // 1. Search by Issued Token Number in active tokens
-    const isExplicitTokenQuery = query.startsWith('token') || query.startsWith('tk') || query.startsWith('#');
-    if (cleanNum && tokens && tokens.length > 0 && (cleanNum.length <= 4 || isExplicitTokenQuery)) {
-      const tokenMatch = tokens.find(t => 
-        String(t.TokenNo) === cleanNum || 
-        `token-${t.TokenNo}` === query || 
-        `token ${t.TokenNo}` === query || 
-        `tk-${t.TokenNo}` === query ||
-        `#${t.TokenNo}` === query
-      );
-      if (tokenMatch) {
-        targetPatId = tokenMatch.PatientID;
+    const exactPidMatch = allPatsForSearch.find(p => p && (
+      String(p.PatientID || '').trim().toLowerCase() === query ||
+      (cleanNum.length > 0 && String(p.PatientID || '').replace(/\D/g, '').replace(/^0+/, '') === cleanNum.replace(/^0+/, '')) ||
+      matchPatientIdOrNameOnly(p, query)
+    ));
+
+    // If doctor searched by mobile number AND it's less than 9 digits AND no Patient ID/Name matched:
+    if (isMobilePattern && cleanNum.length < 9 && !exactPidMatch) {
+      // Check if exact token number matches
+      const exactTok = (tokens || []).find(t => String(t.TokenNo) === cleanNum || `#${t.TokenNo}` === query);
+      if (exactTok && exactTok.PatientID) {
+        handleSelectPatientFromMultiModal(exactTok.PatientID);
+        setTimeout(() => setIsSearchLoadingModal(false), 200);
+        return;
       }
+
+      setIsSearchLoadingModal(false);
+      setPvSaveSuccess(`⚠️ Please enter at least 9 digits for mobile number search (کم از کم 9 ہندسے درج کریں)`);
+      setTimeout(() => setPvSaveSuccess(''), 4000);
+      return;
     }
 
-    // 2. Search match in local patients using matchPatientRecord
-    if (!targetPatId) {
-      const localMatch = patients.find(p => matchPatientRecord(p, query));
-      if (localMatch) {
-        targetPatId = localMatch.PatientID;
-      }
-    }
-
-    // 3. Search in dropdown options / cached archive
-    if (!targetPatId) {
-      const optMatch = pvPatientDropdownOptions.find(p => 
-        String(p.PatientID || '').toLowerCase() === query || 
-        matchPatientRecord(p, query) ||
-        (p.tokenNo && String(p.tokenNo) === cleanNum)
-      );
-      if (optMatch) {
-        targetPatId = optMatch.PatientID;
-      }
-    }
-
-    // 4. Fetch archive records from backend API so search immediately works even for un-cached legacy patients
     const bridgeUrl = window.location.origin;
-    const targetQuery = targetPatId || query || pvSelectedPatientId;
 
-    fetch(`${bridgeUrl}/api/nhc-patient-history?q=${encodeURIComponent(targetQuery)}&limit=100`)
+    fetch(`${bridgeUrl}/api/nhc-patient-history?q=${encodeURIComponent(query)}&limit=100`)
       .then(res => res.ok ? res.json() : [])
       .then((nhcResults: NhcPatientHistory[]) => {
         if (Array.isArray(nhcResults) && nhcResults.length > 0) {
@@ -1527,41 +1595,126 @@ Healing Naturally. Restoring Balance.`;
           });
         }
 
-        if (!targetPatId) {
-          const matchedNhc = (nhcResults || []).find(p => matchPatientRecord(p, query));
-          if (matchedNhc) {
-            targetPatId = matchedNhc.PatientID;
-          } else {
-            const localMatches = patients.filter(p => matchPatientRecord(p, query));
-            if (localMatches.length > 0) {
-              targetPatId = localMatches[0].PatientID;
+        const matchedMap = new Map<string, MultiPatientSearchResult>();
+
+        const tokenMap = new Map<string, { tokenNo: number; shift: number }>();
+        (tokens || []).forEach(t => {
+          if (t && t.PatientID) {
+            tokenMap.set(String(t.PatientID).trim().toLowerCase(), { tokenNo: t.TokenNo, shift: t.Shift });
+          }
+        });
+
+        // Search by phone number ONLY if cleanNum.length >= 9
+        const isPhoneQuery = cleanNum.length >= 9;
+
+        const isRecordMatch = (p: any): boolean => {
+          if (!p) return false;
+          // matchPatientRecord checks Patient ID, Name, Address, and Phone
+          if (matchPatientRecord(p, query)) return true;
+          const pPhone = String(p.PhoneMobile || p.PhoneRes || p.PhoneOff || '').replace(/\D/g, '');
+          if (isPhoneQuery && pPhone.includes(cleanNum)) return true;
+          const pToken = tokenMap.get(String(p.PatientID || '').trim().toLowerCase());
+          if (pToken && (String(pToken.tokenNo) === cleanNum || `#${pToken.tokenNo}` === query)) return true;
+          return false;
+        };
+
+        // 1. Active EMR Patients
+        (patients || []).forEach(p => {
+          if (!p || !p.PatientID) return;
+          const pid = String(p.PatientID).trim();
+          const cleanPid = pid.toLowerCase();
+          if (isRecordMatch(p)) {
+            const tokInfo = tokenMap.get(cleanPid);
+            matchedMap.set(cleanPid, {
+              PatientID: pid,
+              PatientName: p.PatientName,
+              PhoneMobile: p.PhoneMobile,
+              Father_husband: p.Father_husband,
+              AgeYears: p.AgeYears,
+              Sex: p.Sex,
+              Address: p.Address,
+              tokenNo: tokInfo?.tokenNo,
+              tokenShift: tokInfo?.shift,
+              isNhc: false,
+              source: tokInfo ? "Active OPD Token" : "EMR Patient"
+            });
+          }
+        });
+
+        // 2. NHC Patients & Archives
+        const allNhc = [...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory, ...(nhcResults || [])];
+        allNhc.forEach(nhc => {
+          if (!nhc || !nhc.PatientID) return;
+          const pid = String(nhc.PatientID).trim();
+          const cleanPid = pid.toLowerCase();
+          if (isRecordMatch(nhc)) {
+            if (!matchedMap.has(cleanPid)) {
+              const tokInfo = tokenMap.get(cleanPid);
+              matchedMap.set(cleanPid, {
+                PatientID: pid,
+                PatientName: getResolvedNhcPatientName(nhc, patients, allNhc),
+                PhoneMobile: nhc.PhoneMobile,
+                Father_husband: nhc.Father_husband,
+                AgeYears: nhc.AgeYears,
+                Sex: nhc.Sex,
+                Address: nhc.Address,
+                tokenNo: tokInfo?.tokenNo,
+                tokenShift: tokInfo?.shift,
+                isNhc: true,
+                source: tokInfo ? "Active OPD Token" : "Patient History Archive"
+              });
             }
           }
-        }
+        });
 
-        if (targetPatId) {
-          resetPvConsultationFields(targetPatId);
-          setPvSelectedPatientId(targetPatId);
-          loadPvPatientHistory(targetPatId, false);
-          checkAndPromptDirectVisitToken(targetPatId);
-        } else if (query) {
-          resetPvConsultationFields();
-          loadPvPatientHistory(query, false);
+        // 3. Tokens check
+        (tokens || []).forEach(tok => {
+          if (!tok || !tok.PatientID) return;
+          const pid = String(tok.PatientID).trim();
+          const cleanPid = pid.toLowerCase();
+          const tokNoStr = String(tok.TokenNo);
+          const isTokMatch = tokNoStr === query || tokNoStr === cleanNum || `token-${tokNoStr}` === query || `#${tokNoStr}` === query;
+          if (isTokMatch && !matchedMap.has(cleanPid)) {
+            matchedMap.set(cleanPid, {
+              PatientID: pid,
+              PatientName: (tok as any).PatientName || `Patient ${pid}`,
+              tokenNo: tok.TokenNo,
+              tokenShift: tok.Shift,
+              isNhc: false,
+              source: "Issued OPD Token"
+            });
+          }
+        });
+
+        const matchingList = Array.from(matchedMap.values());
+
+        if (matchingList.length > 1) {
+          // MULTIPLE MATCHES FOUND: Open selection popup modal!
+          setMultiPatientSearchResults(matchingList);
+          setMultiPatientSearchQuery(rawQuery);
+          setMultiPatientModalFilter('');
+          setIsMultiPatientModalOpen(true);
+        } else if (matchingList.length === 1) {
+          // EXACT SINGLE MATCH FOUND: Directly select
+          const singleTarget = matchingList[0];
+          handleSelectPatientFromMultiModal(singleTarget.PatientID, singleTarget);
+        } else {
+          // NO MATCH FOUND
+          if (isMobilePattern && cleanNum.length < 9) {
+            setPvSaveSuccess(`⚠️ Please enter at least 9 digits for mobile number search (کم از کم 9 ہندسے درج کریں)`);
+          } else {
+            setPvSaveSuccess(`⚠️ No patient record found matching "${rawQuery}"`);
+          }
+          setTimeout(() => setPvSaveSuccess(''), 4000);
         }
       })
       .catch((e) => {
         console.warn('Search query error in NHC history workstation:', e);
-        if (targetPatId) {
-          resetPvConsultationFields(targetPatId);
-          setPvSelectedPatientId(targetPatId);
-          loadPvPatientHistory(targetPatId, false);
-          checkAndPromptDirectVisitToken(targetPatId);
-        }
       })
       .finally(() => {
         setTimeout(() => {
           setIsSearchLoadingModal(false);
-        }, 300);
+        }, 200);
       });
   };
 
@@ -6231,23 +6384,84 @@ Healing Naturally. Restoring Balance.`;
                         const val = e.target.value;
                         setPvPatientSearch(val);
                         const trimmed = val.trim();
-                        if (trimmed.length >= 1) {
-                          fetchNhcArchive(trimmed);
-                          const matched = pvPatientDropdownOptions.find(p => matchPatientRecord(p, trimmed))
-                            || patients.find(p => matchPatientRecord(p, trimmed))
-                            || (nhcPatients || []).find(p => matchPatientRecord(p, trimmed))
-                            || nhcArchiveList.find(p => matchPatientRecord(p, trimmed));
-                          if (matched && matched.PatientID !== pvSelectedPatientId) {
-                            resetPvConsultationFields(matched.PatientID);
-                            setPvSelectedPatientId(matched.PatientID);
-                            setPvSelectedHistoryDate('ALL');
-                            loadPvPatientHistory(matched.PatientID, false);
-                          }
-                        } else {
-                          // Search box is empty -> clear record & history
+                        const cleanNum = trimmed.replace(/\D/g, '');
+
+                        if (!trimmed) {
+                          // Search box is empty -> clear record, history & fields
                           setPvSelectedPatientId('');
                           resetPvConsultationFields('');
                           setPvSelectedHistoryDate('ALL');
+                          setPvNhcHistory([]);
+                          setIsMultiPatientModalOpen(false);
+                          return;
+                        }
+
+                        // Fetch NHC archive records in background as doctor types
+                        fetchNhcArchive(trimmed);
+
+                        // 1. Check if typed query matches any Patient ID, MR#, or Name directly (EXCLUDING phone number)
+                        const allPats = [...patients, ...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory];
+                        const idOrNameMatch = allPats.find(p => p && (
+                          String(p.PatientID || '').trim().toLowerCase() === trimmed.toLowerCase() ||
+                          (cleanNum.length > 0 && String(p.PatientID || '').replace(/\D/g, '').replace(/^0+/, '') === cleanNum.replace(/^0+/, '')) ||
+                          matchPatientIdOrNameOnly(p, trimmed)
+                        ));
+
+                        if (idOrNameMatch && idOrNameMatch.PatientID) {
+                          if (idOrNameMatch.PatientID !== pvSelectedPatientId) {
+                            resetPvConsultationFields(idOrNameMatch.PatientID);
+                            setPvSelectedPatientId(idOrNameMatch.PatientID);
+                            setPvSelectedHistoryDate('ALL');
+                            loadPvPatientHistory(idOrNameMatch.PatientID, false);
+                          }
+                          return;
+                        }
+
+                        // 2. Mobile Number Search (checks Pakistani mobile prefixes: 0300-0309, 0310-0319, 0320-0327, 0330-0339, 0340-0349, 0355, 0370, +923)
+                        const isMobilePattern = isPakistaniMobilePrefix(trimmed);
+
+                        if (isMobilePattern) {
+                          if (cleanNum.length >= 9) {
+                            const phoneMatches = allPats.filter(p => p && String(p.PhoneMobile || '').replace(/\D/g, '').includes(cleanNum));
+                            const uniquePhoneMap = new Map<string, any>();
+                            phoneMatches.forEach(p => uniquePhoneMap.set(String(p.PatientID).trim().toLowerCase(), p));
+
+                            if (uniquePhoneMap.size > 1) {
+                              // Multiple patients found with this mobile number -> Open popup selection modal!
+                              setTimeout(() => {
+                                handleExecutePatientSearch();
+                              }, 300);
+                            } else if (uniquePhoneMap.size === 1) {
+                              // Exactly 1 patient found -> Auto select in real time
+                              const matchedPt = Array.from(uniquePhoneMap.values())[0];
+                              if (matchedPt && matchedPt.PatientID !== pvSelectedPatientId) {
+                                resetPvConsultationFields(matchedPt.PatientID);
+                                setPvSelectedPatientId(matchedPt.PatientID);
+                                setPvSelectedHistoryDate('ALL');
+                                loadPvPatientHistory(matchedPt.PatientID, false);
+                              }
+                            }
+                          } else {
+                            // Mobile search is < 9 digits -> Check if token number matches
+                            const tokMatch = (tokens || []).find(t => String(t.TokenNo) === cleanNum);
+                            if (tokMatch && tokMatch.PatientID && tokMatch.PatientID !== pvSelectedPatientId) {
+                              resetPvConsultationFields(tokMatch.PatientID);
+                              setPvSelectedPatientId(tokMatch.PatientID);
+                              setPvSelectedHistoryDate('ALL');
+                              loadPvPatientHistory(tokMatch.PatientID, false);
+                            }
+                          }
+                        } else {
+                          // 3. General Search for non-mobile queries
+                          const generalMatch = pvPatientDropdownOptions.find(p => matchPatientRecord(p, trimmed))
+                            || allPats.find(p => matchPatientRecord(p, trimmed));
+
+                          if (generalMatch && generalMatch.PatientID && generalMatch.PatientID !== pvSelectedPatientId) {
+                            resetPvConsultationFields(generalMatch.PatientID);
+                            setPvSelectedPatientId(generalMatch.PatientID);
+                            setPvSelectedHistoryDate('ALL');
+                            loadPvPatientHistory(generalMatch.PatientID, false);
+                          }
                         }
                       }}
                       onKeyDown={(e) => {
@@ -6266,6 +6480,8 @@ Healing Naturally. Restoring Balance.`;
                           setPvSelectedPatientId('');
                           resetPvConsultationFields('');
                           setPvSelectedHistoryDate('ALL');
+                          setPvNhcHistory([]);
+                          setIsMultiPatientModalOpen(false);
                         }}
                         className="absolute right-2 top-2.5 sm:top-1.5 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
                         title="Clear search"
@@ -6282,6 +6498,37 @@ Healing Naturally. Restoring Balance.`;
                     <Search className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
                     <span>Search</span>
                   </button>
+
+                  {/* Multiple Patients Found Quick Action Button */}
+                  {(() => {
+                    const q = pvPatientSearch.trim().toLowerCase();
+                    const cleanNum = q.replace(/\D/g, '');
+                    const isMobile = isPakistaniMobilePrefix(q);
+
+                    if (q.length >= 1 && !pvSelectedPatientId) {
+                      const allPatsForBadge = [...patients, ...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory];
+                      const hasIdMatch = allPatsForBadge.some(p => p && matchPatientIdOrNameOnly(p, q));
+
+                      // If query is a mobile prefix AND less than 9 digits AND no Patient ID matched -> don't show badge
+                      if (isMobile && cleanNum.length < 9 && !hasIdMatch) return null;
+
+                      const matchedCount = pvPatientDropdownOptions.filter(p => matchPatientRecord(p, q)).length;
+                      if (matchedCount > 1) {
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => handleExecutePatientSearch()}
+                            className="text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-1 rounded-md flex items-center space-x-1 cursor-pointer transition animate-pulse shrink-0"
+                            title="Click to view all matching patients in selection modal"
+                          >
+                            <Users className="w-3 h-3 text-amber-700 shrink-0" />
+                            <span>⚡ {matchedCount} Patients Found - Click to Choose</span>
+                          </button>
+                        );
+                      }
+                    }
+                    return null;
+                  })()}
                 </div>
 
 
@@ -12368,6 +12615,194 @@ Healing Naturally. Restoring Balance.`;
           </div>
         </div>
       )}
+
+      {/* MULTIPLE PATIENT MATCHES POPUP SELECTION MODAL */}
+      {isMultiPatientModalOpen && (() => {
+        const filter = multiPatientModalFilter.trim().toLowerCase();
+        const filteredResults = multiPatientSearchResults.filter(p => {
+          if (!filter) return true;
+          const pName = String(p.PatientName || '').toLowerCase();
+          const pId = String(p.PatientID || '').toLowerCase();
+          const pFather = String(p.Father_husband || '').toLowerCase();
+          const pPhone = String(p.PhoneMobile || '').toLowerCase();
+          return pName.includes(filter) || pId.includes(filter) || pFather.includes(filter) || pPhone.includes(filter);
+        });
+
+        return (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
+            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-3xl w-full flex flex-col overflow-hidden max-h-[90vh]">
+              
+              {/* Modal Header */}
+              <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white p-4 sm:p-5 flex items-start justify-between border-b border-emerald-500/30">
+                <div className="flex items-start space-x-3">
+                  <div className="p-2.5 bg-emerald-500/20 rounded-xl border border-emerald-400/30 text-emerald-300 shrink-0 mt-0.5">
+                    <Users className="w-6 h-6 text-emerald-400" />
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2 flex-wrap gap-1">
+                      <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
+                        Multiple Patients Found for Search
+                      </h3>
+                      <span className="text-[10px] font-black uppercase tracking-wider bg-amber-400 text-slate-900 px-2 py-0.5 rounded-md shadow-2xs font-mono">
+                        {multiPatientSearchResults.length} Patients Found
+                      </span>
+                    </div>
+                    <p className="text-xs text-emerald-200 mt-1">
+                      Search Term: <strong className="text-amber-300 font-mono bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">"{multiPatientSearchQuery}"</strong>
+                    </p>
+                    <p className="text-[11px] text-slate-300 mt-0.5">
+                      Doctor Sahab, multiple patient records match this mobile number/search term. Please click <strong>"Select Patient"</strong> on the intended record below:
+                    </p>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsMultiPatientModalOpen(false)}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
+                  title="Close Modal"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+
+              {/* Filter inside Modal */}
+              <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
+                <div className="relative flex-1">
+                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Filter list by patient name, MR#, father name..."
+                    value={multiPatientModalFilter}
+                    onChange={(e) => setMultiPatientModalFilter(e.target.value)}
+                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-800"
+                  />
+                  {multiPatientModalFilter && (
+                    <button
+                      type="button"
+                      onClick={() => setMultiPatientModalFilter('')}
+                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs font-bold"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+                <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider shrink-0 hidden sm:inline">
+                  Showing {filteredResults.length} of {multiPatientSearchResults.length}
+                </span>
+              </div>
+
+              {/* Patient List Content Body */}
+              <div className="p-3 sm:p-4 overflow-y-auto space-y-2.5 flex-1 max-h-[55vh]">
+                {filteredResults.length === 0 ? (
+                  <div className="p-8 text-center text-slate-500">
+                    <p className="font-bold text-slate-700 text-sm">No matching patients found in filtered list</p>
+                    <p className="text-xs text-slate-400 mt-1">Try clearing the filter text above.</p>
+                  </div>
+                ) : (
+                  filteredResults.map((patient, idx) => (
+                    <div
+                      key={`multi-pat-${patient.PatientID}-${idx}`}
+                      onClick={() => handleSelectPatientFromMultiModal(patient.PatientID, patient)}
+                      className="bg-white hover:bg-emerald-50/60 border border-slate-200 hover:border-emerald-400 rounded-xl p-3 sm:p-3.5 transition-all shadow-2xs hover:shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer group"
+                    >
+                      {/* Left Column: Avatar & Patient Demographics */}
+                      <div className="flex items-start space-x-3">
+                        {patient.tokenNo ? (
+                          <div className="w-11 h-11 rounded-xl bg-amber-500 text-slate-900 font-black flex flex-col items-center justify-center shrink-0 border border-amber-400 shadow-2xs">
+                            <span className="text-[8px] font-extrabold uppercase text-slate-900 leading-none">Token</span>
+                            <span className="text-base leading-tight">#{patient.tokenNo}</span>
+                          </div>
+                        ) : (
+                          <div className="w-11 h-11 rounded-xl bg-emerald-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-2xs border border-emerald-500">
+                            {patient.PatientName.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          {/* Row 1: Name, MR#, Source Badge */}
+                          <div className="flex items-center space-x-2 flex-wrap gap-1">
+                            <h4 className="text-sm font-extrabold text-slate-900 group-hover:text-emerald-700 transition">
+                              {patient.PatientName}
+                            </h4>
+                            <span className="text-[10px] font-mono font-black bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
+                              MR# {patient.PatientID}
+                            </span>
+                            {patient.source && (
+                              <span className="text-[9px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded border border-emerald-300">
+                                {patient.source}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Row 2: Mobile No, Father/Husband Name, Age & Sex */}
+                          <div className="flex items-center space-x-3 flex-wrap gap-2 text-xs text-slate-600">
+                            {patient.PhoneMobile && (
+                              <span className="flex items-center space-x-1 font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-mono">
+                                <Phone className="w-3 h-3 text-emerald-600" />
+                                <span>{patient.PhoneMobile}</span>
+                              </span>
+                            )}
+
+                            {patient.Father_husband && (
+                              <span className="font-semibold text-slate-700">
+                                S/O / W/O: <strong>{patient.Father_husband}</strong>
+                              </span>
+                            )}
+
+                            {(patient.AgeYears || patient.Sex) && (
+                              <span className="text-slate-500 font-medium">
+                                • {patient.AgeYears ? `${patient.AgeYears} Yrs` : ''} {patient.Sex ? `(${patient.Sex})` : ''}
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Row 3: Address / City if available */}
+                          {(patient.Address || patient.City) && (
+                            <div className="text-[11px] text-slate-500 flex items-center space-x-1">
+                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
+                              <span className="truncate max-w-md">{patient.Address || patient.City}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Right Column: Select Button */}
+                      <div className="shrink-0 flex items-center justify-end sm:justify-start">
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleSelectPatientFromMultiModal(patient.PatientID, patient);
+                          }}
+                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5 cursor-pointer group-hover:scale-105 shrink-0"
+                        >
+                          <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                          <span>Select Patient</span>
+                        </button>
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="bg-slate-100 p-3 sm:p-4 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
+                <span className="text-xs text-slate-600 font-medium">
+                  Click <strong>Select Patient</strong> to open medical history & consultation workspace.
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setIsMultiPatientModalOpen(false)}
+                  className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition cursor-pointer"
+                >
+                  Cancel / Close
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* GRID VIEW VISIT DATE SELECTOR MODAL */}
       {isGridVisitSelectorModalOpen && gridSelectorPatientId && (() => {

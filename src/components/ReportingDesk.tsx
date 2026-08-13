@@ -47,7 +47,8 @@ export type ReportType =
   | 'required_stock'
   | 'pnl_summary'
   | 'shift_collection_summary'
-  | 'foc_cases_summary';
+  | 'foc_cases_summary'
+  | 'store_medicine_report';
 
 interface ReportingDeskProps {
   vendors?: ErpVendor[];
@@ -92,6 +93,7 @@ export default function ReportingDesk({
   patientVisits = [],
   posSales = [],
   invoices = [],
+  invoiceDetails = [],
   visits = [],
   patients = [],
   currentUser,
@@ -105,17 +107,21 @@ export default function ReportingDesk({
   const [fetchedTxns, setFetchedTxns] = useState<ErpTransaction[]>([]);
   const [fetchedPayrolls, setFetchedPayrolls] = useState<ErpPayroll[]>([]);
   const [fetchedExpenses, setFetchedExpenses] = useState<ErpExpense[]>([]);
+  const [fetchedInvoices, setFetchedInvoices] = useState<any[]>([]);
+  const [fetchedInvoiceDetails, setFetchedInvoiceDetails] = useState<any[]>([]);
 
   const loadReportData = React.useCallback(async () => {
     try {
-      const [itRes, vRes, poRes, grnRes, txRes, payRes, expRes] = await Promise.all([
+      const [itRes, vRes, poRes, grnRes, txRes, payRes, expRes, invRes, invDetRes] = await Promise.all([
         fetch('/api/query/items').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_vendors').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_purchase_orders').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_grn').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_transactions').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_payroll').then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch('/api/query/erp_expenses').then(r => r.ok ? r.json() : []).catch(() => [])
+        fetch('/api/query/erp_expenses').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/invoices').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/invoice_details').then(r => r.ok ? r.json() : []).catch(() => [])
       ]);
       if (Array.isArray(itRes) && itRes.length > 0) setFetchedItems(itRes);
       if (Array.isArray(vRes) && vRes.length > 0) setFetchedVendors(vRes);
@@ -124,6 +130,8 @@ export default function ReportingDesk({
       if (Array.isArray(txRes) && txRes.length > 0) setFetchedTxns(txRes);
       if (Array.isArray(payRes) && payRes.length > 0) setFetchedPayrolls(payRes);
       if (Array.isArray(expRes) && expRes.length > 0) setFetchedExpenses(expRes);
+      if (Array.isArray(invRes) && invRes.length > 0) setFetchedInvoices(invRes);
+      if (Array.isArray(invDetRes) && invDetRes.length > 0) setFetchedInvoiceDetails(invDetRes);
     } catch (err) {
       console.error('ReportingDesk fetch error:', err);
     }
@@ -178,6 +186,19 @@ export default function ReportingDesk({
     if (Array.isArray(fetchedExpenses) && fetchedExpenses.length > 0) return fetchedExpenses;
     return [];
   }, [expenses, fetchedExpenses]);
+
+  const effectiveInvoices = useMemo(() => {
+    if (Array.isArray(invoices) && invoices.length > 0) return invoices;
+    if (Array.isArray(posSales) && posSales.length > 0) return posSales;
+    if (Array.isArray(fetchedInvoices) && fetchedInvoices.length > 0) return fetchedInvoices;
+    return [];
+  }, [invoices, posSales, fetchedInvoices]);
+
+  const effectiveInvoiceDetails = useMemo(() => {
+    if (Array.isArray(invoiceDetails) && invoiceDetails.length > 0) return invoiceDetails;
+    if (Array.isArray(fetchedInvoiceDetails) && fetchedInvoiceDetails.length > 0) return fetchedInvoiceDetails;
+    return [];
+  }, [invoiceDetails, fetchedInvoiceDetails]);
 
   // Helper stock extractors
   const getItemStock = (item: any) => {
@@ -757,6 +778,196 @@ export default function ReportingDesk({
     );
   }, [focReportData.rows, searchQuery]);
 
+  // Report 11: Store Medicine Sales, Purchase Cost & Profit Margin Analysis
+  const storeMedicineReportData = useMemo(() => {
+    const validInvoices = effectiveInvoices.filter(inv => {
+      const invDate = parseCleanDate(inv.InvoiceDate || inv.date || inv.Date);
+      const isNotReversed = inv.Status !== 3 && inv.status !== 'Reversed';
+      return isNotReversed && isWithinDateRange(invDate);
+    });
+
+    const validInvoiceNos = new Set(validInvoices.map(i => i.InvoiceNo || i.invoiceNo || i.id));
+
+    const itemSalesMap: Record<string, {
+      itemId: string;
+      itemName: string;
+      category: string;
+      company: string;
+      qtySold: number;
+      unitPurchasePrice: number;
+      unitSalePrice: number;
+      totalGrossSales: number;
+      totalDiscount: number;
+      totalNetSales: number;
+      totalCogs: number;
+      grossProfit: number;
+      marginPct: number;
+    }> = {};
+
+    let totalGrossSalesAll = 0;
+    let totalDiscountsAll = 0;
+    let totalNetSalesAll = 0;
+    let totalCogsAll = 0;
+
+    // Process detail lines
+    effectiveInvoiceDetails.forEach(detail => {
+      const invNo = detail.InvoiceNo || detail.invoiceNo;
+      if (!validInvoiceNos.has(invNo)) return;
+
+      const itemId = detail.ItemID || detail.itemId || 'UNKNOWN';
+      const itemObj = effectiveItems.find(it => it.ItemID === itemId || it.id === itemId);
+      
+      const itemName = itemObj?.ItemName || itemObj?.itemName || detail.ItemName || detail.itemName || itemId;
+      const category = itemObj?.Category || itemObj?.category || detail.Category || 'Pharmacy Store';
+      const company = itemObj?.Company || itemObj?.company || itemObj?.Brand || detail.Company || '-';
+
+      const qty = Number(detail.Qty || detail.qty || detail.quantity) || 0;
+      const salePrice = Number(detail.SalePrice || detail.salePrice || detail.Price || itemObj?.SalePrice || itemObj?.Price) || 0;
+      
+      const purPrice = Number(detail.CostPrice || detail.costPrice || detail.PurchasePrice || itemObj?.PurchasePrice || itemObj?.TP || itemObj?.costPrice) || (salePrice > 0 ? Math.round(salePrice * 0.75) : 0);
+
+      const detailGross = Number(detail.TotalAmount || detail.GAmount) || (qty * salePrice);
+      const detailDisc = Number(detail.Discount || detail.discount) || 0;
+      const detailNet = Number(detail.NetAmount || detail.netAmount) || (detailGross - detailDisc);
+      const detailCogs = qty * purPrice;
+
+      totalGrossSalesAll += detailGross;
+      totalDiscountsAll += detailDisc;
+      totalNetSalesAll += detailNet;
+      totalCogsAll += detailCogs;
+
+      if (!itemSalesMap[itemId]) {
+        itemSalesMap[itemId] = {
+          itemId,
+          itemName,
+          category,
+          company,
+          qtySold: 0,
+          unitPurchasePrice: purPrice,
+          unitSalePrice: salePrice,
+          totalGrossSales: 0,
+          totalDiscount: 0,
+          totalNetSales: 0,
+          totalCogs: 0,
+          grossProfit: 0,
+          marginPct: 0
+        };
+      }
+
+      itemSalesMap[itemId].qtySold += qty;
+      itemSalesMap[itemId].totalGrossSales += detailGross;
+      itemSalesMap[itemId].totalDiscount += detailDisc;
+      itemSalesMap[itemId].totalNetSales += detailNet;
+      itemSalesMap[itemId].totalCogs += detailCogs;
+    });
+
+    // Fallback if invoiceDetails array is empty or partial: inspect invoice basket/items arrays
+    if (effectiveInvoiceDetails.length === 0) {
+      validInvoices.forEach(inv => {
+        const invItems = inv.items || inv.basket || inv.InvoiceDetails || [];
+        const invDisc = Number(inv.Discount) || 0;
+        const invGross = Number(inv.GAmount || inv.GrandTotal || inv.TotalAmount) || 0;
+        const invNet = Number(inv.NetAmount || inv.NetPayable) || (invGross - invDisc);
+
+        if (Array.isArray(invItems) && invItems.length > 0) {
+          invItems.forEach((it: any) => {
+            const itemId = it.ItemID || it.itemId || 'ITEM';
+            const itemObj = effectiveItems.find(i => i.ItemID === itemId);
+            const itemName = itemObj?.ItemName || it.ItemName || itemId;
+            const category = itemObj?.Category || 'Pharmacy Store';
+            const company = itemObj?.Company || '-';
+            const qty = Number(it.Qty || it.qty) || 1;
+            const salePrice = Number(it.SalePrice || it.price || itemObj?.SalePrice) || 0;
+            const purPrice = Number(it.CostPrice || itemObj?.PurchasePrice || itemObj?.TP) || Math.round(salePrice * 0.75);
+
+            const gross = qty * salePrice;
+            const disc = Number(it.Discount) || (invGross > 0 ? Math.round((gross / invGross) * invDisc) : 0);
+            const net = gross - disc;
+            const cogs = qty * purPrice;
+
+            totalGrossSalesAll += gross;
+            totalDiscountsAll += disc;
+            totalNetSalesAll += net;
+            totalCogsAll += cogs;
+
+            if (!itemSalesMap[itemId]) {
+              itemSalesMap[itemId] = {
+                itemId,
+                itemName,
+                category,
+                company,
+                qtySold: 0,
+                unitPurchasePrice: purPrice,
+                unitSalePrice: salePrice,
+                totalGrossSales: 0,
+                totalDiscount: 0,
+                totalNetSales: 0,
+                totalCogs: 0,
+                grossProfit: 0,
+                marginPct: 0
+              };
+            }
+
+            itemSalesMap[itemId].qtySold += qty;
+            itemSalesMap[itemId].totalGrossSales += gross;
+            itemSalesMap[itemId].totalDiscount += disc;
+            itemSalesMap[itemId].totalNetSales += net;
+            itemSalesMap[itemId].totalCogs += cogs;
+          });
+        } else {
+          totalGrossSalesAll += invGross;
+          totalDiscountsAll += invDisc;
+          totalNetSalesAll += invNet;
+          const estCogs = Math.round(invNet * 0.75);
+          totalCogsAll += estCogs;
+        }
+      });
+    }
+
+    const rows = Object.values(itemSalesMap).map(row => {
+      const profit = row.totalNetSales - row.totalCogs;
+      const margin = row.totalNetSales > 0 ? (profit / row.totalNetSales) * 100 : 0;
+      return {
+        ...row,
+        grossProfit: profit,
+        marginPct: margin
+      };
+    });
+
+    rows.sort((a, b) => b.totalNetSales - a.totalNetSales);
+
+    const totalGrossProfitAll = totalNetSalesAll - totalCogsAll;
+    const overallMarginPctAll = totalNetSalesAll > 0 ? (totalGrossProfitAll / totalNetSalesAll) * 100 : 0;
+
+    return {
+      validInvoicesCount: validInvoices.length,
+      rows,
+      totalGrossSalesAll,
+      totalDiscountsAll,
+      totalNetSalesAll,
+      totalCogsAll,
+      totalGrossProfitAll,
+      overallMarginPctAll
+    };
+  }, [effectiveInvoices, effectiveInvoiceDetails, effectiveItems, startDate, endDate, datePreset]);
+
+  const filteredStoreMedicineRows = useMemo(() => {
+    let list = storeMedicineReportData.rows;
+    if (selectedCategory && selectedCategory !== 'all') {
+      list = list.filter(r => r.category?.toLowerCase() === selectedCategory.toLowerCase());
+    }
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase();
+      list = list.filter(r =>
+        r.itemName.toLowerCase().includes(q) ||
+        r.itemId.toLowerCase().includes(q) ||
+        r.company.toLowerCase().includes(q) ||
+        r.category.toLowerCase().includes(q)
+      );
+    }
+    return list;
+  }, [storeMedicineReportData.rows, selectedCategory, searchQuery]);
+
   // Available Item Categories
   const categoriesList = useMemo(() => {
     const set = new Set<string>();
@@ -913,6 +1124,52 @@ export default function ReportingDesk({
         focReportData.grandTotalWaived,
         ''
       ]);
+    } else if (activeReport === 'store_medicine_report') {
+      headers = [
+        'Item ID',
+        'Medicine / Item Name',
+        'Category',
+        'Company / Brand',
+        'Qty Sold',
+        'Unit Purchase Price (Rs.)',
+        'Unit Retail / Sale Price (Rs.)',
+        'Total Purchase Cost / COGS (Rs.)',
+        'Gross Sales (Rs.)',
+        'Discount Allowed (Rs.)',
+        'Net Revenue (Rs.)',
+        'Gross Profit (Rs.)',
+        'Margin (%)'
+      ];
+      rows = filteredStoreMedicineRows.map(r => [
+        r.itemId,
+        r.itemName,
+        r.category,
+        r.company,
+        r.qtySold,
+        r.unitPurchasePrice,
+        r.unitSalePrice,
+        r.totalCogs,
+        r.totalGrossSales,
+        r.totalDiscount,
+        r.totalNetSales,
+        r.grossProfit,
+        r.marginPct.toFixed(1) + '%'
+      ]);
+      rows.push([
+        'TOTALS',
+        '',
+        '',
+        '',
+        filteredStoreMedicineRows.reduce((a, b) => a + b.qtySold, 0),
+        '',
+        '',
+        storeMedicineReportData.totalCogsAll,
+        storeMedicineReportData.totalGrossSalesAll,
+        storeMedicineReportData.totalDiscountsAll,
+        storeMedicineReportData.totalNetSalesAll,
+        storeMedicineReportData.totalGrossProfitAll,
+        storeMedicineReportData.overallMarginPctAll.toFixed(1) + '%'
+      ]);
     }
 
     const csvContent = 'data:text/csv;charset=utf-8,' +
@@ -953,7 +1210,8 @@ export default function ReportingDesk({
       required_stock: 'Required Stock Requisition & Procurement Calculation Report',
       pnl_summary: 'Executive Profit & Loss Financial Summary Statement',
       shift_collection_summary: 'Shift-Wise Collection & Revenue Summary Statement',
-      foc_cases_summary: 'Free of Charge (FOC) Cases & Welfare Waiver Report'
+      foc_cases_summary: 'Free of Charge (FOC) Cases & Welfare Waiver Report',
+      store_medicine_report: 'Store Medicine Sales, Cost Price & Profit Margin Analysis Report'
     };
 
     const recordCountText =
@@ -965,7 +1223,8 @@ export default function ReportingDesk({
       activeReport === 'required_stock' ? `${requiredStockData.length} Requisition Items` :
       activeReport === 'pnl_summary' ? 'Executive Financial Summary' :
       activeReport === 'foc_cases_summary' ? `${focReportData.totalCount} FOC Patients` :
-      activeReport === 'shift_collection_summary' ? `${shiftCollectionData.dailyRows.length} Daily Records` : `${poData.length} Purchase Orders`;
+      activeReport === 'shift_collection_summary' ? `${shiftCollectionData.dailyRows.length} Daily Records` :
+      activeReport === 'store_medicine_report' ? `${filteredStoreMedicineRows.length} Store Medicine Lines` : `${poData.length} Purchase Orders`;
 
     let tableHtml = '';
 
@@ -1326,6 +1585,61 @@ export default function ReportingDesk({
           </tfoot>
         </table>
       `;
+    } else if (activeReport === 'store_medicine_report') {
+      tableHtml = `
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>Item ID</th>
+              <th>Medicine Name</th>
+              <th>Category</th>
+              <th>Company</th>
+              <th style="text-align: right">Qty Sold</th>
+              <th style="text-align: right">Unit Pur. Price</th>
+              <th style="text-align: right">Unit Sale Price</th>
+              <th style="text-align: right">Total COGS</th>
+              <th style="text-align: right">Gross Sales</th>
+              <th style="text-align: right">Discount</th>
+              <th style="text-align: right">Net Revenue</th>
+              <th style="text-align: right">Gross Profit</th>
+              <th style="text-align: right">Margin %</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${filteredStoreMedicineRows.map(r => `
+              <tr>
+                <td><b>${r.itemId}</b></td>
+                <td><b>${r.itemName}</b></td>
+                <td>${r.category}</td>
+                <td>${r.company}</td>
+                <td style="text-align: right; font-weight: bold;">${r.qtySold}</td>
+                <td style="text-align: right">Rs. ${r.unitPurchasePrice.toLocaleString()}</td>
+                <td style="text-align: right">Rs. ${r.unitSalePrice.toLocaleString()}</td>
+                <td style="text-align: right; color: #475569;">Rs. ${r.totalCogs.toLocaleString()}</td>
+                <td style="text-align: right">Rs. ${r.totalGrossSales.toLocaleString()}</td>
+                <td style="text-align: right; color: #d97706;">Rs. ${r.totalDiscount.toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold; color: #0284c7;">Rs. ${r.totalNetSales.toLocaleString()}</td>
+                <td style="text-align: right; font-weight: 800; color: ${r.grossProfit >= 0 ? '#15803d' : '#b91c1c'};">Rs. ${r.grossProfit.toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold;"><span class="badge" style="background: ${r.marginPct >= 20 ? '#dcfce7; color: #166534' : '#fef3c7; color: #92400e'};">${r.marginPct.toFixed(1)}%</span></td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background: #0f172a; color: white; font-weight: bold;">
+              <td colspan="4">GRAND TOTALS (${storeMedicineReportData.rows.length} MEDICINES)</td>
+              <td style="text-align: right">${filteredStoreMedicineRows.reduce((a, b) => a + b.qtySold, 0)}</td>
+              <td></td>
+              <td></td>
+              <td style="text-align: right; color: #cbd5e1;">Rs. ${storeMedicineReportData.totalCogsAll.toLocaleString()}</td>
+              <td style="text-align: right; color: #cbd5e1;">Rs. ${storeMedicineReportData.totalGrossSalesAll.toLocaleString()}</td>
+              <td style="text-align: right; color: #fde68a;">Rs. ${storeMedicineReportData.totalDiscountsAll.toLocaleString()}</td>
+              <td style="text-align: right; color: #38bdf8; font-size: 13px;">Rs. ${storeMedicineReportData.totalNetSalesAll.toLocaleString()}</td>
+              <td style="text-align: right; color: #4ade80; font-size: 13px;">Rs. ${storeMedicineReportData.totalGrossProfitAll.toLocaleString()}</td>
+              <td style="text-align: right; color: #facc15; font-size: 13px;">${storeMedicineReportData.overallMarginPctAll.toFixed(1)}%</td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
     } else {
       tableHtml = `
         <table class="report-table">
@@ -1634,8 +1948,8 @@ export default function ReportingDesk({
             </div>
             <div class="clinic-info">
               <h1 class="clinic-name">${clinicName}</h1>
-              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
               <div class="clinic-tagline">HEALING NATURALLY. RESTORING BALANCE.</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
               <div class="clinic-timings">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
               </div>
@@ -1765,7 +2079,7 @@ export default function ReportingDesk({
         </div>
 
         {/* REPORT TYPE SELECTOR BUTTONS */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-10 gap-2 mt-6 pt-5 border-t border-slate-800">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-11 gap-2 mt-6 pt-5 border-t border-slate-800">
           {[
             { id: 'pending_payments', label: 'Pending Vendor Payments', icon: Building2, badge: pendingPaymentsSummary.vendorsWithDues },
             { id: 'payroll_disbursement', label: 'Salary Disbursement', icon: Users, badge: payrollSummary.recordCount },
@@ -1773,6 +2087,7 @@ export default function ReportingDesk({
             { id: 'purchase_orders', label: 'Purchase Orders', icon: ShoppingCart, badge: poSummary.totalPos },
             { id: 'shift_collection_summary', label: 'Shift Collection', icon: PieChart },
             { id: 'foc_cases_summary', label: 'FOC Cases', icon: HeartHandshake, badge: focReportData.totalCount },
+            { id: 'store_medicine_report', label: 'Store Sales & Profit Margin', icon: Boxes, badge: storeMedicineReportData.rows.length },
             { id: 'current_stock', label: 'Current Stock', icon: Boxes, badge: currentStockSummary.totalItems },
             { id: 'minimum_stock', label: 'Minimum Stock Alert', icon: AlertTriangle, badge: minimumStockSummary.totalLowStock, isAlert: true },
             { id: 'required_stock', label: 'Required Requisition', icon: PackagePlus, badge: requiredStockSummary.totalItemsToOrder },
@@ -1883,7 +2198,7 @@ export default function ReportingDesk({
             />
           </div>
 
-          {(activeReport === 'expense_analysis' || activeReport === 'current_stock' || activeReport === 'minimum_stock' || activeReport === 'required_stock') && (
+          {(activeReport === 'expense_analysis' || activeReport === 'current_stock' || activeReport === 'minimum_stock' || activeReport === 'required_stock' || activeReport === 'store_medicine_report') && (
             <div className="flex items-center space-x-2 w-full sm:w-auto">
               <Filter className="w-3.5 h-3.5 text-slate-400" />
               <select
@@ -2077,11 +2392,11 @@ export default function ReportingDesk({
               <h1 className="text-xl font-black text-rose-900 tracking-tight font-serif uppercase">
                 {clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}
               </h1>
-              <p className="text-[11px] font-bold text-slate-800 mt-0.5">
-                10 Shalimar Road, Garhi Shahu, Lahore
-              </p>
               <p className="text-[10px] font-extrabold text-rose-700 tracking-wider uppercase mt-0.5">
                 HEALING NATURALLY. RESTORING BALANCE.
+              </p>
+              <p className="text-[11px] font-bold text-slate-800 mt-0.5">
+                10 Shalimar Road, Garhi Shahu, Lahore
               </p>
               <p className="text-[9px] text-emerald-800 font-bold uppercase mt-0.5">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
@@ -2821,6 +3136,171 @@ export default function ReportingDesk({
                         Rs. {focReportData.grandTotalWaived.toLocaleString()}
                       </td>
                       <td></td>
+                    </tr>
+                  </tfoot>
+                </table>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* REPORT TABLE 11: STORE MEDICINE SALES, COST & PROFIT MARGIN ANALYSIS */}
+        {activeReport === 'store_medicine_report' && (
+          <div className="space-y-6 pt-2">
+            {/* KPI SUMMARY CARDS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-sky-600 uppercase tracking-wider">Gross Pharmacy Sales</div>
+                  <div className="text-2xl font-black text-sky-950 mt-1">Rs. {storeMedicineReportData.totalGrossSalesAll.toLocaleString()}</div>
+                  <div className="text-[11px] font-medium text-sky-700 mt-0.5">
+                    {storeMedicineReportData.validInvoicesCount} Invoices • {storeMedicineReportData.rows.length} Items Sold
+                  </div>
+                </div>
+                <ShoppingCart className="w-8 h-8 text-sky-500 opacity-80" />
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-amber-600 uppercase tracking-wider">Discounts & Concessions</div>
+                  <div className="text-2xl font-black text-amber-950 mt-1">Rs. {storeMedicineReportData.totalDiscountsAll.toLocaleString()}</div>
+                  <div className="text-[11px] font-medium text-amber-700 mt-0.5">Discounts given on POS sales</div>
+                </div>
+                <DollarSign className="w-8 h-8 text-amber-500 opacity-80" />
+              </div>
+
+              <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-purple-600 uppercase tracking-wider">Purchase Cost (COGS)</div>
+                  <div className="text-2xl font-black text-purple-950 mt-1">Rs. {storeMedicineReportData.totalCogsAll.toLocaleString()}</div>
+                  <div className="text-[11px] font-medium text-purple-700 mt-0.5">Total stock acquisition cost</div>
+                </div>
+                <Boxes className="w-8 h-8 text-purple-500 opacity-80" />
+              </div>
+
+              <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between">
+                <div>
+                  <div className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Net Gross Profit & Margin</div>
+                  <div className="text-2xl font-black text-emerald-950 mt-1">Rs. {storeMedicineReportData.totalGrossProfitAll.toLocaleString()}</div>
+                  <div className="text-[11px] font-extrabold text-emerald-700 mt-0.5 flex items-center space-x-1">
+                    <span className="px-1.5 py-0.5 bg-emerald-200 text-emerald-900 rounded-md">
+                      {storeMedicineReportData.overallMarginPctAll.toFixed(1)}% Margin
+                    </span>
+                    <span>• Net: Rs. {storeMedicineReportData.totalNetSalesAll.toLocaleString()}</span>
+                  </div>
+                </div>
+                <TrendingUp className="w-8 h-8 text-emerald-500 opacity-80" />
+              </div>
+            </div>
+
+            {/* DETAILED MEDICINES PROFIT MARGIN TABLE */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+              <div className="p-4 bg-slate-900 text-white flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div>
+                  <h4 className="font-bold text-sm text-white">Store Medicine Sales, Cost Price & Profit Margin Ledger</h4>
+                  <p className="text-xs text-slate-300">
+                    Comprehensive audit statement showing itemized purchase costs (COGS), sale prices, discounts, net revenue, and gross profit margins.
+                  </p>
+                </div>
+                <span className="text-xs font-bold text-slate-300 bg-slate-800 px-3 py-1 rounded-full border border-slate-700 self-start sm:self-auto">
+                  {filteredStoreMedicineRows.length} Medicines Found
+                </span>
+              </div>
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-100 text-slate-800 font-extrabold border-b border-slate-300 text-[11px] uppercase">
+                      <th className="p-3 border-r border-slate-200">Item ID</th>
+                      <th className="p-3 border-r border-slate-200">Medicine / Item Name</th>
+                      <th className="p-3 border-r border-slate-200">Category</th>
+                      <th className="p-3 border-r border-slate-200">Company</th>
+                      <th className="p-3 text-right border-r border-slate-200">Qty Sold</th>
+                      <th className="p-3 text-right border-r border-slate-200">Unit Pur. Price</th>
+                      <th className="p-3 text-right border-r border-slate-200">Unit Sale Price</th>
+                      <th className="p-3 text-right border-r border-slate-200 text-purple-900 bg-purple-50/50">Total Cost (COGS)</th>
+                      <th className="p-3 text-right border-r border-slate-200">Gross Sales</th>
+                      <th className="p-3 text-right border-r border-slate-200 text-amber-900">Discount</th>
+                      <th className="p-3 text-right border-r border-slate-200 text-sky-900 bg-sky-50/50">Net Revenue</th>
+                      <th className="p-3 text-right border-r border-slate-200 text-emerald-950 bg-emerald-50/50">Gross Profit</th>
+                      <th className="p-3 text-center">Profit Margin %</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-200 font-medium text-slate-800">
+                    {filteredStoreMedicineRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={13} className="p-8 text-center text-slate-400 italic">
+                          No store medicine sales found for the selected date range and filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredStoreMedicineRows.map((r, idx) => (
+                        <tr key={r.itemId + idx} className={idx % 2 === 0 ? 'bg-white hover:bg-slate-50/80' : 'bg-slate-50/50 hover:bg-slate-100/50'}>
+                          <td className="p-3 font-mono font-bold text-slate-600 border-r border-slate-100">{r.itemId}</td>
+                          <td className="p-3 font-extrabold text-slate-900 border-r border-slate-100">{r.itemName}</td>
+                          <td className="p-3 text-slate-600 border-r border-slate-100">{r.category}</td>
+                          <td className="p-3 text-slate-600 border-r border-slate-100">{r.company}</td>
+                          <td className="p-3 text-right font-black text-slate-900 border-r border-slate-100">{r.qtySold}</td>
+                          <td className="p-3 text-right text-slate-700 font-mono border-r border-slate-100">Rs. {r.unitPurchasePrice.toLocaleString()}</td>
+                          <td className="p-3 text-right text-slate-700 font-mono border-r border-slate-100">Rs. {r.unitSalePrice.toLocaleString()}</td>
+                          <td className="p-3 text-right font-bold text-purple-900 bg-purple-50/30 border-r border-slate-100 font-mono">
+                            Rs. {r.totalCogs.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-right text-slate-800 font-mono border-r border-slate-100">Rs. {r.totalGrossSales.toLocaleString()}</td>
+                          <td className="p-3 text-right text-amber-700 font-mono border-r border-slate-100">
+                            {r.totalDiscount > 0 ? `Rs. ${r.totalDiscount.toLocaleString()}` : '-'}
+                          </td>
+                          <td className="p-3 text-right font-bold text-sky-900 bg-sky-50/30 border-r border-slate-100 font-mono">
+                            Rs. {r.totalNetSales.toLocaleString()}
+                          </td>
+                          <td className={`p-3 text-right font-black font-mono border-r border-slate-100 ${
+                            r.grossProfit >= 0 ? 'text-emerald-700 bg-emerald-50/30' : 'text-rose-700 bg-rose-50/30'
+                          }`}>
+                            Rs. {r.grossProfit.toLocaleString()}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-0.5 text-[10px] font-extrabold rounded-md border inline-block ${
+                              r.marginPct >= 20
+                                ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                                : r.marginPct >= 10
+                                ? 'bg-amber-100 text-amber-800 border-amber-300'
+                                : 'bg-rose-100 text-rose-800 border-rose-300'
+                            }`}>
+                              {r.marginPct.toFixed(1)}%
+                            </span>
+                          </td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                  <tfoot>
+                    <tr className="bg-slate-900 text-white font-extrabold text-xs">
+                      <td className="p-3 uppercase tracking-wider" colSpan={4}>
+                        Grand Totals ({filteredStoreMedicineRows.length} Items)
+                      </td>
+                      <td className="p-3 text-right text-slate-100 font-black">
+                        {filteredStoreMedicineRows.reduce((a, b) => a + b.qtySold, 0)}
+                      </td>
+                      <td></td>
+                      <td></td>
+                      <td className="p-3 text-right font-black text-purple-300 bg-slate-800 font-mono">
+                        Rs. {storeMedicineReportData.totalCogsAll.toLocaleString()}
+                      </td>
+                      <td className="p-3 text-right text-slate-200 font-mono">
+                        Rs. {storeMedicineReportData.totalGrossSalesAll.toLocaleString()}
+                      </td>
+                      <td className="p-3 text-right text-amber-300 font-mono">
+                        Rs. {storeMedicineReportData.totalDiscountsAll.toLocaleString()}
+                      </td>
+                      <td className="p-3 text-right font-black text-sky-300 bg-slate-800 font-mono">
+                        Rs. {storeMedicineReportData.totalNetSalesAll.toLocaleString()}
+                      </td>
+                      <td className="p-3 text-right font-black text-emerald-400 bg-slate-950 font-mono text-sm">
+                        Rs. {storeMedicineReportData.totalGrossProfitAll.toLocaleString()}
+                      </td>
+                      <td className="p-3 text-center font-black text-amber-300 bg-slate-950 font-mono text-sm">
+                        {storeMedicineReportData.overallMarginPctAll.toFixed(1)}%
+                      </td>
                     </tr>
                   </tfoot>
                 </table>

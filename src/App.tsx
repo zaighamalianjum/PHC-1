@@ -2112,17 +2112,14 @@ export default function App() {
 
   const handleUpdateItemStock = (itemId: string, newStock: number) => {
     setItems((prev) => prev.map((i) => (i.ItemID === itemId ? { ...i, CStock: newStock } : i)));
-    if (mongoDbSettings.SyncEnabled) {
-      const bridgeUrl = mongoDbSettings.BridgeUrl || 'http://localhost:5000';
-      const matched = items.find(i => i.ItemID === itemId);
-      if (matched) {
-        fetch(`${bridgeUrl}/api/items/${itemId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ ...matched, CStock: newStock })
-        }).catch(err => console.error('Failed to sync updated drug stock level to MongoDB:', err.message));
-      }
-    }
+    const bridgeUrl = (mongoDbSettings.SyncEnabled && mongoDbSettings.BridgeUrl) ? mongoDbSettings.BridgeUrl : '';
+    const matched = items.find(i => i.ItemID === itemId);
+    const payload = matched ? { ...matched, CStock: newStock } : { ItemID: itemId, CStock: newStock };
+    fetch(`${bridgeUrl}/api/items/${encodeURIComponent(itemId)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).catch(err => console.error('Failed to sync updated drug stock level to MongoDB:', err.message));
   };
 
   const handleUpdateAccountBalance = (tlid: number, balanceAmt: number) => {

@@ -747,7 +747,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             <div class="clinic-brand">
               <div class="clinic-title">${cName}</div>
               <div class="clinic-tagline">${cTag}</div>
-              <div class="contact-line">📍 ${cAddr} &nbsp;|&nbsp; 📞 ${cPhone}</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
+              <div class="clinic-timings" style="font-size: 10px; font-weight: 700; color: #047857; margin-top: 2px;">
+                Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
+              </div>
             </div>
             <div style="width: 70px; text-align: right;">
               <span style="font-size: 9px; font-weight: 900; background: #0f172a; color: #fff; padding: 3px 6px; border-radius: 4px;">FINANCIAL</span>
@@ -1248,7 +1251,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         safeFetchJson('/api/query/erp_payroll'),
         safeFetchJson('/api/query/erp_expenses'),
         safeFetchJson('/api/query/erp_assets'),
-        safeFetchJson('/api/query/items'),
+        safeFetchJson('/api/items'),
         safeFetchJson('/api/appointments'),
         safeFetchJson('/api/visits'),
         safeFetchJson('/api/billing/invoices')
@@ -1465,7 +1468,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
   // HANDLERS FOR PURCHASE ORDERS & STOCK REQUISITION
   const getRequiredQty = (item: any) => {
-    return 0;
+    const reorder = Number(item?.ReorderQty) || Number(item?.reorderQty) || 0;
+    if (reorder > 0) return reorder;
+    const minStock = Number(item?.MinStock ?? item?.minStock ?? 1);
+    const cStock = Number(item?.CStock ?? item?.Stock ?? 0);
+    const diff = (minStock * 2) - cStock;
+    return diff > 0 ? diff : (minStock > 0 ? minStock * 2 : 10);
   };
 
   const isMedicineSelectedInPo = (itemId: string, itemName: string) => {
@@ -2061,7 +2069,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
         // Re-fetch inventory items & vendors to show updated stock & balance immediately
         const [itemsRes, vendorsRes] = await Promise.all([
-          safeFetchJson('/api/query/items'),
+          safeFetchJson('/api/items'),
           safeFetchJson('/api/query/erp_vendors')
         ]);
         if (Array.isArray(itemsRes) && itemsRes.length > 0) {
@@ -2466,8 +2474,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
             <div class="clinic-info">
               <h1 class="clinic-name">${cName}</h1>
-              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
               <div class="clinic-tagline">${cTag}</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
               <div class="clinic-timings">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
               </div>
@@ -3858,8 +3866,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
             <div class="clinic-info">
               <h1 class="clinic-name">${cName}</h1>
-              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
               <div class="clinic-tagline">${cTag}</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
               <div class="clinic-timings">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
               </div>
@@ -6150,7 +6158,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                         <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                         <input
                           type="text"
-                          placeholder=""
+                          placeholder="Search medicine name, ID, category..."
                           value={medicineSearchTerm}
                           onChange={e => setMedicineSearchTerm(e.target.value)}
                           className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium"
@@ -6212,19 +6220,23 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 </div>
 
                 {/* MEDICINES GRID VIEW */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-60 overflow-y-auto p-1">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[380px] overflow-y-auto p-1">
                   {inventoryItems
                     .filter(med => {
+                      const itemName = String(med.ItemName || med.Name || med.title || '');
+                      const itemId = String(med.ItemID || med.id || '');
                       const medCat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
                       const matchCategory = poCategoryFilter === 'all' || medCat.toLowerCase().includes(poCategoryFilter.toLowerCase());
-                      const matchSearch = med.ItemName?.toLowerCase().includes(medicineSearchTerm.toLowerCase()) ||
-                                          med.ItemID?.toLowerCase().includes(medicineSearchTerm.toLowerCase()) ||
-                                          medCat.toLowerCase().includes(medicineSearchTerm.toLowerCase());
+                      const sTerm = medicineSearchTerm.toLowerCase().trim();
+                      const matchSearch = !sTerm ||
+                                          itemName.toLowerCase().includes(sTerm) ||
+                                          itemId.toLowerCase().includes(sTerm) ||
+                                          medCat.toLowerCase().includes(sTerm);
                       const cStock = med.CStock ?? med.Stock ?? 0;
                       const minStock = (med.MinStock !== undefined && med.MinStock !== null) ? med.MinStock : 1;
                       if (!matchSearch || !matchCategory) return false;
                       if (medicineFilterMode === 'lowStock') return cStock <= minStock;
-                      if (medicineFilterMode === 'selected') return isMedicineSelectedInPo(med.ItemID, med.ItemName);
+                      if (medicineFilterMode === 'selected') return isMedicineSelectedInPo(med.ItemID || itemId, med.ItemName || itemName);
                       return true;
                     })
                     .map((med, idx) => {
@@ -6885,8 +6897,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   </div>
                 </div>
 
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-left text-xs">
+                <div className="border border-slate-200 rounded-xl overflow-hidden grn-summary-card">
+                  <table className="w-full text-left text-xs grn-summary-table">
                     <thead>
                       <tr className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
                         <th className="p-2.5">Item ID</th>
@@ -6896,9 +6908,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                         <th className="p-2.5 text-center w-20">Prev. Recv</th>
                         <th className="p-2.5 text-center w-20">Pending</th>
                         <th className="p-2.5 text-center w-24">Now Receiving</th>
-                        <th className="p-2.5 text-right w-20">Unit Price</th>
-                        <th className="p-2.5 text-right w-24">Subtotal</th>
-                        <th className="p-2.5 text-center w-20">Exclude</th>
+                        <th className="p-2.5 text-right w-20 grn-unit-price">Unit Price</th>
+                        <th className="p-2.5 text-right w-24 grn-subtotal">Subtotal</th>
+                        <th className="p-2.5 text-center w-20 exclude-col">Exclude</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -6965,7 +6977,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   className="w-20 p-1 border border-emerald-300 rounded-lg text-xs text-center font-black bg-emerald-50 text-emerald-900 focus:outline-hidden"
                                 />
                               </td>
-                              <td className="p-2.5 text-right font-semibold text-slate-700">
+                              <td className="p-2.5 text-right font-semibold text-slate-700 grn-unit-price">
                                 <div className="flex items-center justify-end space-x-1">
                                   <span className="text-slate-400 font-bold">Rs.</span>
                                   <input
@@ -6986,8 +6998,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   />
                                 </div>
                               </td>
-                              <td className="p-2.5 text-right font-bold text-slate-900">Rs. {subtotal.toLocaleString()}</td>
-                              <td className="p-2.5 text-center">
+                              <td className="p-2.5 text-right font-bold text-slate-900 grn-subtotal">Rs. {subtotal.toLocaleString()}</td>
+                              <td className="p-2.5 text-center exclude-col">
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveGrnItem(idx)}

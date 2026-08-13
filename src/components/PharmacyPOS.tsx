@@ -42,11 +42,11 @@ import {
   QrCode,
   CheckCircle2,
   Zap,
-  Barcode
+  Barcode,
+  Download
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
-import MedicineBarcodeMapper from './MedicineBarcodeMapper';
 import { parseScannedItemQR, playBeepSound, ParsedQRResult } from '../utils/qrUtils';
 import {
   Patient,
@@ -216,6 +216,8 @@ export default function PharmacyPOS({
   // Inventory Manager State
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [invSearchQuery, setInvSearchQuery] = useState('');
+  const [invSortField, setInvSortField] = useState<'ItemID' | 'ItemName' | 'Unit' | 'MedicineType' | 'CStock' | 'MinStock' | 'ReorderQty' | 'PurchasePrice' | 'Price'>('ItemName');
+  const [invSortOrder, setInvSortOrder] = useState<'asc' | 'desc'>('asc');
   
   // New/Edit Item Form State
   const [itemFormId, setItemFormId] = useState('');
@@ -441,6 +443,31 @@ export default function PharmacyPOS({
     setIsAddMedicineModalOpen(true);
   };
 
+  // Sync Item changes to database helper
+  const syncItemToBackend = async (action: 'CREATE' | 'UPDATE' | 'DELETE', item: Partial<Item> & { ItemID: string }) => {
+    try {
+      if (action === 'CREATE') {
+        await fetch('/api/items', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item)
+        });
+      } else if (action === 'UPDATE') {
+        await fetch(`/api/items/${encodeURIComponent(item.ItemID)}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(item)
+        });
+      } else if (action === 'DELETE') {
+        await fetch(`/api/items/${encodeURIComponent(item.ItemID)}`, {
+          method: 'DELETE'
+        });
+      }
+    } catch (err) {
+      console.error(`Failed to ${action} item in database:`, err);
+    }
+  };
+
   // Add/Update Item handler
   const handleSaveItem = (e: React.FormEvent) => {
     e.preventDefault();
@@ -476,28 +503,26 @@ export default function PharmacyPOS({
     const expDateVal = itemFormExpDate.trim() || undefined;
 
     if (editingItem) {
-      // Update existing item
-      setItems(prev => prev.map(itm => {
-        if (itm.ItemID === editingItem.ItemID) {
-          return {
-            ...itm,
-            ItemID: finalItemId,
-            ItemName: itemFormName.trim(),
-            Price: rPrice,
-            PurchasePrice: pPrice,
-            CStock: stock,
-            MinStock: minS,
-            ReorderQty: reorderQ,
-            Unit: itemFormUnit,
-            MedicineType: itemFormMedicineType,
-            VendorBarcode: vendorBarcodeVal,
-            BatchNo: batchNoVal,
-            MfgDate: mfgDateVal,
-            ExpDate: expDateVal
-          };
-        }
-        return itm;
-      }));
+      const updatedItem: Item = {
+        ...editingItem,
+        ItemID: finalItemId,
+        ItemName: itemFormName.trim(),
+        Price: rPrice,
+        PurchasePrice: pPrice,
+        CStock: stock,
+        MinStock: minS,
+        ReorderQty: reorderQ,
+        Unit: itemFormUnit,
+        MedicineType: itemFormMedicineType,
+        VendorBarcode: vendorBarcodeVal,
+        BatchNo: batchNoVal,
+        MfgDate: mfgDateVal,
+        ExpDate: expDateVal
+      };
+
+      // Update existing item in local state and database
+      setItems(prev => prev.map(itm => itm.ItemID === editingItem.ItemID ? updatedItem : itm));
+      syncItemToBackend('UPDATE', updatedItem);
       setInvSuccessMsg(`Medicine "${itemFormName.trim()}" updated successfully!`);
       resetItemForm();
     } else {
@@ -526,6 +551,7 @@ export default function PharmacyPOS({
       };
 
       setItems(prev => [...prev, newItem]);
+      syncItemToBackend('CREATE', newItem);
       setInvSuccessMsg(`New medicine "${itemFormName.trim()}" (ID: ${finalItemId}) added successfully!`);
       resetItemForm();
     }
@@ -542,6 +568,7 @@ export default function PharmacyPOS({
     }
     if (window.confirm(`Are you sure you want to delete "${itemName}" from the inventory list?`)) {
       setItems(prev => prev.filter(itm => itm.ItemID !== itemId));
+      syncItemToBackend('DELETE', { ItemID: itemId });
       setInvSuccessMsg(`Medicine "${itemName}" removed from inventory successfully.`);
       setTimeout(() => setInvSuccessMsg(''), 5000);
       if (editingItem?.ItemID === itemId) {
@@ -1608,6 +1635,7 @@ export default function PharmacyPOS({
     setBillingShift(userShift);
     setStoreShift(userShift);
   }, [currentUser?.UserID, currentUser?.AssignedShift]);
+  const [storeDiscountPercent, setStoreDiscountPercent] = useState<0 | 5 | 10 | 15>(0);
   const [storeDiscountInput, setStoreDiscountInput] = useState<number | string>('');
   const [storeBasket, setStoreBasket] = useState<{ ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[]>([]);
   const [storeRowItemId, setStoreRowItemId] = useState('');
@@ -2357,6 +2385,15 @@ export default function PharmacyPOS({
 
   const { storeGAmount, storeNetAmount, storeDiscVal } = calculateStoreTotals();
 
+  useEffect(() => {
+    if (storeDiscountPercent > 0) {
+      const computed = Math.round((storeGAmount * storeDiscountPercent) / 100);
+      setStoreDiscountInput(computed);
+    } else {
+      setStoreDiscountInput(0);
+    }
+  }, [storeGAmount, storeDiscountPercent]);
+
   const handleAddToStoreBasket = () => {
     if (!storeRowItemId) return;
     const selectedItem = items.find((i) => i.ItemID === storeRowItemId);
@@ -2475,6 +2512,7 @@ export default function PharmacyPOS({
 
     // Reset forms
     setStoreBasket([]);
+    setStoreDiscountPercent(0);
     setStoreDiscountInput('');
     setStorePatientId('');
 
@@ -2709,16 +2747,7 @@ export default function PharmacyPOS({
             <Undo2 className="w-3.5 h-3.5" />
             <span>Sales Returns</span>
           </button>
-          <button
-            onClick={() => handleSubTabSwitch('grn', 'Inventory GRN')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-              activeSubTab === 'grn' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Truck className="w-3.5 h-3.5" />
-            <span>Inventory GRN</span>
-            {!canViewStock && <Lock className="w-3 h-3 text-amber-500 ml-1" />}
-          </button>
+
           <button
             onClick={() => handleSubTabSwitch('inventory_manager', 'Stock Grid & Manager')}
             className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
@@ -2747,76 +2776,10 @@ export default function PharmacyPOS({
             <Tag className="w-3.5 h-3.5 text-indigo-500" />
             <span>Clinic Medicine Label Printer</span>
           </button>
-          <button
-            onClick={() => handleSubTabSwitch('barcode_mapper', 'Medicine Barcode Mapper (MongoDB)')}
-            className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-black transition cursor-pointer ${
-              activeSubTab === 'barcode_mapper' ? 'bg-emerald-600 text-white shadow-sm' : 'text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200'
-            }`}
-            title="Scan & associate manufacturer/vendor QR codes to ItemIDs in MongoDB"
-          >
-            <QrCode className="w-3.5 h-3.5 text-emerald-600" />
-            <span>Barcode Mapper</span>
-          </button>
         </div>
       </div>
 
-      {/* ⚡ Quick Hardware Barcode & QR Auto-Focus Interceptor Bar */}
-      <div className="bg-slate-900 text-white rounded-2xl p-3.5 shadow-lg border border-slate-800 flex flex-col md:flex-row items-center justify-between gap-3">
-        <div className="flex items-center space-x-3 w-full md:w-auto">
-          <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30 flex items-center justify-center shrink-0">
-            <QrCode className="w-5 h-5 animate-pulse" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <h4 className="text-xs font-black uppercase tracking-wider text-emerald-400">⚡ Hardware Scanner Auto-Focus Interceptor</h4>
-              <span className="text-[10px] bg-emerald-500/20 text-emerald-300 font-bold px-2 py-0.5 rounded-full border border-emerald-500/30">
-                Active & Listening
-              </span>
-            </div>
-            <p className="text-[11px] text-slate-400">
-              Point barcode / QR scanner & scan label to instantly parse and add medicine to invoice basket.
-            </p>
-          </div>
-        </div>
 
-        <div className="flex flex-wrap items-center space-x-2 w-full md:w-auto">
-          <div className="relative flex-1 md:w-80">
-            <input
-              ref={quickScannerInputRef}
-              type="text"
-              value={quickScannerInput}
-              onChange={(e) => setQuickScannerInput(e.target.value)}
-              onKeyDown={handleQuickScannerKeyDown}
-              placeholder=""
-              className="w-full pl-9 pr-3 py-2 bg-slate-950 text-emerald-300 placeholder-slate-500 border border-emerald-500/40 rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 focus:ring-emerald-400 shadow-inner"
-            />
-            <Barcode className="w-4 h-4 text-emerald-400 absolute left-3 top-2.5" />
-          </div>
-
-          <button
-            type="button"
-            onClick={() => setAutoAddOnScan(!autoAddOnScan)}
-            className={`px-3 py-2 rounded-xl text-xs font-extrabold flex items-center space-x-1.5 transition cursor-pointer border ${
-              autoAddOnScan
-                ? 'bg-emerald-600 hover:bg-emerald-700 border-emerald-500 text-white shadow-xs'
-                : 'bg-slate-800 hover:bg-slate-700 border-slate-700 text-slate-300'
-            }`}
-            title="When enabled, scanned items automatically enter the active basket"
-          >
-            <CheckCircle className={`w-3.5 h-3.5 ${autoAddOnScan ? 'text-white' : 'text-slate-500'}`} />
-            <span>Auto-Add {autoAddOnScan ? 'ON' : 'OFF'}</span>
-          </button>
-
-          <button
-            type="button"
-            onClick={() => quickScannerInputRef.current?.focus()}
-            className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold rounded-xl border border-slate-700 transition cursor-pointer shrink-0"
-            title="Press F2 anywhere to focus hardware scanner"
-          >
-            Focus (F2)
-          </button>
-        </div>
-      </div>
 
       {/* ⚡ Visual Confirmation Indicator for Last Scanned & Mapped Barcode */}
       {lastMappedScan && (
@@ -3523,21 +3486,6 @@ export default function PharmacyPOS({
                 onChange={(e) => {
                   const pId = e.target.value;
                   setStorePatientId(pId);
-                  if (pId) {
-                    const tok = (tokens || []).slice().reverse().find(t => t.PatientID === pId);
-                    if (tok && (tok.Shift === 1 || tok.Shift === 2)) {
-                      setStoreShift(tok.Shift as 1 | 2);
-                    } else {
-                      const app = (appointments || []).slice().reverse().find(a => a.PatientID === pId);
-                      if (app && (app.Shift === 1 || app.Shift === 2)) {
-                        setStoreShift(app.Shift as 1 | 2);
-                      } else {
-                        setStoreShift(currentUser?.AssignedShift === 2 ? 2 : 1);
-                      }
-                    }
-                  } else {
-                    setStoreShift(currentUser?.AssignedShift === 2 ? 2 : 1);
-                  }
                 }}
                 className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none font-medium"
               >
@@ -3755,25 +3703,39 @@ export default function PharmacyPOS({
                   <span className="font-mono text-slate-900 font-bold">Rs. {storeGAmount.toLocaleString()}</span>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="block text-xxs font-bold text-slate-400 uppercase">Apply Discount (Rs.)</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder=""
-                    max={storeGAmount}
-                    value={storeDiscountInput}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      if (val === '') {
-                        setStoreDiscountInput('');
-                      } else {
-                        const num = parseInt(val) || 0;
-                        setStoreDiscountInput(Math.min(storeGAmount, Math.max(0, num)));
-                      }
-                    }}
-                    className="w-full text-xs font-mono font-bold border border-slate-200 bg-white rounded-lg p-2 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                  />
+                <div className="space-y-2">
+                  <label className="block text-xxs font-bold text-slate-400 uppercase tracking-wider">
+                    Discount Percentage (5%, 10%, 15% Only)
+                  </label>
+                  <div className="grid grid-cols-4 gap-1.5">
+                    {([0, 5, 10, 15] as const).map((pct) => {
+                      const discAmt = Math.round((storeGAmount * pct) / 100);
+                      const isSelected = storeDiscountPercent === pct;
+                      return (
+                        <button
+                          key={pct}
+                          type="button"
+                          onClick={() => setStoreDiscountPercent(pct)}
+                          className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
+                            isSelected
+                              ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-300'
+                              : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                          }`}
+                        >
+                          <span className="text-xs font-black">{pct === 0 ? '0%' : `${pct}%`}</span>
+                          <span className={`text-[10px] font-mono mt-0.5 ${isSelected ? 'text-emerald-100 font-bold' : 'text-slate-400'}`}>
+                            {pct === 0 ? 'Rs. 0' : `-Rs. ${discAmt}`}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {storeDiscountPercent > 0 && (
+                    <div className="flex justify-between items-center bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-800">
+                      <span>Applied {storeDiscountPercent}% Discount:</span>
+                      <span className="font-mono text-emerald-950 font-extrabold">- Rs. {storeDiscVal.toLocaleString()}</span>
+                    </div>
+                  )}
                 </div>
 
                 <div className="border-t border-slate-100 pt-3 flex justify-between items-center text-sm">
@@ -3989,322 +3951,7 @@ export default function PharmacyPOS({
         </div>
       )}
 
-      {/* Supplier GRN Tab */}
-      {activeSubTab === 'grn' && (
-        !canViewStock ? (
-          <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm text-center max-w-xl mx-auto my-12 space-y-4 animate-fadeIn">
-            <div className="w-16 h-16 bg-rose-50 text-rose-600 rounded-full flex items-center justify-center mx-auto border border-rose-100 shadow-inner">
-              <ShieldAlert className="w-8 h-8" />
-            </div>
-            <h3 className="text-base font-black text-slate-900 uppercase tracking-wide">Stock GRN Access Restricted</h3>
-            <p className="text-xs text-slate-600 font-medium leading-relaxed">
-              Your account (<strong className="text-slate-900">{currentUser?.FullName || currentUser?.LoginName}</strong>) does not have access rights for <span className="font-bold text-slate-900">Stock & Inventory Control</span>.
-            </p>
-            <div className="p-3 bg-slate-50 rounded-xl text-xxs font-mono text-slate-600 border border-slate-200">
-              Contact your System Administrator to enable Stock Management rights in Settings &gt; User Access Control.
-            </div>
-          </div>
-        ) : (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn" id="pos-grn-tab">
-          
-          {/* Supplier GRN Maker */}
-          <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-950 flex items-center border-b border-slate-100 pb-3">
-              <Truck className="w-4.5 h-4.5 text-emerald-500 mr-2" />
-              Goods Received Note (GRN) / Stock Inward
-            </h3>
 
-            {grnSuccessMsg && (
-              <div className="p-3 bg-emerald-50 text-emerald-700 text-xs rounded-lg font-semibold border border-emerald-100">
-                {grnSuccessMsg}
-              </div>
-            )}
-
-            <form onSubmit={handlePostGRN} className="space-y-4">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xxs font-bold text-slate-500 uppercase">Select Supplier *</label>
-                  <div className="flex items-center space-x-1.5 mt-1">
-                    <select
-                      required
-                      value={grnSupplierId}
-                      onChange={(e) => setGrnSupplierId(e.target.value)}
-                      className="flex-1 text-xs border border-slate-200 bg-white rounded-lg p-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                    >
-                      <option value="">-- Choose Vendor --</option>
-                      {suppliers.map((sup) => (
-                        <option key={sup.SID} value={sup.SID}>
-                          {sup.SupplierName} ({sup.SID})
-                        </option>
-                      ))}
-                    </select>
-                    <button
-                      type="button"
-                      onClick={() => setIsVendorModalOpen(true)}
-                      title="Manage Suppliers (Grid-View / Add / Edit)"
-                      className="px-3 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 hover:border-emerald-300 rounded-lg flex items-center justify-center transition cursor-pointer font-bold text-xs"
-                    >
-                      <Edit className="w-3.5 h-3.5 mr-1" />
-                      <span>Edit Vendors</span>
-                    </button>
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-xxs font-bold text-slate-500 uppercase">Inward Remarks</label>
-                  <input
-                    type="text"
-                    placeholder=""
-                    value={grnRemarks}
-                    onChange={(e) => setGrnRemarks(e.target.value)}
-                    className="mt-1 w-full text-xs border border-slate-200 rounded-lg p-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* GRN Row Builder */}
-              <div className="bg-slate-50 p-4 border border-slate-150 rounded-xl space-y-3">
-                <span className="text-xxs font-bold text-slate-400 uppercase">Inward Stock Inserter Worksheet</span>
-                
-                <div className="grid grid-cols-1 sm:grid-cols-4 gap-2.5 items-end">
-                  <div className="sm:col-span-2">
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Product Item</label>
-                    <select
-                      value={grnRowItemId}
-                      onChange={(e) => setGrnRowItemId(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-1.5 focus:outline-none"
-                    >
-                      <option value="">-- Select Product --</option>
-                      {items.map((i, idx) => (
-                        <option key={`${i.ItemID}-${idx}`} value={i.ItemID}>
-                          {i.ItemName} [Current: {i.CStock}]
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Qty Inward</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={grnRowQty}
-                      onChange={(e) => setGrnRowQty(parseInt(e.target.value) || 1)}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-1.5 focus:outline-none font-mono font-bold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Purchase Cost Rate (Rs.)</label>
-                    <input
-                      type="number"
-                      min="0.1"
-                      step="0.1"
-                      value={grnRowPrice}
-                      onChange={(e) => setGrnRowPrice(parseFloat(e.target.value) || 1)}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-1.5 focus:outline-none font-mono font-bold"
-                    />
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={handleAddToGrnBasket}
-                  className="w-full py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xxs font-bold rounded flex items-center justify-center transition"
-                >
-                  <Plus className="w-3.5 h-3.5 mr-1" />
-                  <span>Insert Stock Inward Row</span>
-                </button>
-              </div>
-
-              {/* Basket list */}
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs">
-                  <thead>
-                    <tr className="border-b border-slate-200 text-slate-400 uppercase text-xxs font-bold">
-                      <th className="py-2">Item ID</th>
-                      <th className="py-2">Product Name</th>
-                      <th className="py-2 text-center">Inward Qty</th>
-                      <th className="py-2 text-right">Purchase Rate</th>
-                      <th className="py-2 text-right">Subtotal Cost</th>
-                      <th className="py-2 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100">
-                    {grnBasket.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="py-4 text-center text-slate-400 font-semibold">GRN sheet is empty. Add lines.</td>
-                      </tr>
-                    ) : (
-                      grnBasket.map((b, idx) => {
-                        const name = items.find((i) => i.ItemID === b.ItemID)?.ItemName || b.ItemID;
-                        return (
-                          <tr key={idx} className="hover:bg-slate-50/50 font-medium">
-                            <td className="py-2 font-mono text-xxs font-bold text-slate-400">{b.ItemID}</td>
-                            <td className="py-2 font-bold text-slate-800">{name}</td>
-                            <td className="py-2 text-center font-bold font-mono">{b.QtyIn}</td>
-                            <td className="py-2 text-right font-mono">Rs. {b.PurchaseRate}</td>
-                            <td className="py-2 text-right font-mono text-slate-900 font-bold">Rs. {(b.QtyIn * b.PurchaseRate).toLocaleString()}</td>
-                            <td className="py-2 text-right">
-                              <button
-                                type="button"
-                                onClick={() => setGrnBasket(grnBasket.filter((_, i) => i !== idx))}
-                                className="text-red-500 hover:text-red-700 p-1"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </td>
-                          </tr>
-                        );
-                      })
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="space-y-2 mt-4">
-                <button
-                  type="submit"
-                  disabled={!canPost}
-                  className={`w-full py-2.5 rounded-lg text-xs font-bold text-white shadow-md transition ${
-                    canPost ? 'bg-emerald-600 hover:bg-emerald-700' : 'bg-slate-400 cursor-not-allowed'
-                  }`}
-                >
-                  {editingGrn ? `Update GRN ${editingGrn.VchNo} & Recalculate Stocks` : 'Post Inward GRN & Capitalize Inventory'}
-                </button>
-                {editingGrn && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setEditingGrn(null);
-                      setGrnBasket([]);
-                      setGrnSupplierId('');
-                      setGrnRemarks('');
-                      setGrnSuccessMsg('Edit mode cancelled.');
-                    }}
-                    className="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-lg transition"
-                  >
-                    Cancel Edit (Reset Form)
-                  </button>
-                )}
-              </div>
-            </form>
-          </div>
-
-          {/* Suppliers directory & GRN History Tabbed Sidebar */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[620px]">
-            {/* Tab selection buttons */}
-            <div className="flex space-x-2 border-b border-slate-100 pb-2 mb-3">
-              <button
-                type="button"
-                onClick={() => setGrnRightTab('suppliers')}
-                className={`flex-1 pb-1 text-xs font-bold border-b-2 transition ${
-                  grnRightTab === 'suppliers' ? 'border-emerald-500 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                Suppliers
-              </button>
-              <button
-                type="button"
-                onClick={() => setGrnRightTab('grn_history')}
-                className={`flex-1 pb-1 text-xs font-bold border-b-2 transition ${
-                  grnRightTab === 'grn_history' ? 'border-emerald-500 text-slate-900' : 'border-transparent text-slate-400 hover:text-slate-600'
-                }`}
-              >
-                GRN History ({grns.length})
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-y-auto pr-1 space-y-3">
-              {grnRightTab === 'suppliers' ? (
-                <div className="space-y-4">
-                  {suppliers.map((sup) => (
-                    <div key={sup.SID} className="text-xxs text-slate-600 space-y-1 bg-slate-50 border border-slate-200 rounded-xl p-3">
-                      <div className="flex justify-between font-bold text-slate-900 text-xs">
-                        <span>{sup.SupplierName}</span>
-                        <span className="text-xxs font-mono text-emerald-600 font-bold">{sup.SID}</span>
-                      </div>
-                      <p className="font-semibold text-slate-500">Call: {sup.Phone}</p>
-                      <p className="text-slate-400 font-semibold">{sup.Address}</p>
-                    </div>
-                  ))}
-                </div>
-              ) : (
-                <div className="space-y-3">
-                  {grns.length === 0 ? (
-                    <p className="text-xs text-slate-400 font-semibold text-center py-16">No inward GRNs posted yet.</p>
-                  ) : (
-                    [...grns].reverse().map((grn) => {
-                      const supName = suppliers.find((s) => s.SID === grn.SID)?.SupplierName || grn.SID;
-                      const details = grnDetails.filter((d) => d.VchNo === grn.VchNo);
-                      const totalCost = details.reduce((sum, d) => sum + (d.QtyIn * d.PurchaseRate), 0);
-                      
-                      return (
-                        <div key={grn.VchNo} className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-2">
-                          <div className="flex justify-between items-start">
-                            <div>
-                              <h4 className="text-xs font-bold text-slate-900 flex items-center">
-                                <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded text-xxs font-mono mr-1.5 font-bold">
-                                  {grn.VchNo}
-                                </span>
-                                {grn.VchDate}
-                              </h4>
-                              <p className="text-xxs text-slate-400 font-semibold mt-1">Vendor: {supName}</p>
-                            </div>
-                            <span className="text-xs font-bold font-mono text-slate-900">
-                              Rs. {totalCost.toLocaleString()}
-                            </span>
-                          </div>
-                          {grn.Remarks && (
-                            <p className="text-xxs text-slate-500 font-medium italic">"{grn.Remarks}"</p>
-                          )}
-                          <div className="flex justify-end space-x-2 border-t border-slate-100 pt-2 mt-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setEditingGrn(grn);
-                                setGrnSupplierId(grn.SID);
-                                setGrnRemarks(grn.Remarks || '');
-                                setGrnBasket(details.map(d => ({
-                                  ItemID: d.ItemID,
-                                  QtyIn: d.QtyIn,
-                                  PurchaseRate: d.PurchaseRate
-                                })));
-                                setGrnSuccessMsg(`Loaded GRN ${grn.VchNo} into worksheet. You can adjust lines or vendor and re-post.`);
-                                window.scrollTo({ top: 0, behavior: 'smooth' });
-                              }}
-                              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-150 rounded text-xxs font-bold flex items-center transition"
-                            >
-                              <Edit className="w-3 h-3 mr-1" />
-                              Edit
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                if (window.confirm(`Are you sure you want to void GRN ${grn.VchNo}? This will subtract its quantities from medicine stocks and reverse its accounting ledger postings!`)) {
-                                  if (onVoidGRN) {
-                                    onVoidGRN(grn.VchNo);
-                                    alert(`GRN ${grn.VchNo} has been voided successfully.`);
-                                  }
-                                }
-                              }}
-                              className="px-2 py-1 bg-red-50 hover:bg-red-100 text-red-600 border border-red-150 rounded text-xxs font-bold flex items-center transition"
-                            >
-                              <Trash2 className="w-3 h-3 mr-1" />
-                              Void
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        )
-      )}
 
       {/* Stock Grid & Manager Tab */}
       {activeSubTab === 'inventory_manager' && (
@@ -4324,554 +3971,538 @@ export default function PharmacyPOS({
         ) : (
         <div className="space-y-6 animate-fadeIn" id="pos-inventory-manager-tab">
           
-          <div className="flex flex-col lg:flex-row gap-6 items-start">
+          <div className="flex flex-col space-y-4">
             
-            {/* Side Navigation Bar: Medicine Categories & PO Required Quantity Manager */}
-            <div className="w-full lg:w-80 shrink-0 bg-white border border-slate-200 rounded-2xl shadow-sm flex flex-col overflow-hidden">
-              
-              {/* Sidebar Header */}
-              <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white space-y-1.5">
-                <div className="flex items-center space-x-2.5">
-                  <div className="p-2 bg-indigo-500/20 rounded-xl text-indigo-300 border border-indigo-400/30 shrink-0">
-                    <Tag className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-black uppercase tracking-wider text-white leading-snug">
-                      Medicine Categories & PO Required Quantity Manager
-                    </h3>
-                    <p className="text-[10px] text-indigo-200 font-medium mt-0.5">
-                      Category Side Navigation & Order Manager
-                    </p>
-                  </div>
+            {/* Category Dropdown Top Toolbar Bar */}
+            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
+                <div className="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-400/30 shrink-0">
+                  <Tag className="w-5 h-5" />
                 </div>
+                <div className="flex-1 min-w-[220px] max-w-lg">
+                  <label className="block text-[10px] font-black uppercase tracking-wider text-indigo-300 mb-1">
+                    Select Medicine Category
+                  </label>
+                  <select
+                    value={invCategoryFilter}
+                    onChange={(e) => setInvCategoryFilter(e.target.value)}
+                    className="w-full py-2 px-3 bg-slate-800 text-white border border-slate-700 rounded-xl text-xs font-bold shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
+                  >
+                    {navCategories.map((cat) => (
+                      <option key={cat.id} value={cat.id} className="bg-slate-900 text-white py-1">
+                        {cat.label} {cat.isFeatured ? ' (Default)' : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setIsCategoryModalOpen(true)}
+                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center space-x-1.5 font-bold text-xs transition cursor-pointer shrink-0 self-end md:self-auto"
+                  title="Category Add & Edit Manager"
+                >
+                  <Tag className="w-3.5 h-3.5" />
+                  <span>Category Manager</span>
+                </button>
               </div>
 
-              {/* Sidebar Search */}
-              <div className="p-3 border-b border-slate-150 bg-slate-50">
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder=""
-                    value={categorySidebarSearch}
-                    onChange={(e) => setCategorySidebarSearch(e.target.value)}
-                    className="w-full text-xs border border-slate-200 rounded-lg pl-8 pr-2.5 py-1.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium placeholder-slate-400"
-                  />
-                </div>
-              </div>
-
-              {/* Side Navigation Category Items List */}
-              <div className="p-2 space-y-1 max-h-[580px] overflow-y-auto divide-y divide-slate-100">
-                {navCategories
-                  .filter((cat) =>
-                    !categorySidebarSearch.trim() ||
-                    cat.label.toLowerCase().includes(categorySidebarSearch.toLowerCase()) ||
-                    cat.id.toLowerCase().includes(categorySidebarSearch.toLowerCase())
-                  )
-                  .map((cat) => {
-                    const isSelected = invCategoryFilter === cat.id;
-                    const { catItemsCount, totalReqQty, lowStockCount } = getCategoryMetrics(cat.id);
-
-                    return (
-                      <button
-                        key={cat.id}
-                        type="button"
-                        onClick={() => setInvCategoryFilter(cat.id)}
-                        className={`w-full text-left px-3 py-2.5 rounded-xl transition-all duration-150 flex items-center justify-between group cursor-pointer ${
-                          isSelected
-                            ? 'bg-gradient-to-r from-blue-600 via-indigo-600 to-indigo-700 text-white shadow-md shadow-indigo-500/15 font-bold border-l-4 border-l-amber-400'
-                            : 'hover:bg-slate-100/90 text-slate-700 font-semibold'
-                        }`}
-                      >
-                        <div className="flex items-center space-x-2.5 min-w-0">
-                          <span className={`w-2 h-2 rounded-full shrink-0 ${
-                            isSelected ? 'bg-amber-300 animate-pulse' : lowStockCount > 0 ? 'bg-rose-500' : 'bg-slate-300'
-                          }`} />
-                          <div className="truncate">
-                            <div className="flex items-center space-x-1.5">
-                              <span className="text-xs truncate">{cat.label}</span>
-                              {cat.isFeatured && (
-                                <span className={`text-[8px] font-black uppercase px-1 py-0.2 rounded shrink-0 ${
-                                  isSelected ? 'bg-amber-400 text-slate-950' : 'bg-indigo-100 text-indigo-700'
-                                }`}>
-                                  Default
-                                </span>
-                              )}
-                            </div>
-                            <div className={`text-[9px] mt-0.5 flex items-center space-x-2 ${
-                              isSelected ? 'text-indigo-100' : 'text-slate-400'
-                            }`}>
-                              <span>{catItemsCount} items</span>
-                              {lowStockCount > 0 && (
-                                <span className={isSelected ? 'text-rose-200 font-bold' : 'text-rose-600 font-bold'}>
-                                  • {lowStockCount} low
-                                </span>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-
-                        <div className="flex flex-col items-end shrink-0 space-y-1 ml-2">
-                          {cat.id !== 'ALL' && totalReqQty > 0 ? (
-                            <span className={`px-2 py-0.5 rounded-md text-[9px] font-black font-mono shadow-2xs ${
-                              isSelected
-                                ? 'bg-amber-400 text-slate-950 border border-amber-300'
-                                : 'bg-amber-50 text-amber-900 border border-amber-200'
-                            }`} title="Category Purchase Order Required Quantity">
-                              PO Req: {totalReqQty}
-                            </span>
-                          ) : (
-                            <span className={`text-[10px] font-mono ${isSelected ? 'text-indigo-200' : 'text-slate-400'}`}>
-                              {catItemsCount}
-                            </span>
-                          )}
-                        </div>
-                      </button>
-                    );
-                  })}
-              </div>
-
-              {/* Sidebar Quick Action Footer */}
-              <div className="p-3 bg-slate-50 border-t border-slate-200 space-y-2 text-xs">
-                <div className="flex items-center justify-between text-[10px] font-bold text-slate-500 uppercase tracking-wider px-1">
-                  <span>Categories: {navCategories.length}</span>
-                  <span className="text-indigo-600 font-extrabold">BM Drops Selected</span>
-                </div>
-
-                <div className="grid grid-cols-1 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setIsCategoryModalOpen(true)}
-                    className="w-full py-1.5 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center justify-center space-x-1.5 font-bold text-xs transition shadow-xs cursor-pointer"
-                  >
-                    <Tag className="w-3.5 h-3.5" />
-                    <span>Category Add & Edit</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenPOGridModal('po_builder')}
-                    className="w-full py-1.5 px-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center justify-center space-x-1.5 font-bold text-xs transition shadow-sm cursor-pointer"
-                  >
-                    <CheckSquare className="w-3.5 h-3.5 text-amber-300" />
-                    <span>Print PO / Threshold Report (Grid-View)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenPOGridModal('sales_velocity')}
-                    className="w-full py-1.5 px-3 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg flex items-center justify-center space-x-1.5 font-bold text-xs transition cursor-pointer"
-                  >
-                    <TrendingUp className="w-3.5 h-3.5 text-rose-600" />
-                    <span>Monthly Sales Demand Grid</span>
-                  </button>
-                </div>
+              <div className="flex items-center space-x-2 shrink-0 self-end md:self-auto">
+                <button
+                  type="button"
+                  onClick={handleOpenAddMedicineModal}
+                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center transition cursor-pointer font-bold text-xs shadow-sm"
+                >
+                  <PlusCircle className="w-4 h-4 mr-1.5" />
+                  <span>Add New Medicine</span>
+                </button>
               </div>
             </div>
 
-            {/* Main Area: Inventory Grid for Selected Category */}
-            <div className="flex-1 min-w-0 bg-white p-6 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-4">
+            {/* Main Area: Excel Sheet Style Inventory Grid View */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-4">
               
-              {/* Active Category Header Banner */}
-              <div className="bg-gradient-to-r from-slate-50 via-indigo-50/40 to-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <span className="px-2.5 py-0.5 bg-indigo-600 text-white text-[10px] font-black uppercase tracking-wider rounded-md">
-                      Selected Category View
-                    </span>
-                    <h3 className="text-base font-black text-slate-900">
-                      {invCategoryFilter === 'ALL' ? 'All Medicine Categories' : invCategoryFilter === 'C' ? 'Clinical Compounding (/C)' : invCategoryFilter === 'P' ? 'Patent Medicine (/P)' : invCategoryFilter}
-                    </h3>
+              {/* Spreadsheet Header Toolbar & Quick Search */}
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-900 text-white p-3.5 rounded-xl border border-slate-800">
+                <div className="flex items-center space-x-2 flex-1 min-w-0">
+                  <div className="relative flex-1">
+                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-emerald-400" />
+                    <input
+                      type="text"
+                      placeholder="Quick Search: Type Medicine Name, ID, Category, Batch #, or Barcode..."
+                      value={invSearchQuery}
+                      onChange={(e) => setInvSearchQuery(e.target.value)}
+                      className="w-full text-xs border border-slate-700 bg-slate-950 text-white placeholder-slate-400 rounded-lg pl-9 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400 font-mono font-medium shadow-inner"
+                    />
+                    {invSearchQuery && (
+                      <button
+                        type="button"
+                        onClick={() => setInvSearchQuery('')}
+                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
                     type="button"
-                    onClick={() => handleOpenPOGridModal('po_builder')}
-                    className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg flex items-center transition cursor-pointer font-bold text-xs"
-                    title="Open interactive Grid-View Purchase Order Builder"
-                  >
-                    <CheckSquare className="w-4 h-4 mr-1.5 text-indigo-600" />
-                    <span>PO Requisition Builder</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleOpenPOGridModal('sales_velocity')}
-                    className="px-3.5 py-2 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg flex items-center transition cursor-pointer font-bold text-xs"
-                    title="View Monthly Top-Selling Medicines Sales Velocity Grid"
-                  >
-                    <TrendingUp className="w-4 h-4 mr-1.5 text-emerald-600" />
-                    <span>Monthly Sales Demand</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handleOpenAddMedicineModal}
-                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg flex items-center transition cursor-pointer font-bold text-xs shadow-sm"
-                  >
-                    <PlusCircle className="w-4 h-4 mr-1.5" />
-                    <span>Add New Medicine</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Search & Action Controls */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-150 pb-3 gap-3">
-                <div className="relative flex-1 max-w-md">
-                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder=""
-                    value={invSearchQuery}
-                    onChange={(e) => setInvSearchQuery(e.target.value)}
-                    className="w-full text-xs border rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 font-medium text-slate-800 border-slate-250 bg-white"
-                  />
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
                     onClick={() => setInvLowStockFilter(!invLowStockFilter)}
-                    className={`px-3 py-1.5 rounded-lg flex items-center transition cursor-pointer font-bold text-xs shadow-xs shrink-0 ${
+                    className={`px-3 py-1.5 rounded-lg flex items-center transition cursor-pointer font-bold text-xs border ${
                       invLowStockFilter
-                        ? 'bg-rose-600 text-white border border-rose-700 ring-2 ring-rose-300'
-                        : 'bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200'
+                        ? 'bg-rose-600 text-white border-rose-500 shadow-xs ring-2 ring-rose-400'
+                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
                     }`}
-                    title="Filter for items with current stock below minimum reorder level"
                   >
-                    <AlertTriangle className="w-3.5 h-3.5 mr-1.5 shrink-0" />
-                    <span>{invLowStockFilter ? 'Showing Low Stock Only' : 'Filter Low Stock'}</span>
-                    <span className={`ml-1.5 px-1.5 py-0.2 text-[10px] font-black rounded-full ${
-                      invLowStockFilter ? 'bg-white text-rose-700' : 'bg-rose-600 text-white'
-                    }`}>
+                    <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-rose-400 shrink-0" />
+                    <span>Low Stock Only</span>
+                    <span className="ml-1.5 px-1.5 py-0.2 bg-rose-500 text-white text-[10px] font-black rounded-full font-mono">
                       {items.filter(itm => itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)).length}
                     </span>
                   </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const processedForExport = items.filter((itm) => {
+                        if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
+                        if (invCategoryFilter !== 'ALL') {
+                          if (invCategoryFilter === 'C') {
+                            if (itm.MedicineType !== 'C') return false;
+                          } else if (invCategoryFilter === 'P') {
+                            if (itm.MedicineType === 'C') return false;
+                          } else {
+                            const u = (itm.Unit || '').toLowerCase().trim();
+                            const c = invCategoryFilter.toLowerCase().trim();
+                            if (u !== c && !u.includes(c)) return false;
+                          }
+                        }
+                        if (invSearchQuery.trim()) {
+                          const q = invSearchQuery.toLowerCase().trim();
+                          return (
+                            itm.ItemID.toLowerCase().includes(q) ||
+                            itm.ItemName.toLowerCase().includes(q) ||
+                            (itm.Unit || '').toLowerCase().includes(q) ||
+                            (itm.BatchNo || '').toLowerCase().includes(q) ||
+                            (itm.VendorBarcode || '').toLowerCase().includes(q)
+                          );
+                        }
+                        return true;
+                      });
+
+                      const headers = ["S.No", "Item ID", "Medicine Name", "Category/Unit", "Type", "Current Stock", "Min Threshold", "Reorder Qty", "Unit Cost (Rs)", "Retail Price (Rs)", "Batch No", "Exp Date"];
+                      const rows = processedForExport.map((itm, idx) => [
+                        idx + 1,
+                        `"${itm.ItemID.replace(/"/g, '""')}"`,
+                        `"${itm.ItemName.replace(/"/g, '""')}"`,
+                        `"${(itm.Unit || 'Tab').replace(/"/g, '""')}"`,
+                        itm.MedicineType === 'C' ? 'Clinical' : 'Patent',
+                        itm.CStock,
+                        (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1,
+                        itm.ReorderQty || 0,
+                        itm.PurchasePrice,
+                        itm.Price,
+                        `"${(itm.BatchNo || '').replace(/"/g, '""')}"`,
+                        `"${(itm.ExpDate || '').replace(/"/g, '""')}"`
+                      ]);
+                      const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                      const url = URL.createObjectURL(blob);
+                      const link = document.createElement('a');
+                      link.setAttribute('href', url);
+                      link.setAttribute('download', `Pharmacy_Stock_Grid_${new Date().toISOString().slice(0, 10)}.csv`);
+                      document.body.appendChild(link);
+                      link.click();
+                      document.body.removeChild(link);
+                    }}
+                    className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-600 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
+                    title="Export filtered inventory grid to CSV Excel Spreadsheet"
+                  >
+                    <Download className="w-3.5 h-3.5 mr-1.5" />
+                    <span>Export CSV</span>
+                  </button>
                 </div>
               </div>
 
-              {/* Success / Error Messages */}
+              {/* Messages */}
               {invSuccessMsg && (
-                <div className="p-3 bg-emerald-50 text-emerald-700 text-xs rounded-lg font-semibold border border-emerald-100">
+                <div className="p-2.5 bg-emerald-50 text-emerald-800 text-xs rounded-lg font-bold border border-emerald-200">
                   {invSuccessMsg}
                 </div>
               )}
-
               {invErrorMsg && (
-                <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg font-semibold border border-red-100 flex items-center">
-                  <AlertCircle className="w-4 h-4 mr-2 shrink-0 text-red-500" />
+                <div className="p-2.5 bg-rose-50 text-rose-800 text-xs rounded-lg font-bold border border-rose-200 flex items-center">
+                  <AlertCircle className="w-4 h-4 mr-2 text-rose-600 shrink-0" />
                   {invErrorMsg}
                 </div>
               )}
 
-            {/* Quick Stats Panel */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
-              <div className="bg-slate-50 border border-slate-150 p-2.5 rounded-xl">
-                <span className="text-[9px] font-extrabold text-slate-400 uppercase tracking-wider block">Filtered Items</span>
-                <span className="text-sm font-black text-slate-900 font-mono block mt-0.5">
-                  {items.filter((itm) => {
-                    if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
-                    if (invCategoryFilter !== 'ALL') {
-                      if (invCategoryFilter === 'C') {
-                        if (itm.MedicineType !== 'C') return false;
-                      } else if (invCategoryFilter === 'P') {
-                        if (itm.MedicineType === 'C') return false;
-                      } else {
-                        const u = (itm.Unit || '').toLowerCase().trim();
-                        const c = invCategoryFilter.toLowerCase().trim();
-                        if (u !== c && !u.includes(c)) return false;
-                      }
+              {/* Excel Spreadsheet Table Container */}
+              {(() => {
+                const processedItems = items.filter((itm) => {
+                  if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
+                  if (invCategoryFilter !== 'ALL') {
+                    if (invCategoryFilter === 'C') {
+                      if (itm.MedicineType !== 'C') return false;
+                    } else if (invCategoryFilter === 'P') {
+                      if (itm.MedicineType === 'C') return false;
+                    } else {
+                      const u = (itm.Unit || '').toLowerCase().trim();
+                      const c = invCategoryFilter.toLowerCase().trim();
+                      if (u !== c && !u.includes(c)) return false;
                     }
-                    if (invSearchQuery.trim()) {
-                      const q = invSearchQuery.toLowerCase().trim();
-                      return (
-                        itm.ItemID.toLowerCase().includes(q) ||
-                        itm.ItemName.toLowerCase().includes(q) ||
-                        (itm.Unit || '').toLowerCase().includes(q)
-                      );
-                    }
-                    return true;
-                  }).length} / {items.length}
-                </span>
-              </div>
+                  }
+                  if (invSearchQuery.trim()) {
+                    const q = invSearchQuery.toLowerCase().trim();
+                    return (
+                      itm.ItemID.toLowerCase().includes(q) ||
+                      itm.ItemName.toLowerCase().includes(q) ||
+                      (itm.Unit || '').toLowerCase().includes(q) ||
+                      (itm.BatchNo || '').toLowerCase().includes(q) ||
+                      (itm.VendorBarcode || '').toLowerCase().includes(q)
+                    );
+                  }
+                  return true;
+                });
 
-              <button
-                type="button"
-                onClick={() => setInvLowStockFilter(!invLowStockFilter)}
-                className={`p-2.5 rounded-xl border text-left transition cursor-pointer ${
-                  invLowStockFilter
-                    ? 'bg-rose-600 text-white border-rose-700 ring-2 ring-rose-400 shadow-sm'
-                    : 'bg-rose-50/50 hover:bg-rose-100/70 border-rose-150'
-                }`}
-                title="Click to toggle filtering for Low Stock items"
-              >
-                <div className="flex items-center justify-between">
-                  <span className={`text-[9px] font-extrabold uppercase tracking-wider block ${
-                    invLowStockFilter ? 'text-rose-100' : 'text-rose-600'
-                  }`}>
-                    Low Stock Alert
-                  </span>
-                  {invLowStockFilter && (
-                    <span className="bg-white text-rose-700 text-[8px] font-black uppercase px-1.5 py-0.2 rounded-full">
-                      Active Filter
-                    </span>
-                  )}
-                </div>
-                <span className={`text-sm font-black font-mono block mt-0.5 ${
-                  invLowStockFilter ? 'text-white' : 'text-rose-700'
-                }`}>
-                  {items.filter(itm => itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)).length} Items
-                </span>
-              </button>
+                processedItems.sort((a, b) => {
+                  let valA: any = a[invSortField];
+                  let valB: any = b[invSortField];
+                  if (valA === undefined || valA === null) valA = '';
+                  if (valB === undefined || valB === null) valB = '';
+                  if (typeof valA === 'string') valA = valA.toLowerCase();
+                  if (typeof valB === 'string') valB = valB.toLowerCase();
 
-              <div className="bg-indigo-50/50 border border-indigo-100 p-2.5 rounded-xl">
-                <span className="text-[9px] font-extrabold text-indigo-500 uppercase tracking-wider block">Clinical (/C)</span>
-                <span className="text-sm font-black text-indigo-700 font-mono block mt-0.5">
-                  {items.filter(itm => itm.MedicineType === 'C').length} Items
-                </span>
-              </div>
+                  if (valA < valB) return invSortOrder === 'asc' ? -1 : 1;
+                  if (valA > valB) return invSortOrder === 'asc' ? 1 : -1;
+                  return 0;
+                });
 
-              <div className="bg-emerald-50/50 border border-emerald-100 p-2.5 rounded-xl">
-                <span className="text-[9px] font-extrabold text-emerald-500 uppercase tracking-wider block">Patent (/P)</span>
-                <span className="text-sm font-black text-emerald-700 font-mono block mt-0.5">
-                  {items.filter(itm => itm.MedicineType !== 'C').length} Items
-                </span>
-              </div>
+                const totalValuationCost = processedItems.reduce((acc, itm) => acc + (itm.PurchasePrice * itm.CStock), 0);
+                const totalValuationRetail = processedItems.reduce((acc, itm) => acc + (itm.Price * itm.CStock), 0);
+
+                const toggleSort = (field: typeof invSortField) => {
+                  if (invSortField === field) {
+                    setInvSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+                  } else {
+                    setInvSortField(field);
+                    setInvSortOrder('asc');
+                  }
+                };
+
+                return (
+                  <div className="flex flex-col space-y-2">
+                    {/* Excel Table Grid */}
+                    <div className="overflow-x-auto border-2 border-slate-300 rounded-lg max-h-[560px] overflow-y-auto shadow-inner bg-slate-50">
+                      <table className="w-full text-left border-collapse text-xs font-sans select-none">
+                        <thead className="sticky top-0 bg-slate-200 text-slate-800 border-b-2 border-slate-300 font-extrabold uppercase tracking-wider text-[10px] z-10 shadow-xs">
+                          <tr className="divide-x divide-slate-300">
+                            <th className="px-2 py-2 text-center w-10 bg-slate-300/80 text-slate-700">#</th>
+                            <th 
+                              onClick={() => toggleSort('ItemID')}
+                              className="px-3 py-2 cursor-pointer hover:bg-slate-300 transition"
+                            >
+                              <div className="flex items-center space-x-1">
+                                <span>Item ID</span>
+                                {invSortField === 'ItemID' && (<span>{invSortOrder === 'asc' ? '▲' : '▼'}</span>)}
+                              </div>
+                            </th>
+                            <th 
+                              onClick={() => toggleSort('ItemName')}
+                              className="px-3 py-2 cursor-pointer hover:bg-slate-300 transition"
+                            >
+                              <div className="flex items-center space-x-1">
+                                <span>Medicine Name</span>
+                                {invSortField === 'ItemName' && (<span>{invSortOrder === 'asc' ? '▲' : '▼'}</span>)}
+                              </div>
+                            </th>
+                            <th className="px-2.5 py-2">Category</th>
+                            <th className="px-2 py-2 text-center">Type</th>
+                            <th 
+                              onClick={() => toggleSort('CStock')}
+                              className="px-3 py-2 text-right cursor-pointer hover:bg-slate-300 transition bg-emerald-100/60 text-emerald-950 font-black"
+                            >
+                              <div className="flex items-center justify-end space-x-1">
+                                <span>Current Stock</span>
+                                {invSortField === 'CStock' && (<span>{invSortOrder === 'asc' ? '▲' : '▼'}</span>)}
+                              </div>
+                            </th>
+                            <th className="px-2.5 py-2 text-right">Min Threshold</th>
+                            <th 
+                              onClick={() => toggleSort('ReorderQty')}
+                              className="px-3 py-2 text-right cursor-pointer hover:bg-slate-300 transition bg-indigo-100/60 text-indigo-950 font-black"
+                            >
+                              <div className="flex items-center justify-end space-x-1">
+                                <span>PO Reorder Qty</span>
+                                {invSortField === 'ReorderQty' && (<span>{invSortOrder === 'asc' ? '▲' : '▼'}</span>)}
+                              </div>
+                            </th>
+                            <th className="px-3 py-2 text-right">Unit Cost (Rs)</th>
+                            <th className="px-3 py-2 text-right">Retail Price (Rs)</th>
+                            <th className="px-3 py-2 text-center">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-200 bg-white text-slate-800">
+                          {processedItems.length === 0 ? (
+                            <tr>
+                              <td colSpan={11} className="px-6 py-12 text-center text-slate-400 font-bold bg-white">
+                                {invLowStockFilter 
+                                  ? 'All inventory medicines are currently above reorder levels! No low stock items found.'
+                                  : 'No medicines match the search or category filter.'}
+                              </td>
+                            </tr>
+                          ) : (
+                            processedItems.map((itm, idx) => {
+                              const isLowStock = itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1);
+                              const isClinical = itm.MedicineType === 'C';
+
+                              return (
+                                <tr 
+                                  key={`${itm.ItemID}-${idx}`}
+                                  className={`divide-x divide-slate-200 hover:bg-blue-50/70 transition ${
+                                    isLowStock ? 'bg-rose-50/60' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'
+                                  }`}
+                                >
+                                  {/* Row Header Number */}
+                                  <td className="px-2 py-1.5 text-center font-mono text-[11px] font-bold text-slate-500 bg-slate-100/80">
+                                    {idx + 1}
+                                  </td>
+
+                                  {/* Item ID */}
+                                  <td className="px-2.5 py-1.5 font-mono text-xs font-bold text-slate-800">
+                                    {itm.ItemID}
+                                  </td>
+
+                                  {/* Medicine Name & Badges */}
+                                  <td className="px-3 py-1.5 font-bold text-slate-900">
+                                    <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
+                                      <span className="text-xs">{itm.ItemName}</span>
+                                      {itm.BatchNo && (
+                                        <span className="px-1.5 py-0.2 bg-slate-100 text-slate-700 rounded text-[9px] font-mono border border-slate-300" title={`Batch #: ${itm.BatchNo}`}>
+                                          B#: {itm.BatchNo}
+                                        </span>
+                                      )}
+                                      {itm.ExpDate && (
+                                        <span className="px-1.5 py-0.2 bg-amber-50 text-amber-900 rounded text-[9px] font-mono border border-amber-300" title={`Exp Date: ${itm.ExpDate}`}>
+                                          Exp: {itm.ExpDate}
+                                        </span>
+                                      )}
+                                      {isLowStock && (
+                                        <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded text-[8px] font-black uppercase tracking-wider animate-pulse">
+                                          Low Stock
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Category / Unit */}
+                                  <td className="px-2.5 py-1.5 font-mono text-xs font-semibold text-slate-700">
+                                    {itm.Unit || 'Tab'}
+                                  </td>
+
+                                  {/* Type */}
+                                  <td className="px-2 py-1.5 text-center">
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                      isClinical ? 'bg-indigo-100 text-indigo-800' : 'bg-emerald-100 text-emerald-800'
+                                    }`}>
+                                      {isClinical ? 'Clinical' : 'Patent'}
+                                    </span>
+                                  </td>
+
+                                  {/* Current Stock (Direct Excel Cell Editing & Quick +/- Buttons) */}
+                                  <td className="px-2 py-1 bg-emerald-50/30">
+                                    <div className="flex items-center justify-end space-x-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (setItems) {
+                                            const newStock = Math.max(0, itm.CStock - 1);
+                                            const updated = { ...itm, CStock: newStock };
+                                            setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                            syncItemToBackend('UPDATE', updated);
+                                          }
+                                        }}
+                                        className="w-5 h-5 bg-slate-200 hover:bg-rose-200 text-slate-700 hover:text-rose-900 rounded font-bold text-xs flex items-center justify-center transition cursor-pointer"
+                                        title="Decrease Current Stock by 1"
+                                      >
+                                        -
+                                      </button>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        value={itm.CStock}
+                                        onChange={(e) => {
+                                          const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
+                                          if (setItems) {
+                                            const updated = { ...itm, CStock: val };
+                                            setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                            syncItemToBackend('UPDATE', updated);
+                                          }
+                                        }}
+                                        className={`w-16 py-0.5 px-1 text-right text-xs font-mono font-black rounded border ${
+                                          isLowStock
+                                            ? 'bg-rose-100 border-rose-400 text-rose-950 focus:ring-1 focus:ring-rose-500'
+                                            : 'bg-white border-slate-300 text-slate-900 focus:ring-1 focus:ring-emerald-500'
+                                        }`}
+                                        title="Direct Excel Cell Edit: Current Stock"
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (setItems) {
+                                            const newStock = itm.CStock + 1;
+                                            const updated = { ...itm, CStock: newStock };
+                                            setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                            syncItemToBackend('UPDATE', updated);
+                                          }
+                                        }}
+                                        className="w-5 h-5 bg-slate-200 hover:bg-emerald-200 text-slate-700 hover:text-emerald-900 rounded font-bold text-xs flex items-center justify-center transition cursor-pointer"
+                                        title="Increase Current Stock by 1"
+                                      >
+                                        +
+                                      </button>
+                                    </div>
+                                  </td>
+
+                                  {/* Min Threshold Direct Cell Edit */}
+                                  <td className="px-2 py-1 text-right bg-slate-50/50">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={(itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1}
+                                      onChange={(e) => {
+                                        const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
+                                        if (setItems) {
+                                          const updated = { ...itm, MinStock: val };
+                                          setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                          syncItemToBackend('UPDATE', updated);
+                                        }
+                                      }}
+                                      className="w-14 py-0.5 px-1 text-right text-xs font-mono font-bold bg-white border border-slate-300 rounded text-slate-700 focus:ring-1 focus:ring-indigo-500"
+                                      title="Direct Excel Cell Edit: Min Threshold"
+                                    />
+                                  </td>
+
+                                  {/* PO Reorder Qty Direct Cell Edit */}
+                                  <td className="px-2 py-1 text-right bg-indigo-50/30">
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={itm.ReorderQty || 0}
+                                      onChange={(e) => {
+                                        const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
+                                        if (setItems) {
+                                          const updated = { ...itm, ReorderQty: val };
+                                          setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                          syncItemToBackend('UPDATE', updated);
+                                        }
+                                      }}
+                                      className="w-16 py-0.5 px-1 text-right text-xs font-mono font-black bg-white border border-indigo-300 rounded text-indigo-950 focus:ring-1 focus:ring-indigo-500"
+                                      title="Direct Excel Cell Edit: Purchase Order Reorder Qty"
+                                    />
+                                  </td>
+
+                                  {/* Unit Cost (Rs) Direct Cell Edit */}
+                                  <td className="px-2 py-1 text-right font-mono">
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={itm.PurchasePrice}
+                                      onChange={(e) => {
+                                        const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
+                                        if (setItems) {
+                                          const updated = { ...itm, PurchasePrice: val };
+                                          setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                          syncItemToBackend('UPDATE', updated);
+                                        }
+                                      }}
+                                      className="w-18 py-0.5 px-1 text-right text-xs font-mono font-medium bg-white border border-slate-300 rounded text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                      title="Direct Excel Cell Edit: Unit Purchase Price"
+                                    />
+                                  </td>
+
+                                  {/* Retail Price (Rs) Direct Cell Edit */}
+                                  <td className="px-2 py-1 text-right font-mono">
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={itm.Price}
+                                      onChange={(e) => {
+                                        const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
+                                        if (setItems) {
+                                          const updated = { ...itm, Price: val };
+                                          setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                          syncItemToBackend('UPDATE', updated);
+                                        }
+                                      }}
+                                      className="w-20 py-0.5 px-1 text-right text-xs font-mono font-extrabold bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-emerald-500"
+                                      title="Direct Excel Cell Edit: Retail Selling Price"
+                                    />
+                                  </td>
+
+                                  {/* Actions */}
+                                  <td className="px-2 py-1 text-center">
+                                    <div className="flex justify-center items-center space-x-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleSelectEditItem(itm)}
+                                        className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-100 rounded transition cursor-pointer"
+                                        title="Full Parameter Edit Dialog"
+                                      >
+                                        <Edit className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleRemoveItem(itm.ItemID, itm.ItemName)}
+                                        disabled={!canAdd}
+                                        className={`p-1 rounded transition cursor-pointer ${
+                                          canAdd ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-100' : 'text-slate-300 cursor-not-allowed'
+                                        }`}
+                                        title="Delete Medicine Row"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Excel Sheet Status Bar */}
+                    <div className="bg-slate-800 text-slate-200 px-4 py-2 rounded-xl text-xs font-mono flex flex-wrap items-center justify-between gap-3 border border-slate-700 shadow-inner">
+                      <div className="flex items-center space-x-4">
+                        <span>
+                          Total Grid Rows: <strong className="text-white">{processedItems.length}</strong> / {items.length}
+                        </span>
+                        <span className="text-slate-500">|</span>
+                        <span>
+                          Low Stock: <strong className="text-rose-400">{processedItems.filter(i => i.CStock <= ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1)).length}</strong>
+                        </span>
+                      </div>
+
+                      <div className="flex items-center space-x-4">
+                        <span>
+                          Cost Value: <strong className="text-amber-300">Rs. {totalValuationCost.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</strong>
+                        </span>
+                        <span className="text-slate-500">|</span>
+                        <span>
+                          Retail Value: <strong className="text-emerald-300">Rs. {totalValuationRetail.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</strong>
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
             </div>
-
-            {/* Active Low Stock Filter Banner */}
-            {invLowStockFilter && (
-              <div className="bg-rose-50 border border-rose-200 rounded-xl p-3 flex items-center justify-between text-xs animate-fadeIn">
-                <div className="flex items-center space-x-2 text-rose-800 font-bold">
-                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                  <span>Showing items where Current Stock (CStock) is below or at Reorder Level (MinStock)</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setInvLowStockFilter(false)}
-                  className="px-2.5 py-1 bg-white hover:bg-rose-100 text-rose-700 border border-rose-300 rounded-lg text-xs font-bold transition cursor-pointer"
-                >
-                  Clear Low Stock Filter
-                </button>
-              </div>
-            )}
-
-            {/* Real-time Medicine Inventory Table */}
-            <div className="overflow-x-auto border border-slate-200 rounded-xl max-h-[500px] overflow-y-auto">
-              <table className="w-full text-left border-collapse text-xs font-sans">
-                <thead className="sticky top-0 bg-slate-100 border-b border-slate-200 text-[10px] text-slate-500 font-black uppercase tracking-wider z-10">
-                  <tr>
-                    <th className="px-3 py-2.5 text-center w-12">S.No</th>
-                    <th className="px-3 py-2.5">Item ID</th>
-                    <th className="px-3 py-2.5">Medicine Name</th>
-                    <th className="px-3 py-2.5">Category / Unit</th>
-                    <th className="px-3 py-2.5">Type</th>
-                    <th className="px-3 py-2.5 text-right">Current Stock</th>
-                    <th className="px-3 py-2.5 text-right">Min Threshold</th>
-                    <th className="px-3 py-2.5 text-right text-indigo-700 font-bold">Reorder Qty</th>
-                    <th className="px-3 py-2.5 text-right">Unit Cost (Rs.)</th>
-                    <th className="px-3 py-2.5 text-right">Retail Price (Rs.)</th>
-                    <th className="px-3 py-2.5 text-center">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-150 bg-white text-slate-800">
-                  {items.filter((itm) => {
-                    if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
-                    if (invCategoryFilter !== 'ALL') {
-                      if (invCategoryFilter === 'C') {
-                        if (itm.MedicineType !== 'C') return false;
-                      } else if (invCategoryFilter === 'P') {
-                        if (itm.MedicineType === 'C') return false;
-                      } else {
-                        const u = (itm.Unit || '').toLowerCase().trim();
-                        const c = invCategoryFilter.toLowerCase().trim();
-                        if (u !== c && !u.includes(c)) return false;
-                      }
-                    }
-                    if (invSearchQuery.trim()) {
-                      const q = invSearchQuery.toLowerCase().trim();
-                      return (
-                        itm.ItemID.toLowerCase().includes(q) ||
-                        itm.ItemName.toLowerCase().includes(q) ||
-                        (itm.Unit || '').toLowerCase().includes(q)
-                      );
-                    }
-                    return true;
-                  }).length === 0 ? (
-                    <tr>
-                      <td colSpan={11} className="px-6 py-12 text-center text-slate-400 font-semibold">
-                        {invLowStockFilter 
-                          ? 'All inventory items are currently above their reorder levels! No low stock items found.'
-                          : 'No medicines match the selected category filter or search query.'}
-                      </td>
-                    </tr>
-                  ) : (
-                    items.filter((itm) => {
-                      if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
-                      if (invCategoryFilter !== 'ALL') {
-                        if (invCategoryFilter === 'C') {
-                          if (itm.MedicineType !== 'C') return false;
-                        } else if (invCategoryFilter === 'P') {
-                          if (itm.MedicineType === 'C') return false;
-                        } else {
-                          const u = (itm.Unit || '').toLowerCase().trim();
-                          const c = invCategoryFilter.toLowerCase().trim();
-                          if (u !== c && !u.includes(c)) return false;
-                        }
-                      }
-                      if (invSearchQuery.trim()) {
-                        const q = invSearchQuery.toLowerCase().trim();
-                        return (
-                          itm.ItemID.toLowerCase().includes(q) ||
-                          itm.ItemName.toLowerCase().includes(q) ||
-                          (itm.Unit || '').toLowerCase().includes(q)
-                        );
-                      }
-                      return true;
-                    }).map((itm, idx) => {
-                      const isLowStock = itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1);
-                      const isClinical = itm.MedicineType === 'C';
-                      const reorderQty = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
-                        ? itm.ReorderQty
-                        : 0;
-                      return (
-                        <tr 
-                          key={`${itm.ItemID}-${idx}`} 
-                          className={`hover:bg-slate-50 transition ${
-                            editingItem?.ItemID === itm.ItemID 
-                              ? 'bg-indigo-50/40' 
-                              : isLowStock 
-                                ? 'bg-rose-50/40 hover:bg-rose-50/70 border-l-4 border-l-rose-500' 
-                                : ''
-                          }`}
-                        >
-                          <td className="px-3 py-2.5 text-center font-mono text-slate-400 font-semibold">{idx + 1}</td>
-                          <td className="px-3 py-2.5 font-mono text-slate-700 font-bold">{itm.ItemID}</td>
-                          <td className="px-3 py-2.5 font-bold text-slate-900">
-                            <div className="flex items-center space-x-2">
-                              <span>{itm.ItemName}</span>
-                              {itm.BatchNo && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-extrabold bg-slate-100 text-slate-800 border border-slate-300 shrink-0" title={`Batch #: ${itm.BatchNo}`}>
-                                  B#: {itm.BatchNo}
-                                </span>
-                              )}
-                              {itm.MfgDate && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-teal-50 text-teal-800 border border-teal-200 shrink-0" title={`Mfg Date: ${itm.MfgDate}`}>
-                                  Mfg: {itm.MfgDate}
-                                </span>
-                              )}
-                              {itm.ExpDate && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-900 border border-amber-300 shrink-0" title={`Exp Date: ${itm.ExpDate}`}>
-                                  Exp: {itm.ExpDate}
-                                </span>
-                              )}
-                              {itm.VendorBarcode && (
-                                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-800 border border-indigo-200 shrink-0" title={`Vendor QR Code: ${itm.VendorBarcode}`}>
-                                  <QrCode className="w-2.5 h-2.5 mr-0.5 text-indigo-600" />
-                                  QR Mapped
-                                </span>
-                              )}
-                              {isLowStock && (
-                                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-rose-600 text-white shadow-2xs shrink-0 animate-pulse">
-                                  <AlertTriangle className="w-2.5 h-2.5 mr-1" />
-                                  Low Stock
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <span className="px-2 py-0.5 bg-slate-100 border border-slate-200 text-slate-700 font-bold text-[10px] rounded-md font-mono">
-                              {itm.Unit || 'Tab'}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5">
-                            <span className={`px-2 py-0.5 rounded font-black text-[9px] uppercase tracking-wider ${
-                              isClinical 
-                                ? 'bg-indigo-50 border border-indigo-100 text-indigo-700' 
-                                : 'bg-emerald-50 border border-emerald-100 text-emerald-700'
-                            }`}>
-                              {isClinical ? 'Clinical' : 'Patent'}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono">
-                            <div className="inline-flex flex-col items-end">
-                              <span className={`px-2 py-0.5 rounded-md font-black text-xs ${
-                                isLowStock 
-                                  ? 'bg-rose-600 text-white border border-rose-700 shadow-2xs flex items-center space-x-1' 
-                                  : 'bg-slate-100 text-slate-900 border border-slate-200'
-                              }`}>
-                                {isLowStock && <AlertTriangle className="w-3 h-3 mr-1 text-white shrink-0" />}
-                                <span>{itm.CStock} {itm.Unit || 'Tab'}s</span>
-                              </span>
-                              {isLowStock && (
-                                <span className="text-[9px] font-extrabold text-rose-600 mt-0.5">
-                                  Below Reorder Level ({(itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1})
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono text-slate-600 font-semibold">
-                            {(itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1} {itm.Unit || 'Tab'}s
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono text-indigo-700 font-bold bg-indigo-50/20">
-                            <div className="flex items-center justify-end space-x-1">
-                              <input
-                                type="number"
-                                min="0"
-                                value={reorderQty}
-                                onChange={(e) => {
-                                  const val = e.target.value === '' ? 0 : Number(e.target.value);
-                                  if (setItems) {
-                                    setItems(prev => prev.map(item => {
-                                      if (item.ItemID === itm.ItemID) {
-                                        return { ...item, ReorderQty: val };
-                                      }
-                                      return item;
-                                    }));
-                                  }
-                                }}
-                                className="w-16 p-1 text-right text-xs border border-indigo-200 rounded font-bold font-mono text-indigo-950 bg-white focus:ring-1 focus:ring-indigo-500"
-                                title="Edit Purchase Order Required Quantity"
-                              />
-                              <span className="text-[10px] text-slate-500 font-medium">
-                                {itm.Unit || 'Tab'}
-                              </span>
-                            </div>
-                          </td>
-                          <td className="px-3 py-2.5 text-right font-mono font-medium text-slate-600">Rs. {itm.PurchasePrice.toFixed(2)}</td>
-                          <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-900">Rs. {itm.Price.toFixed(2)}</td>
-                          <td className="px-3 py-2.5 text-center">
-                            <div className="flex justify-center items-center space-x-1">
-                              <button
-                                onClick={() => handleSelectEditItem(itm)}
-                                className="p-1.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
-                                title="Edit Medicine Parameter"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleRemoveItem(itm.ItemID, itm.ItemName)}
-                                disabled={!canAdd}
-                                className={`p-1.5 rounded-lg transition cursor-pointer ${
-                                  canAdd ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-50' : 'text-slate-300 cursor-not-allowed'
-                                }`}
-                                title="Remove from Inventory"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-
-          </div>
 
         </div>
       </div>
@@ -5272,22 +4903,6 @@ export default function PharmacyPOS({
 
           </div>
 
-        </div>
-      )}
-
-      {activeSubTab === 'barcode_mapper' && (
-        <div className="animate-fadeIn">
-          <MedicineBarcodeMapper
-            items={items}
-            setItems={setItems}
-            currentUser={currentUser}
-            onMappingAdded={(m) => {
-              setScanToastMsg({
-                text: `Mapped Vendor QR Code "${m.Barcode}" to ${m.ItemName || m.ItemID} in MongoDB!`,
-                type: 'success'
-              });
-            }}
-          />
         </div>
       )}
 
@@ -5993,31 +5608,7 @@ export default function PharmacyPOS({
                 />
               </div>
 
-              {/* Vendor / BM Private Limited QR Code Linker Card */}
-              <div className="p-3 bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 rounded-xl space-y-1.5 shadow-2xs">
-                <div className="flex items-center justify-between">
-                  <label className="block text-[10px] font-black text-emerald-900 uppercase tracking-wider flex items-center space-x-1">
-                    <QrCode className="w-3.5 h-3.5 text-emerald-600 mr-1" />
-                    <span>Vendor Barcode / QR Code (BM Private Limited Mapping)</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => setIsQRScannerOpen(true)}
-                    className="text-[10px] font-extrabold text-emerald-800 hover:text-emerald-950 flex items-center bg-white px-2.5 py-1 rounded-md border border-emerald-300 hover:bg-emerald-100 transition shadow-2xs cursor-pointer"
-                  >
-                    <QrCode className="w-3 h-3 mr-1 text-emerald-600" />
-                    <span>Scan Box QR</span>
-                  </button>
-                </div>
-                <input
-                  type="text"
-                  placeholder=""
-                  value={itemFormVendorBarcode}
-                  onChange={(e) => setItemFormVendorBarcode(e.target.value)}
-                  className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-emerald-500 border-emerald-300 bg-white font-mono font-bold text-slate-900 text-xs shadow-xs"
-                />
 
-              </div>
 
               <div className="grid grid-cols-2 gap-3">
                 <div>
@@ -6192,8 +5783,8 @@ export default function PharmacyPOS({
         </div>
       )}
 
-      {/* Interactive Grid-View Purchase Order Builder & Monthly Sales Velocity Analytics Modal */}
-      {isPOGridModalOpen && (() => {
+      {/* Interactive Grid-View Purchase Order Builder & Monthly Sales Velocity Analytics Modal - Disabled/Removed */}
+      {false && (() => {
         // Calculations for PO Builder Tab
         const filteredGridItems = items.filter(itm => {
           const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1;

@@ -410,6 +410,21 @@ export interface NhcPatientHistory {
   MedicineType?: 'C' | 'P' | string;
 }
 
+export interface MultiPatientSearchResult {
+  PatientID: string;
+  PatientName: string;
+  PhoneMobile?: string;
+  Father_husband?: string;
+  AgeYears?: number | string;
+  Sex?: string;
+  Address?: string;
+  City?: string;
+  tokenNo?: number;
+  tokenShift?: number;
+  isNhc?: boolean;
+  source?: string;
+}
+
 export interface SmartLocatorMedicine {
   Symptoms: string;
   MedicineName: string;

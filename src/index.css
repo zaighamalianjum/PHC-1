@@ -188,6 +188,7 @@
   #printable-daily-collection-sheet,
   #printable-invoices-sheet,
   #printable-payment-collection-pdf,
+  #printable-grn-sheet,
   #vendor-printable-sheet,
   #cashflow-printable-sheet,
   #pl-statement-frame,
@@ -203,4 +204,197 @@
     margin: 0 !important;
     background: #ffffff !important;
   }
+
+  /* ==========================================
+     GOODS RECEIVED NOTE (GRN) A4 PRINT STYLING
+     ========================================== */
+  #printable-grn-sheet,
+  .grn-print-sheet,
+  .grn-summary-card {
+    box-sizing: border-box !important;
+    overflow: visible !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    color: #000000 !important;
+    border: none !important;
+    box-shadow: none !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Hide interactive controls, buttons, cancel options & modal overlays during GRN print */
+  .grn-summary-card button,
+  .grn-summary-card input[type="button"],
+  .grn-summary-card .no-print,
+  .grn-summary-card .exclude-col,
+  .grn-print-hide,
+  .grn-action-btn {
+    display: none !important;
+  }
+
+  /* Form inputs converted to plain printable text blocks in GRN print */
+  .grn-summary-card input[type="text"],
+  .grn-summary-card input[type="number"] {
+    border: none !important;
+    background: transparent !important;
+    padding: 0 !important;
+    box-shadow: none !important;
+    font-weight: 800 !important;
+    color: #000000 !important;
+    width: auto !important;
+    text-align: inherit !important;
+  }
+
+  /* Table structure formatting for A4 GRN printing */
+  .grn-summary-table,
+  table.grn-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    margin-top: 8px !important;
+    margin-bottom: 8px !important;
+    font-size: 9.5pt !important;
+  }
+
+  .grn-summary-table th,
+  table.grn-table th {
+    background-color: #f1f5f9 !important;
+    color: #0f172a !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    font-size: 8pt !important;
+    letter-spacing: 0.5px !important;
+    border-bottom: 2px solid #0f172a !important;
+    padding: 6px 8px !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .grn-summary-table td,
+  table.grn-table td {
+    padding: 5px 8px !important;
+    border-bottom: 1px solid #e2e8f0 !important;
+    color: #0f172a !important;
+    vertical-align: middle !important;
+  }
+
+  /* Alignment & Numeric formatting for Unit Price, Subtotal, and Grand Total */
+  .grn-unit-price,
+  td.grn-unit-price,
+  th.grn-unit-price {
+    text-align: right !important;
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace !important;
+    font-variant-numeric: tabular-nums !important;
+    font-weight: 700 !important;
+    color: #1e293b !important;
+    width: 100px !important;
+    white-space: nowrap !important;
+  }
+
+  .grn-subtotal,
+  td.grn-subtotal,
+  th.grn-subtotal {
+    text-align: right !important;
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace !important;
+    font-variant-numeric: tabular-nums !important;
+    font-weight: 800 !important;
+    color: #0f172a !important;
+    width: 120px !important;
+    background-color: #f8fafc !important;
+    white-space: nowrap !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Table Footer & Subtotal Row */
+  .grn-summary-table tfoot tr,
+  table.grn-table tfoot tr {
+    background-color: #f1f5f9 !important;
+    border-top: 2px solid #0f172a !important;
+    border-bottom: 2px solid #0f172a !important;
+    font-weight: 800 !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .grn-summary-table tfoot td,
+  table.grn-table tfoot td {
+    padding: 8px 8px !important;
+    font-size: 9.5pt !important;
+  }
+
+  /* Grand Total Box for GRN Summary Card */
+  .grn-grand-total,
+  .grn-grand-total-card {
+    background: #0f172a !important;
+    color: #ffffff !important;
+    border: 1px solid #020617 !important;
+    border-radius: 6px !important;
+    padding: 10px 16px !important;
+    margin-top: 12px !important;
+    float: right !important;
+    min-width: 280px !important;
+    text-align: right !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  .grn-grand-total .grn-total-label,
+  .grn-grand-total-card .grn-total-label {
+    font-size: 8pt !important;
+    font-weight: 800 !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.8px !important;
+    color: #94a3b8 !important;
+  }
+
+  .grn-grand-total .grn-total-amount,
+  .grn-grand-total-card .grn-total-amount {
+    font-size: 16pt !important;
+    font-weight: 900 !important;
+    font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace !important;
+    font-variant-numeric: tabular-nums !important;
+    color: #34d399 !important;
+    margin-top: 2px !important;
+  }
+}
+
+/* Goods Received Note (GRN) Base Utility Classes for Screen & Print */
+.grn-summary-card {
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 0.75rem;
+  padding: 1.25rem;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+}
+
+.grn-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.75rem;
+  line-height: 1rem;
+}
+
+.grn-unit-price,
+.grn-subtotal {
+  text-align: right;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.grn-grand-total,
+.grn-grand-total-card {
+  background: #0f172a;
+  color: #ffffff;
+  font-family: var(--font-mono), ui-monospace, SFMono-Regular, monospace;
+  font-variant-numeric: tabular-nums;
+  border-radius: 0.5rem;
+  padding: 0.75rem 1rem;
+  text-align: right;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }

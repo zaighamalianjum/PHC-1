@@ -12,6 +12,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import XLSX from 'xlsx';
+import JSZip from 'jszip';
 
 dotenv.config();
 
@@ -3700,7 +3701,12 @@ app.delete('/api/smart-locator/all', async (req, res) => {
 app.get('/api/query/:collection', async (req, res) => {
   try {
     const { collection } = req.params;
-    const limit = parseInt(req.query.limit) || 500;
+    let limit = 0;
+    if (req.query.limit !== undefined) {
+      limit = parseInt(req.query.limit) || 0;
+    } else if (collection !== 'items') {
+      limit = 500;
+    }
     const skip = parseInt(req.query.skip) || 0;
     
     // Parse custom JSON query if provided in URL (e.g. ?q={"role":"Doctor"})
@@ -3876,6 +3882,8 @@ app.get('/api/mongodb/status', (req, res) => {
 app.get('/api/mongodb/backup', async (req, res) => {
   try {
     const targetDbName = db instanceof InMemoryDB ? "PharmacyPOSDB" : (db.databaseName || "PharmacyPOSDB");
+    const requestedFormat = (req.query.format || 'zip').toString().toLowerCase();
+
     const backupData = {
       backupDate: new Date().toISOString(),
       system: "Punjab Homeopathic Clinic EMR & Pharmacy POS",
@@ -3897,10 +3905,31 @@ app.get('/api/mongodb/backup', async (req, res) => {
       }
     }
 
-    const filename = `mongodb_backup_${targetDbName}_${new Date().toISOString().split('T')[0]}.json`;
-    res.setHeader('Content-Type', 'application/json');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
-    res.status(200).send(JSON.stringify(backupData, null, 2));
+    const dateStr = new Date().toISOString().split('T')[0];
+
+    if (requestedFormat === 'json' || requestedFormat === 'raw_json') {
+      const jsonFilename = `mongodb_backup_${targetDbName}_${dateStr}.json`;
+      res.setHeader('Content-Type', 'application/json');
+      res.setHeader('Content-Disposition', `attachment; filename="${jsonFilename}"`);
+      return res.status(200).send(JSON.stringify(backupData));
+    }
+
+    // Default: High-Ratio ZIP Archive Compression
+    const jsonStr = JSON.stringify(backupData);
+    const jsonInsideZip = `mongodb_backup_${targetDbName}_${dateStr}.json`;
+    const zip = new JSZip();
+    zip.file(jsonInsideZip, jsonStr);
+
+    const zipBuffer = await zip.generateAsync({
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+      compressionOptions: { level: 9 }
+    });
+
+    const zipFilename = `mongodb_backup_${targetDbName}_${dateStr}.zip`;
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="${zipFilename}"`);
+    return res.status(200).send(zipBuffer);
   } catch (err) {
     console.error('Backup API Error:', err);
     res.status(500).json({ success: false, error: err.message });
