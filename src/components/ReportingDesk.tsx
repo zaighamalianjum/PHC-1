@@ -87,6 +87,7 @@ export default function ReportingDesk({
   expenses = [],
   assets = [],
   inventoryItems = [],
+  items = [],
   appointments = [],
   patientVisits = [],
   posSales = [],
@@ -96,6 +97,106 @@ export default function ReportingDesk({
   currentUser,
   clinicSettings
 }: ReportingDeskProps) {
+  // Self-fetching fallback for ERP & Inventory items
+  const [fetchedItems, setFetchedItems] = useState<any[]>([]);
+  const [fetchedVendors, setFetchedVendors] = useState<ErpVendor[]>([]);
+  const [fetchedPOs, setFetchedPOs] = useState<ErpPurchaseOrder[]>([]);
+  const [fetchedGrns, setFetchedGrns] = useState<ErpGrn[]>([]);
+  const [fetchedTxns, setFetchedTxns] = useState<ErpTransaction[]>([]);
+  const [fetchedPayrolls, setFetchedPayrolls] = useState<ErpPayroll[]>([]);
+  const [fetchedExpenses, setFetchedExpenses] = useState<ErpExpense[]>([]);
+
+  const loadReportData = React.useCallback(async () => {
+    try {
+      const [itRes, vRes, poRes, grnRes, txRes, payRes, expRes] = await Promise.all([
+        fetch('/api/query/items').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/erp_vendors').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/erp_purchase_orders').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/erp_grn').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/erp_transactions').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/erp_payroll').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/erp_expenses').then(r => r.ok ? r.json() : []).catch(() => [])
+      ]);
+      if (Array.isArray(itRes) && itRes.length > 0) setFetchedItems(itRes);
+      if (Array.isArray(vRes) && vRes.length > 0) setFetchedVendors(vRes);
+      if (Array.isArray(poRes) && poRes.length > 0) setFetchedPOs(poRes);
+      if (Array.isArray(grnRes) && grnRes.length > 0) setFetchedGrns(grnRes);
+      if (Array.isArray(txRes) && txRes.length > 0) setFetchedTxns(txRes);
+      if (Array.isArray(payRes) && payRes.length > 0) setFetchedPayrolls(payRes);
+      if (Array.isArray(expRes) && expRes.length > 0) setFetchedExpenses(expRes);
+    } catch (err) {
+      console.error('ReportingDesk fetch error:', err);
+    }
+  }, []);
+
+  React.useEffect(() => {
+    loadReportData();
+    window.addEventListener('phc_db_updated', loadReportData);
+    return () => window.removeEventListener('phc_db_updated', loadReportData);
+  }, [loadReportData]);
+
+  // Effective datasets combining props and fetched state
+  const effectiveItems = useMemo(() => {
+    if (Array.isArray(inventoryItems) && inventoryItems.length > 0) return inventoryItems;
+    if (Array.isArray(items) && items.length > 0) return items;
+    if (Array.isArray(fetchedItems) && fetchedItems.length > 0) return fetchedItems;
+    return [];
+  }, [inventoryItems, items, fetchedItems]);
+
+  const effectiveVendors = useMemo(() => {
+    if (Array.isArray(vendors) && vendors.length > 0) return vendors;
+    if (Array.isArray(fetchedVendors) && fetchedVendors.length > 0) return fetchedVendors;
+    return [];
+  }, [vendors, fetchedVendors]);
+
+  const effectivePOs = useMemo(() => {
+    if (Array.isArray(purchaseOrders) && purchaseOrders.length > 0) return purchaseOrders;
+    if (Array.isArray(fetchedPOs) && fetchedPOs.length > 0) return fetchedPOs;
+    return [];
+  }, [purchaseOrders, fetchedPOs]);
+
+  const effectiveGrns = useMemo(() => {
+    if (Array.isArray(grns) && grns.length > 0) return grns;
+    if (Array.isArray(fetchedGrns) && fetchedGrns.length > 0) return fetchedGrns;
+    return [];
+  }, [grns, fetchedGrns]);
+
+  const effectiveTransactions = useMemo(() => {
+    if (Array.isArray(transactions) && transactions.length > 0) return transactions;
+    if (Array.isArray(fetchedTxns) && fetchedTxns.length > 0) return fetchedTxns;
+    return [];
+  }, [transactions, fetchedTxns]);
+
+  const effectivePayrolls = useMemo(() => {
+    if (Array.isArray(payrolls) && payrolls.length > 0) return payrolls;
+    if (Array.isArray(fetchedPayrolls) && fetchedPayrolls.length > 0) return fetchedPayrolls;
+    return [];
+  }, [payrolls, fetchedPayrolls]);
+
+  const effectiveExpenses = useMemo(() => {
+    if (Array.isArray(expenses) && expenses.length > 0) return expenses;
+    if (Array.isArray(fetchedExpenses) && fetchedExpenses.length > 0) return fetchedExpenses;
+    return [];
+  }, [expenses, fetchedExpenses]);
+
+  // Helper stock extractors
+  const getItemStock = (item: any) => {
+    if (!item) return 0;
+    if (item.CStock !== undefined && item.CStock !== null) return Number(item.CStock);
+    if (item.cStock !== undefined && item.cStock !== null) return Number(item.cStock);
+    if (item.Stock !== undefined && item.Stock !== null) return Number(item.Stock);
+    if (item.stock !== undefined && item.stock !== null) return Number(item.stock);
+    if (item.Qty !== undefined && item.Qty !== null) return Number(item.Qty);
+    return 0;
+  };
+
+  const getItemMinStock = (item: any) => {
+    if (!item) return 1;
+    if (item.MinStock !== undefined && item.MinStock !== null) return Number(item.MinStock);
+    if (item.minStock !== undefined && item.minStock !== null) return Number(item.minStock);
+    return 1;
+  };
+
   // Active Report Type Selection
   const [activeReport, setActiveReport] = useState<ReportType>('pending_payments');
 
@@ -155,14 +256,14 @@ export default function ReportingDesk({
 
   // Report 1: Pending Vendor Payments
   const pendingPaymentsData = useMemo(() => {
-    return vendors
+    return effectiveVendors
       .map(v => {
         // Calculate GRNs for this vendor
-        const vGrns = grns.filter(g => g.VendorID === v.VendorID || g.VendorName === v.VendorName);
+        const vGrns = effectiveGrns.filter(g => g.VendorID === v.VendorID || g.VendorName === v.VendorName);
         const totalGrnBills = vGrns.reduce((sum, g) => sum + (Number(g.TotalAmount) || 0), 0);
 
         // Payments made to vendor
-        const vPayments = transactions.filter(
+        const vPayments = effectiveTransactions.filter(
           t => (t.VendorID === v.VendorID || t.VendorName === v.VendorName) && t.Type === 'VendorPayment'
         );
         const totalPaid = vPayments.reduce((sum, t) => sum + (Number(t.Amount) || 0), 0);
@@ -183,7 +284,7 @@ export default function ReportingDesk({
           v.Phone.includes(searchQuery);
         return matchesSearch;
       });
-  }, [vendors, grns, transactions, searchQuery]);
+  }, [effectiveVendors, effectiveGrns, effectiveTransactions, searchQuery]);
 
   const pendingPaymentsSummary = useMemo(() => {
     const totalOwed = pendingPaymentsData.reduce((sum, v) => sum + (v.pendingBalance > 0 ? v.pendingBalance : 0), 0);
@@ -193,7 +294,7 @@ export default function ReportingDesk({
 
   // Report 2: Salary Disbursement
   const payrollData = useMemo(() => {
-    return payrolls
+    return effectivePayrolls
       .filter(p => {
         const pDate = p.PaymentDate || `${p.MonthYear}-01`;
         return isWithinDateRange(pDate);
@@ -204,7 +305,7 @@ export default function ReportingDesk({
           p.PayrollID.toLowerCase().includes(searchQuery.toLowerCase());
         return matchesSearch;
       });
-  }, [payrolls, startDate, endDate, datePreset, searchQuery]);
+  }, [effectivePayrolls, startDate, endDate, datePreset, searchQuery]);
 
   const payrollSummary = useMemo(() => {
     const totalDisbursed = payrollData.reduce((sum, p) => sum + (Number(p.NetSalary) || 0), 0);
@@ -216,7 +317,7 @@ export default function ReportingDesk({
 
   // Report 3: Expense Analysis
   const expenseData = useMemo(() => {
-    return expenses
+    return effectiveExpenses
       .filter(e => isWithinDateRange(e.ExpenseDate))
       .filter(e => {
         const matchesSearch = e.Description.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -225,7 +326,7 @@ export default function ReportingDesk({
         const matchesCat = selectedCategory === 'all' || e.Category === selectedCategory;
         return matchesSearch && matchesCat;
       });
-  }, [expenses, startDate, endDate, datePreset, searchQuery, selectedCategory]);
+  }, [effectiveExpenses, startDate, endDate, datePreset, searchQuery, selectedCategory]);
 
   const expenseSummary = useMemo(() => {
     const totalExpense = expenseData.reduce((sum, e) => sum + (Number(e.Amount) || 0), 0);
@@ -238,7 +339,7 @@ export default function ReportingDesk({
 
   // Report 4: Purchase Orders & GRN Details
   const poData = useMemo(() => {
-    return purchaseOrders
+    return effectivePOs
       .filter(p => isWithinDateRange(p.OrderDate))
       .filter(p => {
         const matchesSearch = p.POID.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -246,13 +347,13 @@ export default function ReportingDesk({
         return matchesSearch;
       })
       .map(p => {
-        const linkedGrn = grns.find(g => g.POID === p.POID);
+        const linkedGrn = effectiveGrns.find(g => g.POID === p.POID);
         return {
           ...p,
           linkedGrn
         };
       });
-  }, [purchaseOrders, grns, startDate, endDate, datePreset, searchQuery]);
+  }, [effectivePOs, effectiveGrns, startDate, endDate, datePreset, searchQuery]);
 
   const poSummary = useMemo(() => {
     const totalPoAmount = poData.reduce((sum, p) => sum + (Number(p.TotalAmount) || 0), 0);
@@ -263,15 +364,16 @@ export default function ReportingDesk({
 
   // Report 5: Current Stock & Inventory Valuation
   const currentStockData = useMemo(() => {
-    return inventoryItems.filter(item => {
+    return effectiveItems.filter(item => {
       const name = item.ItemName || item.name || '';
-      const cat = item.Category || item.category || '';
+      const cat = item.Category || item.category || item.Unit || item.unit || '';
       const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        cat.toLowerCase().includes(searchQuery.toLowerCase());
+        cat.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        String(item.ItemID || item._id || '').toLowerCase().includes(searchQuery.toLowerCase());
       const matchesCat = selectedCategory === 'all' || cat === selectedCategory;
       return matchesSearch && matchesCat;
     });
-  }, [inventoryItems, searchQuery, selectedCategory]);
+  }, [effectiveItems, searchQuery, selectedCategory]);
 
   const currentStockSummary = useMemo(() => {
     let totalItems = currentStockData.length;
@@ -280,9 +382,9 @@ export default function ReportingDesk({
     let totalRetailValuation = 0;
 
     currentStockData.forEach(i => {
-      const cStock = Number(i.CStock) || 0;
-      const pPrice = Number(i.PurchasePrice) || Number(i.Price) || 0;
-      const rPrice = Number(i.Price) || 0;
+      const cStock = getItemStock(i);
+      const pPrice = Number(i.PurchasePrice ?? i.purchasePrice ?? i.Price ?? i.price ?? 0);
+      const rPrice = Number(i.Price ?? i.price ?? 0);
 
       totalStockUnits += cStock;
       totalPurchaseValuation += cStock * pPrice;
@@ -294,35 +396,36 @@ export default function ReportingDesk({
 
   // Report 6: Minimum Stock / Low Stock Alert
   const minimumStockData = useMemo(() => {
-    return inventoryItems
+    return effectiveItems
       .filter(item => {
-        const cStock = Number(item.CStock) || 0;
-        const minStock = (item.MinStock !== undefined && item.MinStock !== null) ? Number(item.MinStock) : 1;
+        const cStock = getItemStock(item);
+        const minStock = getItemMinStock(item);
         return cStock <= minStock;
       })
       .filter(item => {
         const name = item.ItemName || item.name || '';
-        const cat = item.Category || item.category || '';
+        const cat = item.Category || item.category || item.Unit || item.unit || '';
         return name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          cat.toLowerCase().includes(searchQuery.toLowerCase());
+          cat.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          String(item.ItemID || item._id || '').toLowerCase().includes(searchQuery.toLowerCase());
       });
-  }, [inventoryItems, searchQuery]);
+  }, [effectiveItems, searchQuery]);
 
   const minimumStockSummary = useMemo(() => {
-    const totalOut = minimumStockData.filter(i => (Number(i.CStock) || 0) === 0).length;
+    const totalOut = minimumStockData.filter(i => getItemStock(i) === 0).length;
     const totalLow = minimumStockData.length - totalOut;
     return { totalLowStock: minimumStockData.length, totalOut, totalLow };
   }, [minimumStockData]);
 
   // Report 7: Required Stock Quantity Requisition
   const requiredStockData = useMemo(() => {
-    return inventoryItems
+    return effectiveItems
       .map(item => {
-        const cStock = Number(item.CStock) || 0;
-        const minStock = (item.MinStock !== undefined && item.MinStock !== null) ? Number(item.MinStock) : 1;
+        const cStock = getItemStock(item);
+        const minStock = getItemMinStock(item);
         const reorderTarget = Number(item.ReorderQty) || (minStock * 2);
         const requiredQty = Math.max(0, reorderTarget - cStock);
-        const unitCost = Number(item.PurchasePrice) || Number(item.Price) || 0;
+        const unitCost = Number(item.PurchasePrice ?? item.purchasePrice ?? item.Price ?? item.price ?? 0);
         const estCost = requiredQty * unitCost;
 
         return {
@@ -338,11 +441,12 @@ export default function ReportingDesk({
       .filter(item => item.requiredQty > 0)
       .filter(item => {
         const name = item.ItemName || item.name || '';
-        const cat = item.Category || item.category || '';
+        const cat = item.Category || item.category || item.Unit || item.unit || '';
         return name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          cat.toLowerCase().includes(searchQuery.toLowerCase());
+          cat.toLowerCase().includes(searchQuery.toLowerCase()) ||
+          String(item.ItemID || item._id || '').toLowerCase().includes(searchQuery.toLowerCase());
       });
-  }, [inventoryItems, searchQuery]);
+  }, [effectiveItems, searchQuery]);
 
   const requiredStockSummary = useMemo(() => {
     const totalItemsToOrder = requiredStockData.length;
@@ -656,12 +760,14 @@ export default function ReportingDesk({
   // Available Item Categories
   const categoriesList = useMemo(() => {
     const set = new Set<string>();
-    inventoryItems.forEach(i => {
+    effectiveItems.forEach(i => {
       if (i.Category) set.add(i.Category);
       if (i.category) set.add(i.category);
+      if (i.Unit) set.add(i.Unit);
+      if (i.unit) set.add(i.unit);
     });
     return Array.from(set);
-  }, [inventoryItems]);
+  }, [effectiveItems]);
 
   // CSV Export Handler
   const handleExportCSV = () => {
@@ -2238,17 +2344,17 @@ export default function ReportingDesk({
                   </tr>
                 ) : (
                   currentStockData.map((i, idx) => {
-                    const cStock = Number(i.CStock) || 0;
-                    const pPrice = Number(i.PurchasePrice) || Number(i.Price) || 0;
+                    const cStock = getItemStock(i);
+                    const pPrice = Number(i.PurchasePrice ?? i.purchasePrice ?? i.Price ?? i.price ?? 0);
                     const val = cStock * pPrice;
                     return (
                       <tr key={i._id || i.ItemID || idx} className="hover:bg-slate-50">
                         <td className="p-3 font-mono font-bold text-slate-700">{i.ItemID || i._id}</td>
                         <td className="p-3 font-bold text-slate-900">{i.ItemName || i.name}</td>
-                        <td className="p-3 text-slate-600">{i.Category || i.category || 'General'}</td>
+                        <td className="p-3 text-slate-600">{i.Category || i.category || i.Unit || 'General'}</td>
                         <td className="p-3 text-center font-bold text-indigo-700">{cStock} {i.Unit || 'Units'}</td>
                         <td className="p-3 text-right text-slate-600">Rs. {pPrice.toLocaleString()}</td>
-                        <td className="p-3 text-right text-emerald-600 font-bold">Rs. {(Number(i.Price) || 0).toLocaleString()}</td>
+                        <td className="p-3 text-right text-emerald-600 font-bold">Rs. {(Number(i.Price ?? i.price) || 0).toLocaleString()}</td>
                         <td className="p-3 text-right font-black text-sky-900">Rs. {val.toLocaleString()}</td>
                       </tr>
                     );
@@ -2284,8 +2390,8 @@ export default function ReportingDesk({
                   </tr>
                 ) : (
                   minimumStockData.map((i, idx) => {
-                    const cStock = Number(i.CStock) || 0;
-                    const minStock = (i.MinStock !== undefined && i.MinStock !== null) ? Number(i.MinStock) : 1;
+                    const cStock = getItemStock(i);
+                    const minStock = getItemMinStock(i);
                     const deficit = Math.max(0, minStock - cStock);
                     const isOut = cStock === 0;
                     return (

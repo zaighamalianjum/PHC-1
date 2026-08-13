@@ -2782,6 +2782,7 @@ export default function App() {
                   visits={visits}
                   visitMedicines={visitMedicines}
                   items={items}
+                  inventoryItems={items}
                   currentUser={currentUser}
                   clinicSettings={clinicSettings}
                   onUnauthorized={triggerGlobalUnauthorized}
