@@ -10,6 +10,7 @@ import {
   UserPlus
 } from 'lucide-react';
 import { Patient, City, NhcPatientHistory } from '../../types';
+import CitySearchSelect from '../common/CitySearchSelect';
 
 interface PatientRegisterViewProps {
   editingPatientId: string;
@@ -240,18 +241,13 @@ export default function PatientRegisterView({
           </div>
 
           <div>
-            <label className="block text-xxs font-bold text-slate-500 uppercase">City ID (Punjab Province)</label>
-            <select
-              value={cityId}
-              onChange={(e) => setCityId(parseInt(e.target.value) || 1)}
-              className="mt-1 w-full text-xs border border-slate-200 rounded-lg p-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-            >
-              {cities.map((city) => (
-                <option key={city.CityID} value={city.CityID}>
-                  {city.CityName}
-                </option>
-              ))}
-            </select>
+            <CitySearchSelect
+              cities={cities}
+              selectedCityId={cityId}
+              onSelectCity={(newCityId) => setCityId(newCityId)}
+              label="City ID (Punjab Province)"
+              placeholder="Search or select city (e.g. Lahore, Faisalabad, Multan)..."
+            />
           </div>
 
           <div>

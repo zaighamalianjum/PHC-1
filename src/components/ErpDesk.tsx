@@ -37,7 +37,11 @@ import {
   ArrowDownRight,
   BarChart3,
   RotateCcw,
-  XCircle
+  XCircle,
+  Pencil,
+  Save,
+  Lock,
+  PhoneCall
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
@@ -858,6 +862,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
   // Modals visibility state
   const [showVendorModal, setShowVendorModal] = useState(false);
+  const [editingVendor, setEditingVendor] = useState<ErpVendor | null>(null);
   const [showPoModal, setShowPoModal] = useState(false);
   const [showGrnModal, setShowGrnModal] = useState(false);
   const [showTxnModal, setShowTxnModal] = useState(false);
@@ -1306,11 +1311,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   }, []);
 
   // Universal Database Helper (Insert, Retrieve, Delete)
-  const saveToDatabase = async (collection: string, data: any) => {
+  const saveToDatabase = async (collection: string, data: any, forceMethod?: 'PUT' | 'POST') => {
     try {
-      const id = data._id;
-      const method = id ? 'PUT' : 'POST';
-      const url = id ? `/api/query/${collection}/${id}` : `/api/query/${collection}`;
+      const id = data._id || data.VendorID || data.SID || data.SupplierID || data.TransactionID || data.ExpenseID || data.EmployeeID || data.AssetID || data.POID || data.GRNID;
+      const method = forceMethod || (id ? 'PUT' : 'POST');
+      const url = (method === 'PUT' && id) ? `/api/query/${collection}/${encodeURIComponent(id)}` : `/api/query/${collection}`;
       const res = await fetch(url, {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -1341,115 +1346,161 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     }
   };
 
-  // Test Entry Generator Function (Stores test entry, verifies retrieval & delete)
-  const handleRunTestEntry = async () => {
+  // Purge All Dummy & Test Records Function
+  const handlePurgeAllDummyData = async () => {
+    if (!window.confirm('Are you sure you want to completely purge and remove all dummy, test, and sample records from the ERP database and system state? Real entries will be retained.')) {
+      return;
+    }
     setLoading(true);
-    setSyncMessage('Executing live database Test Entry across ERP modules...');
+    setSyncMessage('Purging all dummy and test records from ERP & database...');
 
     try {
-      const testId = `TEST-${Date.now().toString().slice(-4)}`;
-      
-      // 1. Test Vendor Entry
-      const testVendor: ErpVendor = {
-        VendorID: `VND-${testId}`,
-        VendorName: `Test Alpha Pharma Distributors (${testId})`,
-        ContactPerson: 'Test Manager Tariq',
-        Phone: '0300-9988776',
-        Email: 'test@alphapharma.com',
-        Address: 'Test Industrial Estate, Lahore',
-        TaxID: `NTN-${testId}`,
-        Balance: 25000,
-        Status: 'Active'
-      };
-      await saveToDatabase('erp_vendors', testVendor);
+      const res = await fetch('/api/admin/purge-dummy-records', { method: 'POST' });
+      const data = await res.json();
 
-      // 2. Test Transaction Entry
-      const testTxn: ErpTransaction = {
-        TransactionID: `TXN-${testId}`,
-        Type: 'Expense',
-        Category: 'Test Utility Inspection',
-        Description: 'Test sample ERP automated validation entry',
-        Amount: 5500,
-        PaymentMethod: 'Cash',
-        ReferenceNo: `REF-${testId}`,
-        Date: new Date().toISOString().split('T')[0],
-        CreatedBy: currentUser?.FullName || 'Admin Test'
-      };
-      await saveToDatabase('erp_transactions', testTxn);
+      // Clean local React state
+      setExpenses(prev => prev.filter(e => !e.ExpenseID?.startsWith('EXP-50') && !e.ExpenseID?.startsWith('TEST-')));
+      setAssets(prev => prev.filter(a => !a.AssetID?.startsWith('AST-10') && !a.AssetID?.startsWith('TEST-')));
+      setTransactions(prev => prev.filter(t => !t.TransactionID?.startsWith('TXN-80') && !t.TransactionID?.startsWith('TEST-')));
+      setPurchaseOrders(prev => prev.filter(p => !p.POID?.startsWith('PO-100') && !p.POID?.startsWith('TEST-')));
+      setPayrolls(prev => prev.filter(p => !p.PayrollID?.startsWith('PAY-2026-07') && !p.PayrollID?.startsWith('TEST-')));
+      setVendors(prev => prev.filter(v => !v.VendorID?.startsWith('VND-00') && !v.VendorID?.startsWith('TEST-')));
+      setEmployees(prev => prev.filter(e => !e.EmployeeID?.startsWith('EMP-10') && !e.EmployeeID?.startsWith('TEST-')));
 
-      // 3. Test Expense Entry
-      const testExp: ErpExpense = {
-        ExpenseID: `EXP-${testId}`,
-        Category: 'Maintenance',
-        Description: 'Test air compressor repair & servicing',
-        Amount: 3200,
-        ExpenseDate: new Date().toISOString().split('T')[0],
-        PaymentMethod: 'Cash',
-        ReceiptRef: `REC-${testId}`
-      };
-      await saveToDatabase('erp_expenses', testExp);
-
-      // 4. Test Purchase Order & Stock Requisition Entry
-      const testPo: ErpPurchaseOrder = {
-        POID: `PO-${testId}`,
-        VendorID: `VND-${testId}`,
-        VendorName: `Test Alpha Pharma Distributors (${testId})`,
-        OrderDate: new Date().toISOString().split('T')[0],
-        ExpectedDeliveryDate: new Date(Date.now() + 5 * 86400000).toISOString().split('T')[0],
-        TotalAmount: 18500,
-        PaidAmount: 0,
-        Status: 'Sent',
-        Notes: 'Automated database verification test purchase order with medicine categories',
-        Items: [
-          { ItemID: 'ITM-001', ItemName: 'Panadol Extra 500mg', Category: 'Tablet / Capsule', Qty: 100, UnitPrice: 120, LineTotal: 12000, BatchNo: `B-${testId}-01` },
-          { ItemID: 'ITM-004', ItemName: 'Arinac Syrup 120ml', Category: 'Syrup / Liquid', Qty: 50, UnitPrice: 130, LineTotal: 6500, BatchNo: `B-${testId}-02` }
-        ]
-      };
-      await saveToDatabase('erp_purchase_orders', testPo);
-
-      // Re-fetch database to confirm retrieval
+      // Re-fetch clean database records
       await fetchErpData();
 
-      alert(`✅ DATABASE INTEGRATION CONFIRMED & TEST ENTRY SUCCESSFUL!\n\nSuccessfully created, saved, and retrieved live database test records (ID suffix: "${testId}") across:\n• Vendors & Suppliers Table\n• Purchase Orders & Requisitions Table (with Medicine Categories)\n• Financial Transactions Ledger Table\n• Operating Expenses Table\n\nEntire app database link validated!`);
+      alert(data.message || 'Clean slate initialized! All dummy entries have been permanently removed.');
     } catch (err: any) {
-      alert(`Test Entry Failed: ${err.message}`);
+      alert(`Purge Failed: ${err.message}`);
     } finally {
       setLoading(false);
     }
   };
 
   // HANDLERS FOR VENDORS
-  const handleAddVendor = async (e: React.FormEvent) => {
+  const handleOpenAddVendor = () => {
+    setEditingVendor(null);
+    setVendorForm({
+      VendorID: `VND-${Math.floor(100 + Math.random() * 900)}`,
+      VendorName: '',
+      ContactPerson: '',
+      Phone: '',
+      Email: '',
+      Address: '',
+      TaxID: '',
+      Balance: 0,
+      Status: 'Active'
+    });
+    setShowVendorModal(true);
+  };
+
+  const handleOpenEditVendor = (vendor: ErpVendor) => {
+    setEditingVendor(vendor);
+    setVendorForm({
+      _id: vendor._id,
+      VendorID: vendor.VendorID || '',
+      VendorName: vendor.VendorName || '',
+      ContactPerson: vendor.ContactPerson || '',
+      Phone: vendor.Phone || '',
+      Email: vendor.Email || '',
+      Address: vendor.Address || '',
+      TaxID: vendor.TaxID || '',
+      Balance: vendor.Balance || 0,
+      Status: vendor.Status || 'Active'
+    });
+    setShowVendorModal(true);
+  };
+
+  const handleOpenEditVendorTop = () => {
+    if (vendors.length === 0) {
+      alert('No suppliers / vendors found in database to edit. Please add a vendor first.');
+      return;
+    }
+    const target = (selectedVendorId ? vendors.find(v => (v.VendorID === selectedVendorId || v._id === selectedVendorId)) : null) || vendors[0];
+    handleOpenEditVendor(target);
+  };
+
+  const handleSaveVendor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
     if (!vendorForm.VendorName?.trim()) return alert('Vendor Name is required.');
 
-    // Prevent double entry: duplicate vendor name check
+    // Prevent duplicate vendor name except when editing the same vendor
     const trimmedName = vendorForm.VendorName.trim().toLowerCase();
-    if (vendors.some(v => v.VendorName?.trim().toLowerCase() === trimmedName)) {
-      return alert('Vendor with this name already exists! Duplicate entry prevented.');
+    const duplicate = vendors.find(v => {
+      const isSameVendor = editingVendor 
+        ? ((editingVendor._id && v._id === editingVendor._id) || (editingVendor.VendorID && v.VendorID === editingVendor.VendorID))
+        : false;
+      if (isSameVendor) return false;
+      return v.VendorName?.trim().toLowerCase() === trimmedName;
+    });
+
+    if (duplicate) {
+      return alert('Another vendor with this name already exists! Duplicate entry prevented.');
     }
 
     setIsSubmitting(true);
     try {
-      const newVendor: ErpVendor = {
-        VendorID: vendorForm.VendorID || `VND-${Math.floor(100 + Math.random() * 900)}`,
-        VendorName: vendorForm.VendorName.trim(),
-        ContactPerson: vendorForm.ContactPerson || 'N/A',
-        Phone: vendorForm.Phone || 'N/A',
-        Email: vendorForm.Email || '',
-        Address: vendorForm.Address || 'Lahore, Pakistan',
-        TaxID: vendorForm.TaxID || '',
-        Balance: Number(vendorForm.Balance) || 0,
-        Status: vendorForm.Status || 'Active'
-      };
+      if (editingVendor) {
+        // UPDATE EXISTING VENDOR
+        const updatedVendor: ErpVendor = {
+          ...editingVendor,
+          VendorName: vendorForm.VendorName.trim(),
+          ContactPerson: vendorForm.ContactPerson || 'N/A',
+          Phone: vendorForm.Phone || 'N/A',
+          Email: vendorForm.Email || '',
+          Address: vendorForm.Address || 'Lahore, Pakistan',
+          TaxID: vendorForm.TaxID || '',
+          Balance: Number(vendorForm.Balance) || 0,
+          Status: (vendorForm.Status as 'Active' | 'Inactive') || 'Active'
+        };
 
-      await saveToDatabase('erp_vendors', newVendor);
-      setVendors(prev => [newVendor, ...prev]);
-      setShowVendorModal(false);
-      setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, Status: 'Active' });
-      setSyncMessage('Vendor saved successfully!');
-      setTimeout(() => setSyncMessage(null), 3000);
+        await saveToDatabase('erp_vendors', updatedVendor, 'PUT');
+
+        setVendors(prev => prev.map(v => {
+          const isMatch = (editingVendor._id && v._id === editingVendor._id) ||
+                          (editingVendor.VendorID && v.VendorID === editingVendor.VendorID);
+          return isMatch ? updatedVendor : v;
+        }));
+
+        // Cascade vendor name change if name was edited
+        if (editingVendor.VendorName !== updatedVendor.VendorName) {
+          setPurchaseOrders(prev => prev.map(po => {
+            if (po.VendorID === updatedVendor.VendorID || po.VendorName === editingVendor.VendorName) {
+              return { ...po, VendorName: updatedVendor.VendorName };
+            }
+            return po;
+          }));
+        }
+
+        setShowVendorModal(false);
+        setEditingVendor(null);
+        setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, Status: 'Active' });
+        setSyncMessage('Vendor details updated successfully in database!');
+        setTimeout(() => setSyncMessage(null), 3000);
+      } else {
+        // REGISTER NEW VENDOR
+        const newVendor: ErpVendor = {
+          VendorID: vendorForm.VendorID || `VND-${Math.floor(100 + Math.random() * 900)}`,
+          VendorName: vendorForm.VendorName.trim(),
+          ContactPerson: vendorForm.ContactPerson || 'N/A',
+          Phone: vendorForm.Phone || 'N/A',
+          Email: vendorForm.Email || '',
+          Address: vendorForm.Address || 'Lahore, Pakistan',
+          TaxID: vendorForm.TaxID || '',
+          Balance: Number(vendorForm.Balance) || 0,
+          Status: (vendorForm.Status as 'Active' | 'Inactive') || 'Active'
+        };
+
+        await saveToDatabase('erp_vendors', newVendor, 'POST');
+        setVendors(prev => [newVendor, ...prev]);
+        setShowVendorModal(false);
+        setEditingVendor(null);
+        setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, Status: 'Active' });
+        setSyncMessage('Vendor saved successfully!');
+        setTimeout(() => setSyncMessage(null), 3000);
+      }
     } catch (err: any) {
       alert('Error saving vendor: ' + err.message);
     } finally {
@@ -1743,9 +1794,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     try {
       const totalAmount = poForm.Items.reduce((sum, i) => sum + (Number(i.Qty) * Number(i.UnitPrice)), 0);
 
+      const selectedVendor = vendors.find(v => v.VendorName === poForm.VendorName);
       const newPo: ErpPurchaseOrder = {
         POID: `PO-${Math.floor(1000 + Math.random() * 9000)}`,
-        VendorID: poForm.VendorID || 'VND-001',
+        VendorID: poForm.VendorID || selectedVendor?.VendorID || `VND-${Math.floor(100 + Math.random() * 900)}`,
         VendorName: poForm.VendorName,
         OrderDate: new Date().toISOString().split('T')[0],
         ExpectedDeliveryDate: poForm.ExpectedDeliveryDate,
@@ -4395,7 +4447,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               
               <div className="space-y-2.5">
                 <button
-                  onClick={() => setShowVendorModal(true)}
+                  onClick={handleOpenAddVendor}
                   className="w-full p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 border border-slate-200 text-left transition flex items-center justify-between group cursor-pointer"
                 >
                   <div className="flex items-center space-x-3">
@@ -4837,7 +4889,17 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               </button>
               <button
                 type="button"
-                onClick={() => setShowVendorModal(true)}
+                onClick={handleOpenEditVendorTop}
+                disabled={vendors.length === 0}
+                className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition flex items-center space-x-1.5 cursor-pointer shadow-xs disabled:opacity-50 disabled:cursor-not-allowed"
+                title="Edit existing supplier/vendor records (Name, Mobile, Address) while keeping SupplierID intact"
+              >
+                <Pencil className="w-4 h-4" />
+                <span>Edit Vendor</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleOpenAddVendor}
                 className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center space-x-1.5 cursor-pointer shadow-xs"
               >
                 <Plus className="w-4 h-4" />
@@ -4891,6 +4953,15 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                       </td>
                       <td className="p-3 text-center">
                       <div className="flex items-center justify-center space-x-1.5">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditVendor(v)}
+                          className="px-2.5 py-1 text-[11px] font-bold text-blue-700 bg-blue-50 hover:bg-blue-100 rounded border border-blue-200 transition cursor-pointer flex items-center space-x-1 shadow-2xs"
+                          title="Edit Vendor Name, Mobile/Phone, Address, and Specifications"
+                        >
+                          <Pencil className="w-3.5 h-3.5" />
+                          <span>Edit</span>
+                        </button>
                         <button
                           onClick={() => {
                             setSelectedVendorId(v.VendorID || v._id || '');
@@ -4980,7 +5051,24 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               </button>
 
               <button
-                onClick={() => setShowVendorModal(true)}
+                type="button"
+                onClick={() => {
+                  if (selectedVendor) {
+                    handleOpenEditVendor(selectedVendor);
+                  } else {
+                    handleOpenEditVendorTop();
+                  }
+                }}
+                disabled={vendors.length === 0}
+                className="px-3.5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                title="Edit vendor name and mobile number while keeping SupplierID intact"
+              >
+                <Pencil className="w-4 h-4" />
+                <span>Edit Vendor</span>
+              </button>
+
+              <button
+                onClick={handleOpenAddVendor}
                 className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
               >
                 <Plus className="w-4 h-4" />
@@ -5967,82 +6055,215 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         />
       )}
 
-      {/* MODAL: ADD VENDOR */}
+      {/* MODAL: REGISTER / EDIT VENDOR */}
       {showVendorModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border space-y-4">
-            <h3 className="font-bold text-slate-900 text-base">Register New Supplier Vendor</h3>
-            <form onSubmit={handleAddVendor} className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-600">Vendor / Company Name</label>
-                <input
-                  type="text"
-                  required
-                  value={vendorForm.VendorName}
-                  onChange={e => setVendorForm({ ...vendorForm, VendorName: e.target.value })}
-                  placeholder=""
-                  className="w-full mt-1 p-2 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-600">Contact Person</label>
-                <input
-                  type="text"
-                  value={vendorForm.ContactPerson}
-                  onChange={e => setVendorForm({ ...vendorForm, ContactPerson: e.target.value })}
-                  placeholder=""
-                  className="w-full mt-1 p-2 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between border-b border-slate-150 pb-3">
+              <div className="flex items-center space-x-2.5">
+                <div className={`p-2 rounded-xl border ${editingVendor ? 'bg-blue-50 border-blue-200 text-blue-600' : 'bg-indigo-50 border-indigo-200 text-indigo-600'}`}>
+                  {editingVendor ? <Pencil className="w-5 h-5" /> : <Building2 className="w-5 h-5" />}
+                </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-600">Phone</label>
+                  <h3 className="font-bold text-slate-900 text-sm md:text-base flex items-center space-x-1.5">
+                    <span>{editingVendor ? 'Edit Supplier / Vendor Record' : 'Register New Supplier Vendor'}</span>
+                  </h3>
+                  <p className="text-xxs text-slate-500 font-medium">
+                    {editingVendor
+                      ? 'Update vendor name, mobile/phone, & specs. Existing Supplier ID remains locked and intact.'
+                      : 'Create a new pharmaceutical distributor & accounts payable profile'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowVendorModal(false);
+                  setEditingVendor(null);
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* If Editing and multiple vendors exist: Quick Switcher Dropdown */}
+            {editingVendor && vendors.length > 1 && (
+              <div className="bg-blue-50/70 p-2.5 rounded-xl border border-blue-200 space-y-1">
+                <label className="text-[10px] font-bold text-blue-900 uppercase tracking-wider flex items-center justify-between">
+                  <span>Switch Supplier To Edit</span>
+                  <span className="text-[10px] font-semibold text-blue-700 font-mono">ID: {editingVendor.VendorID}</span>
+                </label>
+                <select
+                  value={editingVendor.VendorID || editingVendor._id}
+                  onChange={(e) => {
+                    const chosen = vendors.find(v => (v.VendorID === e.target.value || v._id === e.target.value));
+                    if (chosen) handleOpenEditVendor(chosen);
+                  }}
+                  className="w-full p-2 bg-white border border-blue-300 rounded-lg text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 outline-none cursor-pointer"
+                >
+                  {vendors.map(v => (
+                    <option key={v.VendorID || v._id} value={v.VendorID || v._id}>
+                      {v.VendorName} (ID: {v.VendorID}) {v.Phone ? `• 📞 ${v.Phone}` : ''}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
+            <form onSubmit={handleSaveVendor} className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <div className="sm:col-span-1">
+                  <label className="text-xxs font-bold text-slate-600 uppercase tracking-wide flex items-center justify-between">
+                    <span>Supplier ID</span>
+                    <span className="text-[9px] text-amber-700 bg-amber-100 px-1 py-0.5 rounded font-bold">Locked / Intact</span>
+                  </label>
+                  <div className="relative mt-1">
+                    <input
+                      type="text"
+                      disabled
+                      value={vendorForm.VendorID || (editingVendor ? editingVendor.VendorID : 'Auto Generated')}
+                      title="Existing Supplier ID is kept strictly intact to preserve PO and ledger history"
+                      className="w-full p-2.5 pl-7 border border-slate-200 bg-slate-100 text-slate-700 rounded-xl text-xs font-mono font-bold cursor-not-allowed select-none"
+                    />
+                    <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-2 top-3" />
+                  </div>
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
+                    <span>Vendor / Company Name <span className="text-rose-500">*</span></span>
+                    {editingVendor && <span className="text-[10px] text-blue-600 font-semibold">Editable</span>}
+                  </label>
                   <input
                     type="text"
-                    value={vendorForm.Phone}
-                    onChange={e => setVendorForm({ ...vendorForm, Phone: e.target.value })}
-                    placeholder=""
-                    className="w-full mt-1 p-2 border rounded-xl text-xs"
+                    required
+                    value={vendorForm.VendorName || ''}
+                    onChange={e => setVendorForm({ ...vendorForm, VendorName: e.target.value })}
+                    placeholder="e.g. High-Tech Pharma Distributors Ltd"
+                    className="w-full mt-1 p-2.5 border border-slate-300 bg-white rounded-xl text-xs font-bold text-slate-900 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide">Contact Person / Rep</label>
+                  <input
+                    type="text"
+                    value={vendorForm.ContactPerson || ''}
+                    onChange={e => setVendorForm({ ...vendorForm, ContactPerson: e.target.value })}
+                    placeholder="e.g. Mr. Tariq Mahmood"
+                    className="w-full mt-1 p-2.5 border border-slate-200 bg-white rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                   />
                 </div>
                 <div>
-                  <label className="text-xs font-bold text-slate-600">Tax NTN ID</label>
+                  <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide flex items-center justify-between">
+                    <span>Mobile / Phone Number <span className="text-rose-500">*</span></span>
+                    {editingVendor && <span className="text-[10px] text-blue-600 font-semibold">Editable</span>}
+                  </label>
+                  <div className="relative mt-1">
+                    <input
+                      type="text"
+                      required
+                      value={vendorForm.Phone || ''}
+                      onChange={e => setVendorForm({ ...vendorForm, Phone: e.target.value })}
+                      placeholder="e.g. 0300-1234567 / 042-35889900"
+                      className="w-full p-2.5 pl-8 border border-slate-300 bg-white rounded-xl text-xs font-mono font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none shadow-2xs"
+                    />
+                    <PhoneCall className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-3" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide">Tax NTN ID</label>
                   <input
                     type="text"
-                    value={vendorForm.TaxID}
+                    value={vendorForm.TaxID || ''}
                     onChange={e => setVendorForm({ ...vendorForm, TaxID: e.target.value })}
-                    placeholder=""
-                    className="w-full mt-1 p-2 border rounded-xl text-xs"
+                    placeholder="e.g. 1234567-8"
+                    className="w-full mt-1 p-2.5 border border-slate-200 bg-white rounded-xl text-xs font-mono text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  />
+                </div>
+                <div>
+                  <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide">Email Address</label>
+                  <input
+                    type="email"
+                    value={vendorForm.Email || ''}
+                    onChange={e => setVendorForm({ ...vendorForm, Email: e.target.value })}
+                    placeholder="e.g. sales@hightechpharma.pk"
+                    className="w-full mt-1 p-2.5 border border-slate-200 bg-white rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="text-xs font-bold text-slate-600">Address</label>
+                <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide">Corporate / Warehouse Address</label>
                 <input
                   type="text"
-                  value={vendorForm.Address}
+                  value={vendorForm.Address || ''}
                   onChange={e => setVendorForm({ ...vendorForm, Address: e.target.value })}
-                  placeholder=""
-                  className="w-full mt-1 p-2 border rounded-xl text-xs"
+                  placeholder="e.g. Plot 14-B, Industrial Area, Kot Lakhpat, Lahore"
+                  className="w-full mt-1 p-2.5 border border-slate-200 bg-white rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                 />
               </div>
 
-              <div className="flex justify-end space-x-2 pt-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide">Account Status</label>
+                  <select
+                    value={vendorForm.Status || 'Active'}
+                    onChange={e => setVendorForm({ ...vendorForm, Status: e.target.value as any })}
+                    className="w-full mt-1 p-2.5 border border-slate-200 bg-white rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  >
+                    <option value="Active">Active Supplier</option>
+                    <option value="Inactive">Inactive / Suspended</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide">Outstanding Balance (Rs.)</label>
+                  <input
+                    type="number"
+                    value={vendorForm.Balance ?? 0}
+                    onChange={e => setVendorForm({ ...vendorForm, Balance: Number(e.target.value) || 0 })}
+                    placeholder="0"
+                    className="w-full mt-1 p-2.5 border border-slate-200 bg-white rounded-xl text-xs font-mono font-bold text-amber-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-2 pt-4 border-t border-slate-100">
                 <button
                   type="button"
-                  onClick={() => setShowVendorModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs"
+                  onClick={() => {
+                    setShowVendorModal(false);
+                    setEditingVendor(null);
+                  }}
+                  className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition cursor-pointer"
                 >
                   Cancel
                 </button>
                 <button
                   type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs"
+                  disabled={isSubmitting}
+                  className={`px-5 py-2.5 rounded-xl text-white font-bold text-xs transition flex items-center space-x-2 cursor-pointer shadow-md disabled:opacity-50 ${
+                    editingVendor
+                      ? 'bg-blue-600 hover:bg-blue-700 shadow-blue-600/20'
+                      : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
+                  }`}
                 >
-                  Save Vendor
+                  {isSubmitting ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                      <span>Saving Data...</span>
+                    </>
+                  ) : (
+                    <>
+                      {editingVendor ? <Pencil className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                      <span>{editingVendor ? 'Update Supplier Record' : 'Save Supplier'}</span>
+                    </>
+                  )}
                 </button>
               </div>
             </form>

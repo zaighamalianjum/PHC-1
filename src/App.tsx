@@ -21,6 +21,7 @@ import {
 } from './data/initialData';
 
 import {
+  City,
   Patient,
   Appointment,
   Token,
@@ -289,7 +290,16 @@ export default function App() {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
-          return (parsed.length > 0 ? parsed : defaultVal) as T;
+          // Filter out any legacy dummy records
+          const cleanList = parsed.filter((item: any) => {
+            if (!item) return false;
+            const id = item.PatientID || item.SID || item.ItemID || item.ExpenseID || item.AssetID || item.TransactionID || item.POID || item.PayrollID || item.VendorID || item.EmployeeID || '';
+            if (typeof id === 'string' && (id.startsWith('TEST-') || id === 'PAT-001' || id === 'PAT-002' || id === 'PAT-003' || id.startsWith('NHC-100') || id.startsWith('EXP-50') || id.startsWith('AST-10') || id.startsWith('TXN-80') || id.startsWith('PAY-2026-07') || id.startsWith('PO-100') || id.startsWith('EMP-10') || id.startsWith('VND-00') || id.startsWith('SUP-00'))) {
+              return false;
+            }
+            return true;
+          });
+          return cleanList as T;
         }
         if (parsed && typeof parsed === 'object') return parsed;
       }
@@ -298,6 +308,7 @@ export default function App() {
   };
 
   // Master Database States (backed by both MongoDB/API and localStorage persistent fallbacks)
+  const [cities, setCities] = useState<City[]>(() => getStoredState('cms_cities', INITIAL_CITIES));
   const [patients, setPatients] = useState<Patient[]>(() => getStoredState('cms_patients', INITIAL_PATIENTS));
   const [appointments, setAppointments] = useState<Appointment[]>(() => getStoredState('cms_appointments', INITIAL_APPOINTMENTS));
   const [tokens, setTokens] = useState<Token[]>(() => getStoredState('cms_tokens', INITIAL_TOKENS));
@@ -339,6 +350,7 @@ export default function App() {
   const [acLedger, setAcLedger] = useState<ACLedger[]>(() => getStoredState('cms_ac_ledger', []));
 
   // Automatic Persistent LocalStorage Backups
+  useEffect(() => { localStorage.setItem('cms_cities', JSON.stringify(cities)); }, [cities]);
   useEffect(() => { localStorage.setItem('cms_patients', JSON.stringify(patients)); }, [patients]);
   useEffect(() => { localStorage.setItem('cms_appointments', JSON.stringify(appointments)); }, [appointments]);
   useEffect(() => { localStorage.setItem('cms_tokens', JSON.stringify(tokens)); }, [tokens]);
@@ -393,6 +405,7 @@ export default function App() {
     try {
       const tasks = [
         fetch(`${bridgeUrl}/api/users`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setUsersList(data)).catch(() => {}),
+        fetch(`${bridgeUrl}/api/cities`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && data.length > 0 && setCities(data)).catch(() => {}),
         fetch(`${bridgeUrl}/api/settings/clinic`).then(r => r.ok ? r.json() : null).then(data => data && data.ClinicName && setClinicSettings(data)).catch(() => {}),
         fetch(`${bridgeUrl}/api/settings/sms`).then(r => r.ok ? r.json() : null).then(data => data && data.ApiUrl && setSmsSettings(data)).catch(() => {}),
         fetch(`${bridgeUrl}/api/patients`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setPatients(data)).catch(() => {}),
@@ -515,6 +528,54 @@ export default function App() {
   // -------------------------------------------------------------
   // CORE DB MUTATORS & AUTOMATED DOUBLE-ENTRY ENGINES
   // -------------------------------------------------------------
+
+  // City Management Master Mutators
+  const handleAddCity = async (newCity: City) => {
+    const bridgeUrl = mongoDbSettings.BridgeUrl || 'http://localhost:5000';
+    try {
+      const res = await fetch(`${bridgeUrl}/api/cities`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newCity)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const savedCity: City = data.data || newCity;
+        setCities(prev => {
+          const idx = prev.findIndex(c => c.CityID === savedCity.CityID);
+          if (idx >= 0) {
+            const copy = [...prev];
+            copy[idx] = savedCity;
+            return copy;
+          }
+          return [...prev, savedCity];
+        });
+        return;
+      }
+    } catch (e) {
+      console.warn('Could not sync city to backend/MongoDB:', e);
+    }
+    // Local fallback
+    setCities(prev => {
+      const idx = prev.findIndex(c => c.CityID === newCity.CityID);
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = newCity;
+        return copy;
+      }
+      return [...prev, newCity];
+    });
+  };
+
+  const handleDeleteCity = async (cityId: number) => {
+    const bridgeUrl = mongoDbSettings.BridgeUrl || 'http://localhost:5000';
+    try {
+      await fetch(`${bridgeUrl}/api/cities/${cityId}`, { method: 'DELETE' });
+    } catch (e) {
+      console.warn('Could not delete city from backend/MongoDB:', e);
+    }
+    setCities(prev => prev.filter(c => c.CityID !== cityId));
+  };
 
   // Add Patient Intake file
   const handleAddPatient = (newPatient: Patient) => {
@@ -2625,7 +2686,7 @@ export default function App() {
                 onAddToken={handleAddToken}
                 onUpdateTokenStatus={handleUpdateTokenStatus}
                 onDeleteToken={handleDeleteToken}
-                cities={INITIAL_CITIES}
+                cities={cities}
                 userRights={currentUserRights}
                 smsSettings={smsSettings}
                 nhcPatients={nhcPatients}
@@ -2690,7 +2751,7 @@ export default function App() {
                 onAddToken={handleAddToken}
                 onUpdateTokenStatus={handleUpdateTokenStatus}
                 onDeleteToken={handleDeleteToken}
-                cities={INITIAL_CITIES}
+                cities={cities}
                 userRights={currentUserRights}
                 smsSettings={smsSettings}
                 nhcPatients={nhcPatients}
@@ -2800,6 +2861,11 @@ export default function App() {
                 setSmsSettings={setSmsSettings}
                 mongoDbSettings={mongoDbSettings}
                 setMongoDbSettings={setMongoDbSettings}
+                cities={cities}
+                setCities={setCities}
+                onAddCity={handleAddCity}
+                onDeleteCity={handleDeleteCity}
+                patients={patients}
               />
             </Suspense>
           )}

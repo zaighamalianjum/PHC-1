@@ -4,8 +4,10 @@
  */
 
 export interface City {
+  _id?: string;
   CityID: number;
   CityName: string;
+  Province?: string;
 }
 
 export interface Patient {

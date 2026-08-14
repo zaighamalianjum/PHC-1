@@ -49,10 +49,14 @@ import {
   Calendar,
   Ban,
   Zap,
-  Boxes
+  Boxes,
+  MapPin,
+  Search,
+  Edit2,
+  Check
 } from 'lucide-react';
-import { User, ClinicSettings, SmsSettings, MongoDbSettings, UserRight } from '../types';
-import { ROLE_RIGHTS } from '../data/initialData';
+import { User, ClinicSettings, SmsSettings, MongoDbSettings, UserRight, City, Patient } from '../types';
+import { ROLE_RIGHTS, INITIAL_CITIES } from '../data/initialData';
 
 interface SettingsDeskProps {
   clinicSettings: ClinicSettings;
@@ -64,6 +68,11 @@ interface SettingsDeskProps {
   setSmsSettings: (settings: SmsSettings) => void;
   mongoDbSettings: MongoDbSettings;
   setMongoDbSettings: (settings: MongoDbSettings) => void;
+  cities?: City[];
+  setCities?: React.Dispatch<React.SetStateAction<City[]>>;
+  onAddCity?: (city: City) => Promise<boolean | void>;
+  onDeleteCity?: (cityId: number) => Promise<boolean | void>;
+  patients?: Patient[];
 }
 
 export default function SettingsDesk({
@@ -75,10 +84,23 @@ export default function SettingsDesk({
   smsSettings,
   setSmsSettings,
   mongoDbSettings,
-  setMongoDbSettings
+  setMongoDbSettings,
+  cities = INITIAL_CITIES,
+  setCities,
+  onAddCity,
+  onDeleteCity,
+  patients = []
 }: SettingsDeskProps) {
-  // Tabs: settings details vs user management vs access control
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'details' | 'users' | 'access' | 'sms' | 'mongodb' | 'maintenance'>('details');
+  // Tabs: settings details vs user management vs access control vs cities
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'details' | 'users' | 'access' | 'cities' | 'sms' | 'mongodb' | 'maintenance'>('details');
+
+  // Cities Management State
+  const [citySearchQuery, setCitySearchQuery] = useState('');
+  const [editingCityId, setEditingCityId] = useState<number | null>(null);
+  const [cityFormName, setCityFormName] = useState('');
+  const [cityFormId, setCityFormId] = useState<number | ''>('');
+  const [cityFormProvince, setCityFormProvince] = useState('Punjab');
+  const [isSavingCity, setIsSavingCity] = useState(false);
 
   // Custom Access Management System State
   const [selectedAccessUserId, setSelectedAccessUserId] = useState<string>(usersList[0]?.UserID || 'USR-01');
@@ -675,6 +697,173 @@ export default function SettingsDesk({
     }
   };
 
+  // ------------------------------------------------------------------------------------------
+  // 🏙️ CITY & GEOGRAPHIC MASTERS MANAGEMENT
+  // ------------------------------------------------------------------------------------------
+  const filteredCitiesList = (cities || []).filter(c => {
+    const q = citySearchQuery.toLowerCase().trim();
+    if (!q) return true;
+    const nameMatch = c.CityName?.toLowerCase().includes(q);
+    const idMatch = c.CityID?.toString().includes(q);
+    const provMatch = (c as any).Province?.toLowerCase().includes(q);
+    return nameMatch || idMatch || provMatch;
+  });
+
+  const getPatientCountForCity = (cityId: number) => {
+    return (patients || []).filter(p => Number(p.CityID) === Number(cityId)).length;
+  };
+
+  const handleStartEditCity = (city: City) => {
+    setEditingCityId(city.CityID);
+    setCityFormName(city.CityName);
+    setCityFormId(city.CityID);
+    setCityFormProvince((city as any).Province || 'Punjab');
+    setErrorMsg('');
+    setSuccessMsg('');
+    // Scroll to top of settings
+    const formEl = document.getElementById('city-management-form');
+    if (formEl) formEl.scrollIntoView({ behavior: 'smooth' });
+  };
+
+  const handleCancelCityEdit = () => {
+    setEditingCityId(null);
+    setCityFormName('');
+    setCityFormId('');
+    setCityFormProvince('Punjab');
+  };
+
+  const handleSaveCitySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!cityFormName.trim()) {
+      setErrorMsg('Please enter a valid City Name.');
+      return;
+    }
+
+    setIsSavingCity(true);
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    try {
+      let targetId = typeof cityFormId === 'number' && cityFormId > 0 ? cityFormId : 0;
+      if (!targetId && editingCityId) {
+        targetId = editingCityId;
+      }
+      if (!targetId) {
+        // Compute next available City ID
+        const maxId = (cities || []).reduce((max, c) => Math.max(max, Number(c.CityID) || 0), 0);
+        targetId = maxId + 1;
+      }
+
+      const cityPayload: City = {
+        CityID: targetId,
+        CityName: cityFormName.trim(),
+        Province: cityFormProvince.trim() || 'Punjab'
+      };
+
+      if (onAddCity) {
+        await onAddCity(cityPayload);
+      } else {
+        const bridgeUrl = mongoDbSettings.BridgeUrl || 'http://localhost:5000';
+        await fetch(`${bridgeUrl}/api/cities`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cityPayload)
+        });
+        if (setCities) {
+          setCities(prev => {
+            const idx = prev.findIndex(c => c.CityID === targetId);
+            if (idx >= 0) {
+              const copy = [...prev];
+              copy[idx] = cityPayload;
+              return copy;
+            }
+            return [...prev, cityPayload];
+          });
+        }
+      }
+
+      setSuccessMsg(`City "${cityPayload.CityName}" (City ID: #${cityPayload.CityID}) has been successfully saved to the database!`);
+      handleCancelCityEdit();
+    } catch (err: any) {
+      setErrorMsg(`Failed to save city: ${err.message}`);
+    } finally {
+      setIsSavingCity(false);
+    }
+  };
+
+  const handleDeleteCityAction = async (city: City) => {
+    const mappedCount = getPatientCountForCity(city.CityID);
+    let confirmPrompt = `Are you sure you want to permanently delete city "${city.CityName}" (ID: #${city.CityID})?`;
+    if (mappedCount > 0) {
+      confirmPrompt += `\n\n⚠️ Caution: There are currently ${mappedCount} patient(s) registered under this City ID in the EMR and Patient Desk.`;
+    }
+
+    if (!window.confirm(confirmPrompt)) {
+      return;
+    }
+
+    try {
+      if (onDeleteCity) {
+        await onDeleteCity(city.CityID);
+      } else {
+        const bridgeUrl = mongoDbSettings.BridgeUrl || 'http://localhost:5000';
+        await fetch(`${bridgeUrl}/api/cities/${city.CityID}`, { method: 'DELETE' });
+        if (setCities) {
+          setCities(prev => prev.filter(c => c.CityID !== city.CityID));
+        }
+      }
+      setSuccessMsg(`City "${city.CityName}" was deleted successfully from the database.`);
+      if (editingCityId === city.CityID) {
+        handleCancelCityEdit();
+      }
+    } catch (err: any) {
+      setErrorMsg(`Failed to delete city: ${err.message}`);
+    }
+  };
+
+  const handleRestorePunjabDefaults = async () => {
+    if (!window.confirm('Restore standard baseline Punjab & Pakistan cities (Lahore, Faisalabad, Rawalpindi, Multan, Gujranwala, Sialkot, Sargodha, Bahawalpur, Sahiwal, Islamabad)? Any custom added cities will be preserved.')) {
+      return;
+    }
+    try {
+      for (const defCity of INITIAL_CITIES) {
+        if (!cities.some(c => c.CityID === defCity.CityID || c.CityName.toLowerCase() === defCity.CityName.toLowerCase())) {
+          if (onAddCity) {
+            await onAddCity({ ...defCity, Province: 'Punjab' });
+          }
+        }
+      }
+      setSuccessMsg('Standard Punjab & Pakistan cities verified and synchronized in database!');
+    } catch (err: any) {
+      setErrorMsg(`Failed to restore cities: ${err.message}`);
+    }
+  };
+
+  const handleExportCitiesCSV = () => {
+    try {
+      const rows = [
+        ['CityID', 'CityName', 'Province', 'Country', 'RegisteredPatients'],
+        ...(cities || []).map(c => [
+          c.CityID,
+          `"${c.CityName}"`,
+          `"${(c as any).Province || 'Punjab'}"`,
+          '"Pakistan"',
+          getPatientCountForCity(c.CityID)
+        ])
+      ];
+      const csvContent = 'data:text/csv;charset=utf-8,' + rows.map(e => e.join(',')).join('\n');
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement('a');
+      link.setAttribute('href', encodedUri);
+      link.setAttribute('download', `PHC_Cities_Master_${new Date().toISOString().split('T')[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+    } catch (err: any) {
+      setErrorMsg(`Export failed: ${err.message}`);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-6" id="settings-desk-root">
       
@@ -746,6 +935,19 @@ export default function SettingsDesk({
           >
             <Database className="w-3.5 h-3.5 mr-1 text-emerald-500" />
             <span>MongoDB Sync</span>
+          </button>
+          <button
+            onClick={() => {
+              setActiveSettingsTab('cities');
+              setErrorMsg('');
+              setSuccessMsg('');
+            }}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center space-x-1 ${
+              activeSettingsTab === 'cities' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <MapPin className="w-3.5 h-3.5 mr-1 text-emerald-500" />
+            <span>Cities & Locations ({(cities || []).length})</span>
           </button>
           <button
             onClick={() => {
@@ -2439,6 +2641,323 @@ export default function SettingsDesk({
                   JSON backup exports can be directly imported back into local MongoDB or MongoDB Atlas using standard <code className="bg-slate-900 px-1 rounded text-emerald-300">mongoimport</code> or via the admin restore console.
                 </p>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View 7: Cities & Geographic Masters */}
+      {activeSettingsTab === 'cities' && (
+        <div className="space-y-6 animate-fadeIn" id="cities-management-tab">
+          {/* Header Card */}
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+            <div className="flex items-start space-x-3">
+              <div className="p-2.5 bg-emerald-50 rounded-xl border border-emerald-100 text-emerald-600">
+                <MapPin className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-wider flex items-center gap-2">
+                  <span>Cities & Geographic Locations Master</span>
+                  <span className="bg-emerald-100 text-emerald-800 text-xxs px-2 py-0.5 rounded-full font-bold">Punjab & Pakistan</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Manage master list of cities for patient registration, token generation, demographic tracking, and EMR medical profiles.
+                </p>
+              </div>
+            </div>
+
+            {/* Quick Action Buttons */}
+            <div className="flex items-center space-x-2">
+              <button
+                type="button"
+                onClick={handleRestorePunjabDefaults}
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer"
+                title="Restore default Punjab cities if missing"
+              >
+                <RefreshCw className="w-3.5 h-3.5 text-blue-600" />
+                <span>Sync Defaults</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportCitiesCSV}
+                className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer"
+                title="Export cities master table as CSV"
+              >
+                <Download className="w-3.5 h-3.5 text-emerald-600" />
+                <span>Export CSV</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Quick Metrics Bar */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-xxs font-bold uppercase text-slate-400">Total Cities</span>
+                <p className="text-xl font-black text-slate-800 mt-0.5">{(cities || []).length}</p>
+              </div>
+              <div className="w-10 h-10 rounded-lg bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                <MapPin className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-xxs font-bold uppercase text-slate-400">Punjab Province Cities</span>
+                <p className="text-xl font-black text-blue-600 mt-0.5">
+                  {(cities || []).filter(c => !c.Province || c.Province.toLowerCase() === 'punjab').length}
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-lg bg-blue-50 text-blue-600 flex items-center justify-center font-bold">
+                <Building className="w-5 h-5" />
+              </div>
+            </div>
+
+            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex items-center justify-between">
+              <div>
+                <span className="text-xxs font-bold uppercase text-slate-400">Registered Patients Mapped</span>
+                <p className="text-xl font-black text-indigo-600 mt-0.5">
+                  {(patients || []).filter(p => p.CityID).length}
+                </p>
+              </div>
+              <div className="w-10 h-10 rounded-lg bg-indigo-50 text-indigo-600 flex items-center justify-center font-bold">
+                <Users className="w-5 h-5" />
+              </div>
+            </div>
+          </div>
+
+          {/* Add / Edit City Form */}
+          <form
+            id="city-management-form"
+            onSubmit={handleSaveCitySubmit}
+            className={`p-5 rounded-xl border transition shadow-xs ${
+              editingCityId ? 'bg-amber-50/50 border-amber-200' : 'bg-white border-slate-200'
+            }`}
+          >
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4">
+              <div className="flex items-center space-x-2">
+                {editingCityId ? (
+                  <>
+                    <Edit2 className="w-4 h-4 text-amber-600" />
+                    <span className="text-xs font-black text-amber-900 uppercase tracking-wider">
+                      Edit Existing City Record (ID #{editingCityId})
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Plus className="w-4 h-4 text-emerald-600" />
+                    <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                      Add New City (Punjab Province / Pakistan)
+                    </span>
+                  </>
+                )}
+              </div>
+
+              {editingCityId && (
+                <button
+                  type="button"
+                  onClick={handleCancelCityEdit}
+                  className="text-xs font-bold text-slate-500 hover:text-slate-800 transition underline cursor-pointer"
+                >
+                  Cancel Edit
+                </button>
+              )}
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-12 gap-4">
+              {/* City ID (Optional custom or auto) */}
+              <div className="sm:col-span-3">
+                <label className="block text-xxs font-bold text-slate-500 uppercase mb-1">
+                  City ID {editingCityId ? '(Locked)' : '(Auto / Custom #)'}
+                </label>
+                <input
+                  type="number"
+                  placeholder="Auto-assigned"
+                  value={cityFormId}
+                  disabled={!!editingCityId}
+                  onChange={(e) => setCityFormId(e.target.value ? Number(e.target.value) : '')}
+                  className="w-full text-xs font-semibold border border-slate-200 rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none disabled:bg-slate-100 disabled:text-slate-400"
+                />
+              </div>
+
+              {/* City Name */}
+              <div className="sm:col-span-5">
+                <label className="block text-xxs font-bold text-slate-500 uppercase mb-1">
+                  City Name <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="e.g. Lahore, Faisalabad, Kasur, Gujranwala..."
+                  value={cityFormName}
+                  onChange={(e) => setCityFormName(e.target.value)}
+                  className="w-full text-xs font-semibold border border-slate-200 rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none bg-white"
+                />
+              </div>
+
+              {/* Province / Region */}
+              <div className="sm:col-span-4">
+                <label className="block text-xxs font-bold text-slate-500 uppercase mb-1">
+                  Province / Region
+                </label>
+                <select
+                  value={cityFormProvince}
+                  onChange={(e) => setCityFormProvince(e.target.value)}
+                  className="w-full text-xs font-semibold border border-slate-200 rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none bg-white"
+                >
+                  <option value="Punjab">Punjab Province</option>
+                  <option value="Sindh">Sindh</option>
+                  <option value="Khyber Pakhtunkhwa">Khyber Pakhtunkhwa (KPK)</option>
+                  <option value="Balochistan">Balochistan</option>
+                  <option value="Islamabad Capital Territory">Islamabad Capital Territory</option>
+                  <option value="Azad Jammu & Kashmir">Azad Jammu & Kashmir (AJK)</option>
+                  <option value="Gilgit-Baltistan">Gilgit-Baltistan</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end space-x-3 mt-4 pt-3 border-t border-slate-100">
+              {editingCityId && (
+                <button
+                  type="button"
+                  onClick={handleCancelCityEdit}
+                  className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-bold transition cursor-pointer"
+                >
+                  Cancel
+                </button>
+              )}
+
+              <button
+                type="submit"
+                disabled={isSavingCity || !cityFormName.trim()}
+                className={`px-5 py-2 rounded-lg text-xs font-bold text-white shadow-xs transition flex items-center space-x-2 cursor-pointer ${
+                  editingCityId
+                    ? 'bg-amber-600 hover:bg-amber-700'
+                    : 'bg-emerald-600 hover:bg-emerald-700'
+                } disabled:bg-slate-400 disabled:cursor-not-allowed`}
+              >
+                <Save className="w-4 h-4" />
+                <span>{isSavingCity ? 'Saving...' : editingCityId ? 'Update City Record' : 'Save & Register City'}</span>
+              </button>
+            </div>
+          </form>
+
+          {/* Cities Directory Table Card */}
+          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
+            {/* Search & Filter Header */}
+            <div className="p-4 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 bg-slate-50/50">
+              <div className="relative flex-1 max-w-md">
+                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search city by name, ID or province (e.g. Lahore, Faisalabad, 1)..."
+                  value={citySearchQuery}
+                  onChange={(e) => setCitySearchQuery(e.target.value)}
+                  className="w-full text-xs pl-9 pr-4 py-2 border border-slate-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white"
+                />
+                {citySearchQuery && (
+                  <button
+                    onClick={() => setCitySearchQuery('')}
+                    className="absolute right-2.5 top-2 text-xxs font-bold text-slate-400 hover:text-slate-600"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+
+              <div className="text-xs text-slate-500 font-semibold">
+                Showing <span className="font-bold text-slate-800">{filteredCitiesList.length}</span> of {(cities || []).length} cities
+              </div>
+            </div>
+
+            {/* Table */}
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs">
+                <thead className="bg-slate-100/80 text-slate-600 font-bold uppercase text-xxs tracking-wider border-b border-slate-200">
+                  <tr>
+                    <th className="py-3 px-4 w-24">City ID</th>
+                    <th className="py-3 px-4">City Name</th>
+                    <th className="py-3 px-4">Province / Territory</th>
+                    <th className="py-3 px-4 text-center">Registered Patients</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 text-slate-700">
+                  {filteredCitiesList.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="text-center py-10 text-slate-400">
+                        <MapPin className="w-8 h-8 mx-auto mb-2 text-slate-300 opacity-60" />
+                        <p className="font-bold text-xs">No cities found matching "{citySearchQuery}"</p>
+                        <p className="text-xxs text-slate-400 mt-1">Try a different search term or add a new city using the form above.</p>
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredCitiesList.map((c) => {
+                      const patientCount = getPatientCountForCity(c.CityID);
+                      const isEditingThis = editingCityId === c.CityID;
+
+                      return (
+                        <tr
+                          key={c.CityID}
+                          className={`hover:bg-slate-50/80 transition ${
+                            isEditingThis ? 'bg-amber-50/60 font-semibold' : ''
+                          }`}
+                        >
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xxs font-black bg-slate-100 text-slate-700 border border-slate-200">
+                              #{c.CityID}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-4 font-bold text-slate-900 flex items-center gap-1.5">
+                            <MapPin className="w-3.5 h-3.5 text-emerald-500 flex-shrink-0" />
+                            <span>{c.CityName}</span>
+                          </td>
+
+                          <td className="py-3 px-4">
+                            <span className="inline-flex items-center px-2 py-0.5 rounded-md text-xxs font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                              {(c as any).Province || 'Punjab'}
+                            </span>
+                          </td>
+
+                          <td className="py-3 px-4 text-center">
+                            {patientCount > 0 ? (
+                              <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xxs font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                {patientCount} patient{patientCount > 1 ? 's' : ''}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 text-xxs">0 patients</span>
+                            )}
+                          </td>
+
+                          <td className="py-3 px-4 text-right">
+                            <div className="flex items-center justify-end space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => handleStartEditCity(c)}
+                                className="p-1.5 text-slate-600 hover:text-blue-600 hover:bg-blue-50 rounded-md transition cursor-pointer"
+                                title={`Edit ${c.CityName}`}
+                              >
+                                <Edit2 className="w-3.5 h-3.5" />
+                              </button>
+
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCityAction(c)}
+                                className="p-1.5 text-slate-600 hover:text-rose-600 hover:bg-rose-50 rounded-md transition cursor-pointer"
+                                title={`Delete ${c.CityName}`}
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
           </div>
         </div>

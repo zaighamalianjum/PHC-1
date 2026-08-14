@@ -32,28 +32,9 @@ export const INITIAL_CITIES: City[] = [
   { CityID: 10, CityName: 'Islamabad' }
 ];
 
-export const INITIAL_SUPPLIERS: Supplier[] = [
-  { SID: 'SUP-001', SupplierName: 'Standipharm Pakistan Ltd', Phone: '042-35112233', Address: 'Industrial Area, Kot Lakhpat, Lahore' },
-  { SID: 'SUP-002', SupplierName: 'Getz Pharma Pakistan', Phone: '021-111111555', Address: 'Korangi Industrial Area, Karachi' },
-  { SID: 'SUP-003', SupplierName: 'GSK Pakistan', Phone: '021-32315431', Address: 'Dockyard Road, West Wharf, Karachi' },
-  { SID: 'SUP-004', SupplierName: 'Searle Company Limited', Phone: '042-35789123', Address: 'Gulberg III, Lahore' }
-];
+export const INITIAL_SUPPLIERS: Supplier[] = [];
 
-export const INITIAL_ITEMS: Item[] = [
-  { ItemID: 'ITM-001', ItemName: 'BM 1 Drops (Hypertension / Heart)', Price: 180.0, PurchasePrice: 140.0, CStock: 8, MinStock: 10, Unit: 'BM Drops', ReorderQty: 0 },
-  { ItemID: 'ITM-002', ItemName: 'BM 12 Drops (Stomach / Gastric)', Price: 180.0, PurchasePrice: 140.0, CStock: 5, MinStock: 10, Unit: 'BM Drops', ReorderQty: 0 },
-  { ItemID: 'ITM-003', ItemName: 'Acid Phos Q (Mother Tincture)', Price: 250.0, PurchasePrice: 190.0, CStock: 3, MinStock: 5, Unit: 'Q D DROPS', ReorderQty: 0 },
-  { ItemID: 'ITM-004', ItemName: 'Berberis Vulg Q (Kidney & Liver)', Price: 280.0, PurchasePrice: 210.0, CStock: 2, MinStock: 5, Unit: 'Q D DROPS', ReorderQty: 0 },
-  { ItemID: 'ITM-005', ItemName: 'Acid Phos 30', Price: 120.0, PurchasePrice: 90.0, CStock: 4, MinStock: 10, Unit: 'Potency 30', ReorderQty: 0 },
-  { ItemID: 'ITM-006', ItemName: 'Arnica Mont 30 (Injury / Pain)', Price: 120.0, PurchasePrice: 90.0, CStock: 2, MinStock: 10, Unit: 'Potency 30', ReorderQty: 0 },
-  { ItemID: 'ITM-007', ItemName: 'Acid Phos 200', Price: 150.0, PurchasePrice: 110.0, CStock: 3, MinStock: 5, Unit: 'Potency 200', ReorderQty: 0 },
-  { ItemID: 'ITM-008', ItemName: 'Arnica Mont 200', Price: 150.0, PurchasePrice: 110.0, CStock: 1, MinStock: 5, Unit: 'Potency 200', ReorderQty: 0 },
-  { ItemID: 'ITM-009', ItemName: 'Phosmet Plus Syp', Price: 220.0, PurchasePrice: 170.0, CStock: 6, MinStock: 10, Unit: 'Syrup', ReorderQty: 0 },
-  { ItemID: 'ITM-010', ItemName: 'Cardiac Care Drop', Price: 310.0, PurchasePrice: 240.0, CStock: 4, MinStock: 10, Unit: 'Drops', ReorderQty: 0 },
-  { ItemID: 'ITM-011', ItemName: 'Panadol 500mg (Paracetamol)', Price: 3.5, PurchasePrice: 2.8, CStock: 1200, MinStock: 200, Unit: 'Tab', ReorderQty: 0 },
-  { ItemID: 'ITM-012', ItemName: 'Augmentin 625mg (Co-Amoxiclav)', Price: 45.0, PurchasePrice: 38.0, CStock: 450, MinStock: 50, Unit: 'Tab', ReorderQty: 0 },
-  { ItemID: 'ITM-013', ItemName: 'Risek 40mg Cap (Omeprazole)', Price: 32.0, PurchasePrice: 26.0, CStock: 500, MinStock: 100, Unit: 'Cap', ReorderQty: 0 }
-];
+export const INITIAL_ITEMS: Item[] = [];
 
 export const INITIAL_LAB_TESTS: LabTest[] = [
   { TID: 'TST-001', TestName: 'Complete Blood Count (CBC)', Cost: 650 },

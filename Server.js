@@ -479,7 +479,7 @@ async function runAutoSeeder() {
       console.log('🌱 Seeded default cities metadata.');
     }
 
-    // 2. Users Seed
+    // 2. Users Seed (Essential administrative credentials only)
     if ((await db.collection('users').countDocuments()) === 0) {
       await db.collection('users').insertMany([
         { UserID: 'USR-001', LoginName: 'admin', FullName: 'Dr. Zaigham Ali Anjum', PasswordHash: '123456', Role: 'Administrator', AssignedShift: 'Both' },
@@ -491,74 +491,7 @@ async function runAutoSeeder() {
       console.log('🌱 Seeded default login credentials.');
     }
 
-    // 3. Patients Seed
-    if ((await db.collection('patients').countDocuments()) === 0) {
-      await db.collection('patients').insertMany([
-        {
-          PatientID: 'PAT-001',
-          PatientName: 'Zubair Ahmad Qureshi',
-          Father_husband: 'Muhammad Ishaq',
-          AgeYears: 42,
-          Sex: 'Male',
-          MaritalStatus: 'Married',
-          Occupation: 'Government Servant',
-          Address: 'House 42, Block C, Model Town',
-          CityID: 1,
-          Country: 'Pakistan',
-          PhoneMobile: '0300-4567891',
-          PhoneRes: '042-35851234',
-          Email: 'zubair.qureshi@gmail.com',
-          RegistrationDate: new Date('2026-06-15T09:30:00')
-        },
-        {
-          PatientID: 'PAT-002',
-          PatientName: 'Saima Parveen',
-          Father_husband: 'Tariq Mahmood',
-          AgeYears: 29,
-          Sex: 'Female',
-          MaritalStatus: 'Married',
-          Occupation: 'Housewife',
-          Address: 'St 4, Mohallah Sharifpura',
-          CityID: 2,
-          Country: 'Pakistan',
-          PhoneMobile: '0321-7654321',
-          PhoneRes: '041-8812345',
-          Email: 'saima.tariq@yahoo.com',
-          RegistrationDate: new Date('2026-06-20T17:15:00')
-        },
-        {
-          PatientID: 'PAT-003',
-          PatientName: 'Haris Ali SBP',
-          Father_husband: 'Liaqat Ali',
-          AgeYears: 35,
-          Sex: 'Male',
-          MaritalStatus: 'Single',
-          Occupation: 'SBP Officer',
-          Address: 'State Bank Officers Colony, G-9',
-          CityID: 10,
-          Country: 'Pakistan',
-          PhoneMobile: '0333-5511223',
-          PhoneOff: '051-9201234',
-          Email: 'haris.ali@sbp.org.pk',
-          RegistrationDate: new Date('2026-07-01T10:00:00')
-        }
-      ]);
-      console.log('🌱 Seeded default clinical patient list.');
-    }
-
-    // 4. Medicines Seed
-    if ((await db.collection('items').countDocuments()) === 0) {
-      await db.collection('items').insertMany([
-        { ItemID: 'ITM-001', ItemName: 'Panadol 500mg (Paracetamol)', Price: 3.5, PurchasePrice: 2.8, CStock: 1200, MinStock: 200, Unit: 'Tab' },
-        { ItemID: 'ITM-002', ItemName: 'Augmentin 625mg (Co-Amoxiclav)', Price: 45.0, PurchasePrice: 38.0, CStock: 450, MinStock: 50, Unit: 'Tab' },
-        { ItemID: 'ITM-003', ItemName: 'Lofnac 50mg (Diclofenac Sodium)', Price: 8.0, PurchasePrice: 6.2, CStock: 800, MinStock: 100, Unit: 'Tab' },
-        { ItemID: 'ITM-004', ItemName: 'Arinac Forte (Ibuprofen / Pseudoephedrine)', Price: 12.0, PurchasePrice: 9.5, CStock: 600, MinStock: 100, Unit: 'Tab' },
-        { ItemID: 'ITM-005', ItemName: 'Surbex-Z (Multivitamins & Zinc)', Price: 15.0, PurchasePrice: 12.0, CStock: 350, MinStock: 50, Unit: 'Tab' }
-      ]);
-      console.log('🌱 Seeded default pharmacy drug inventory.');
-    }
-
-    // 5. Lab Tests Seed
+    // 3. Lab Tests Menu Catalog (Diagnostic Catalog)
     if ((await db.collection('lab_tests').countDocuments()) === 0) {
       await db.collection('lab_tests').insertMany([
         { TID: 'TST-001', TestName: 'Complete Blood Count (CBC)', Cost: 650 },
@@ -568,18 +501,7 @@ async function runAutoSeeder() {
       console.log('🌱 Seeded default clinical diagnostic test menu.');
     }
 
-    // 5.5 Suppliers / Vendors Seed
-    if ((await db.collection('suppliers').countDocuments()) === 0) {
-      await db.collection('suppliers').insertMany([
-        { SID: 'SUP-001', SupplierName: 'Standipharm Pakistan Ltd', Phone: '042-35112233', Address: 'Industrial Area, Kot Lakhpat, Lahore' },
-        { SID: 'SUP-002', SupplierName: 'Getz Pharma Pakistan', Phone: '021-111111555', Address: 'Korangi Industrial Area, Karachi' },
-        { SID: 'SUP-003', SupplierName: 'GSK Pakistan', Phone: '021-32315431', Address: 'Dockyard Road, West Wharf, Karachi' },
-        { SID: 'SUP-004', SupplierName: 'Searle Company Limited', Phone: '042-35789123', Address: 'Gulberg III, Lahore' }
-      ]);
-      console.log('🌱 Seeded default suppliers registry.');
-    }
-
-    // 6. Chart of Accounts Seed (FL level-1, SL level-2, and TL level-3)
+    // 4. Chart of Accounts Seed (FL level-1, SL level-2, and TL level-3 with 0 initial balance)
     if ((await db.collection('fl_accounts').countDocuments()) === 0) {
       await db.collection('fl_accounts').insertMany([
         { FLID: 1, FLName: 'Assets' },
@@ -609,17 +531,17 @@ async function runAutoSeeder() {
 
     if ((await db.collection('accounts').countDocuments()) === 0) {
       await db.collection('accounts').insertMany([
-        { FLID: 1, SLID: 101, TLID: 101001, TLName: 'Dr. Cash-in-Hand (Morning Shift)', AcBalance: 45000 },
-        { FLID: 1, SLID: 101, TLID: 101002, TLName: 'Dr. Cash-in-Hand (Evening Shift)', AcBalance: 125000 },
-        { FLID: 1, SLID: 101, TLID: 101003, TLName: 'Appointment Cash Desk', AcBalance: 15000 },
-        { FLID: 1, SLID: 101, TLID: 101004, TLName: 'Bank Al-Falah (Current Account)', AcBalance: 450000 },
-        { FLID: 1, SLID: 102, TLID: 102001, TLName: 'SBP Panel Employee Receivables', AcBalance: 68000 },
-        { FLID: 1, SLID: 103, TLID: 103001, TLName: 'Pharmacy Pharmacy Stock Ledger', AcBalance: 245000 },
-        { FLID: 2, SLID: 201, TLID: 201001, TLName: 'Payable to Standipharm Pakistan', AcBalance: -15000 },
-        { FLID: 2, SLID: 201, TLID: 201002, TLName: 'Payable to Getz Pharma', AcBalance: -28000 },
-        { FLID: 3, SLID: 301, TLID: 301001, TLName: 'Owner Capital Equity Account', AcBalance: -800000 },
-        { FLID: 4, SLID: 401, TLID: 401001, TLName: 'Appointment OPD Ticket Revenue', AcBalance: -35000 },
-        { FLID: 4, SLID: 401, TLID: 401002, TLName: 'Lab & Diagnostics Revenue', AcBalance: -18000 },
+        { FLID: 1, SLID: 101, TLID: 101001, TLName: 'Dr. Cash-in-Hand (Morning Shift)', AcBalance: 0 },
+        { FLID: 1, SLID: 101, TLID: 101002, TLName: 'Dr. Cash-in-Hand (Evening Shift)', AcBalance: 0 },
+        { FLID: 1, SLID: 101, TLID: 101003, TLName: 'Appointment Cash Desk', AcBalance: 0 },
+        { FLID: 1, SLID: 101, TLID: 101004, TLName: 'Bank Al-Falah (Current Account)', AcBalance: 0 },
+        { FLID: 1, SLID: 102, TLID: 102001, TLName: 'SBP Panel Employee Receivables', AcBalance: 0 },
+        { FLID: 1, SLID: 103, TLID: 103001, TLName: 'Pharmacy Stock Ledger', AcBalance: 0 },
+        { FLID: 2, SLID: 201, TLID: 201001, TLName: 'Payable to Suppliers / Distributers', AcBalance: 0 },
+        { FLID: 2, SLID: 201, TLID: 201002, TLName: 'Accounts Payable General', AcBalance: 0 },
+        { FLID: 3, SLID: 301, TLID: 301001, TLName: 'Owner Capital Equity Account', AcBalance: 0 },
+        { FLID: 4, SLID: 401, TLID: 401001, TLName: 'Appointment OPD Ticket Revenue', AcBalance: 0 },
+        { FLID: 4, SLID: 401, TLID: 401002, TLName: 'Lab & Diagnostics Revenue', AcBalance: 0 },
         { FLID: 4, SLID: 401, TLID: 401101, TLName: 'Morning Shift: Appointment Revenue', AcBalance: 0 },
         { FLID: 4, SLID: 401, TLID: 401102, TLName: 'Morning Shift: Clinical Medicine Revenue', AcBalance: 0 },
         { FLID: 4, SLID: 401, TLID: 401103, TLName: 'Morning Shift: Patent Medicine Revenue', AcBalance: 0 },
@@ -628,19 +550,19 @@ async function runAutoSeeder() {
         { FLID: 4, SLID: 401, TLID: 401202, TLName: 'Evening Shift: Clinical Medicine Revenue', AcBalance: 0 },
         { FLID: 4, SLID: 401, TLID: 401203, TLName: 'Evening Shift: Patent Medicine Revenue', AcBalance: 0 },
         { FLID: 4, SLID: 401, TLID: 401204, TLName: 'Evening Shift: Store Medicine Revenue', AcBalance: 0 },
-        { FLID: 4, SLID: 402, TLID: 402001, TLName: 'Pharmacy Store Cash Sales', AcBalance: -185000 },
-        { FLID: 5, SLID: 501, TLID: 501001, TLName: 'Pharmacy Cost of Goods Sold (COGS)', AcBalance: 110000 },
-        { FLID: 5, SLID: 501, TLID: 501002, TLName: 'Pharmacy Customer Discounts Allowed', AcBalance: 7500 },
-        { FLID: 5, SLID: 501, TLID: 501003, TLName: 'Pharmacy Sales Return Debit A/C', AcBalance: 4000 },
-        { FLID: 5, SLID: 501, TLID: 501004, TLName: 'Pharmacy Sales Return Disc Reversal', AcBalance: -500 },
-        { FLID: 5, SLID: 502, TLID: 502001, TLName: 'Clinic Rent & Lease Expense', AcBalance: 30000 },
-        { FLID: 5, SLID: 502, TLID: 502002, TLName: 'Electricity & Water Utility Bills', AcBalance: 12000 },
-        { FLID: 5, SLID: 502, TLID: 502003, TLName: 'Doctor Consultation Sharing Pay', AcBalance: 15000 }
+        { FLID: 4, SLID: 402, TLID: 402001, TLName: 'Pharmacy Store Cash Sales', AcBalance: 0 },
+        { FLID: 5, SLID: 501, TLID: 501001, TLName: 'Pharmacy Cost of Goods Sold (COGS)', AcBalance: 0 },
+        { FLID: 5, SLID: 501, TLID: 501002, TLName: 'Pharmacy Customer Discounts Allowed', AcBalance: 0 },
+        { FLID: 5, SLID: 501, TLID: 501003, TLName: 'Pharmacy Sales Return Debit A/C', AcBalance: 0 },
+        { FLID: 5, SLID: 501, TLID: 501004, TLName: 'Pharmacy Sales Return Disc Reversal', AcBalance: 0 },
+        { FLID: 5, SLID: 502, TLID: 502001, TLName: 'Clinic Rent & Lease Expense', AcBalance: 0 },
+        { FLID: 5, SLID: 502, TLID: 502002, TLName: 'Electricity & Water Utility Bills', AcBalance: 0 },
+        { FLID: 5, SLID: 502, TLID: 502003, TLName: 'Doctor Consultation Sharing Pay', AcBalance: 0 }
       ]);
-      console.log('🌱 Seeded default Level-3 Chart of Accounts.');
+      console.log('🌱 Seeded default Level-3 Chart of Accounts with zero balances.');
     }
 
-    // 7. System Settings Seed
+    // 5. System Settings Seed
     if ((await db.collection('config').countDocuments()) === 0) {
       await db.collection('config').insertOne({
         ConfigID: 0,
@@ -655,7 +577,7 @@ async function runAutoSeeder() {
       });
     }
 
-    // 8. Clinic Profile Seed
+    // 6. Clinic Profile Seed
     const defaultClinicInfo = {
       ClinicName: 'Punjab Homeopathic Clinic',
       ClinicLogoText: 'PHC',
@@ -672,7 +594,7 @@ async function runAutoSeeder() {
       await db.collection('clinic').updateOne({}, { $set: defaultClinicInfo });
     }
 
-    // 9. SMS Settings Seed
+    // 7. SMS Settings Seed
     if ((await db.collection('sms').countDocuments()) === 0) {
       await db.collection('sms').insertOne({
         Provider: 'twilio',
@@ -685,82 +607,7 @@ async function runAutoSeeder() {
       });
     }
 
-    // 12. NHC Patient History Seed
-    if ((await db.collection('nhc_patient_history').countDocuments()) === 0) {
-      await db.collection('nhc_patient_history').insertMany([
-        {
-          PatientID: 'NHC-1001',
-          PatientName: 'Kashif Jameel',
-          AgeYears: 45,
-          Sex: 'Male',
-          PhoneMobile: '0321-4455667',
-          Father_husband: 'Muhammad Jameel',
-          RegistrationDate: '2025-05-12',
-          VisitDate: '2026-03-10',
-          Symptoms: 'Mild headache, dry cough, low grade fever',
-          Diagnosis: 'Acute viral bronchopneumonia, tension headache',
-          MedicineDetail: 'Syp. Hydryllin DM 2 tsp tid x 5 days',
-          Dosage: '2 tsp tid',
-          MedicineType: 'P',
-          LabTests: 'Chest X-Ray PA View, CBC',
-          Address: 'Model Town, Block D, Lahore'
-        },
-        {
-          PatientID: 'NHC-1001',
-          PatientName: 'Kashif Jameel',
-          AgeYears: 45,
-          Sex: 'Male',
-          PhoneMobile: '0321-4455667',
-          Father_husband: 'Muhammad Jameel',
-          RegistrationDate: '2025-05-12',
-          VisitDate: '2026-03-10',
-          Symptoms: 'Mild headache, dry cough, low grade fever',
-          Diagnosis: 'Acute viral bronchopneumonia, tension headache',
-          MedicineDetail: 'Tab. Panadol 500mg tid x 5 days',
-          Dosage: '1 tab tid',
-          MedicineType: 'P',
-          LabTests: 'Chest X-Ray PA View, CBC',
-          Address: 'Model Town, Block D, Lahore'
-        },
-        {
-          PatientID: 'NHC-1002',
-          PatientName: 'Zoya Fatima',
-          AgeYears: 23,
-          Sex: 'Female',
-          PhoneMobile: '0300-8899001',
-          Father_husband: 'Syed Ali Naqvi',
-          RegistrationDate: '2025-08-15',
-          VisitDate: '2026-04-12',
-          Symptoms: 'Severe joint pain, lethargy, skin rash',
-          Diagnosis: 'Suspicion of Rheumatic / Connective tissue disorder',
-          MedicineDetail: 'Tab. Lofnac 50mg bid x 7 days',
-          Dosage: '1 tab bid',
-          MedicineType: 'P',
-          LabTests: 'RA Factor, Anti-CCP, CBC',
-          Address: 'Gulberg III, Lahore'
-        },
-        {
-          PatientID: 'NHC-1003',
-          PatientName: 'Abid Hussain',
-          AgeYears: 55,
-          Sex: 'Male',
-          PhoneMobile: '0345-1122334',
-          Father_husband: 'Hussain Ahmad',
-          RegistrationDate: '2025-02-20',
-          VisitDate: '2026-05-02',
-          Symptoms: 'Polyuria, polydipsia, burning micturition',
-          Diagnosis: 'Type 2 Diabetes Mellitus, Mild UTI',
-          MedicineDetail: 'Tab. Panadol 500mg tid x 3 days',
-          Dosage: '1 tab tid',
-          MedicineType: 'P',
-          LabTests: 'HbA1c, Urine RE & Culture, Blood Sugar Random',
-          Address: 'Allama Iqbal Town, Lahore'
-        }
-      ]);
-      console.log('🌱 Seeded legacy NHC patient history records.');
-    }
-    
-    // 13. Smart Locator Medicines Seed
+    // 8. Smart Locator Clinical Symptom Knowledgebase
     if ((await db.collection('smart_locator_medicines').countDocuments()) === 0) {
       await db.collection('smart_locator_medicines').insertMany([
         { Symptoms: 'fever, headache, body ache, high temperature, pain', MedicineName: 'Paracetamol', Dosage: '1-0-1', Composition: 'Paracetamol 500mg' },
@@ -772,92 +619,94 @@ async function runAutoSeeder() {
         { Symptoms: 'vomiting, nausea, motion sickness, stomach upset', MedicineName: 'Gravinate', Dosage: '1-0-1', Composition: 'Dimenhydrinate 50mg' },
         { Symptoms: 'muscle spasm, pain, backache, neck pain, stiffness', MedicineName: 'Nuberol Forte', Dosage: '1-0-1', Composition: 'Paracetamol + Orphenadrine' }
       ]);
-      console.log('🌱 Seeded default smart locator medicines.');
+      console.log('🌱 Seeded default smart locator clinical matcher.');
     }
 
-    // 14. Mini ERP Vendors Seed
-    if ((await db.collection('erp_vendors').countDocuments()) === 0) {
-      await db.collection('erp_vendors').insertMany([
-        { VendorID: 'VND-001', VendorName: 'High-Tech Pharma Distributors Ltd', ContactPerson: 'Mr. Tariq Mahmood', Phone: '0300-1112223', Email: 'sales@hitechpharma.pk', Address: 'Brandreth Road, Lahore', TaxID: 'NTN-8912301', Balance: 45000, Status: 'Active' },
-        { VendorID: 'VND-002', VendorName: 'MedCare Global Supplies', ContactPerson: 'Sheikh Usman Ali', Phone: '0312-4445556', Email: 'info@medcare.pk', Address: 'Nishtar Road, Multan', TaxID: 'NTN-7612344', Balance: 18500, Status: 'Active' },
-        { VendorID: 'VND-003', VendorName: 'Homeo Care Labs Pakistan', ContactPerson: 'Dr. Salman Akram', Phone: '0333-7778889', Email: 'orders@homeocare.pk', Address: 'Circular Road, Rawalpindi', TaxID: 'NTN-5544332', Balance: 0, Status: 'Active' }
-      ]);
-      console.log('🌱 Seeded Mini ERP vendors table.');
-    }
-
-    // 15. Mini ERP Purchase Orders Seed
-    if ((await db.collection('erp_purchase_orders').countDocuments()) === 0) {
-      await db.collection('erp_purchase_orders').insertMany([
-        {
-          POID: 'PO-1001', VendorID: 'VND-001', VendorName: 'High-Tech Pharma Distributors Ltd', OrderDate: '2026-07-28', ExpectedDeliveryDate: '2026-08-05', TotalAmount: 85000, PaidAmount: 40000, Status: 'Sent', Notes: 'Urgent stock for dispensary antibiotics',
-          Items: [
-            { ItemID: 'ITM-001', ItemName: 'Panadol Extra 500mg', Qty: 200, UnitPrice: 120, LineTotal: 24000 },
-            { ItemID: 'ITM-002', ItemName: 'Augmentin 625mg', Qty: 100, UnitPrice: 610, LineTotal: 61000 }
-          ]
-        },
-        {
-          POID: 'PO-1002', VendorID: 'VND-002', VendorName: 'MedCare Global Supplies', OrderDate: '2026-07-30', ExpectedDeliveryDate: '2026-08-02', TotalAmount: 32000, PaidAmount: 32000, Status: 'Received', Notes: 'Syrup stock replenishment',
-          Items: [
-            { ItemID: 'ITM-003', ItemName: 'Syp Brufen 120ml', Qty: 150, UnitPrice: 140, LineTotal: 21000 },
-            { ItemID: 'ITM-004', ItemName: 'Flygyl 400mg Tab', Qty: 110, UnitPrice: 100, LineTotal: 11000 }
-          ]
-        }
-      ]);
-      console.log('🌱 Seeded Mini ERP purchase orders table.');
-    }
-
-    // 16. Mini ERP Transactions Ledger Seed
-    if ((await db.collection('erp_transactions').countDocuments()) === 0) {
-      await db.collection('erp_transactions').insertMany([
-        { TransactionID: 'TXN-8001', Type: 'Income', Category: 'Patient Consultation & Medicine Sales', Description: 'Daily Dispensary POS Cash Inflow', Amount: 145000, PaymentMethod: 'Cash', ReferenceNo: 'POS-BATCH-20260801', Date: '2026-08-01', CreatedBy: 'Admin' },
-        { TransactionID: 'TXN-8002', Type: 'Expense', Category: 'Pharmacy Electricity Utility Bill', Description: 'LESCO Electricity Bill for July 2026', Amount: 38500, PaymentMethod: 'Bank', ReferenceNo: 'LESCO-99214', Date: '2026-08-01', CreatedBy: 'Accountant' },
-        { TransactionID: 'TXN-8003', Type: 'VendorPayment', Category: 'Vendor Balance Settlement', Description: 'Partial payment to High-Tech Pharma', Amount: 40000, PaymentMethod: 'Bank', ReferenceNo: 'CHQ-448102', Date: '2026-07-29', CreatedBy: 'Accountant' },
-        { TransactionID: 'TXN-8004', Type: 'PayrollPayment', Category: 'Monthly Staff Salary Disbursement', Description: 'Staff Payroll Disbursement for July 2026', Amount: 180000, PaymentMethod: 'Bank', ReferenceNo: 'PAY-JUL26', Date: '2026-08-01', CreatedBy: 'Admin' }
-      ]);
-      console.log('🌱 Seeded Mini ERP transactions table.');
-    }
-
-    // 17. Mini ERP Employees Seed
-    if ((await db.collection('erp_employees').countDocuments()) === 0) {
-      await db.collection('erp_employees').insertMany([
-        { EmployeeID: 'EMP-101', FullName: 'Dr. Zaigham Ali Anjum', Role: 'Chief Consultant Doctor', Department: 'Medical & EMR', Phone: '0300-8889991', Email: 'doctor@clinic.pk', JoiningDate: '2020-01-15', Salary: 250000, Status: 'Active', CNIC: '35202-1234567-1', BankAccount: 'PK36MEZN000102030405' },
-        { EmployeeID: 'EMP-102', FullName: 'M. Kashif Qadri', Role: 'Chief Pharmacist', Department: 'Pharmacy & Store', Phone: '0321-7776665', Email: 'kashif@pharmacy.pk', JoiningDate: '2021-03-01', Salary: 85000, Status: 'Active', CNIC: '35201-9876543-3', BankAccount: 'PK12HABB000987654321' },
-        { EmployeeID: 'EMP-103', FullName: 'Ayesha Bibi', Role: 'Senior Receptionist', Department: 'Administration', Phone: '0311-2223334', Email: 'ayesha@clinic.pk', JoiningDate: '2022-06-10', Salary: 45000, Status: 'Active', CNIC: '35202-5554443-2', BankAccount: 'PK90MCBB000112233445' },
-        { EmployeeID: 'EMP-104', FullName: 'Muhammad Rizwan', Role: 'Inventory & Store Officer', Department: 'Logistics', Phone: '0345-3332211', Email: 'rizwan@store.pk', JoiningDate: '2023-09-01', Salary: 50000, Status: 'Active', CNIC: '35203-1122334-5', BankAccount: 'PK45UBL000223344556' }
-      ]);
-      console.log('🌱 Seeded Mini ERP employees table.');
-    }
-
-    // 18. Mini ERP Payroll Seed
-    if ((await db.collection('erp_payroll').countDocuments()) === 0) {
-      await db.collection('erp_payroll').insertMany([
-        { PayrollID: 'PAY-2026-07-101', EmployeeID: 'EMP-101', EmployeeName: 'Dr. Zaigham Ali Anjum', MonthYear: '2026-07', BasicSalary: 250000, Allowances: 15000, Deductions: 5000, NetSalary: 260000, PaymentStatus: 'Paid', PaymentDate: '2026-08-01', PaymentMethod: 'Bank' },
-        { PayrollID: 'PAY-2026-07-102', EmployeeID: 'EMP-102', EmployeeName: 'M. Kashif Qadri', MonthYear: '2026-07', BasicSalary: 85000, Allowances: 5000, Deductions: 2000, NetSalary: 88000, PaymentStatus: 'Paid', PaymentDate: '2026-08-01', PaymentMethod: 'Bank' },
-        { PayrollID: 'PAY-2026-07-103', EmployeeID: 'EMP-103', EmployeeName: 'Ayesha Bibi', MonthYear: '2026-07', BasicSalary: 45000, Allowances: 2000, Deductions: 1000, NetSalary: 46000, PaymentStatus: 'Paid', PaymentDate: '2026-08-01', PaymentMethod: 'Cash' }
-      ]);
-      console.log('🌱 Seeded Mini ERP payroll table.');
-    }
-
-    // 19. Mini ERP Expenses Seed
-    if ((await db.collection('erp_expenses').countDocuments()) === 0) {
-      await db.collection('erp_expenses').insertMany([
-        { ExpenseID: 'EXP-501', Category: 'Utilities', Description: 'LESCO Electricity Monthly Bill', Amount: 38500, ExpenseDate: '2026-08-01', PaymentMethod: 'Bank', ReceiptRef: 'LESCO-99214' },
-        { ExpenseID: 'EXP-502', Category: 'Rent', Description: 'Clinic & Pharmacy Premises Monthly Rent', Amount: 120000, ExpenseDate: '2026-08-01', PaymentMethod: 'Bank', ReceiptRef: 'RENT-AUG26' },
-        { ExpenseID: 'EXP-503', Category: 'Refreshment', Description: 'Tea, Coffee & Water Refreshments for Patients and Staff', Amount: 6500, ExpenseDate: '2026-07-31', PaymentMethod: 'Cash', ReceiptRef: 'CASH-PETTY-09' },
-        { ExpenseID: 'EXP-504', Category: 'Maintenance', Description: 'Air Conditioner Service & Refrigeration Gas Refill', Amount: 14500, ExpenseDate: '2026-07-25', PaymentMethod: 'Cash', ReceiptRef: 'INV-AC-88' }
-      ]);
-      console.log('🌱 Seeded Mini ERP expenses table.');
-    }
-
-    // 20. Mini ERP Assets Seed
-    if ((await db.collection('erp_assets').countDocuments()) === 0) {
-      await db.collection('erp_assets').insertMany([
-        { AssetID: 'AST-101', AssetName: 'Haier Medical Refrigerator (Insulin & Cold Storage)', Category: 'Equipment', PurchaseDate: '2023-05-10', PurchaseCost: 185000, CurrentValue: 150000, DepreciationRate: 10, Status: 'Active' },
-        { AssetID: 'AST-102', AssetName: 'Thermal Receipt Printer & Barcode Scanner System', Category: 'IT Hardware', PurchaseDate: '2024-01-20', PurchaseCost: 65000, CurrentValue: 52000, DepreciationRate: 15, Status: 'Active' },
-        { AssetID: 'AST-103', AssetName: 'Doctor Consultation Desk & Ergonomic Executive Chairs', Category: 'Furniture', PurchaseDate: '2022-11-15', PurchaseCost: 120000, CurrentValue: 90000, DepreciationRate: 10, Status: 'Active' }
-      ]);
-      console.log('🌱 Seeded Mini ERP assets table.');
-    }
+    // 🧹 STRICT PURGE: Permanently remove all legacy dummy/seed records from database collections
+    await Promise.allSettled([
+      // Operational Expenses Dummy Data Clean
+      db.collection('erp_expenses').deleteMany({
+        $or: [
+          { ExpenseID: /^EXP-50/ },
+          { ExpenseID: /^TEST-/ },
+          { Description: /LESCO Electricity Monthly Bill|Clinic & Pharmacy Premises Monthly Rent|Tea, Coffee & Water Refreshments|Air Conditioner Service & Refrigeration/i }
+        ]
+      }),
+      // Fixed Assets Register Dummy Data Clean
+      db.collection('erp_assets').deleteMany({
+        $or: [
+          { AssetID: /^AST-10/ },
+          { AssetID: /^TEST-/ },
+          { AssetName: /Haier Medical Refrigerator|Thermal Receipt Printer|Doctor Consultation Desk/i }
+        ]
+      }),
+      // Financial Transactions Ledger Dummy Data Clean
+      db.collection('erp_transactions').deleteMany({
+        $or: [
+          { TransactionID: /^TXN-80/ },
+          { TransactionID: /^TEST-/ },
+          { ReferenceNo: /POS-BATCH-20260801|LESCO-99214|CHQ-448102|PAY-JUL26/i }
+        ]
+      }),
+      // Payroll Dummy Data Clean
+      db.collection('erp_payroll').deleteMany({
+        $or: [
+          { PayrollID: /^PAY-2026-07/ },
+          { PayrollID: /^TEST-/ }
+        ]
+      }),
+      // Purchase Orders Dummy Data Clean
+      db.collection('erp_purchase_orders').deleteMany({
+        $or: [
+          { POID: /^PO-100/ },
+          { POID: /^TEST-/ }
+        ]
+      }),
+      // Employees Dummy Data Clean
+      db.collection('erp_employees').deleteMany({
+        $or: [
+          { EmployeeID: /^EMP-10/ },
+          { FullName: /Kashif Qadri|Ayesha Bibi|Muhammad Rizwan/i }
+        ]
+      }),
+      // Vendors Directory Dummy Data Clean
+      db.collection('erp_vendors').deleteMany({
+        $or: [
+          { VendorID: /^VND-00/ },
+          { VendorID: /^TEST-/ },
+          { VendorName: /High-Tech Pharma Distributors Ltd|MedCare Global Supplies|Homeo Care Labs Pakistan/i }
+        ]
+      }),
+      // Patients Dummy Data Clean
+      db.collection('patients').deleteMany({
+        $or: [
+          { PatientID: /^PAT-00/ },
+          { PatientName: /Zubair Ahmad Qureshi|Saima Parveen|Haris Ali SBP/i }
+        ]
+      }),
+      // Legacy Patient History Dummy Data Clean
+      db.collection('nhc_patient_history').deleteMany({
+        $or: [
+          { PatientID: /^NHC-100/ },
+          { PatientName: /Kashif Jameel|Zoya Fatima|Abid Hussain/i }
+        ]
+      }),
+      // Suppliers Dummy Data Clean
+      db.collection('suppliers').deleteMany({
+        $or: [
+          { SID: /^SUP-00/ },
+          { SupplierName: /Standipharm Pakistan Ltd|Getz Pharma Pakistan|GSK Pakistan|Searle Company Limited/i }
+        ]
+      }),
+      // Inventory Items Dummy Data Clean
+      db.collection('items').deleteMany({
+        $or: [
+          { ItemID: /^ITM-00/ },
+          { ItemName: /Panadol 500mg \(Paracetamol\)|Augmentin 625mg \(Co-Amoxiclav\)|Lofnac 50mg|Arinac Forte|Surbex-Z/i }
+        ]
+      })
+    ]);
+    console.log('🧹 Purged all dummy operational records from database successfully.');
 
     await db.collection('system_init').updateOne(
       { _id: 'INIT_FLAG' },
@@ -955,6 +804,71 @@ app.delete('/api/users/:id', async (req, res) => {
 });
 
 // ------------------------------------------------------------------------------------------
+// 🏙️ CITIES & GEOGRAPHIC MASTERS MODULE (PUNJAB PROVINCE & PAKISTAN)
+// ------------------------------------------------------------------------------------------
+
+// Fetch all cities
+app.get('/api/cities', async (req, res) => {
+  try {
+    const cities = await db.collection('cities')
+      .find({})
+      .sort({ CityID: 1 })
+      .toArray();
+    res.json(cities);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Insert or Update City
+app.post('/api/cities', async (req, res) => {
+  try {
+    const city = req.body;
+    if (!city || !city.CityName || !city.CityName.trim()) {
+      return res.status(400).json({ error: 'CityName is required.' });
+    }
+    city.CityName = city.CityName.trim();
+    if (!city.Province) {
+      city.Province = 'Punjab';
+    }
+
+    // Auto calculate CityID if not provided
+    if (!city.CityID || isNaN(Number(city.CityID)) || Number(city.CityID) <= 0) {
+      const allCities = await db.collection('cities').find({}).toArray();
+      const maxId = allCities.reduce((max, c) => Math.max(max, Number(c.CityID) || 0), 0);
+      city.CityID = maxId + 1;
+    } else {
+      city.CityID = Number(city.CityID);
+    }
+
+    if (city._id) delete city._id;
+
+    await db.collection('cities').updateOne(
+      { CityID: city.CityID },
+      { $set: city },
+      { upsert: true }
+    );
+    res.json({ success: true, message: 'City saved successfully.', data: city });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Delete City
+app.delete('/api/cities/:id', async (req, res) => {
+  try {
+    const rawId = req.params.id;
+    const numId = Number(rawId);
+    const query = !isNaN(numId) ? { $or: [{ CityID: numId }, { CityID: rawId }] } : { CityID: rawId };
+    
+    const result = await db.collection('cities').deleteOne(query);
+    res.json({ success: true, message: 'City deleted successfully.', result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ------------------------------------------------------------------------------------------
 // 👤 CLINICAL PATIENT REGISTRATION MODULE
 // ------------------------------------------------------------------------------------------
 
@@ -1024,6 +938,93 @@ app.delete('/api/patients/:id', async (req, res) => {
     const { id } = req.params;
     await db.collection('patients').deleteOne({ PatientID: id });
     res.json({ success: true, message: 'Patient removed from records.' });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ------------------------------------------------------------------------------------------
+// 🧹 SYSTEM ADMIN: PURGE ALL DUMMY / TEST RECORDS
+// ------------------------------------------------------------------------------------------
+app.post('/api/admin/purge-dummy-records', async (req, res) => {
+  try {
+    const purgeResults = await Promise.allSettled([
+      db.collection('erp_expenses').deleteMany({
+        $or: [
+          { ExpenseID: /^EXP-50/ },
+          { ExpenseID: /^TEST-/ },
+          { Description: /LESCO Electricity Monthly Bill|Clinic & Pharmacy Premises Monthly Rent|Tea, Coffee & Water Refreshments|Air Conditioner Service & Refrigeration/i }
+        ]
+      }),
+      db.collection('erp_assets').deleteMany({
+        $or: [
+          { AssetID: /^AST-10/ },
+          { AssetID: /^TEST-/ },
+          { AssetName: /Haier Medical Refrigerator|Thermal Receipt Printer|Doctor Consultation Desk/i }
+        ]
+      }),
+      db.collection('erp_transactions').deleteMany({
+        $or: [
+          { TransactionID: /^TXN-80/ },
+          { TransactionID: /^TEST-/ },
+          { ReferenceNo: /POS-BATCH-20260801|LESCO-99214|CHQ-448102|PAY-JUL26/i }
+        ]
+      }),
+      db.collection('erp_payroll').deleteMany({
+        $or: [
+          { PayrollID: /^PAY-2026-07/ },
+          { PayrollID: /^TEST-/ }
+        ]
+      }),
+      db.collection('erp_purchase_orders').deleteMany({
+        $or: [
+          { POID: /^PO-100/ },
+          { POID: /^TEST-/ }
+        ]
+      }),
+      db.collection('erp_employees').deleteMany({
+        $or: [
+          { EmployeeID: /^EMP-10/ },
+          { FullName: /Kashif Qadri|Ayesha Bibi|Muhammad Rizwan/i }
+        ]
+      }),
+      db.collection('erp_vendors').deleteMany({
+        $or: [
+          { VendorID: /^VND-00/ },
+          { VendorID: /^TEST-/ },
+          { VendorName: /High-Tech Pharma Distributors Ltd|MedCare Global Supplies|Homeo Care Labs Pakistan/i }
+        ]
+      }),
+      db.collection('patients').deleteMany({
+        $or: [
+          { PatientID: /^PAT-00/ },
+          { PatientName: /Zubair Ahmad Qureshi|Saima Parveen|Haris Ali SBP/i }
+        ]
+      }),
+      db.collection('nhc_patient_history').deleteMany({
+        $or: [
+          { PatientID: /^NHC-100/ },
+          { PatientName: /Kashif Jameel|Zoya Fatima|Abid Hussain/i }
+        ]
+      }),
+      db.collection('suppliers').deleteMany({
+        $or: [
+          { SID: /^SUP-00/ },
+          { SupplierName: /Standipharm Pakistan Ltd|Getz Pharma Pakistan|GSK Pakistan|Searle Company Limited/i }
+        ]
+      }),
+      db.collection('items').deleteMany({
+        $or: [
+          { ItemID: /^ITM-00/ },
+          { ItemName: /Panadol 500mg \(Paracetamol\)|Augmentin 625mg \(Co-Amoxiclav\)|Lofnac 50mg|Arinac Forte|Surbex-Z/i }
+        ]
+      })
+    ]);
+
+    res.json({
+      success: true,
+      message: 'All dummy and test records have been successfully purged from the database.'
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -4024,14 +4025,59 @@ app.put('/api/query/:collection/:id', async (req, res) => {
     
     if (updateData._id) delete updateData._id; // Ensure we don't try to update immutable _id
 
-    let query = { _id: id };
-    
-    // Check if real ObjectId is needed for MongoDB
+    if (db instanceof InMemoryDB) {
+      if (!db.collections[collection]) db.collections[collection] = [];
+      const col = db.collections[collection];
+      const index = col.findIndex(doc => {
+        return (
+          doc._id === id ||
+          doc.VendorID === id ||
+          doc.SID === id ||
+          doc.SupplierID === id ||
+          doc.PatientID === id ||
+          doc.ItemID === id ||
+          doc.VisitID === id ||
+          doc.InvoiceNo === id ||
+          doc.TransactionID === id ||
+          doc.ExpenseID === id ||
+          doc.EmployeeID === id ||
+          doc.AssetID === id
+        );
+      });
+      if (index !== -1) {
+        col[index] = { ...col[index], ...updateData };
+      } else {
+        col.push({ _id: id, ...updateData });
+      }
+      return res.json({ success: true, message: 'Document updated in in-memory DB' });
+    }
+
+    const queryConditions = [{ _id: id }];
     try {
-      if (typeof ObjectId !== 'undefined' && id.length === 24) {
-        query = { $or: [{ _id: id }, { _id: new ObjectId(id) }] };
+      if (typeof ObjectId !== 'undefined' && ObjectId.isValid(id) && id.length === 24) {
+        queryConditions.push({ _id: new ObjectId(id) });
       }
     } catch (e) {}
+
+    // Check business keys
+    queryConditions.push(
+      { VendorID: id },
+      { SID: id },
+      { SupplierID: id },
+      { PatientID: id },
+      { ItemID: id },
+      { VisitID: id },
+      { InvoiceNo: id },
+      { VoucherNo: id },
+      { TransactionID: id },
+      { ExpenseID: id },
+      { EmployeeID: id },
+      { AssetID: id },
+      { POID: id },
+      { GRNID: id }
+    );
+
+    const query = { $or: queryConditions };
 
     const result = await db.collection(collection).updateOne(
       query,
@@ -4049,12 +4095,53 @@ app.delete('/api/query/:collection/:id', async (req, res) => {
   try {
     const { collection, id } = req.params;
     
-    let query = { _id: id };
+    if (db instanceof InMemoryDB) {
+      if (db.collections[collection]) {
+        db.collections[collection] = db.collections[collection].filter(doc => {
+          return !(
+            doc._id === id ||
+            doc.VendorID === id ||
+            doc.SID === id ||
+            doc.SupplierID === id ||
+            doc.PatientID === id ||
+            doc.ItemID === id ||
+            doc.VisitID === id ||
+            doc.InvoiceNo === id ||
+            doc.TransactionID === id ||
+            doc.ExpenseID === id ||
+            doc.EmployeeID === id ||
+            doc.AssetID === id
+          );
+        });
+      }
+      return res.json({ success: true, message: 'Document deleted from in-memory DB' });
+    }
+
+    const queryConditions = [{ _id: id }];
     try {
-      if (typeof ObjectId !== 'undefined' && id.length === 24) {
-        query = { $or: [{ _id: id }, { _id: new ObjectId(id) }] };
+      if (typeof ObjectId !== 'undefined' && ObjectId.isValid(id) && id.length === 24) {
+        queryConditions.push({ _id: new ObjectId(id) });
       }
     } catch (e) {}
+
+    queryConditions.push(
+      { VendorID: id },
+      { SID: id },
+      { SupplierID: id },
+      { PatientID: id },
+      { ItemID: id },
+      { VisitID: id },
+      { InvoiceNo: id },
+      { VoucherNo: id },
+      { TransactionID: id },
+      { ExpenseID: id },
+      { EmployeeID: id },
+      { AssetID: id },
+      { POID: id },
+      { GRNID: id }
+    );
+
+    const query = { $or: queryConditions };
 
     const result = await db.collection(collection).deleteOne(query);
     res.json({ success: true, message: 'Document deleted successfully.', result });

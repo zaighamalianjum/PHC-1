@@ -50,6 +50,7 @@ import {
 } from '../types';
 import { generatePatientId } from '../utils/idGenerator';
 import { generateWhatsAppPrescriptionUrl, openWhatsAppUrl } from '../utils/whatsappUtils';
+import CitySearchSelect from './common/CitySearchSelect';
 
 interface EMRDeskProps {
   patients: Patient[];
@@ -4055,16 +4056,13 @@ export default function EMRDesk({
 
                 {/* Resident Location */}
                 <div className="space-y-1">
-                  <label className="block text-xxs font-black text-slate-600 uppercase tracking-wider">Resident City *</label>
-                  <select
-                    value={editPatientCityId}
-                    onChange={(e) => setEditPatientCityId(parseInt(e.target.value) || 1)}
-                    className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white text-slate-800"
-                  >
-                    {cities.map((c) => (
-                      <option key={c.CityID} value={c.CityID}>{c.CityName}</option>
-                    ))}
-                  </select>
+                  <CitySearchSelect
+                    cities={cities}
+                    selectedCityId={editPatientCityId}
+                    onSelectCity={(newCityId) => setEditPatientCityId(newCityId)}
+                    label="Resident City (Punjab Province)"
+                    placeholder="Search city..."
+                  />
                 </div>
 
                 {/* Address */}
@@ -4555,16 +4553,13 @@ export default function EMRDesk({
 
                   {/* Resident Location */}
                   <div className="space-y-1">
-                    <label className="block text-xxs font-black text-slate-600 uppercase tracking-wider">City ID (Punjab Province)</label>
-                    <select
-                      value={regCityId}
-                      onChange={(e) => setRegCityId(parseInt(e.target.value) || 1)}
-                      className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-emerald-500 bg-white text-slate-800"
-                    >
-                      {cities && cities.map((c) => (
-                        <option key={c.CityID} value={c.CityID}>{c.CityName}</option>
-                      ))}
-                    </select>
+                    <CitySearchSelect
+                      cities={cities}
+                      selectedCityId={regCityId}
+                      onSelectCity={(newCityId) => setRegCityId(newCityId)}
+                      label="City ID (Punjab Province)"
+                      placeholder="Search city (e.g. Lahore, Multan)..."
+                    />
                   </div>
 
                   {/* Country */}
