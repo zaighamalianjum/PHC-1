@@ -810,11 +810,32 @@ export default function PatientDesk({
   const [claimBillDesignation, setClaimBillDesignation] = useState<string>('');
   const [claimBillRemarks, setClaimBillRemarks] = useState<string>('');
 
+  // Helper function for date normalization
+  const parseDateToISOKey = (dateStr?: string | null): string => {
+    if (!dateStr || dateStr === 'N/A' || dateStr === '—') return '';
+    const clean = String(dateStr).trim().split('T')[0].split(' ')[0];
+    const parts = clean.split('-');
+    if (parts.length === 3) {
+      if (parts[0].length === 4) {
+        return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+      }
+      if (parts[2].length === 4) {
+        return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    const d = new Date(String(dateStr).trim());
+    if (isNaN(d.getTime())) return clean;
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    return `${yyyy}-${mm}-${dd}`;
+  };
+
   // States for All Patients Grid-View Tab
   const [gridViewSearch, setGridViewSearch] = useState('');
-  const [gridViewDatePreset, setGridViewDatePreset] = useState<'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom'>('today');
-  const [gridViewStartDate, setGridViewStartDate] = useState(() => new Date().toISOString().split('T')[0]);
-  const [gridViewEndDate, setGridViewEndDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [gridViewDatePreset, setGridViewDatePreset] = useState<'all' | 'today' | 'yesterday' | 'this_week' | 'this_month' | 'custom'>('all');
+  const [gridViewStartDate, setGridViewStartDate] = useState('');
+  const [gridViewEndDate, setGridViewEndDate] = useState('');
   const [gridViewGenderFilter, setGridViewGenderFilter] = useState<string>('all');
   const [gridViewFocOnly, setGridViewFocOnly] = useState<boolean>(false);
 
@@ -8774,8 +8795,23 @@ Healing Naturally. Restoring Balance.`;
           return `${yyyy}-${mm}-${dd}`;
         };
 
+        // Master consolidate patients from EMR, NHC, and history
+        const masterMap = new Map<string, Patient>();
+        (patients || []).forEach(p => {
+          if (p && p.PatientID) masterMap.set(String(p.PatientID).trim().toLowerCase(), p);
+        });
+        [...(nhcPatients || []), ...(nhcArchiveList || []), ...(pvNhcHistory || [])].forEach(p => {
+          if (p && p.PatientID) {
+            const k = String(p.PatientID).trim().toLowerCase();
+            if (!masterMap.has(k)) {
+              masterMap.set(k, p as any);
+            }
+          }
+        });
+        const masterPatientsList = Array.from(masterMap.values());
+
         // Filter patients
-        let rawFilteredPatients = patients.filter((pt) => {
+        let rawFilteredPatients = masterPatientsList.filter((pt) => {
           const ptVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
           const ptVisitIds = new Set(ptVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
           const ptVisitDates = new Set(ptVisits.map(v => v.VisitDate ? parseDateToISOKey(v.VisitDate) : '').filter(Boolean));
@@ -9117,28 +9153,48 @@ Healing Naturally. Restoring Balance.`;
                       let sumGrandTotal = 0;
 
                       const rowsHtml = filteredPatients.map(p => {
-                        const pVisits = (visits || []).filter(v => isSamePatient(v.PatientID, p.PatientID));
+                        let pVisits = (visits || []).filter(v => isSamePatient(v.PatientID, p.PatientID));
                         const pVisitIds = new Set(pVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
-                        const pVisitDates = new Set(pVisits.map(v => v.VisitDate ? v.VisitDate.split('T')[0] : '').filter(Boolean));
-                        const pNhc = (pvNhcHistory || []).filter(nhc => {
+                        const pVisitDates = new Set(pVisits.map(v => v.VisitDate ? parseDateToISOKey(v.VisitDate) : '').filter(Boolean));
+                        let pNhc = (pvNhcHistory || []).filter(nhc => {
                           if (!isSamePatient(nhc.PatientID, p.PatientID)) return false;
                           const nhcId = String(nhc.VisitID || '').trim().toLowerCase();
                           if (nhcId && pVisitIds.has(nhcId)) return false;
                           const nhcDate = nhc.date || (nhc as any).VisitDate || '';
-                          if (nhcDate && pVisitDates.has(nhcDate.split('T')[0])) return false;
+                          if (nhcDate && pVisitDates.has(parseDateToISOKey(nhcDate))) return false;
                           return true;
                         });
-                        const pInvoices = (invoices || []).filter(inv => isSamePatient(inv.PatientID, p.PatientID));
+                        let pInvoices = (invoices || []).filter(inv => isSamePatient(inv.PatientID, p.PatientID));
+                        let pApps = (appointments || []).filter(a => isSamePatient(a.PatientID, p.PatientID) && a.Status !== 3);
+
+                        if (gridViewStartDate || gridViewEndDate) {
+                          pVisits = pVisits.filter(v => {
+                            const d = parseDateToISOKey(v.VisitDate);
+                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                          });
+                          pNhc = pNhc.filter(nhc => {
+                            const d = parseDateToISOKey(nhc.date || (nhc as any).VisitDate);
+                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                          });
+                          pApps = pApps.filter(a => {
+                            const d = parseDateToISOKey(a.AppointmentDate);
+                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                          });
+                          pInvoices = pInvoices.filter(inv => {
+                            const d = parseDateToISOKey(inv.InvoiceDate);
+                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                          });
+                        }
 
                         const sortedVisits = [...pVisits].sort((a, b) => {
-                          const dA = a.VisitDate ? a.VisitDate.split('T')[0] : '';
-                          const dB = b.VisitDate ? b.VisitDate.split('T')[0] : '';
+                          const dA = parseDateToISOKey(a.VisitDate);
+                          const dB = parseDateToISOKey(b.VisitDate);
                           if (dA !== dB) return dB.localeCompare(dA);
                           return (Number(b.VisitID) || 0) - (Number(a.VisitID) || 0);
                         });
                         const sortedNhc = [...pNhc].sort((a, b) => {
-                          const dA = a.date || (a as any).VisitDate || '';
-                          const dB = b.date || (b as any).VisitDate || '';
+                          const dA = parseDateToISOKey(a.date || (a as any).VisitDate);
+                          const dB = parseDateToISOKey(b.date || (b as any).VisitDate);
                           return dB.localeCompare(dA);
                         });
 
@@ -9146,8 +9202,8 @@ Healing Naturally. Restoring Balance.`;
                         const lastNhc = sortedNhc[0];
                         let isVisitNewer = true;
                         if (lastV && lastNhc) {
-                          const vDate = lastV.VisitDate ? lastV.VisitDate.split('T')[0] : '';
-                          const nDate = lastNhc.date || (lastNhc as any).VisitDate || '';
+                          const vDate = parseDateToISOKey(lastV.VisitDate);
+                          const nDate = parseDateToISOKey(lastNhc.date || (lastNhc as any).VisitDate);
                           if (nDate > vDate) isVisitNewer = false;
                         } else if (!lastV && lastNhc) {
                           isVisitNewer = false;
@@ -9157,13 +9213,12 @@ Healing Naturally. Restoring Balance.`;
                         const medStr = pMeds.map(m => `${m.MedicineDetail} (${m.Dosage || '1-0-1'})`).join(', ') || 'N/A';
                         const symptomsText = isVisitNewer ? (lastV?.SymptomsDiagnosis || 'N/A') : (lastNhc?.symptoms || 'N/A');
 
-                        const pApps = (appointments || []).filter(a => isSamePatient(a.PatientID, p.PatientID) && a.Status !== 3);
-                        const appDates = new Set(pApps.map(a => a.AppointmentDate ? a.AppointmentDate.split('T')[0] : ''));
+                        const appDates = new Set(pApps.map(a => parseDateToISOKey(a.AppointmentDate)));
 
                         let appOpdTotal = pApps.reduce((acc, a) => acc + (Number(a.FeeCharged) || Number((a as any).ConsultationFee) || 0), 0);
 
                         pVisits.forEach(v => {
-                          const vDate = v.VisitDate ? v.VisitDate.split('T')[0] : '';
+                          const vDate = parseDateToISOKey(v.VisitDate);
                           let vFee = Number(v.ConsultationFee) || 0;
                           if (!vFee && v.VisitRemarks) {
                             const oMatch = v.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
@@ -9333,18 +9388,39 @@ Healing Naturally. Restoring Balance.`;
                     </thead>
                     <tbody className="text-slate-800">
                       {filteredPatients.map((pt, idx) => {
-                        const ptVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
+                        let ptVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
                         const ptVisitIds = new Set(ptVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
-                        const ptVisitDates = new Set(ptVisits.map(v => v.VisitDate ? v.VisitDate.split('T')[0] : '').filter(Boolean));
-                        const ptNhc = (pvNhcHistory || []).filter(nhc => {
+                        const ptVisitDates = new Set(ptVisits.map(v => v.VisitDate ? parseDateToISOKey(v.VisitDate) : '').filter(Boolean));
+                        let ptNhc = (pvNhcHistory || []).filter(nhc => {
                           if (!isSamePatient(nhc.PatientID, pt.PatientID)) return false;
                           const nhcId = String(nhc.VisitID || '').trim().toLowerCase();
                           if (nhcId && ptVisitIds.has(nhcId)) return false;
                           const nhcDate = nhc.date || (nhc as any).VisitDate || '';
-                          if (nhcDate && ptVisitDates.has(nhcDate.split('T')[0])) return false;
+                          if (nhcDate && ptVisitDates.has(parseDateToISOKey(nhcDate))) return false;
                           return true;
                         });
-                        const ptInvoices = (invoices || []).filter(inv => isSamePatient(inv.PatientID, pt.PatientID));
+                        let ptInvoices = (invoices || []).filter(inv => isSamePatient(inv.PatientID, pt.PatientID));
+                        let ptApps = (appointments || []).filter(a => isSamePatient(a.PatientID, pt.PatientID) && a.Status !== 3);
+
+                        if (gridViewStartDate || gridViewEndDate) {
+                          ptVisits = ptVisits.filter(v => {
+                            const d = parseDateToISOKey(v.VisitDate);
+                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                          });
+                          ptNhc = ptNhc.filter(nhc => {
+                            const d = parseDateToISOKey(nhc.date || (nhc as any).VisitDate);
+                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                          });
+                          ptApps = ptApps.filter(a => {
+                            const d = parseDateToISOKey(a.AppointmentDate);
+                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                          });
+                          ptInvoices = ptInvoices.filter(inv => {
+                            const d = parseDateToISOKey(inv.InvoiceDate);
+                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                          });
+                        }
+
                         const allPtVisits = [...ptVisits, ...ptNhc];
 
                         const sortedPtVisits = [...ptVisits].sort((a, b) => {
@@ -9386,8 +9462,7 @@ Healing Naturally. Restoring Balance.`;
                         const clinicalMeds = matchedMedicines.filter(m => m.MedicineType === 'C');
                         const patentMeds = matchedMedicines.filter(m => m.MedicineType === 'P');
 
-                        const ptApps = (appointments || []).filter(a => isSamePatient(a.PatientID, pt.PatientID) && a.Status !== 3);
-                        const appDates = new Set(ptApps.map(a => a.AppointmentDate ? a.AppointmentDate.split('T')[0] : ''));
+                        const appDates = new Set(ptApps.map(a => parseDateToISOKey(a.AppointmentDate)));
 
                         let appOpdTotal = ptApps.reduce((acc, a) => acc + (Number(a.FeeCharged) || Number((a as any).ConsultationFee) || 0), 0);
 
@@ -15038,26 +15113,29 @@ Healing Naturally. Restoring Balance.`;
           let pVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
           if (gridViewStartDate || gridViewEndDate) {
             pVisits = pVisits.filter(v => {
-              if (gridViewStartDate && v.VisitDate < gridViewStartDate) return false;
-              if (gridViewEndDate && v.VisitDate > gridViewEndDate) return false;
+              const d = parseDateToISOKey(v.VisitDate || (v as any).date);
+              if (gridViewStartDate && d < gridViewStartDate) return false;
+              if (gridViewEndDate && d > gridViewEndDate) return false;
               return true;
             });
           }
 
-          let pApps = (appointments || []).filter(a => a.PatientID === pt.PatientID && a.Status !== 3);
+          let pApps = (appointments || []).filter(a => isSamePatient(a.PatientID, pt.PatientID) && a.Status !== 3);
           if (gridViewStartDate || gridViewEndDate) {
             pApps = pApps.filter(a => {
-              if (gridViewStartDate && a.AppointmentDate < gridViewStartDate) return false;
-              if (gridViewEndDate && a.AppointmentDate > gridViewEndDate) return false;
+              const d = parseDateToISOKey(a.AppointmentDate);
+              if (gridViewStartDate && d < gridViewStartDate) return false;
+              if (gridViewEndDate && d > gridViewEndDate) return false;
               return true;
             });
           }
 
-          let pInvoices = (invoices || []).filter(inv => inv.PatientID === pt.PatientID && (inv.Status as number) !== 3);
+          let pInvoices = (invoices || []).filter(inv => isSamePatient(inv.PatientID, pt.PatientID) && (inv.Status as number) !== 3);
           if (gridViewStartDate || gridViewEndDate) {
             pInvoices = pInvoices.filter(inv => {
-              if (gridViewStartDate && inv.InvoiceDate < gridViewStartDate) return false;
-              if (gridViewEndDate && inv.InvoiceDate > gridViewEndDate) return false;
+              const d = parseDateToISOKey(inv.InvoiceDate);
+              if (gridViewStartDate && d < gridViewStartDate) return false;
+              if (gridViewEndDate && d > gridViewEndDate) return false;
               return true;
             });
           }

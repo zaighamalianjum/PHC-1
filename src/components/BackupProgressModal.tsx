@@ -42,7 +42,6 @@ const COLLECTIONS_TO_BACKUP: CollectionMeta[] = [
   { key: 'cms_visit_medicines', name: 'Prescription Medicine Records', category: 'visits' },
   { key: 'cms_med_certs', name: 'Issued Medical Certificates', category: 'visits' },
   { key: 'cms_sbp_certs', name: 'SBP Fitness Certificates', category: 'visits' },
-  { key: 'cms_nhc_patients', name: 'NHC Legacy Patient History', category: 'patients' },
   { key: 'cms_invoices', name: 'Pharmacy Sales Invoices', category: 'pharmacy', isKeyCollection: true },
   { key: 'cms_invoice_details', name: 'Sales Line Items & Dispensary Logs', category: 'pharmacy' },
   { key: 'cms_sales_returns', name: 'Pharmacy Sales Returns Log', category: 'pharmacy' },

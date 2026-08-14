@@ -20,8 +20,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
-app.use(express.json({ limit: '200mb' }));
-app.use(express.urlencoded({ limit: '200mb', extended: true }));
+app.use(express.json({ limit: '500mb' }));
+app.use(express.urlencoded({ limit: '500mb', extended: true }));
 app.use(cors()); // Allow your React frontend to communicate with this API
 
 // 1. MONGODB CONNECTION CONFIGURATION
@@ -3695,6 +3695,257 @@ app.delete('/api/smart-locator/all', async (req, res) => {
 });
 
 // ==========================================================================================
+// 💾 MASTER DATABASE RESTORE & BACKUP IMPORT ENDPOINTS
+// Handles 250MB+ JSON restores safely with chunking, upserting, and collection auto-mapping
+// ==========================================================================================
+const isExcludedNhcCollection = (name) => {
+  if (!name) return false;
+  const n = String(name).toLowerCase().replace(/[^a-z0-9_]/g, '');
+  return n === 'nhc_patient_history' || n === 'cms_nhc_patients' || n === 'nhc_patients' || n === 'nhcpatienthistory' || n === 'nhcpatienthistorydesk';
+};
+
+function sanitizeMongoDoc(rawDoc) {
+  if (!rawDoc || typeof rawDoc !== 'object') return rawDoc;
+  const doc = { ...rawDoc };
+
+  // Exclude / remove immutable _id so it never conflicts during restore update operations
+  delete doc._id;
+
+  for (const key of Object.keys(doc)) {
+    const val = doc[key];
+    if (val && typeof val === 'object' && !Array.isArray(val)) {
+      if (val.$oid) {
+        doc[key] = String(val.$oid);
+      } else if (val.$date) {
+        doc[key] = String(val.$date);
+      }
+    }
+  }
+
+  return doc;
+}
+
+app.post('/api/restore/collection-chunk', async (req, res) => {
+  try {
+    const { collectionName, records, wipe, mode } = req.body;
+    if (!collectionName || !Array.isArray(records)) {
+      return res.status(400).json({ error: 'Invalid parameters: collectionName and records array are required.' });
+    }
+
+    const colName = collectionName.toLowerCase().trim();
+
+    // Strictly exclude nhc_patient_history from restoration
+    if (isExcludedNhcCollection(colName)) {
+      return res.json({ success: true, collection: colName, count: 0, message: 'nhc_patient_history collection is excluded from restoration.' });
+    }
+
+    if (records.length === 0) {
+      return res.json({ success: true, count: 0, message: 'Empty chunk provided.' });
+    }
+
+    if (wipe === true) {
+      if (db instanceof InMemoryDB) {
+        db.collections[colName] = [];
+      } else {
+        await db.collection(colName).deleteMany({});
+      }
+    }
+
+    const sanitizedRecords = records
+      .map(r => sanitizeMongoDoc(r))
+      .filter(r => r && typeof r === 'object');
+
+    if (sanitizedRecords.length === 0) {
+      return res.json({ success: true, count: 0, message: 'No valid documents to restore.' });
+    }
+
+    if (db instanceof InMemoryDB) {
+      if (!db.collections[colName]) db.collections[colName] = [];
+      if (wipe === true) {
+        db.collections[colName] = [...sanitizedRecords];
+      } else {
+        db.collections[colName].push(...sanitizedRecords);
+      }
+      return res.json({ success: true, collection: colName, count: sanitizedRecords.length });
+    }
+
+    // Determine restore strategy:
+    // If wipe mode (or wipe=true), directly insert documents without running update/$set queries
+    const isWipeMode = mode === 'wipe' || wipe === true;
+
+    if (isWipeMode) {
+      try {
+        const result = await db.collection(colName).insertMany(sanitizedRecords, { ordered: false });
+        return res.json({ success: true, collection: colName, count: sanitizedRecords.length, result });
+      } catch (insertErr) {
+        // Fallback to bulkWrite insertOne in case of non-fatal batch warnings
+        const insertOps = sanitizedRecords.map(doc => ({ insertOne: { document: doc } }));
+        const result = await db.collection(colName).bulkWrite(insertOps, { ordered: false });
+        return res.json({ success: true, collection: colName, count: sanitizedRecords.length, result });
+      }
+    }
+
+    // Merge & Upsert Mode: update matching records by primary business key without including _id in $set
+    const sample = sanitizedRecords[0] || {};
+    let keyField = null;
+    if ('PatientID' in sample) keyField = 'PatientID';
+    else if ('ItemID' in sample) keyField = 'ItemID';
+    else if ('VisitID' in sample) keyField = 'VisitID';
+    else if ('InvoiceNo' in sample) keyField = 'InvoiceNo';
+    else if ('VoucherNo' in sample) keyField = 'VoucherNo';
+    else if ('TokenNo' in sample) keyField = 'TokenNo';
+    else if ('AppointmentID' in sample) keyField = 'AppointmentID';
+    else if ('LabTestID' in sample) keyField = 'LabTestID';
+    else if ('SupplierID' in sample) keyField = 'SupplierID';
+    else if ('UserID' in sample) keyField = 'UserID';
+    else if ('CityID' in sample) keyField = 'CityID';
+
+    const operations = sanitizedRecords.map(doc => {
+      const docCopy = { ...doc };
+      delete docCopy._id; // Guarantee immutable _id is completely removed from $set update payload
+
+      if (keyField && docCopy[keyField] !== undefined && docCopy[keyField] !== null && docCopy[keyField] !== '') {
+        return {
+          updateOne: {
+            filter: { [keyField]: docCopy[keyField] },
+            update: { $set: docCopy },
+            upsert: true
+          }
+        };
+      } else {
+        return {
+          insertOne: { document: docCopy }
+        };
+      }
+    });
+
+    const result = await db.collection(colName).bulkWrite(operations, { ordered: false });
+    res.json({ success: true, collection: colName, count: sanitizedRecords.length, result });
+  } catch (err) {
+    console.error('Error restoring collection chunk:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/restore/full-database', async (req, res) => {
+  try {
+    const { wipe, data } = req.body;
+    if (!data) {
+      return res.status(400).json({ error: 'No data provided for database restore.' });
+    }
+
+    const report = {};
+    let totalRestored = 0;
+
+    const processCollectionData = async (colName, recordsList) => {
+      if (!Array.isArray(recordsList) || recordsList.length === 0) return 0;
+      const cleanName = colName.toLowerCase().trim();
+
+      // Strictly exclude nhc_patient_history from restoration
+      if (isExcludedNhcCollection(cleanName)) {
+        return 0;
+      }
+
+      if (wipe) {
+        await db.collection(cleanName).deleteMany({});
+      }
+      
+      const batchSize = 2000;
+      let colInserted = 0;
+
+      for (let i = 0; i < recordsList.length; i += batchSize) {
+        const batch = recordsList.slice(i, i + batchSize);
+        const sanitizedBatch = batch.map(r => sanitizeMongoDoc(r)).filter(r => r && typeof r === 'object');
+        if (sanitizedBatch.length === 0) continue;
+
+        if (wipe) {
+          try {
+            await db.collection(cleanName).insertMany(sanitizedBatch, { ordered: false });
+            colInserted += sanitizedBatch.length;
+            continue;
+          } catch (e) {
+            console.warn(`Full restore insertMany warning for ${cleanName}, falling back to bulkWrite`);
+          }
+        }
+
+        const sample = sanitizedBatch[0] || {};
+        let keyField = null;
+        if ('PatientID' in sample) keyField = 'PatientID';
+        else if ('ItemID' in sample) keyField = 'ItemID';
+        else if ('VisitID' in sample) keyField = 'VisitID';
+        else if ('InvoiceNo' in sample) keyField = 'InvoiceNo';
+        else if ('VoucherNo' in sample) keyField = 'VoucherNo';
+
+        const operations = sanitizedBatch.map(doc => {
+          const docCopy = { ...doc };
+          delete docCopy._id; // Exclude immutable _id from $set payload
+          
+          if (keyField && docCopy[keyField] !== undefined && docCopy[keyField] !== null) {
+            return {
+              updateOne: {
+                filter: { [keyField]: docCopy[keyField] },
+                update: { $set: docCopy },
+                upsert: true
+              }
+            };
+          } else {
+            return { insertOne: { document: docCopy } };
+          }
+        });
+
+        await db.collection(cleanName).bulkWrite(operations, { ordered: false });
+        colInserted += sanitizedBatch.length;
+      }
+      return colInserted;
+    };
+
+    if (Array.isArray(data)) {
+      const grouped = {};
+      data.forEach(doc => {
+        let col = 'unknown_records';
+        if (doc.PatientID && (doc.PatientName || doc.MRNo)) col = 'patients';
+        else if (doc.VisitID || doc.SymptomsDiagnosis) col = 'visits';
+        else if (doc.ItemID || doc.ItemName) col = 'items';
+        else if (doc.InvoiceNo && doc.TotalAmount !== undefined) col = 'invoice_headers';
+        else if (doc.InvoiceNo && doc.Quantity) col = 'invoice_details';
+        else if (doc.AppointmentID || doc.AppointmentDate) col = 'appointments';
+        else if (doc.MedicineDetail) return; // Skip nhc_patient_history
+        else if (doc.TokenNo) col = 'tokens';
+        else if (doc.LabTestID || doc.TestName) col = 'lab_tests';
+        else if (doc.VoucherNo) col = 'vouchers';
+        
+        if (!grouped[col]) grouped[col] = [];
+        grouped[col].push(doc);
+      });
+
+      for (const [col, list] of Object.entries(grouped)) {
+        const c = await processCollectionData(col, list);
+        report[col] = c;
+        totalRestored += c;
+      }
+    } else if (typeof data === 'object') {
+      for (const [colName, recordsList] of Object.entries(data)) {
+        if (Array.isArray(recordsList)) {
+          const c = await processCollectionData(colName, recordsList);
+          report[colName] = c;
+          totalRestored += c;
+        }
+      }
+    }
+
+    res.json({
+      success: true,
+      message: `Database restore completed successfully! ${totalRestored} total records synchronized into MongoDB.`,
+      report,
+      totalRestored
+    });
+  } catch (err) {
+    console.error('Master database restore failed:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================================================================
 // 🛠️ GENERIC DYNAMIC DATABASE QUERY & STORAGE HANDLER API
 // Supports full list, custom JSON filter searches, insert/post, update/put, and delete for ALL tables
 // ==========================================================================================
@@ -3894,12 +4145,14 @@ app.get('/api/mongodb/backup', async (req, res) => {
 
     if (db instanceof InMemoryDB) {
       for (const [collName, docs] of Object.entries(db.collections || {})) {
+        if (isExcludedNhcCollection(collName)) continue; // Strictly exclude nhc_patient_history
         backupData.collections[collName] = Array.isArray(docs) ? docs : [];
       }
     } else {
       const collections = await db.listCollections().toArray();
       for (const collInfo of collections) {
         const name = collInfo.name;
+        if (isExcludedNhcCollection(name)) continue; // Strictly exclude nhc_patient_history
         const docs = await db.collection(name).find({}).toArray();
         backupData.collections[name] = docs;
       }

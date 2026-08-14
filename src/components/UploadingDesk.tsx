@@ -4,6 +4,7 @@
  */
 
 import React, { useState } from 'react';
+import JSZip from 'jszip';
 import { 
   UploadCloud, 
   CheckCircle, 
@@ -44,7 +45,7 @@ export default function UploadingDesk({
   smartLocatorMedicines,
   setSmartLocatorMedicines
 }: UploadingDeskProps) {
-  const [activeUploadTab, setActiveUploadTab] = useState<'medicines' | 'labtests' | 'nhcpatienthistory' | 'barcode' | 'smartlocator'>('medicines');
+  const [activeUploadTab, setActiveUploadTab] = useState<'medicines' | 'labtests' | 'nhcpatienthistory' | 'barcode' | 'smartlocator' | 'master_backup'>('medicines');
   
   // Paste inputs
   const [medicinePasteText, setMedicinePasteText] = useState('');
@@ -82,6 +83,235 @@ export default function UploadingDesk({
   const [uploadModeSmart, setUploadModeSmart] = useState<'wipe' | 'merge'>('wipe');
   const [dragActiveSmart, setDragActiveSmart] = useState(false);
   const [smartLocatorSearch, setSmartLocatorSearch] = useState('');
+
+  // 💾 250MB Master Backup Restore States
+  const fileInputMasterRef = React.useRef<HTMLInputElement>(null);
+  const [masterFile, setMasterFile] = useState<File | null>(null);
+  const [masterRestoreMode, setMasterRestoreMode] = useState<'wipe' | 'merge'>('wipe');
+  const [isRestoringMaster, setIsRestoringMaster] = useState(false);
+  const [masterRestoreProgress, setMasterRestoreProgress] = useState(0);
+  const [masterRestoreStatusText, setMasterRestoreStatusText] = useState('');
+  const [masterRestoreReport, setMasterRestoreReport] = useState<{ [col: string]: number } | null>(null);
+  const [dragActiveMaster, setDragActiveMaster] = useState(false);
+
+  const handleStartMasterRestore = async () => {
+    if (!masterFile) {
+      setErrorMsg('Please select a 250 MB .json or .zip backup file first.');
+      return;
+    }
+    setIsRestoringMaster(true);
+    setMasterRestoreProgress(0);
+    setMasterRestoreStatusText('Reading backup file...');
+    setErrorMsg('');
+    setSuccessMsg('');
+    setMasterRestoreReport(null);
+
+    try {
+      let parsedData: any;
+      const isZip = masterFile.name.toLowerCase().endsWith('.zip') || masterFile.type.includes('zip');
+
+      if (isZip) {
+        setMasterRestoreStatusText('Unpacking ZIP archive backup file...');
+        const zip = await JSZip.loadAsync(masterFile);
+        const jsonFileName = Object.keys(zip.files).find(
+          f => f.toLowerCase().endsWith('.json') && !zip.files[f].dir
+        );
+        if (!jsonFileName) {
+          throw new Error('No .json database file found inside the uploaded ZIP archive.');
+        }
+        setMasterRestoreStatusText(`Extracting "${jsonFileName}" from ZIP archive...`);
+        const text = await zip.files[jsonFileName].async('string');
+        parsedData = JSON.parse(text);
+      } else {
+        setMasterRestoreStatusText('Reading JSON backup file...');
+        const text = await masterFile.text();
+        setMasterRestoreProgress(10);
+        setMasterRestoreStatusText('Parsing JSON data structure...');
+        parsedData = JSON.parse(text);
+      }
+
+      setMasterRestoreProgress(25);
+      setMasterRestoreStatusText('Analyzing database collections...');
+
+      // Helper to identify excluded legacy collections
+      const isExcludedNhcCollection = (name: string) => {
+        if (!name) return false;
+        const n = String(name).toLowerCase().replace(/[^a-z0-9_]/g, '');
+        return n === 'nhc_patient_history' || n === 'cms_nhc_patients' || n === 'nhc_patients' || n === 'nhcpatienthistory' || n === 'nhcpatienthistorydesk';
+      };
+
+      // Helper to strip immutable _id field and format nested date/oid types
+      const sanitizeDocForRestore = (doc: any) => {
+        if (!doc || typeof doc !== 'object') return null;
+        const clean: any = {};
+        for (const [key, val] of Object.entries(doc)) {
+          if (key === '_id') {
+            // CRITICAL: Exclude immutable _id from restore payload to prevent MongoDB update errors
+            continue;
+          }
+          if (val && typeof val === 'object' && !Array.isArray(val)) {
+            if ((val as any).$oid) {
+              clean[key] = String((val as any).$oid);
+            } else if ((val as any).$date) {
+              clean[key] = String((val as any).$date);
+            } else {
+              clean[key] = val;
+            }
+          } else {
+            clean[key] = val;
+          }
+        }
+        return clean;
+      };
+
+      // Extract collections from parsed backup JSON
+      const extractCollections = (dataObj: any): { name: string; records: any[] }[] => {
+        if (!dataObj || typeof dataObj !== 'object') return [];
+        const result: { name: string; records: any[] }[] = [];
+
+        // Helper to pull arrays out of a key-value map
+        const pullFromMap = (mapObj: any) => {
+          if (!mapObj || typeof mapObj !== 'object') return;
+          for (const [key, val] of Object.entries(mapObj)) {
+            if (isExcludedNhcCollection(key)) {
+              // Strictly exclude nhc_patient_history from restore
+              continue;
+            }
+            if (Array.isArray(val) && val.length > 0) {
+              const cleaned = val.map(sanitizeDocForRestore).filter(d => d !== null);
+              if (cleaned.length > 0) {
+                result.push({ name: key, records: cleaned });
+              }
+            } else if (val && typeof val === 'object' && !Array.isArray(val)) {
+              // If val is an object mapping ID -> doc
+              const docs = Object.values(val)
+                .map(sanitizeDocForRestore)
+                .filter(d => d !== null);
+              if (docs.length > 0) {
+                result.push({ name: key, records: docs });
+              }
+            }
+          }
+        };
+
+        // 1. Direct array of documents
+        if (Array.isArray(dataObj)) {
+          const grouped: { [col: string]: any[] } = {};
+          dataObj.forEach(doc => {
+            if (!doc || typeof doc !== 'object') return;
+            if (doc.MedicineDetail) return; // Strictly skip nhc_patient_history
+
+            let col = 'unknown_records';
+            if (doc.PatientID && (doc.PatientName || doc.MRNo)) col = 'patients';
+            else if (doc.VisitID || doc.SymptomsDiagnosis) col = 'visits';
+            else if (doc.ItemID || doc.ItemName) col = 'items';
+            else if (doc.InvoiceNo && doc.TotalAmount !== undefined) col = 'invoice_headers';
+            else if (doc.InvoiceNo && doc.Quantity) col = 'invoice_details';
+            else if (doc.AppointmentID || doc.AppointmentDate) col = 'appointments';
+            else if (doc.TokenNo) col = 'tokens';
+            else if (doc.LabTestID || doc.TestName) col = 'lab_tests';
+            else if (doc.VoucherNo) col = 'vouchers';
+
+            if (isExcludedNhcCollection(col)) return;
+
+            const cleanDoc = sanitizeDocForRestore(doc);
+            if (!cleanDoc) return;
+
+            if (!grouped[col]) grouped[col] = [];
+            grouped[col].push(cleanDoc);
+          });
+
+          for (const [col, list] of Object.entries(grouped)) {
+            if (list.length > 0) result.push({ name: col, records: list });
+          }
+          return result;
+        }
+
+        // 2. If JSON contains nested "collections" object (Standard system backup format)
+        if (dataObj.collections && typeof dataObj.collections === 'object') {
+          pullFromMap(dataObj.collections);
+        } else if (dataObj.data && typeof dataObj.data === 'object') {
+          if (dataObj.data.collections && typeof dataObj.data.collections === 'object') {
+            pullFromMap(dataObj.data.collections);
+          } else {
+            pullFromMap(dataObj.data);
+          }
+        } else if (dataObj.tables && typeof dataObj.tables === 'object') {
+          pullFromMap(dataObj.tables);
+        } else if (dataObj.db && typeof dataObj.db === 'object') {
+          pullFromMap(dataObj.db);
+        } else {
+          // Top level map
+          pullFromMap(dataObj);
+        }
+
+        return result;
+      };
+
+      const collectionsToRestore = extractCollections(parsedData);
+
+      if (collectionsToRestore.length === 0) {
+        throw new Error('No valid collection arrays or documents were found inside the JSON file. Ensure the file contains collections or database document arrays.');
+      }
+
+      const totalDocCount = collectionsToRestore.reduce((acc, c) => acc + c.records.length, 0);
+      setMasterRestoreStatusText(`Found ${collectionsToRestore.length} collections (${totalDocCount.toLocaleString()} total documents). Streaming to MongoDB...`);
+
+      const bridgeUrl = mongoDbSettings.BridgeUrl || window.location.origin;
+      const finalReport: { [col: string]: number } = {};
+      let processedDocs = 0;
+      const chunkSize = 2000;
+
+      for (let cIdx = 0; cIdx < collectionsToRestore.length; cIdx++) {
+        const colObj = collectionsToRestore[cIdx];
+        const colName = colObj.name;
+        const records = colObj.records;
+        finalReport[colName] = 0;
+
+        for (let i = 0; i < records.length; i += chunkSize) {
+          const chunk = records.slice(i, i + chunkSize);
+          const isFirstChunkForCol = i === 0;
+
+          setMasterRestoreStatusText(
+            `Restoring collection "${colName}" (${Math.min(i + chunk.length, records.length).toLocaleString()} / ${records.length.toLocaleString()} records)...`
+          );
+
+          const resp = await fetch(`${bridgeUrl}/api/restore/collection-chunk`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              collectionName: colName,
+              records: chunk,
+              mode: masterRestoreMode,
+              wipe: isFirstChunkForCol && masterRestoreMode === 'wipe'
+            })
+          });
+
+          if (!resp.ok) {
+            const errData = await resp.json().catch(() => ({}));
+            throw new Error(errData.error || `HTTP error ${resp.status} while restoring ${colName}`);
+          }
+
+          finalReport[colName] += chunk.length;
+          processedDocs += chunk.length;
+
+          const pct = Math.min(95, Math.round(25 + (processedDocs / totalDocCount) * 70));
+          setMasterRestoreProgress(pct);
+        }
+      }
+
+      setMasterRestoreProgress(100);
+      setMasterRestoreStatusText('Database restore complete! MongoDB index synchronization finished.');
+      setMasterRestoreReport(finalReport);
+      setSuccessMsg(`🎉 MongoDB Backup Restore Completed! Successfully restored ${processedDocs.toLocaleString()} total records across ${collectionsToRestore.length} collections.`);
+
+    } catch (err: any) {
+      console.error('Master database restore error:', err);
+      setErrorMsg(`Restore Failed: ${err.message}`);
+    } finally {
+      setIsRestoringMaster(false);
+    }
+  };
 
   // Handle processing of pasted text
   const handleSmartLocatorProcess = () => {
@@ -1000,6 +1230,19 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
             <Sparkles className="w-3.5 h-3.5 mr-1 text-amber-500 animate-pulse" />
             <span>Smart Locator Upload</span>
           </button>
+          <button
+            onClick={() => {
+              setActiveUploadTab('master_backup');
+              setErrorMsg('');
+              setSuccessMsg('');
+            }}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center space-x-1 ${
+              activeUploadTab === 'master_backup' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Database className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+            <span>💾 250MB JSON Restore</span>
+          </button>
         </div>
       </div>
 
@@ -1873,6 +2116,218 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
 
           </div>
 
+        </div>
+      )}
+
+      {/* 💾 250MB Master Backup Restore UI Section */}
+      {activeUploadTab === 'master_backup' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
+          {/* File Picker & Mode Settings Card (5 cols) */}
+          <div className="lg:col-span-5 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-6">
+            <div className="space-y-5">
+              <div className="flex items-center space-x-3 border-b border-slate-100 pb-4">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <Database className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-base font-bold text-slate-800">250 MB MongoDB Backup Restore</h3>
+                  <p className="text-xs text-slate-500">Restore single 250 MB .json file directly into MongoDB</p>
+                </div>
+              </div>
+
+              {/* Restore Mode Options */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                  1. Select Restore Mode
+                </label>
+                <div className="grid grid-cols-2 gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setMasterRestoreMode('wipe')}
+                    className={`p-3 text-left rounded-xl border transition cursor-pointer ${
+                      masterRestoreMode === 'wipe'
+                        ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 ring-1 ring-indigo-500'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-slate-50'
+                    }`}
+                  >
+                    <div className="text-xs font-bold flex items-center justify-between">
+                      <span>Wipe & Restore Fresh</span>
+                      {masterRestoreMode === 'wipe' && <CheckCircle className="w-4 h-4 text-indigo-600" />}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+                      Deletes old records and replaces with fresh backup. (Recommended)
+                    </p>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setMasterRestoreMode('merge')}
+                    className={`p-3 text-left rounded-xl border transition cursor-pointer ${
+                      masterRestoreMode === 'merge'
+                        ? 'border-indigo-600 bg-indigo-50/50 text-indigo-900 ring-1 ring-indigo-500'
+                        : 'border-slate-200 hover:border-slate-300 text-slate-700 bg-slate-50'
+                    }`}
+                  >
+                    <div className="text-xs font-bold flex items-center justify-between">
+                      <span>Merge & Upsert</span>
+                      {masterRestoreMode === 'merge' && <CheckCircle className="w-4 h-4 text-indigo-600" />}
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+                      Updates matching IDs & appends missing documents safely.
+                    </p>
+                  </button>
+                </div>
+              </div>
+
+              {/* Drag & Drop File Selector */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                  2. Choose Backup File (.JSON or .ZIP)
+                </label>
+                <input
+                  type="file"
+                  ref={fileInputMasterRef}
+                  accept=".json,.zip"
+                  className="hidden"
+                  onChange={(e) => {
+                    const f = e.target.files?.[0];
+                    if (f) setMasterFile(f);
+                  }}
+                />
+                <div
+                  onDragOver={(e) => { e.preventDefault(); setDragActiveMaster(true); }}
+                  onDragLeave={() => setDragActiveMaster(false)}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragActiveMaster(false);
+                    const f = e.dataTransfer.files?.[0];
+                    if (f) setMasterFile(f);
+                  }}
+                  onClick={() => fileInputMasterRef.current?.click()}
+                  className={`border-2 border-dashed rounded-2xl p-6 text-center cursor-pointer transition flex flex-col items-center justify-center space-y-3 ${
+                    dragActiveMaster
+                      ? 'border-indigo-500 bg-indigo-50/50'
+                      : masterFile
+                      ? 'border-emerald-300 bg-emerald-50/30'
+                      : 'border-slate-300 hover:border-indigo-400 bg-slate-50 hover:bg-slate-100/50'
+                  }`}
+                >
+                  {masterFile ? (
+                    <>
+                      <div className="p-3 bg-emerald-100 text-emerald-700 rounded-full">
+                        <Check className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-800 break-all">{masterFile.name}</p>
+                        <p className="text-[11px] text-emerald-700 font-bold mt-0.5">
+                          Size: {(masterFile.size / (1024 * 1024)).toFixed(2)} MB
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Click or drag another file to replace</p>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="p-3 bg-indigo-100 text-indigo-600 rounded-full">
+                        <UploadCloud className="w-6 h-6" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-bold text-slate-700">Click to Browse or Drag & Drop Backup File (.json / .zip)</p>
+                        <p className="text-[10px] text-slate-400 mt-1">Supports single .json or compressed .zip database backup (up to 500 MB)</p>
+                      </div>
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Action Button */}
+            <button
+              type="button"
+              disabled={!masterFile || isRestoringMaster}
+              onClick={handleStartMasterRestore}
+              className={`w-full py-3.5 px-4 rounded-xl font-bold text-xs flex items-center justify-center space-x-2 transition shadow-md cursor-pointer ${
+                !masterFile || isRestoringMaster
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed shadow-none'
+                  : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-200 hover:shadow-indigo-300'
+              }`}
+            >
+              {isRestoringMaster ? (
+                <>
+                  <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                  <span>Restoring MongoDB Database...</span>
+                </>
+              ) : (
+                <>
+                  <Database className="w-4 h-4" />
+                  <span>🚀 Start MongoDB Master Restore</span>
+                </>
+              )}
+            </button>
+          </div>
+
+          {/* Progress & Live Restoration Status Card (7 cols) */}
+          <div className="lg:col-span-7 bg-white p-6 rounded-2xl border border-slate-200 shadow-xs flex flex-col justify-between space-y-6">
+            <div>
+              <div className="flex items-center justify-between border-b border-slate-100 pb-4 mb-4">
+                <h3 className="text-base font-bold text-slate-800 flex items-center space-x-2">
+                  <RefreshCw className={`w-5 h-5 text-indigo-600 ${isRestoringMaster ? 'animate-spin' : ''}`} />
+                  <span>Restoration Progress & Summary</span>
+                </h3>
+                {isRestoringMaster && (
+                  <span className="px-2.5 py-1 bg-amber-50 text-amber-700 font-bold text-[10px] rounded-full border border-amber-200 animate-pulse">
+                    Live Uploading...
+                  </span>
+                )}
+              </div>
+
+              {/* Progress Bar */}
+              <div className="space-y-2 mb-6">
+                <div className="flex justify-between items-center text-xs">
+                  <span className="font-bold text-slate-700">Total Progress</span>
+                  <span className="font-mono font-extrabold text-indigo-600">{masterRestoreProgress}%</span>
+                </div>
+                <div className="w-full bg-slate-100 h-3 rounded-full overflow-hidden p-0.5 border border-slate-200">
+                  <div
+                    className="bg-gradient-to-r from-indigo-500 via-indigo-600 to-emerald-500 h-full rounded-full transition-all duration-300"
+                    style={{ width: `${masterRestoreProgress}%` }}
+                  ></div>
+                </div>
+                <p className="text-xs font-semibold text-slate-600 animate-fadeIn min-h-[20px]">
+                  {masterRestoreStatusText || 'Ready. Select a backup file and click Start Master Restore.'}
+                </p>
+              </div>
+
+              {/* Report Summary */}
+              {masterRestoreReport && (
+                <div className="space-y-3 animate-fadeIn">
+                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wider flex items-center space-x-1.5">
+                    <CheckCircle className="w-4 h-4 text-emerald-500" />
+                    <span>Restored MongoDB Collections Summary:</span>
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 max-h-[320px] overflow-y-auto p-1">
+                    {Object.entries(masterRestoreReport).map(([col, count]) => (
+                      <div key={col} className="p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs flex justify-between items-center">
+                        <span className="font-bold text-slate-700 capitalize truncate pr-2">{col.replace(/_/g, ' ')}</span>
+                        <span className="font-mono font-extrabold text-indigo-600 bg-white px-2 py-0.5 rounded border border-slate-200 shrink-0">
+                          {count.toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {!masterRestoreReport && !isRestoringMaster && (
+                <div className="p-8 text-center text-slate-400 bg-slate-50 rounded-2xl border border-dashed border-slate-200 flex flex-col items-center justify-center space-y-2">
+                  <Database className="w-10 h-10 text-slate-300" />
+                  <p className="text-xs font-bold text-slate-600">No Restore Operation Active</p>
+                  <p className="text-[11px] max-w-md text-slate-400">
+                    Upload your 250 MB .json file on the left panel. The system will stream chunks to MongoDB automatically without overloading browser memory.
+                  </p>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

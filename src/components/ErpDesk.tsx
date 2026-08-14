@@ -2135,7 +2135,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           );
 
           if (matchedGrnItem) {
-            const qtyRec = Number(matchedGrnItem.ReceivedQty) || Number(matchedGrnItem.Qty) || 0;
+            const qtyRec = Number(matchedGrnItem.ReceivedQty) || Number((matchedGrnItem as any).Qty) || 0;
             const currentStock = Number(inv.CStock) || Number(inv.Stock) || 0;
             const newStock = Math.max(0, currentStock - qtyRec);
             return { ...inv, CStock: newStock, Stock: newStock };
