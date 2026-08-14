@@ -2839,7 +2839,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               <div class="branding">
                 <h1 class="title">${cName}</h1>
                 <div class="tagline">${cTag}</div>
-                <div class="doc-info">${cDoc ? `${cDoc} ${cDocSub ? `(${cDocSub})` : ''}` : ''}</div>
                 <div class="addr">📍 ${cAddr} &nbsp;|&nbsp; 📞 ${cPhone}</div>
               </div>
               <div class="badge-box">
@@ -7996,11 +7995,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                         <p className="text-[10px] font-extrabold text-rose-800 tracking-widest uppercase mt-0.5">
                           {cTag}
                         </p>
-                        {cDoc ? (
-                          <p className="text-[11px] font-extrabold text-slate-800 mt-0.5">
-                            {cDoc} {cDocSub ? <span className="font-normal text-slate-600">({cDocSub})</span> : null}
-                          </p>
-                        ) : null}
                         <p className="text-[10px] text-slate-600 font-semibold mt-0.5">
                           📍 {cAddr} &nbsp;|&nbsp; 📞 {cPhone}
                         </p>
