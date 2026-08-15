@@ -482,10 +482,11 @@ export interface ErpGrnItem {
   OrderedQty: number;
   AlreadyReceivedQty?: number;
   PendingQty?: number;
-  ReceivedQty: number;
-  UnitPrice: number;
+  ReceivedQty: number | string;
+  UnitPrice: number | string;
   LineTotal: number;
   BatchNo?: string;
+  MfgDate?: string;
   ExpiryDate?: string;
 }
 

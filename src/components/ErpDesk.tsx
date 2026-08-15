@@ -890,6 +890,30 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [bulkPoFileError, setBulkPoFileError] = useState('');
   const bulkPoFileInputRef = React.useRef<HTMLInputElement>(null);
 
+  // Bulk GRN Upload Modal State
+  const [showUploadBulkGrnModal, setShowUploadBulkGrnModal] = useState(false);
+  const [bulkGrnSelectedPoId, setBulkGrnSelectedPoId] = useState<string>('');
+  const [bulkGrnRawText, setBulkGrnRawText] = useState('');
+  const [bulkGrnParsedItems, setBulkGrnParsedItems] = useState<{
+    ItemID: string;
+    ItemName: string;
+    Category: string;
+    OrderedQty: number;
+    AlreadyReceivedQty: number;
+    PendingQty: number;
+    ReceivedQty: number;
+    UnitPrice: number;
+    MfgDate: string;
+    ExpiryDate: string;
+    BatchNo: string;
+    isMatchedPo: boolean;
+    isMatchedInventory: boolean;
+    stockInHand?: number;
+  }[]>([]);
+  const [bulkGrnDragActive, setBulkGrnDragActive] = useState(false);
+  const [bulkGrnFileError, setBulkGrnFileError] = useState('');
+  const bulkGrnFileInputRef = React.useRef<HTMLInputElement>(null);
+
   // Pay Vendor Popup Modal State
   const [payVendorModalData, setPayVendorModalData] = useState<{
     vendor: ErpVendor;
@@ -1029,7 +1053,19 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     ChallanNo: string;
     SupplierInvoiceNo: string;
     Remarks: string;
-    Items: { ItemID: string; ItemName: string; OrderedQty: number; ReceivedQty: number; UnitPrice: number; LineTotal: number; BatchNo?: string; ExpiryDate?: string }[];
+    Items: {
+      ItemID: string;
+      ItemName: string;
+      OrderedQty: number;
+      AlreadyReceivedQty?: number;
+      PendingQty?: number;
+      ReceivedQty: number | string;
+      UnitPrice: number | string;
+      LineTotal: number;
+      BatchNo?: string;
+      MfgDate?: string;
+      ExpiryDate?: string;
+    }[];
   }>({
     POID: '',
     GRNID: '',
@@ -1769,6 +1805,261 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     setTimeout(() => setSyncMessage(null), 4000);
   };
 
+  // HANDLERS FOR BULK GRN STOCK INWARD UPLOAD
+  const parseAndMatchBulkGrnData = (
+    parsedRows: Array<{ name: string; mfgDate?: string; expiryDate?: string; qty?: number; price?: number; batchNo?: string }>,
+    targetPoId?: string
+  ) => {
+    const poIdToUse = targetPoId || bulkGrnSelectedPoId || grnForm.POID;
+    const selectedPo = purchaseOrders.find(p => p.POID === poIdToUse);
+    const poPendingItems = selectedPo ? getPoItemsReceiptInfo(selectedPo) : [];
+
+    const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const result: typeof bulkGrnParsedItems = [];
+
+    parsedRows.forEach((row) => {
+      const cleanName = (row.name || '').trim();
+      if (!cleanName) return;
+
+      const normRowName = norm(cleanName);
+
+      // Match against selected PO items first
+      const matchedPoItem = poPendingItems.find(pi =>
+        (pi.ItemName && norm(pi.ItemName) === normRowName) ||
+        (pi.ItemID && norm(pi.ItemID) === normRowName)
+      );
+
+      // Match against master inventory items
+      const matchedInv = (inventoryItems || []).find((inv: any) => {
+        const invName = String(inv.ItemName || inv.Name || '').toLowerCase().trim();
+        return invName === cleanName.toLowerCase() || norm(invName) === normRowName;
+      });
+
+      const orderedQty = matchedPoItem ? matchedPoItem.OrderedQty : (selectedPo?.Items?.find(i => norm(i.ItemName) === normRowName)?.Qty || 0);
+      const alreadyRecv = matchedPoItem ? (matchedPoItem.AlreadyReceivedQty || 0) : 0;
+      const pendingQty = matchedPoItem ? (matchedPoItem.PendingQty ?? Math.max(0, orderedQty - alreadyRecv)) : 0;
+
+      const parsedQty = row.qty !== undefined && row.qty !== null && !isNaN(Number(row.qty))
+        ? Math.max(0, Number(row.qty))
+        : (pendingQty > 0 ? pendingQty : 0);
+
+      const parsedPrice = row.price !== undefined && row.price !== null && !isNaN(Number(row.price))
+        ? Math.max(0, Number(row.price))
+        : (matchedInv?.PurchasePrice ?? matchedInv?.Price ?? 0);
+
+      const todayStr = new Date().toISOString().split('T')[0];
+      const twoYearsStr = new Date(Date.now() + 365 * 2 * 86400000).toISOString().split('T')[0];
+
+      result.push({
+        ItemID: matchedPoItem?.ItemID || matchedInv?.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
+        ItemName: matchedPoItem?.ItemName || matchedInv?.ItemName || cleanName,
+        Category: matchedInv?.Category || 'Tablet / Capsule',
+        OrderedQty: Number(orderedQty) || 0,
+        AlreadyReceivedQty: Number(alreadyRecv) || 0,
+        PendingQty: Number(pendingQty) || 0,
+        ReceivedQty: parsedQty,
+        UnitPrice: parsedPrice,
+        MfgDate: row.mfgDate || todayStr,
+        ExpiryDate: row.expiryDate || twoYearsStr,
+        BatchNo: row.batchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+        isMatchedPo: Boolean(matchedPoItem),
+        isMatchedInventory: Boolean(matchedInv),
+        stockInHand: matchedInv?.CStock ?? matchedInv?.Stock ?? 0
+      });
+    });
+
+    setBulkGrnParsedItems(result);
+  };
+
+  const handleBulkGrnExcelRead = (file: File) => {
+    if (!file) return;
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    if (fileExt !== 'xlsx' && fileExt !== 'xls' && fileExt !== 'csv') {
+      setBulkGrnFileError('Invalid file format. Please upload an Excel (.xlsx, .xls) or CSV (.csv) file.');
+      return;
+    }
+    setBulkGrnFileError('');
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        import('xlsx').then((XLSX) => {
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+          if (!rawData || rawData.length === 0) {
+            setBulkGrnFileError('The uploaded sheet is empty.');
+            return;
+          }
+
+          let nameIdx = 0;
+          let mfgIdx = -1;
+          let expIdx = -1;
+          let qtyIdx = 1;
+          let priceIdx = 2;
+          let batchIdx = -1;
+          let startRow = 0;
+
+          const firstRow = rawData[0].map(c => String(c || '').toLowerCase().trim());
+          const hasHeader = firstRow.some(c =>
+            c.includes('item') || c.includes('name') || c.includes('qty') ||
+            c.includes('mfg') || c.includes('exp') || c.includes('price') || c.includes('rate')
+          );
+
+          if (hasHeader) {
+            startRow = 1;
+            const foundName = firstRow.findIndex(c => c.includes('item') || c.includes('name') || c.includes('medicine') || c.includes('desc'));
+            const foundMfg = firstRow.findIndex(c => c.includes('mfg') || c.includes('mfd') || c.includes('manufactur') || c.includes('prod date'));
+            const foundExp = firstRow.findIndex(c => c.includes('exp') || c.includes('expiry') || c.includes('expiration') || c.includes('best before'));
+            const foundQty = firstRow.findIndex(c => c.includes('recv') || c.includes('received') || c.includes('qty') || c.includes('quantity') || c.includes('inward'));
+            const foundPrice = firstRow.findIndex(c => c.includes('price') || c.includes('rate') || c.includes('cost') || c.includes('unit') || c.includes('invoice'));
+            const foundBatch = firstRow.findIndex(c => c.includes('batch') || c.includes('lot'));
+
+            if (foundName >= 0) nameIdx = foundName;
+            if (foundMfg >= 0) mfgIdx = foundMfg;
+            if (foundExp >= 0) expIdx = foundExp;
+            if (foundQty >= 0) qtyIdx = foundQty;
+            if (foundPrice >= 0) priceIdx = foundPrice;
+            if (foundBatch >= 0) batchIdx = foundBatch;
+          }
+
+          const parsedRows: Array<{ name: string; mfgDate?: string; expiryDate?: string; qty?: number; price?: number; batchNo?: string }> = [];
+          for (let i = startRow; i < rawData.length; i++) {
+            const row = rawData[i];
+            if (!row || row.length === 0) continue;
+            const nameStr = String(row[nameIdx] || '').trim();
+            if (!nameStr) continue;
+
+            const mfgStr = mfgIdx >= 0 && row[mfgIdx] ? String(row[mfgIdx]).trim() : undefined;
+            const expStr = expIdx >= 0 && row[expIdx] ? String(row[expIdx]).trim() : undefined;
+            const qtyVal = parseFloat(String(row[qtyIdx] || '0')) || 0;
+            const priceRaw = priceIdx >= 0 && row[priceIdx] !== undefined && row[priceIdx] !== null ? parseFloat(String(row[priceIdx])) : NaN;
+            const priceVal = !isNaN(priceRaw) ? priceRaw : undefined;
+            const batchStr = batchIdx >= 0 && row[batchIdx] ? String(row[batchIdx]).trim() : undefined;
+
+            parsedRows.push({
+              name: nameStr,
+              mfgDate: mfgStr,
+              expiryDate: expStr,
+              qty: qtyVal,
+              price: priceVal,
+              batchNo: batchStr
+            });
+          }
+
+          parseAndMatchBulkGrnData(parsedRows);
+        });
+      } catch (err: any) {
+        setBulkGrnFileError('Failed to read Excel file: ' + err.message);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleParseBulkGrnText = (text: string) => {
+    setBulkGrnRawText(text);
+    if (!text.trim()) {
+      setBulkGrnParsedItems([]);
+      return;
+    }
+
+    const lines = text.split(/\r?\n/);
+    const parsedRows: Array<{ name: string; mfgDate?: string; expiryDate?: string; qty?: number; price?: number; batchNo?: string }> = [];
+
+    lines.forEach((line, idx) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+
+      let parts = trimmed.split('\t');
+      if (parts.length < 2) parts = trimmed.split(',');
+      if (parts.length < 2) parts = trimmed.split(';');
+
+      if (parts.length >= 1) {
+        const col0 = parts[0].trim();
+        if (idx === 0 && (col0.toLowerCase().includes('item') || col0.toLowerCase().includes('name') || col0.toLowerCase().includes('medicine'))) {
+          return;
+        }
+
+        // Support formats:
+        // 5 columns: Item Name, Mfg Date, Expiry Date, Received QTY, Unit Price
+        // 4 columns: Item Name, Expiry Date, Received QTY, Unit Price
+        // 3 columns: Item Name, Received Qty, Unit Price
+        // 2 columns: Item Name, Received Qty
+        let mfgDate: string | undefined;
+        let expiryDate: string | undefined;
+        let qtyVal = 0;
+        let priceVal: number | undefined;
+
+        if (parts.length >= 5) {
+          mfgDate = parts[1].trim() || undefined;
+          expiryDate = parts[2].trim() || undefined;
+          qtyVal = parseFloat(parts[3].trim()) || 0;
+          const p = parseFloat(parts[4].trim());
+          priceVal = !isNaN(p) ? p : undefined;
+        } else if (parts.length === 4) {
+          expiryDate = parts[1].trim() || undefined;
+          qtyVal = parseFloat(parts[2].trim()) || 0;
+          const p = parseFloat(parts[3].trim());
+          priceVal = !isNaN(p) ? p : undefined;
+        } else if (parts.length === 3) {
+          qtyVal = parseFloat(parts[1].trim()) || 0;
+          const p = parseFloat(parts[2].trim());
+          priceVal = !isNaN(p) ? p : undefined;
+        } else if (parts.length === 2) {
+          qtyVal = parseFloat(parts[1].trim()) || 0;
+        }
+
+        parsedRows.push({
+          name: col0,
+          mfgDate,
+          expiryDate,
+          qty: qtyVal,
+          price: priceVal
+        });
+      }
+    });
+
+    parseAndMatchBulkGrnData(parsedRows);
+  };
+
+  const handleApplyBulkGrnToForm = () => {
+    if (bulkGrnParsedItems.length === 0) return;
+
+    const poIdToUse = bulkGrnSelectedPoId || grnForm.POID;
+    const selectedPo = purchaseOrders.find(p => p.POID === poIdToUse);
+
+    const grnItems = bulkGrnParsedItems.map(item => ({
+      ItemID: item.ItemID,
+      ItemName: item.ItemName,
+      OrderedQty: item.OrderedQty,
+      AlreadyReceivedQty: item.AlreadyReceivedQty,
+      PendingQty: item.PendingQty,
+      ReceivedQty: item.ReceivedQty > 0 ? item.ReceivedQty : ('' as any),
+      UnitPrice: item.UnitPrice > 0 ? item.UnitPrice : ('' as any),
+      LineTotal: (item.ReceivedQty || 0) * (item.UnitPrice || 0),
+      BatchNo: item.BatchNo,
+      MfgDate: item.MfgDate,
+      ExpiryDate: item.ExpiryDate
+    }));
+
+    setGrnForm(prev => ({
+      ...prev,
+      POID: poIdToUse || prev.POID,
+      VendorID: selectedPo?.VendorID || prev.VendorID,
+      VendorName: selectedPo?.VendorName || prev.VendorName,
+      Items: grnItems
+    }));
+
+    setShowUploadBulkGrnModal(false);
+    setShowGrnModal(true);
+    setSyncMessage(`${grnItems.length} Bulk items loaded into GRN stock inward form!`);
+    setTimeout(() => setSyncMessage(null), 4000);
+  };
+
   const handleAddPoItem = () => {
     setPoForm(prev => ({
       ...prev,
@@ -1976,10 +2267,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         OrderedQty: ordered,
         AlreadyReceivedQty: alreadyReceived,
         PendingQty: pending,
-        ReceivedQty: pending, // Default proposal is remaining pending items
-        UnitPrice: i.UnitPrice,
-        LineTotal: pending * i.UnitPrice,
-        BatchNo: i.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
+        ReceivedQty: '' as any, // Empty textbox for physical verification
+        UnitPrice: '' as any, // Empty textbox for supplier invoice rate
+        LineTotal: 0,
+        BatchNo: i.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+        MfgDate: new Date().toISOString().split('T')[0],
+        ExpiryDate: new Date(Date.now() + 365 * 2 * 86400000).toISOString().split('T')[0]
       };
     });
     return items.filter(i => i.PendingQty > 0);
@@ -5605,14 +5898,31 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 </div>
                 <p className="text-xs text-slate-500">Official verified receipts of PO shipments received and added to pharmacy stock</p>
               </div>
-              <button
-                type="button"
-                onClick={() => handleOpenGrnForPo()}
-                className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-xs transition flex items-center space-x-1.5 self-start cursor-pointer"
-              >
-                <Plus className="w-4 h-4" />
-                <span>Create New GRN</span>
-              </button>
+              <div className="flex items-center space-x-2 self-start">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBulkGrnSelectedPoId('');
+                    setBulkGrnRawText('');
+                    setBulkGrnParsedItems([]);
+                    setBulkGrnFileError('');
+                    setShowUploadBulkGrnModal(true);
+                  }}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition flex items-center space-x-1.5 shadow-sm cursor-pointer"
+                  title="Upload Excel or Paste Bulk GRN Receipts"
+                >
+                  <FileSpreadsheet className="w-4 h-4" />
+                  <span>Upload Bulk GRN</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenGrnForPo()}
+                  className="px-3.5 py-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 font-bold text-xs transition flex items-center space-x-1.5 cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>Create New GRN</span>
+                </button>
+              </div>
             </div>
 
             {/* GRN GRID SEARCH & VENDOR DROPDOWN FILTER BAR */}
@@ -6978,10 +7288,332 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         </div>
       )}
 
+      {/* MODAL: UPLOAD BULK GRN RECEIVED STOCK (EXCEL / PASTE) */}
+      {showUploadBulkGrnModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-5xl w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[92vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black">
+                  <FileSpreadsheet className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-base flex items-center space-x-2">
+                    <span>Upload Bulk GRN Received Stock (Excel / Paste)</span>
+                    <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase">
+                      Stock Inward
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Upload supplier invoice / delivery challan (.xlsx, .csv) or paste rows. Order QTY is automatically matched from the selected Purchase Order.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowUploadBulkGrnModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Error Banner */}
+            {bulkGrnFileError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex items-center space-x-2 text-rose-800 text-xs font-bold shrink-0">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span>{bulkGrnFileError}</span>
+              </div>
+            )}
+
+            {/* Modal Body: 2 Columns */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-4 overflow-y-auto flex-1 pr-1">
+              {/* Left Column: PO Selection & Upload/Paste Inputs (5 cols) */}
+              <div className="lg:col-span-5 space-y-3.5 flex flex-col justify-between">
+                <div className="space-y-3">
+                  {/* PO Selector */}
+                  <div>
+                    <label className="text-xs font-bold text-slate-700 block mb-1">
+                      Link with Purchase Order (Auto-Picks Order QTY)
+                    </label>
+                    <select
+                      value={bulkGrnSelectedPoId || grnForm.POID}
+                      onChange={e => {
+                        const newPoId = e.target.value;
+                        setBulkGrnSelectedPoId(newPoId);
+                        if (bulkGrnRawText) {
+                          handleParseBulkGrnText(bulkGrnRawText);
+                        }
+                      }}
+                      className="w-full p-2 border border-emerald-300 rounded-xl text-xs font-mono font-bold bg-white text-emerald-900 focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                    >
+                      <option value="">-- Choose Purchase Order --</option>
+                      {purchaseOrders.map((p, idx) => (
+                        <option key={idx} value={p.POID}>
+                          {p.POID} ({p.VendorName}) - {p.Status === 'Received' ? '✓ Fully Received' : p.Status === 'Partially Received' ? '⚡ Partial' : 'Pending Order'}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Excel Upload Dropzone */}
+                  <div
+                    onDragOver={(e) => {
+                      e.preventDefault();
+                      setBulkGrnDragActive(true);
+                    }}
+                    onDragLeave={() => setBulkGrnDragActive(false)}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      setBulkGrnDragActive(false);
+                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                        handleBulkGrnExcelRead(e.dataTransfer.files[0]);
+                      }
+                    }}
+                    onClick={() => bulkGrnFileInputRef.current?.click()}
+                    className={`border-2 border-dashed rounded-2xl p-4 text-center cursor-pointer transition-all flex flex-col items-center justify-center space-y-2 ${
+                      bulkGrnDragActive
+                        ? 'border-emerald-500 bg-emerald-50/50 scale-[0.99]'
+                        : 'border-slate-300 hover:border-emerald-500 hover:bg-slate-50/80 bg-white'
+                    }`}
+                  >
+                    <input
+                      ref={bulkGrnFileInputRef}
+                      type="file"
+                      accept=".xlsx,.xls,.csv"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleBulkGrnExcelRead(e.target.files[0]);
+                        }
+                      }}
+                    />
+                    <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center">
+                      <FileSpreadsheet className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <span className="text-xs font-black text-slate-800 block">Drop Delivery Challan / Excel File Here</span>
+                      <span className="text-[10px] text-slate-500 block mt-0.5">Supports .xlsx, .xls, .csv</span>
+                    </div>
+                  </div>
+
+                  <div className="relative flex py-0.5 items-center">
+                    <div className="flex-grow border-t border-slate-200"></div>
+                    <span className="shrink mx-3 text-[10px] font-extrabold text-slate-400 uppercase tracking-wider">OR PASTE DATA BELOW</span>
+                    <div className="flex-grow border-t border-slate-200"></div>
+                  </div>
+
+                  {/* Direct Paste Area */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-700 flex items-center space-x-1">
+                        <FileText className="w-3.5 h-3.5 text-emerald-600" />
+                        <span>Paste 5-Column Text Data</span>
+                      </label>
+                      <span className="text-[10px] text-slate-400 font-mono font-medium">Name, Mfg, Exp, Recv, Price</span>
+                    </div>
+                    <textarea
+                      rows={6}
+                      value={bulkGrnRawText}
+                      onChange={(e) => handleParseBulkGrnText(e.target.value)}
+                      placeholder={`Paste tab/comma separated rows from Excel:\nItem Name\tMfg Date\tExpiry Date\tReceived QTY\tUnit Price\nPanadol Extra 500mg\t2026-01-10\t2028-01-10\t100\t12.50\nAmoxicillin 250mg\t2026-02-01\t2027-12-31\t50\t45.00\nBrufen 400mg\t2026-01-15\t2028-06-30\t200\t8.75`}
+                      className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Parsed Items Preview & Summary (7 cols) */}
+              <div className="lg:col-span-7 bg-slate-50/70 border border-slate-200 rounded-2xl p-4 flex flex-col justify-between space-y-3">
+                <div className="space-y-3">
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                    <div>
+                      <h4 className="text-xs font-extrabold text-slate-900 uppercase tracking-wider">
+                        Parsed GRN Items Preview ({bulkGrnParsedItems.length})
+                      </h4>
+                      <p className="text-[11px] text-slate-500">
+                        {bulkGrnParsedItems.filter(i => i.isMatchedPo).length} Matched in PO • {bulkGrnParsedItems.filter(i => !i.isMatchedPo).length} Extra / Unmatched
+                      </p>
+                    </div>
+
+                    {bulkGrnParsedItems.length > 0 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setBulkGrnParsedItems([]);
+                          setBulkGrnRawText('');
+                        }}
+                        className="text-[11px] font-bold text-rose-600 hover:text-rose-800 hover:underline cursor-pointer"
+                      >
+                        Clear Items
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Summary Bar */}
+                  {bulkGrnParsedItems.length > 0 && (
+                    <div className="grid grid-cols-3 gap-2 bg-white p-2.5 rounded-xl border border-slate-200 text-center shadow-2xs">
+                      <div>
+                        <span className="text-[10px] text-slate-500 block">Total Items</span>
+                        <span className="text-xs font-black text-slate-900">{bulkGrnParsedItems.length}</span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 block">Total Received Qty</span>
+                        <span className="text-xs font-black text-amber-700">
+                          {bulkGrnParsedItems.reduce((acc, curr) => acc + (Number(curr.ReceivedQty) || 0), 0)}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[10px] text-slate-500 block">Total Inward Value</span>
+                        <span className="text-xs font-black text-emerald-700">
+                          Rs. {bulkGrnParsedItems.reduce((acc, curr) => acc + ((Number(curr.ReceivedQty) || 0) * (Number(curr.UnitPrice) || 0)), 0).toLocaleString()}
+                        </span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Items Scrollable Table */}
+                  <div className="max-h-64 overflow-y-auto overflow-x-auto border border-slate-200 rounded-xl bg-white shadow-2xs">
+                    {bulkGrnParsedItems.length === 0 ? (
+                      <div className="p-8 text-center text-slate-400 space-y-1">
+                        <FileSpreadsheet className="w-8 h-8 mx-auto text-slate-300" />
+                        <p className="text-xs font-bold text-slate-600">No items loaded yet</p>
+                        <p className="text-[11px]">Upload an Excel file or paste rows with Name, Mfg Date, Expiry Date, Received Qty, and Unit Price.</p>
+                      </div>
+                    ) : (
+                      <table className="w-full text-left text-xs min-w-[650px]">
+                        <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase font-extrabold sticky top-0 border-b border-slate-200">
+                          <tr>
+                            <th className="p-2 w-7 text-center">#</th>
+                            <th className="p-2 min-w-[120px]">Item Name</th>
+                            <th className="p-2 w-16 text-center">PO Qty</th>
+                            <th className="p-2 w-24 text-center">Mfg Date</th>
+                            <th className="p-2 w-24 text-center">Expiry Date</th>
+                            <th className="p-2 w-16 text-center">Recv Qty</th>
+                            <th className="p-2 w-20 text-right">Price (Rs.)</th>
+                            <th className="p-2 w-20 text-right">Subtotal</th>
+                            <th className="p-2 w-7 text-center"></th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {bulkGrnParsedItems.map((item, idx) => (
+                            <tr key={idx} className="hover:bg-slate-50/80">
+                              <td className="p-2 text-center text-[10px] text-slate-400 font-bold">{idx + 1}</td>
+                              <td className="p-2">
+                                <span className="font-bold text-slate-800 block text-xs">{item.ItemName}</span>
+                                <div className="flex items-center space-x-1 mt-0.5">
+                                  {item.isMatchedPo ? (
+                                    <span className="px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded font-bold text-[9px]">
+                                      In PO
+                                    </span>
+                                  ) : (
+                                    <span className="px-1 py-0.2 bg-amber-100 text-amber-800 rounded font-bold text-[9px]">
+                                      Extra Item
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-2 text-center font-bold text-indigo-700 bg-indigo-50/40">
+                                {item.OrderedQty || 0}
+                              </td>
+                              <td className="p-2 text-center">
+                                <input
+                                  type="date"
+                                  value={item.MfgDate || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, MfgDate: val } : it));
+                                  }}
+                                  className="w-24 p-1 border border-slate-200 rounded text-[11px] font-mono bg-white"
+                                />
+                              </td>
+                              <td className="p-2 text-center">
+                                <input
+                                  type="date"
+                                  value={item.ExpiryDate || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, ExpiryDate: val } : it));
+                                  }}
+                                  className="w-24 p-1 border border-slate-200 rounded text-[11px] font-mono bg-white"
+                                />
+                              </td>
+                              <td className="p-2 text-center">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.ReceivedQty}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, ReceivedQty: val } : it));
+                                  }}
+                                  className="w-14 p-1 border border-emerald-300 rounded text-center text-xs font-bold bg-emerald-50/60 text-emerald-950"
+                                />
+                              </td>
+                              <td className="p-2 text-right">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  step="any"
+                                  value={item.UnitPrice}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, UnitPrice: val } : it));
+                                  }}
+                                  className="w-16 p-1 border border-slate-200 rounded text-right text-xs font-bold bg-white"
+                                />
+                              </td>
+                              <td className="p-2 text-right font-extrabold text-slate-900 text-xs">
+                                Rs. {((Number(item.ReceivedQty) || 0) * (Number(item.UnitPrice) || 0)).toLocaleString()}
+                              </td>
+                              <td className="p-2 text-center">
+                                <button
+                                  type="button"
+                                  onClick={() => setBulkGrnParsedItems(prev => prev.filter((_, i) => i !== idx))}
+                                  className="text-slate-400 hover:text-rose-600 font-bold p-0.5 rounded cursor-pointer"
+                                  title="Remove Item"
+                                >
+                                  ✕
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    )}
+                  </div>
+                </div>
+
+                {/* Modal Actions */}
+                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowUploadBulkGrnModal(false)}
+                    className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    disabled={bulkGrnParsedItems.length === 0}
+                    onClick={handleApplyBulkGrnToForm}
+                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs shadow-md transition flex items-center space-x-1.5 cursor-pointer"
+                  >
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>Apply to GRN ({bulkGrnParsedItems.length} Items)</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* MODAL: CREATE / PROCESS GOODS RECEIVED NOTE (GRN) */}
       {showGrnModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-xl border space-y-5 max-h-[92vh] overflow-y-auto">
+        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-6xl w-full p-6 shadow-2xl border border-slate-100 space-y-5 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
                 <h3 className="font-bold text-slate-900 text-lg flex items-center space-x-2">
@@ -6990,13 +7622,30 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 </h3>
                 <p className="text-xs text-slate-500">Enter or select Purchase Order (PO Number) to fetch items, verify received quantities, and add stock to inventory</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowGrnModal(false)}
-                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
-              >
-                ✕
-              </button>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setBulkGrnSelectedPoId(grnForm.POID);
+                    setBulkGrnRawText('');
+                    setBulkGrnParsedItems([]);
+                    setBulkGrnFileError('');
+                    setShowUploadBulkGrnModal(true);
+                  }}
+                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs flex items-center space-x-1 cursor-pointer"
+                  title="Upload Excel or Paste Bulk GRN Receipts"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5" />
+                  <span>Upload Bulk GRN</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowGrnModal(false)}
+                  className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
+                >
+                  ✕
+                </button>
+              </div>
             </div>
 
             <form onSubmit={handleApproveGrn} className="space-y-4">
@@ -7103,20 +7752,20 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   </div>
                 </div>
 
-                <div className="border border-slate-200 rounded-xl overflow-hidden grn-summary-card">
-                  <table className="w-full text-left text-xs grn-summary-table">
+                <div className="border border-slate-200 rounded-xl overflow-x-auto w-full grn-summary-card">
+                  <table className="w-full text-left text-xs min-w-[920px] grn-summary-table">
                     <thead>
-                      <tr className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
-                        <th className="p-2.5">Item ID</th>
-                        <th className="p-2.5">Medicine Description</th>
+                      <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                        <th className="p-2.5 w-24">Item ID</th>
+                        <th className="p-2.5 min-w-[150px]">Medicine Description</th>
                         <th className="p-2.5 text-center w-24">Batch No.</th>
-                        <th className="p-2.5 text-center w-20">Ordered</th>
-                        <th className="p-2.5 text-center w-20">Prev. Recv</th>
-                        <th className="p-2.5 text-center w-20">Pending</th>
+                        <th className="p-2.5 text-center w-16">Ordered</th>
+                        <th className="p-2.5 text-center w-16">Prev. Recv</th>
+                        <th className="p-2.5 text-center w-16">Pending</th>
                         <th className="p-2.5 text-center w-24">Now Receiving</th>
-                        <th className="p-2.5 text-right w-20 grn-unit-price">Unit Price</th>
+                        <th className="p-2.5 text-right w-28 grn-unit-price">Unit Price</th>
                         <th className="p-2.5 text-right w-24 grn-subtotal">Subtotal</th>
-                        <th className="p-2.5 text-center w-20 exclude-col">Exclude</th>
+                        <th className="p-2.5 text-center w-28 shrink-0 exclude-col">Exclude</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -7141,7 +7790,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                         grnForm.Items.map((item, idx) => {
                           const prevReceived = item.AlreadyReceivedQty || 0;
                           const pending = item.PendingQty ?? Math.max(0, item.OrderedQty - prevReceived);
-                          const subtotal = (Number(item.ReceivedQty) || 0) * (Number(item.UnitPrice) || 0);
+                          const currentRecvQty = item.ReceivedQty === '' || item.ReceivedQty === undefined || item.ReceivedQty === null ? '' : item.ReceivedQty;
+                          const currentUnitPrice = item.UnitPrice === '' || item.UnitPrice === undefined || item.UnitPrice === null ? '' : item.UnitPrice;
+                          const numRecv = Number(currentRecvQty) || 0;
+                          const numPrice = Number(currentUnitPrice) || 0;
+                          const subtotal = numRecv * numPrice;
 
                           return (
                             <tr key={idx} className="hover:bg-slate-50">
@@ -7171,48 +7824,62 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   type="number"
                                   min="0"
                                   max={pending > 0 ? pending * 2 : 9999}
-                                  value={item.ReceivedQty}
+                                  placeholder="0"
+                                  value={currentRecvQty}
                                   onChange={e => {
-                                    const val = Number(e.target.value);
+                                    const raw = e.target.value;
+                                    const val = raw === '' ? '' : Number(raw);
                                     setGrnForm(prev => {
                                       const updated = [...prev.Items];
-                                      updated[idx] = { ...updated[idx], ReceivedQty: val, LineTotal: val * updated[idx].UnitPrice };
+                                      const uPrice = Number(updated[idx].UnitPrice) || 0;
+                                      updated[idx] = {
+                                        ...updated[idx],
+                                        ReceivedQty: val as any,
+                                        LineTotal: (Number(val) || 0) * uPrice
+                                      };
                                       return { ...prev, Items: updated };
                                     });
                                   }}
-                                  className="w-20 p-1 border border-emerald-300 rounded-lg text-xs text-center font-black bg-emerald-50 text-emerald-900 focus:outline-hidden"
+                                  className="w-20 p-1.5 border border-emerald-400 rounded-lg text-xs text-center font-bold bg-white text-emerald-950 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
                                 />
                               </td>
                               <td className="p-2.5 text-right font-semibold text-slate-700 grn-unit-price">
                                 <div className="flex items-center justify-end space-x-1">
-                                  <span className="text-slate-400 font-bold">Rs.</span>
+                                  <span className="text-slate-400 font-bold text-xs">Rs.</span>
                                   <input
                                     type="number"
                                     min="0"
-                                    step="0.01"
-                                    value={item.UnitPrice}
+                                    step="any"
+                                    placeholder="0.00"
+                                    value={currentUnitPrice}
                                     onChange={e => {
-                                      const val = Number(e.target.value);
+                                      const raw = e.target.value;
+                                      const val = raw === '' ? '' : Number(raw);
                                       setGrnForm(prev => {
                                         const updated = [...prev.Items];
-                                        updated[idx] = { ...updated[idx], UnitPrice: val, LineTotal: (updated[idx].ReceivedQty || 0) * val };
+                                        const rQty = Number(updated[idx].ReceivedQty) || 0;
+                                        updated[idx] = {
+                                          ...updated[idx],
+                                          UnitPrice: val as any,
+                                          LineTotal: rQty * (Number(val) || 0)
+                                        };
                                         return { ...prev, Items: updated };
                                       });
                                     }}
-                                    className="w-20 p-1 border border-slate-300 rounded-lg text-xs text-right font-bold bg-white text-slate-900 focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                                    className="w-22 p-1.5 border border-slate-300 rounded-lg text-xs text-right font-bold bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                                     title="Edit Unit Cost for Inward Stock"
                                   />
                                 </div>
                               </td>
                               <td className="p-2.5 text-right font-bold text-slate-900 grn-subtotal">Rs. {subtotal.toLocaleString()}</td>
-                              <td className="p-2.5 text-center exclude-col">
+                              <td className="p-2.5 text-center w-28 shrink-0 exclude-col">
                                 <button
                                   type="button"
                                   onClick={() => handleRemoveGrnItem(idx)}
                                   title="Exclude medicine item from this GRN batch (will remain pending in PO for next batch)"
-                                  className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 rounded-md text-[11px] font-bold transition inline-flex items-center space-x-1 cursor-pointer"
+                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition inline-flex items-center space-x-1 cursor-pointer whitespace-nowrap shrink-0 shadow-2xs"
                                 >
-                                  <XCircle className="w-3.5 h-3.5 text-amber-600" />
+                                  <XCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
                                   <span>Exclude</span>
                                 </button>
                               </td>
@@ -7241,7 +7908,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 <div className="text-sm">
                   <span className="text-slate-500 font-bold">Total GRN Inward Value: </span>
                   <span className="text-lg font-black text-emerald-700 ml-1">
-                    Rs. {grnForm.Items.reduce((sum, i) => sum + (Number(i.ReceivedQty) * Number(i.UnitPrice)), 0).toLocaleString()}
+                    Rs. {grnForm.Items.reduce((sum, i) => sum + ((Number(i.ReceivedQty) || 0) * (Number(i.UnitPrice) || 0)), 0).toLocaleString()}
                   </span>
                 </div>
 

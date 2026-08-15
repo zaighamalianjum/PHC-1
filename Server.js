@@ -2991,6 +2991,9 @@ app.post('/api/erp/grn/approve', async (req, res) => {
           if ((!matchedItem.Price || matchedItem.Price <= 0) && unitPrice > 0) {
             setFields.Price = Math.round(unitPrice * 1.2);
           }
+          if (item.BatchNo) setFields.BatchNo = item.BatchNo;
+          if (item.MfgDate) setFields.MfgDate = item.MfgDate;
+          if (item.ExpiryDate) setFields.ExpiryDate = item.ExpiryDate;
 
           const updatePayload = {
             $inc: { CStock: qtyReceived }
@@ -3007,6 +3010,9 @@ app.post('/api/erp/grn/approve', async (req, res) => {
           // Keep local existingItem copy updated
           matchedItem.CStock = (matchedItem.CStock || 0) + qtyReceived;
           if (unitPrice > 0) matchedItem.PurchasePrice = unitPrice;
+          if (item.BatchNo) matchedItem.BatchNo = item.BatchNo;
+          if (item.MfgDate) matchedItem.MfgDate = item.MfgDate;
+          if (item.ExpiryDate) matchedItem.ExpiryDate = item.ExpiryDate;
         } else {
           // 2. New Item: Generate auto-increment ID starting after 1443 (e.g. 1444, 1445)
           maxNumericId++;
@@ -3022,7 +3028,10 @@ app.post('/api/erp/grn/approve', async (req, res) => {
             MinStock: 1,
             Unit: item.Category || item.Unit || 'Tab',
             MedicineType: 'P',
-            ReorderQty: 0
+            ReorderQty: 0,
+            BatchNo: item.BatchNo || '',
+            MfgDate: item.MfgDate || '',
+            ExpiryDate: item.ExpiryDate || ''
           };
 
           await db.collection('items').insertOne(newItemDoc);
