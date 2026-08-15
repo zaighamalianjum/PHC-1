@@ -75,10 +75,12 @@ import {
   X,
   Stethoscope,
   Maximize2,
-  Minimize2
+  Minimize2,
+  CloudUpload
 } from 'lucide-react';
 import UnauthorizedModal from './components/UnauthorizedModal';
 import GlobalSearchHeader from './components/GlobalSearchHeader';
+import { CloudBackupModal } from './components/CloudBackupModal';
 
 const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, restricted: true },
@@ -186,6 +188,9 @@ export default function App() {
 
   // User Profile Popover Modal State
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
+
+  // Cloud DB Backup Modal State
+  const [showCloudBackupModal, setShowCloudBackupModal] = useState<boolean>(false);
 
   // App-Wide Native Full Screen State & Listener
   const [isAppFullScreen, setIsAppFullScreen] = useState<boolean>(false);
@@ -2316,7 +2321,19 @@ export default function App() {
                 {clinicSettings.ClinicName || 'Punjab Homeopathic Clinic'}
               </h1>
             </div>
-            <div className="flex items-center space-x-1 sm:space-x-2.5 lg:space-x-3 text-xs shrink-0">
+            <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-2.5 text-xs shrink-0">
+              {/* DB Cloud Backup Button */}
+              <button
+                onClick={() => setShowCloudBackupModal(true)}
+                className="flex items-center space-x-1 sm:space-x-1.5 bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 hover:from-blue-600 hover:via-indigo-600 hover:to-sky-600 active:from-blue-800 active:to-indigo-800 text-white font-extrabold text-[10px] px-2 sm:px-2.5 py-1 rounded-md border border-sky-400/40 shadow-xs transition cursor-pointer shrink-0"
+                title="Export database snapshot as ZIP and upload to Google Drive (Punjabhomeopathic@gmail.com)"
+                id="top-cloud-backup-btn"
+              >
+                <CloudUpload className="w-3 h-3 text-sky-300 animate-pulse" />
+                <span className="uppercase tracking-wider text-[9.5px] hidden sm:inline">DB Cloud Backup</span>
+                <span className="uppercase tracking-wider text-[9.5px] sm:hidden">Cloud DB</span>
+              </button>
+
               <button
                 onClick={refreshAllData}
                 disabled={isRefreshing}
@@ -2876,6 +2893,14 @@ export default function App() {
             </Suspense>
           )}
         </div>
+
+        {/* Google Drive Cloud Backup Modal */}
+        <CloudBackupModal
+          isOpen={showCloudBackupModal}
+          onClose={() => setShowCloudBackupModal(false)}
+          targetDbName={mongoDbSettings.DatabaseName || 'PharmacyPOSDB'}
+          suggestedEmail="Punjabhomeopathic@gmail.com"
+        />
 
         {/* Global Unauthorized Popup Modal */}
         <UnauthorizedModal
