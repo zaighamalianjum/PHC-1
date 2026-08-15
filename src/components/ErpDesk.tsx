@@ -1792,8 +1792,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     setIsSubmitting(true);
     try {
-      const totalAmount = poForm.Items.reduce((sum, i) => sum + (Number(i.Qty) * Number(i.UnitPrice)), 0);
-
       const selectedVendor = vendors.find(v => v.VendorName === poForm.VendorName);
       const newPo: ErpPurchaseOrder = {
         POID: `PO-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -1801,7 +1799,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         VendorName: poForm.VendorName,
         OrderDate: new Date().toISOString().split('T')[0],
         ExpectedDeliveryDate: poForm.ExpectedDeliveryDate,
-        TotalAmount: totalAmount,
+        TotalAmount: 0, // Valuation determined when invoice is entered in GRN
         PaidAmount: 0,
         Status: 'Sent',
         Notes: poForm.Notes,
@@ -1809,9 +1807,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           ItemID: i.ItemID,
           ItemName: i.ItemName || 'General Item',
           Category: i.Category || 'General Medicine',
-          Qty: Number(i.Qty),
-          UnitPrice: Number(i.UnitPrice),
-          LineTotal: Number(i.Qty) * Number(i.UnitPrice),
+          Qty: Number(i.Qty) || 1,
+          UnitPrice: Number(i.UnitPrice || 0),
+          LineTotal: 0,
           BatchNo: i.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
         }))
       };
@@ -6508,15 +6506,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                 </span>
                               </div>
                               <div className="flex justify-between">
-                                <span>Required Stock:</span>
+                                <span>Required Demand:</span>
                                 <span className="font-extrabold text-indigo-700 bg-indigo-100/60 px-1 rounded">
                                   +{reqQty} {med.Unit || 'Tab'}
-                                </span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Purchase Rate:</span>
-                                <span className="font-bold text-slate-900">
-                                  Rs. {med.PurchasePrice ?? med.Price ?? 0}
                                 </span>
                               </div>
                             </div>
@@ -6527,16 +6519,16 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                               <div className="flex items-center justify-between w-full">
                                 <span className="text-[10px] font-extrabold text-emerald-700 flex items-center">
                                   <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-600" />
-                                  Selected
+                                  In PO List
                                 </span>
                                 <div className="flex items-center space-x-1">
                                   <label className="text-[10px] text-slate-500 font-bold">Qty:</label>
                                   <input
                                     type="number"
-                                    min="0"
+                                    min="1"
                                     value={currentPoItem?.Qty ?? reqQty}
                                     onChange={e => {
-                                      const val = Number(e.target.value);
+                                      const val = Math.max(1, Number(e.target.value));
                                       setPoForm(prev => ({
                                         ...prev,
                                         Items: prev.Items.map(i =>
@@ -6569,7 +6561,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                 }`}
                               >
                                 <Plus className="w-3.5 h-3.5" />
-                                <span>Choose for PO ({reqQty} {med.Unit || 'Tab'})</span>
+                                <span>Add to Requisition (+{reqQty})</span>
                               </button>
                             )}
                           </div>
@@ -6599,41 +6591,42 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   <table className="w-full text-left text-xs">
                     <thead>
                       <tr className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
+                        <th className="p-2.5 w-10 text-center">#</th>
                         <th className="p-2.5">Medicine Name</th>
-                        <th className="p-2.5 w-36">Medicine Category</th>
-                        <th className="p-2.5 w-32">Batch No.</th>
-                        <th className="p-2.5 w-24 text-center">Required Qty</th>
-                        <th className="p-2.5 w-28 text-right">Unit Price (Rs.)</th>
-                        <th className="p-2.5 w-28 text-right">Subtotal</th>
+                        <th className="p-2.5 w-44">Medicine Category</th>
+                        <th className="p-2.5 w-36">Batch No. (Optional)</th>
+                        <th className="p-2.5 w-32 text-center">Required Order Qty</th>
                         <th className="p-2.5 w-12 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
                       {poForm.Items.length === 0 ? (
                         <tr>
-                          <td colSpan={7} className="p-4 text-center text-slate-400 font-medium">
+                          <td colSpan={6} className="p-6 text-center text-slate-400 font-medium">
                             No medicines selected yet. Choose items from the grid above or auto-select low stock items!
                           </td>
                         </tr>
                       ) : (
                         poForm.Items.map((item, idx) => {
-                          const subtotal = (Number(item.Qty) || 0) * (Number(item.UnitPrice) || 0);
                           return (
                             <tr key={idx} className="hover:bg-slate-50">
+                              <td className="p-2.5 text-center font-bold text-slate-400 font-mono">
+                                {idx + 1}
+                              </td>
                               <td className="p-2 font-medium">
                                 <input
                                   type="text"
-                                  placeholder=""
+                                  placeholder="Enter medicine name..."
                                   value={item.ItemName}
                                   onChange={e => handleUpdatePoItem(idx, 'ItemName', e.target.value)}
-                                  className="w-full p-1 border rounded-lg text-xs font-semibold"
+                                  className="w-full p-1.5 border rounded-lg text-xs font-bold text-slate-900 bg-white"
                                 />
                               </td>
                               <td className="p-2">
                                 <select
                                   value={item.Category || 'Tablet / Capsule'}
                                   onChange={e => handleUpdatePoItem(idx, 'Category', e.target.value)}
-                                  className="w-full p-1 border rounded-lg text-xs font-bold text-indigo-900 bg-indigo-50/60 cursor-pointer"
+                                  className="w-full p-1.5 border rounded-lg text-xs font-bold text-indigo-900 bg-indigo-50/60 cursor-pointer"
                                 >
                                   {medicineCategories.map((c, cIdx) => (
                                     <option key={cIdx} value={c}>{c}</option>
@@ -6643,34 +6636,21 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                               <td className="p-2">
                                 <input
                                   type="text"
-                                  placeholder=""
+                                  placeholder="Batch / Ref #"
                                   value={item.BatchNo || ''}
                                   onChange={e => handleUpdatePoItem(idx, 'BatchNo', e.target.value)}
-                                  className="w-full p-1 border rounded-lg text-xs font-mono font-bold bg-amber-50/60 text-amber-900"
+                                  className="w-full p-1.5 border rounded-lg text-xs font-mono font-bold bg-amber-50/60 text-amber-900 text-center"
                                 />
                               </td>
-                              <td className="p-2">
+                              <td className="p-2 text-center">
                                 <input
                                   type="number"
-                                  min="0"
-                                  placeholder=""
+                                  min="1"
+                                  placeholder="1"
                                   value={item.Qty}
-                                  onChange={e => handleUpdatePoItem(idx, 'Qty', Number(e.target.value))}
-                                  className="w-full p-1 border rounded-lg text-xs text-center font-bold"
+                                  onChange={e => handleUpdatePoItem(idx, 'Qty', Math.max(1, Number(e.target.value)))}
+                                  className="w-24 mx-auto p-1.5 border border-indigo-300 rounded-lg text-xs text-center font-black font-mono bg-indigo-50/40 text-indigo-950"
                                 />
-                              </td>
-                              <td className="p-2">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  placeholder=""
-                                  value={item.UnitPrice}
-                                  onChange={e => handleUpdatePoItem(idx, 'UnitPrice', Number(e.target.value))}
-                                  className="w-full p-1 border rounded-lg text-xs text-right font-semibold"
-                                />
-                              </td>
-                              <td className="p-2 text-right font-bold text-slate-900">
-                                Rs. {subtotal.toLocaleString()}
                               </td>
                               <td className="p-2 text-center">
                                 <button
@@ -6681,10 +6661,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                       Items: prev.Items.filter((_, i) => i !== idx)
                                     }));
                                   }}
-                                  className="p-1 text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
                                   title="Remove item"
                                 >
-                                  <Trash2 className="w-3.5 h-3.5" />
+                                  <Trash2 className="w-4 h-4" />
                                 </button>
                               </td>
                             </tr>
@@ -6696,13 +6676,19 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 </div>
               </div>
 
-              {/* FOOTER & GRAND TOTAL */}
+              {/* FOOTER & REQUISITION QUANTITY TOTAL */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
-                <div className="text-sm">
-                  <span className="text-slate-500 font-bold">Grand Total Amount: </span>
-                  <span className="text-lg font-black text-indigo-700 ml-1">
-                    Rs. {poForm.Items.reduce((sum, i) => sum + (Number(i.Qty) * Number(i.UnitPrice)), 0).toLocaleString()}
-                  </span>
+                <div className="text-xs space-y-0.5">
+                  <div className="flex items-center space-x-2">
+                    <span className="text-slate-500 font-bold">Total Requisition Demand:</span>
+                    <span className="text-sm font-black text-indigo-700 font-mono">
+                      {poForm.Items.reduce((sum, i) => sum + (Number(i.Qty) || 0), 0).toLocaleString()} Units
+                    </span>
+                    <span className="text-slate-400 font-medium">({poForm.Items.length} Selected Medicines)</span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 italic">
+                    💡 Vendor invoice price, discounts, and challan numbers will be recorded during Goods Received Note (GRN) entry.
+                  </p>
                 </div>
 
                 <div className="flex items-center space-x-2">

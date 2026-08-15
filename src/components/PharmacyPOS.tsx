@@ -6444,8 +6444,8 @@ export default function PharmacyPOS({
                         <Sparkles className="w-5 h-5" />
                       </div>
                       <div>
-                        <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider block">Est. Purchase Cost</span>
-                        <strong className="text-lg font-black font-mono text-emerald-950">Rs. {totalEstCost.toLocaleString()}</strong>
+                        <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider block">Requisition Status</span>
+                        <strong className="text-lg font-black font-mono text-emerald-950">{selectedPoItemIds.size > 0 ? 'Ready to Order' : 'No Items Selected'}</strong>
                       </div>
                     </div>
                   </div>
@@ -6563,16 +6563,14 @@ export default function PharmacyPOS({
                             <th className="p-3 text-center">Current Stock</th>
                             <th className="p-3 text-center">Min Threshold</th>
                             <th className="p-3 text-center">Stock Deficit</th>
-                            <th className="p-3 text-center w-32 bg-indigo-950 text-indigo-200">Order Qty (Editable)</th>
-                            <th className="p-3 text-right">Unit Price</th>
-                            <th className="p-3 text-right">Est. Line Cost</th>
+                            <th className="p-3 text-center w-36 bg-indigo-950 text-indigo-200">Required Order Qty</th>
                             <th className="p-3 text-center">Include in PO</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-150 font-medium">
                           {filteredGridItems.length === 0 ? (
                             <tr>
-                              <td colSpan={11} className="p-8 text-center text-slate-400 font-bold">
+                              <td colSpan={9} className="p-8 text-center text-slate-400 font-bold">
                                 No medicines match your current filter scope or search query.
                               </td>
                             </tr>
@@ -6588,7 +6586,6 @@ export default function PharmacyPOS({
                                 : 0;
                               
                               const currentOrderQty = customOrderQtyMap[itm.ItemID] !== undefined ? customOrderQtyMap[itm.ItemID] : defaultCalcQty;
-                              const lineCost = currentOrderQty * (itm.PurchasePrice || 0);
 
                               return (
                                 <tr
@@ -6660,12 +6657,6 @@ export default function PharmacyPOS({
                                       />
                                       <span className="text-[10px] text-slate-400 font-bold">{itm.Unit || 'Tab'}</span>
                                     </div>
-                                  </td>
-                                  <td className="p-3 text-right font-mono text-slate-600 font-semibold">
-                                    Rs. {(itm.PurchasePrice || 0).toLocaleString()}
-                                  </td>
-                                  <td className="p-3 text-right font-mono font-bold text-indigo-950">
-                                    Rs. {lineCost.toLocaleString()}
                                   </td>
                                   <td className="p-3 text-center">
                                     <button
