@@ -43,7 +43,12 @@ import {
   CheckCircle2,
   Zap,
   Barcode,
-  Download
+  Download,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Receipt
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
@@ -218,6 +223,8 @@ export default function PharmacyPOS({
   const [invSearchQuery, setInvSearchQuery] = useState('');
   const [invSortField, setInvSortField] = useState<'ItemID' | 'ItemName' | 'Unit' | 'MedicineType' | 'CStock' | 'MinStock' | 'ReorderQty' | 'PurchasePrice' | 'Price'>('ItemName');
   const [invSortOrder, setInvSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [invCurrentPage, setInvCurrentPage] = useState<number>(1);
+  const [invPageSize, setInvPageSize] = useState<number>(50);
   
   // New/Edit Item Form State
   const [itemFormId, setItemFormId] = useState('');
@@ -577,8 +584,21 @@ export default function PharmacyPOS({
     }
   };
 
-  // Print states for pharmacy cash invoice bill
+  // Print states for pharmacy cash invoice bill and reports
   const [printModalOpen, setPrintModalOpen] = useState(false);
+  const [printModalFormat, setPrintModalFormat] = useState<'a4' | 'thermal'>('a4');
+  const [selectedDailyReportDate, setSelectedDailyReportDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
+  const [lastPostedInvoiceData, setLastPostedInvoiceData] = useState<{
+    patient: Patient | null;
+    basket: { ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[];
+    discount: number;
+    netAmount: number;
+    shift: 1 | 2;
+    invoiceNo: string;
+    invoiceDate: string;
+  } | null>(null);
   const [printBillData, setPrintBillData] = useState<{
     patient: Patient | null;
     basket: { ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[];
@@ -1306,7 +1326,1105 @@ export default function PharmacyPOS({
     win.document.close();
   };
 
-  // Print Inventory Stock Grid / Low Stock Report to standard A4 printer
+  // Helper to convert number to words for formal A4 invoices
+  const convertNumberToWords = (amount: number): string => {
+    if (amount <= 0) return 'Zero Rupees Only';
+    const units = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten', 'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+    const tens = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+    const numToWordsLessThanThousand = (n: number): string => {
+      let str = '';
+      if (n >= 100) {
+        str += units[Math.floor(n / 100)] + ' Hundred ';
+        n %= 100;
+      }
+      if (n >= 20) {
+        str += tens[Math.floor(n / 10)] + ' ';
+        n %= 10;
+      }
+      if (n > 0) {
+        str += units[n] + ' ';
+      }
+      return str.trim();
+    };
+
+    let num = Math.floor(amount);
+    let words = '';
+
+    if (num >= 10000000) {
+      words += numToWordsLessThanThousand(Math.floor(num / 10000000)) + ' Crore ';
+      num %= 10000000;
+    }
+    if (num >= 100000) {
+      words += numToWordsLessThanThousand(Math.floor(num / 100000)) + ' Lakh ';
+      num %= 100000;
+    }
+    if (num >= 1000) {
+      words += numToWordsLessThanThousand(Math.floor(num / 1000)) + ' Thousand ';
+      num %= 1000;
+    }
+    if (num > 0) {
+      words += numToWordsLessThanThousand(num) + ' ';
+    }
+
+    return 'Rupees ' + words.trim() + ' Only';
+  };
+
+  // 1. Official A4 Size Invoice Print Handler
+  const handlePrintA4Invoice = (billData: {
+    patient: Patient | null;
+    basket: { ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[];
+    discount: number;
+    netAmount: number;
+    shift: 1 | 2;
+    invoiceNo: string;
+    invoiceDate: string;
+  }) => {
+    if (currentUser?.Role !== 'Administrator' && (currentUser?.Permissions?.canPrintPOSInvoice === false || userRights.find(r => r.MenuID === 'pharmacy')?.PrintRec === false)) {
+      alert("Printing Pharmacy POS Bills is restricted by administrator permissions.");
+      return;
+    }
+
+    const win = window.open('', '_blank', 'width=1050,height=900');
+    if (!win) {
+      alert("Pop-up blocker prevented opening print window. Please allow pop-ups for this site.");
+      return;
+    }
+
+    const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
+    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "042-3111222 / 0300-1234567";
+    const clinicTagline = clinicSettings?.ClinicLogoText || "Consultation, Clinical Compounding & Retail Pharmacy";
+    const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
+    const printTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    const grossTotal = billData.basket.reduce((sum, item) => sum + item.Qty * item.Price, 0);
+    const amountInWords = convertNumberToWords(billData.netAmount);
+
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>A4 Invoice - ${billData.invoiceNo} - ${clinicName}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 10mm 12mm 12mm 12mm;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+              margin: 0;
+              padding: 0;
+              color: #0f172a;
+              font-size: 11px;
+              line-height: 1.4;
+              background: #fff;
+            }
+            .invoice-wrapper {
+              border: 2px solid #0f172a;
+              border-radius: 8px;
+              padding: 16px;
+              min-height: 270mm;
+              display: flex;
+              flex-direction: column;
+              justify-content: space-between;
+            }
+            .header-container {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              border-bottom: 2px solid #0f172a;
+              padding-bottom: 12px;
+              margin-bottom: 12px;
+            }
+            .brand-box {
+              display: flex;
+              align-items: center;
+              gap: 12px;
+            }
+            .brand-logo {
+              width: 55px;
+              height: 55px;
+              object-fit: contain;
+            }
+            .clinic-title {
+              font-size: 20px;
+              font-weight: 900;
+              color: #1e1b4b;
+              text-transform: uppercase;
+              margin: 0;
+              letter-spacing: -0.3px;
+            }
+            .clinic-subtitle {
+              font-size: 10px;
+              color: #475569;
+              font-weight: 600;
+              margin-top: 2px;
+            }
+            .clinic-contact {
+              font-size: 9.5px;
+              color: #334155;
+              margin-top: 2px;
+            }
+            .badge-box {
+              text-align: right;
+            }
+            .invoice-badge {
+              display: inline-block;
+              background: #1e1b4b;
+              color: #fff;
+              font-size: 12px;
+              font-weight: 900;
+              padding: 5px 12px;
+              border-radius: 6px;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .badge-sub {
+              font-size: 9.5px;
+              color: #64748b;
+              font-weight: 700;
+              margin-top: 4px;
+            }
+            
+            /* Meta Grid */
+            .meta-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr;
+              gap: 12px;
+              margin-bottom: 14px;
+            }
+            .meta-card {
+              background: #f8fafc;
+              border: 1px solid #cbd5e1;
+              border-radius: 6px;
+              padding: 8px 12px;
+            }
+            .meta-card-title {
+              font-size: 10px;
+              font-weight: 900;
+              text-transform: uppercase;
+              color: #1e1b4b;
+              border-bottom: 1px solid #e2e8f0;
+              padding-bottom: 3px;
+              margin-bottom: 6px;
+              letter-spacing: 0.5px;
+            }
+            .meta-row {
+              display: flex;
+              justify-content: space-between;
+              font-size: 10.5px;
+              margin-bottom: 3px;
+            }
+            .meta-label {
+              color: #64748b;
+              font-weight: 600;
+            }
+            .meta-val {
+              color: #0f172a;
+              font-weight: 800;
+            }
+
+            /* Table */
+            .table-container {
+              margin-bottom: 14px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 10.5px;
+            }
+            th {
+              background: #0f172a;
+              color: #fff;
+              padding: 7px 8px;
+              text-align: left;
+              font-weight: 800;
+              text-transform: uppercase;
+              font-size: 9.5px;
+              letter-spacing: 0.3px;
+            }
+            td {
+              padding: 6px 8px;
+              border-bottom: 1px solid #e2e8f0;
+              color: #1e293b;
+            }
+            tr:nth-child(even) td {
+              background: #f8fafc;
+            }
+            .col-center { text-align: center; }
+            .col-right { text-align: right; }
+            .col-bold { font-weight: 800; font-family: monospace; }
+            
+            /* Summary & Notes Section */
+            .bottom-section {
+              display: grid;
+              grid-template-columns: 1.3fr 1fr;
+              gap: 16px;
+              margin-top: 10px;
+            }
+            .terms-box {
+              border: 1px solid #e2e8f0;
+              background: #fafafa;
+              border-radius: 6px;
+              padding: 10px;
+              font-size: 9.5px;
+            }
+            .terms-title {
+              font-weight: 900;
+              text-transform: uppercase;
+              color: #0f172a;
+              margin-bottom: 4px;
+            }
+            .terms-list {
+              margin: 0;
+              padding-left: 14px;
+              color: #475569;
+              line-height: 1.35;
+            }
+            .summary-card {
+              background: #f8fafc;
+              border: 1.5px solid #0f172a;
+              border-radius: 6px;
+              padding: 10px;
+            }
+            .summary-row {
+              display: flex;
+              justify-content: space-between;
+              font-size: 11px;
+              margin-bottom: 4px;
+              color: #334155;
+            }
+            .summary-total {
+              border-top: 2px solid #0f172a;
+              padding-top: 6px;
+              margin-top: 6px;
+              display: flex;
+              justify-content: space-between;
+              font-size: 14px;
+              font-weight: 900;
+              color: #0f172a;
+            }
+            .words-box {
+              margin-top: 6px;
+              padding: 5px 8px;
+              background: #f1f5f9;
+              border-radius: 4px;
+              font-size: 9.5px;
+              font-weight: 700;
+              color: #1e1b4b;
+              font-style: italic;
+            }
+
+            /* Signatures */
+            .signatures-box {
+              display: flex;
+              justify-content: space-between;
+              margin-top: 30px;
+              padding-top: 10px;
+            }
+            .sig-line {
+              width: 180px;
+              text-align: center;
+              border-top: 1.5px solid #0f172a;
+              padding-top: 4px;
+              font-size: 10px;
+              font-weight: 800;
+              color: #1e293b;
+              text-transform: uppercase;
+            }
+
+            .footer-info {
+              text-align: center;
+              font-size: 8.5px;
+              color: #64748b;
+              margin-top: 12px;
+              border-top: 1px dashed #cbd5e1;
+              padding-top: 6px;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="invoice-wrapper">
+            <div>
+              <!-- Header -->
+              <div class="header-container">
+                <div class="brand-box">
+                  <img src="${logoSrc}" class="brand-logo" alt="Logo" onerror="this.style.display='none'" />
+                  <div>
+                    <h1 class="clinic-title">${clinicName}</h1>
+                    <div class="clinic-subtitle">${clinicTagline}</div>
+                    <div class="clinic-contact">📍 ${clinicAddress} • 📞 ${clinicPhone}</div>
+                  </div>
+                </div>
+                <div class="badge-box">
+                  <div class="invoice-badge">PHARMACY INVOICE</div>
+                  <div class="badge-sub">Computerized Tax & Cash Dispense Bill</div>
+                </div>
+              </div>
+
+              <!-- Meta Grid -->
+              <div class="meta-grid">
+                <div class="meta-card">
+                  <div class="meta-card-title">🧾 Invoice & Shift Information</div>
+                  <div class="meta-row">
+                    <span class="meta-label">Invoice Ref #:</span>
+                    <span class="meta-val" style="font-family: monospace; font-size: 12px; color: #1e1b4b;">${billData.invoiceNo}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">Date & Time:</span>
+                    <span class="meta-val">${billData.invoiceDate} ${printTimeStr}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">Operational Shift:</span>
+                    <span class="meta-val">${billData.shift === 1 ? '☀️ Morning Shift (1)' : '🌙 Evening Shift (2)'}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">Payment Status:</span>
+                    <span class="meta-val" style="color: #047857;">PAID IN CASH (POSTED)</span>
+                  </div>
+                </div>
+
+                <div class="meta-card">
+                  <div class="meta-card-title">👤 Patient / Customer Details</div>
+                  <div class="meta-row">
+                    <span class="meta-label">Patient / Customer:</span>
+                    <span class="meta-val" style="font-size: 11.5px;">${billData.patient ? billData.patient.PatientName : 'Walk-in Customer / Guest'}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">Patient MR # / ID:</span>
+                    <span class="meta-val" style="font-family: monospace;">${billData.patient ? billData.patient.PatientID : 'WALK-IN'}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">Contact Mobile:</span>
+                    <span class="meta-val">${billData.patient?.PhoneMobile || billData.patient?.PhoneRes || billData.patient?.PhoneOff || 'N/A'}</span>
+                  </div>
+                  <div class="meta-row">
+                    <span class="meta-label">Billed By:</span>
+                    <span class="meta-val">${currentUser?.FullName || currentUser?.LoginName || 'Duty Pharmacist'}</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Items Table -->
+              <div class="table-container">
+                <table>
+                  <thead>
+                    <tr>
+                      <th class="col-center" style="width: 32px;">#</th>
+                      <th style="width: 80px;">Item Code</th>
+                      <th>Medicine Description & Form</th>
+                      <th style="width: 80px;">Category</th>
+                      <th class="col-center" style="width: 70px;">Batch #</th>
+                      <th class="col-center" style="width: 50px;">Qty</th>
+                      <th class="col-right" style="width: 85px;">Unit Rate</th>
+                      <th class="col-right" style="width: 95px;">Net Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${billData.basket.map((b, idx) => {
+                      const item = items.find(i => i.ItemID === b.ItemID);
+                      const isClinical = b.MedicineType === 'C' || item?.MedicineType === 'C';
+                      const lineTotal = b.Qty * b.Price;
+                      const medCategory = item?.Category || (isClinical ? 'Clinical Compounded' : (item?.Unit || 'Patent'));
+                      const batchNo = item?.BatchNo || '-';
+
+                      return `
+                        <tr>
+                          <td class="col-center" style="font-weight: bold; color: #64748b;">${idx + 1}</td>
+                          <td style="font-family: monospace; font-weight: 700;">${b.ItemID}</td>
+                          <td>
+                            <strong style="color: #0f172a; font-size: 11px;">${item ? item.ItemName : b.ItemID}</strong>
+                            ${isClinical ? '<span style="font-size: 9px; color: #047857; font-weight: bold; display: block;">* Doctor Prescribed Clinical Compounding</span>' : ''}
+                          </td>
+                          <td><span style="font-size: 9.5px; font-weight: 700; color: #4338ca;">${medCategory}</span></td>
+                          <td class="col-center" style="font-family: monospace; font-size: 9.5px;">${batchNo}</td>
+                          <td class="col-center col-bold" style="font-size: 11px;">${b.Qty}</td>
+                          <td class="col-right col-bold">Rs. ${b.Price.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</td>
+                          <td class="col-right col-bold" style="color: #0f172a;">Rs. ${lineTotal.toLocaleString()}</td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <!-- Bottom Section -->
+            <div>
+              <div class="bottom-section">
+                <div class="terms-box">
+                  <div class="terms-title">📌 Pharmacy Return & Exchange Terms</div>
+                  <ol class="terms-list">
+                    <li>Medicines once dispensed can only be exchanged within <strong>3 days</strong> with this original computerized bill.</li>
+                    <li>Clinical compounded mixtures, opened drops/syrups, vaccines & cut blister packs are <strong>strictly non-returnable</strong>.</li>
+                    <li>Store homeopathic remedies in a cool, dry place away from direct sunlight, camphor & strong aromatics.</li>
+                    <li>Please verify your cash change and medicine count before departing the dispensing counter.</li>
+                  </ol>
+                  <div class="words-box">
+                    <strong>In Words:</strong> ${amountInWords}
+                  </div>
+                </div>
+
+                <div class="summary-card">
+                  <div class="summary-row">
+                    <span>Gross Subtotal:</span>
+                    <strong style="font-family: monospace;">Rs. ${grossTotal.toLocaleString()}</strong>
+                  </div>
+                  ${billData.discount > 0 ? `
+                    <div class="summary-row" style="color: #dc2626;">
+                      <span>Discount / Concession:</span>
+                      <strong style="font-family: monospace;">- Rs. ${billData.discount.toLocaleString()}</strong>
+                    </div>
+                  ` : ''}
+                  <div class="summary-total">
+                    <span>NET PAYABLE:</span>
+                    <span style="font-family: monospace; color: #047857;">Rs. ${billData.netAmount.toLocaleString()}</span>
+                  </div>
+                  <div class="summary-row" style="margin-top: 6px; font-size: 10px; color: #64748b;">
+                    <span>Payment Method:</span>
+                    <strong style="color: #0f172a;">Cash Handover</strong>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Signatures & Footer -->
+              <div class="signatures-box">
+                <div class="sig-line">Pharmacist / Dispenser Signature</div>
+                <div style="text-align: center;">
+                  <div style="font-family: monospace; font-size: 14px; font-weight: 900; letter-spacing: 2px;">*${billData.invoiceNo}*</div>
+                  <div style="font-size: 8.5px; color: #64748b;">Verification Barcode</div>
+                </div>
+                <div class="sig-line">Customer / Receiver Signature</div>
+              </div>
+
+              <div class="footer-info">
+                Thank you for choosing Punjab Homeopathic Clinic & Pharmacy. We wish you a speedy and complete recovery! • System Printed: ${billData.invoiceDate} ${printTimeStr}
+              </div>
+            </div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
+  // 2. Thermal Slip Customer Receipt Print Handler (80mm POS Slip)
+  const handlePrintThermalReceipt = (billData: {
+    patient: Patient | null;
+    basket: { ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[];
+    discount: number;
+    netAmount: number;
+    shift: 1 | 2;
+    invoiceNo: string;
+    invoiceDate: string;
+  }) => {
+    if (currentUser?.Role !== 'Administrator' && (currentUser?.Permissions?.canPrintPOSInvoice === false || userRights.find(r => r.MenuID === 'pharmacy')?.PrintRec === false)) {
+      alert("Printing Pharmacy POS Bills is restricted by administrator permissions.");
+      return;
+    }
+
+    const printWin = window.open('', '_blank', 'width=420,height=600');
+    if (!printWin) {
+      alert("Popup blocked! Please allow popups to print thermal customer receipts.");
+      return;
+    }
+
+    const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
+    const cPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || '042-3111222 / 0300-1234567';
+    const cAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || 'Opp. State Bank, Mall Road, Lahore';
+    const shiftText = billData.shift === 1 ? 'MORNING SHIFT (1)' : 'EVENING SHIFT (2)';
+    const dateStr = billData.invoiceDate || new Date().toISOString().split('T')[0];
+    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const grossTotal = billData.basket.reduce((sum, item) => sum + item.Qty * item.Price, 0);
+    const cashierName = currentUser?.FullName || currentUser?.LoginName || 'Pharmacist on Duty';
+    const patientDisplay = billData.patient ? billData.patient.PatientName : 'Walk-in Customer';
+    const patientIdDisplay = billData.patient ? ` (ID: ${billData.patient.PatientID})` : '';
+
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Thermal Receipt - ${billData.invoiceNo}</title>
+          <style>
+            @media print {
+              @page { margin: 0; size: 80mm auto; }
+              body { margin: 0; padding: 2mm 3mm; }
+            }
+            body {
+              font-family: 'Courier New', Courier, monospace, Arial, sans-serif;
+              width: 72mm;
+              margin: 0 auto;
+              padding: 6px 3px;
+              color: #000;
+              background: #fff;
+              font-size: 11px;
+              line-height: 1.25;
+            }
+            .text-center { text-align: center; }
+            .text-right { text-align: right; }
+            .text-bold { font-weight: 900; }
+            .clinic-header { text-align: center; margin-bottom: 4px; }
+            .clinic-name { font-size: 13px; font-weight: 900; text-transform: uppercase; margin: 0; line-height: 1.2; font-family: sans-serif; }
+            .clinic-sub { font-size: 9px; font-weight: bold; color: #111; margin-top: 2px; }
+            .divider-solid { border-top: 1.5px solid #000; margin: 4px 0; }
+            .divider-dashed { border-top: 1px dashed #000; margin: 4px 0; }
+            .receipt-title { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; text-align: center; margin: 3px 0; font-family: sans-serif; }
+            .meta-row { display: flex; justify-content: space-between; font-size: 10px; margin: 2px 0; }
+            .meta-label { font-weight: bold; width: 35%; }
+            .meta-val { font-weight: bold; width: 65%; text-align: right; word-break: break-word; }
+            
+            /* Table */
+            .items-table { width: 100%; border-collapse: collapse; font-size: 10.5px; margin: 4px 0; }
+            .items-table th { text-align: left; border-bottom: 1px dashed #000; padding: 3px 0; font-size: 9.5px; font-weight: 900; }
+            .items-table td { padding: 2px 0; vertical-align: top; }
+            .total-box { font-size: 13px; font-weight: 900; text-align: right; padding: 3px 0; }
+            .footer-msg { font-size: 8.5px; text-align: center; margin-top: 6px; font-weight: bold; line-height: 1.3; }
+            .barcode-box { text-align: center; font-family: monospace; font-size: 13px; letter-spacing: 2px; font-weight: 900; margin: 4px 0; }
+          </style>
+        </head>
+        <body>
+          <div class="clinic-header">
+            <h2 class="clinic-name">${clinicName}</h2>
+            <div class="clinic-sub">${cAddress}</div>
+            <div class="clinic-sub">Ph: ${cPhone}</div>
+          </div>
+          
+          <div class="divider-solid"></div>
+          <div class="receipt-title">*** CUSTOMER RECEIPT ***</div>
+          <div class="divider-solid"></div>
+
+          <div class="meta-row">
+            <span class="meta-label">Invoice No:</span>
+            <span class="meta-val text-bold" style="font-size: 11px;">${billData.invoiceNo}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Date/Time :</span>
+            <span class="meta-val">${dateStr} ${timeStr}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Customer  :</span>
+            <span class="meta-val">${patientDisplay}${patientIdDisplay}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Shift     :</span>
+            <span class="meta-val">${shiftText}</span>
+          </div>
+          <div class="meta-row">
+            <span class="meta-label">Cashier   :</span>
+            <span class="meta-val">${cashierName}</span>
+          </div>
+
+          <div class="divider-dashed"></div>
+
+          <table class="items-table">
+            <thead>
+              <tr>
+                <th style="width: 52%;">ITEM</th>
+                <th style="width: 15%; text-align: center;">QTY</th>
+                <th style="width: 33%; text-align: right;">TOTAL</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${billData.basket.map(b => {
+                const itm = items.find(i => i.ItemID === b.ItemID);
+                const lineTotal = b.Qty * b.Price;
+                return `
+                  <tr>
+                    <td colspan="3" style="font-weight: bold; padding-top: 3px;">${itm ? itm.ItemName : b.ItemID}</td>
+                  </tr>
+                  <tr>
+                    <td style="font-size: 9.5px; color: #333; padding-left: 6px;">@ Rs. ${b.Price.toFixed(0)}</td>
+                    <td style="text-align: center; font-weight: bold;">${b.Qty}</td>
+                    <td style="text-align: right; font-weight: bold;">Rs. ${lineTotal.toLocaleString()}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+          </table>
+
+          <div class="divider-dashed"></div>
+
+          <div class="meta-row">
+            <span class="meta-label">Subtotal  :</span>
+            <span class="meta-val">Rs. ${grossTotal.toLocaleString()}</span>
+          </div>
+          ${billData.discount > 0 ? `
+            <div class="meta-row">
+              <span class="meta-label">Discount  :</span>
+              <span class="meta-val">- Rs. ${billData.discount.toLocaleString()}</span>
+            </div>
+          ` : ''}
+
+          <div class="divider-solid"></div>
+          <div class="total-box">
+            NET TOTAL: Rs. ${billData.netAmount.toLocaleString()}
+          </div>
+          <div class="divider-solid"></div>
+
+          <div class="meta-row" style="font-size: 9.5px;">
+            <span class="meta-label">Payment   :</span>
+            <span class="meta-val text-bold">CASH RECEIVED (POSTED)</span>
+          </div>
+
+          <div class="barcode-box">||| ${billData.invoiceNo} |||</div>
+
+          <div class="divider-dashed"></div>
+          <div class="footer-msg">
+            Return/Exchange within 3 days with receipt.<br/>
+            Opened syrups/clinical items not returnable.<br/>
+            <strong>* THANK YOU & GET WELL SOON *</strong>
+          </div>
+
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWin.document.close();
+  };
+
+  // 3. Daily Store Medicine Sales Summary Sheet Print Handler (A4 Day-End Closing Report)
+  const handlePrintDailySalesReport = (targetDate?: string) => {
+    const reportDate = targetDate || selectedDailyReportDate || new Date().toISOString().split('T')[0];
+
+    // Filter invoices matching this date
+    const dayInvoices = invoices.filter(inv => inv.InvoiceDate === reportDate);
+    
+    if (dayInvoices.length === 0) {
+      alert(`No store medicine invoices found for date: ${reportDate}`);
+      return;
+    }
+
+    // Collect all details
+    const dayDetails = invoiceDetails.filter(d => dayInvoices.some(inv => inv.InvoiceNo === d.InvoiceNo));
+
+    // Totals
+    const totalInvoicesCount = dayInvoices.length;
+    const totalUnitsSold = dayDetails.reduce((sum, d) => sum + (d.Qty || 0), 0);
+    const grossSalesSum = dayInvoices.reduce((sum, inv) => sum + (inv.GAmount || 0), 0);
+    const totalDiscountSum = dayInvoices.reduce((sum, inv) => sum + (inv.Discount || 0), 0);
+    const netSalesSum = dayInvoices.reduce((sum, inv) => sum + (inv.NetAmount || 0), 0);
+
+    // Shifts
+    const shift1Invoices = dayInvoices.filter(i => i.shift === 1);
+    const shift2Invoices = dayInvoices.filter(i => i.shift === 2);
+    const shift1NetSum = shift1Invoices.reduce((sum, inv) => sum + (inv.NetAmount || 0), 0);
+    const shift2NetSum = shift2Invoices.reduce((sum, inv) => sum + (inv.NetAmount || 0), 0);
+
+    // Grouping by category
+    const categoryMap = new Map<string, { category: string; count: number; qty: number; revenue: number }>();
+    dayDetails.forEach(d => {
+      const itm = items.find(i => i.ItemID === d.ItemID);
+      const cat = itm?.Category || (d.MedicineType === 'C' || itm?.MedicineType === 'C' ? 'Clinical Compounding' : (itm?.Unit || 'Patent / Other'));
+      const lineTotal = (d.Qty || 0) * (d.Price || 0);
+
+      const existing = categoryMap.get(cat) || { category: cat, count: 0, qty: 0, revenue: 0 };
+      existing.count += 1;
+      existing.qty += (d.Qty || 0);
+      existing.revenue += lineTotal;
+      categoryMap.set(cat, existing);
+    });
+
+    const categorySummaryList = Array.from(categoryMap.values()).sort((a, b) => b.revenue - a.revenue);
+
+    // Grouping by item (Top Selling Medicines)
+    const itemMap = new Map<string, { itemId: string; itemName: string; category: string; qty: number; unitPrice: number; revenue: number }>();
+    dayDetails.forEach(d => {
+      const itm = items.find(i => i.ItemID === d.ItemID);
+      const name = itm?.ItemName || d.ItemID;
+      const cat = itm?.Category || (d.MedicineType === 'C' ? 'Clinical' : (itm?.Unit || 'Patent'));
+      const lineTotal = (d.Qty || 0) * (d.Price || 0);
+
+      const existing = itemMap.get(d.ItemID) || {
+        itemId: d.ItemID,
+        itemName: name,
+        category: cat,
+        qty: 0,
+        unitPrice: d.Price || 0,
+        revenue: 0
+      };
+      existing.qty += (d.Qty || 0);
+      existing.revenue += lineTotal;
+      itemMap.set(d.ItemID, existing);
+    });
+
+    const topItemsList = Array.from(itemMap.values()).sort((a, b) => b.qty - a.qty);
+
+    const win = window.open('', '_blank', 'width=1100,height=900');
+    if (!win) {
+      alert("Pop-up blocker prevented opening print window. Please allow pop-ups for this site.");
+      return;
+    }
+
+    const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
+    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "042-3111222 / 0300-1234567";
+    const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
+    const printedBy = currentUser?.FullName || currentUser?.LoginName || 'Duty Pharmacist';
+    const printTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Daily Medicine Store Sales Closing Report - ${reportDate}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 10mm 12mm 12mm 12mm;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
+            }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+              margin: 0;
+              padding: 0;
+              color: #0f172a;
+              font-size: 10.5px;
+              line-height: 1.35;
+              background: #fff;
+            }
+            .header-container {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              border-bottom: 2.5px solid #0f172a;
+              padding-bottom: 10px;
+              margin-bottom: 12px;
+            }
+            .brand-box {
+              display: flex;
+              align-items: center;
+              gap: 12px;
+            }
+            .brand-logo {
+              width: 50px;
+              height: 50px;
+              object-fit: contain;
+            }
+            .clinic-title {
+              font-size: 19px;
+              font-weight: 900;
+              color: #1e1b4b;
+              text-transform: uppercase;
+              margin: 0;
+            }
+            .clinic-subtitle {
+              font-size: 10px;
+              color: #475569;
+              font-weight: 700;
+              margin-top: 2px;
+            }
+            .report-badge-box {
+              text-align: right;
+            }
+            .report-badge {
+              display: inline-block;
+              background: #047857;
+              color: #fff;
+              font-size: 12px;
+              font-weight: 900;
+              padding: 5px 12px;
+              border-radius: 6px;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .report-date {
+              font-size: 11px;
+              font-weight: 800;
+              color: #0f172a;
+              margin-top: 4px;
+            }
+
+            /* Metric Cards */
+            .kpi-grid {
+              display: grid;
+              grid-template-columns: repeat(5, 1fr);
+              gap: 8px;
+              margin-bottom: 14px;
+            }
+            .kpi-card {
+              border: 1.5px solid #cbd5e1;
+              border-radius: 6px;
+              padding: 8px;
+              text-align: center;
+              background: #f8fafc;
+            }
+            .kpi-title {
+              font-size: 9px;
+              font-weight: 800;
+              text-transform: uppercase;
+              color: #64748b;
+              margin-bottom: 3px;
+            }
+            .kpi-val {
+              font-size: 15px;
+              font-weight: 900;
+              color: #0f172a;
+              font-family: monospace;
+            }
+
+            /* Section */
+            .section-header {
+              font-size: 11px;
+              font-weight: 900;
+              text-transform: uppercase;
+              color: #1e1b4b;
+              border-bottom: 1.5px solid #cbd5e1;
+              padding-bottom: 3px;
+              margin: 12px 0 6px 0;
+              display: flex;
+              justify-content: space-between;
+            }
+
+            /* Tables */
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              font-size: 10px;
+              margin-bottom: 10px;
+            }
+            th {
+              background: #1e293b;
+              color: #fff;
+              padding: 5px 7px;
+              text-align: left;
+              font-weight: 800;
+              font-size: 9px;
+              text-transform: uppercase;
+            }
+            td {
+              padding: 4.5px 7px;
+              border-bottom: 1px solid #e2e8f0;
+              color: #1e293b;
+            }
+            tr:nth-child(even) td {
+              background: #f8fafc;
+            }
+            .col-center { text-align: center; }
+            .col-right { text-align: right; }
+            .col-bold { font-weight: 800; font-family: monospace; }
+            .total-row td {
+              background: #f1f5f9;
+              font-weight: 900;
+              border-top: 2px solid #0f172a;
+              border-bottom: 2px solid #0f172a;
+            }
+
+            /* Drawer reconciliation */
+            .reconciliation-box {
+              border: 1.5px solid #0f172a;
+              border-radius: 6px;
+              padding: 10px;
+              background: #f8fafc;
+              margin-top: 10px;
+            }
+
+            /* Signatures */
+            .sig-grid {
+              display: grid;
+              grid-template-columns: 1fr 1fr 1fr;
+              gap: 20px;
+              margin-top: 25px;
+              padding-top: 10px;
+            }
+            .sig-block {
+              text-align: center;
+              border-top: 1.5px solid #0f172a;
+              padding-top: 4px;
+              font-size: 9.5px;
+              font-weight: 800;
+              text-transform: uppercase;
+            }
+          </style>
+        </head>
+        <body>
+          <!-- Header -->
+          <div class="header-container">
+            <div class="brand-box">
+              <img src="${logoSrc}" class="brand-logo" alt="Logo" onerror="this.style.display='none'" />
+              <div>
+                <h1 class="clinic-title">${clinicName}</h1>
+                <div class="clinic-subtitle">DAILY MEDICINE STORE SALES & DISPENSE CLOSING AUDIT REPORT</div>
+                <div style="font-size: 9.5px; color: #475569; margin-top: 2px;">📍 ${clinicAddress} • 📞 ${clinicPhone}</div>
+              </div>
+            </div>
+            <div class="report-badge-box">
+              <div class="report-badge">DAILY SALES SUMMARY</div>
+              <div class="report-date">📅 Closing Date: <strong>${reportDate}</strong></div>
+              <div style="font-size: 9px; color: #64748b; margin-top: 2px;">Generated: ${printTimeStr} by ${printedBy}</div>
+            </div>
+          </div>
+
+          <!-- KPI Summary Cards -->
+          <div class="kpi-grid">
+            <div class="kpi-card">
+              <div class="kpi-title">Total Invoices</div>
+              <div class="kpi-val" style="color: #4338ca;">${totalInvoicesCount}</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title">Medicine Units Sold</div>
+              <div class="kpi-val" style="color: #0284c7;">${totalUnitsSold.toLocaleString()}</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title">Gross Total (Rs.)</div>
+              <div class="kpi-val">Rs. ${grossSalesSum.toLocaleString()}</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-title">Total Discount (Rs.)</div>
+              <div class="kpi-val" style="color: #dc2626;">- Rs. ${totalDiscountSum.toLocaleString()}</div>
+            </div>
+            <div class="kpi-card" style="background: #ecfdf5; border-color: #059669;">
+              <div class="kpi-title" style="color: #065f46;">Net Cash Realized</div>
+              <div class="kpi-val" style="color: #047857;">Rs. ${netSalesSum.toLocaleString()}</div>
+            </div>
+          </div>
+
+          <!-- Category Breakdown Table -->
+          <div class="section-header">
+            <span>🏷️ 1. Category-Wise Medicine Sales Breakdown</span>
+            <span style="font-size: 9.5px; color: #64748b;">Total Categories Active: ${categorySummaryList.length}</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 30px;" class="col-center">#</th>
+                <th>Medicine Category / Dosage Form</th>
+                <th class="col-center" style="width: 90px;">Distinct Items</th>
+                <th class="col-center" style="width: 90px;">Total Qty Sold</th>
+                <th class="col-right" style="width: 120px;">Category Net Sales</th>
+                <th class="col-right" style="width: 80px;">% Share</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${categorySummaryList.map((cat, idx) => {
+                const sharePercent = netSalesSum > 0 ? ((cat.revenue / netSalesSum) * 100).toFixed(1) : '0.0';
+                return `
+                  <tr>
+                    <td class="col-center" style="font-weight: bold; color: #64748b;">${idx + 1}</td>
+                    <td><strong>${cat.category}</strong></td>
+                    <td class="col-center">${cat.count}</td>
+                    <td class="col-center col-bold">${cat.qty}</td>
+                    <td class="col-right col-bold">Rs. ${cat.revenue.toLocaleString()}</td>
+                    <td class="col-right" style="font-weight: bold; color: #4338ca;">${sharePercent}%</td>
+                  </tr>
+                `;
+              }).join('')}
+              <tr class="total-row">
+                <td colspan="2">TOTAL STORE MEDICINE CATEGORIES</td>
+                <td class="col-center">${topItemsList.length}</td>
+                <td class="col-center">${totalUnitsSold.toLocaleString()}</td>
+                <td class="col-right">Rs. ${netSalesSum.toLocaleString()}</td>
+                <td class="col-right">100.0%</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <!-- Top Selling Medicines Table -->
+          <div class="section-header">
+            <span>💊 2. Itemized Medicine Sales Log (Sorted by Quantity Sold)</span>
+            <span style="font-size: 9.5px; color: #64748b;">${topItemsList.length} Unique Medicines Sold</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 30px;" class="col-center">#</th>
+                <th style="width: 75px;">Item Code</th>
+                <th>Medicine Name</th>
+                <th style="width: 90px;">Category</th>
+                <th class="col-center" style="width: 65px;">Qty Sold</th>
+                <th class="col-right" style="width: 85px;">Unit Price</th>
+                <th class="col-right" style="width: 100px;">Total Revenue</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${topItemsList.map((itm, idx) => `
+                <tr>
+                  <td class="col-center" style="color: #64748b; font-weight: bold;">${idx + 1}</td>
+                  <td style="font-family: monospace; font-weight: 700;">${itm.itemId}</td>
+                  <td><strong>${itm.itemName}</strong></td>
+                  <td><span style="font-size: 9px; color: #4338ca; font-weight: 700;">${itm.category}</span></td>
+                  <td class="col-center col-bold" style="color: #0f172a;">${itm.qty}</td>
+                  <td class="col-right">Rs. ${itm.unitPrice.toLocaleString()}</td>
+                  <td class="col-right col-bold" style="color: #047857;">Rs. ${itm.revenue.toLocaleString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <!-- Shift & Drawer Reconciliation -->
+          <div class="reconciliation-box">
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 6px;">
+              <strong style="font-size: 11px; text-transform: uppercase;">💼 Shift & Cash Drawer Reconciliation</strong>
+              <span style="font-size: 10px; font-weight: 800; color: #047857;">ALL INVOICES POSTED & CLOSED</span>
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 10.5px;">
+              <div>
+                <span style="color: #64748b;">☀️ Morning Shift (1) Total:</span><br/>
+                <strong style="font-size: 12px; color: #c2410c;">Rs. ${shift1NetSum.toLocaleString()}</strong> (${shift1Invoices.length} invs)
+              </div>
+              <div>
+                <span style="color: #64748b;">🌙 Evening Shift (2) Total:</span><br/>
+                <strong style="font-size: 12px; color: #7e22ce;">Rs. ${shift2NetSum.toLocaleString()}</strong> (${shift2Invoices.length} invs)
+              </div>
+              <div style="text-align: right;">
+                <span style="color: #64748b;">Grand Total Cash Collected:</span><br/>
+                <strong style="font-size: 14px; color: #047857; font-family: monospace;">Rs. ${netSalesSum.toLocaleString()}</strong>
+              </div>
+            </div>
+          </div>
+
+          <!-- Signatures -->
+          <div class="sig-grid">
+            <div class="sig-block">
+              Pharmacist / Cashier on Duty<br/>
+              <span style="font-size: 8.5px; font-weight: normal; color: #64748b;">(${printedBy})</span>
+            </div>
+            <div class="sig-block">
+              Pharmacy Store In-Charge<br/>
+              <span style="font-size: 8.5px; font-weight: normal; color: #64748b;">(Cash Handover Verified)</span>
+            </div>
+            <div class="sig-block">
+              Dr. Zaigham Ali Anjum<br/>
+              <span style="font-size: 8.5px; font-weight: normal; color: #64748b;">(Managing Director & Administrator)</span>
+            </div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              setTimeout(function() {
+                window.print();
+              }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
   const handlePrintStockGrid = (forceLowStockOnly?: boolean) => {
     const isLowStock = forceLowStockOnly || invLowStockFilter;
 
@@ -2801,6 +3919,8 @@ export default function PharmacyPOS({
       invoiceDate: newHeader.InvoiceDate
     };
     setPrintBillData(billDataObj);
+    setLastPostedInvoiceData(billDataObj);
+    setPrintModalFormat('thermal');
     setPrintModalOpen(true);
 
     // Reset forms
@@ -2944,6 +4064,8 @@ export default function PharmacyPOS({
       invoiceDate: newHeader.InvoiceDate
     };
     setPrintBillData(storeBillObj);
+    setLastPostedInvoiceData(storeBillObj);
+    setPrintModalFormat('thermal');
     setPrintModalOpen(true);
 
     // Reset forms
@@ -3316,8 +4438,34 @@ export default function PharmacyPOS({
             </h3>
 
             {billingSuccess && (
-              <div className="p-3 bg-emerald-50 text-emerald-700 text-xs rounded-lg font-semibold border border-emerald-100">
-                {billingSuccess}
+              <div className="p-4 bg-emerald-50 text-emerald-800 text-xs rounded-xl font-medium border border-emerald-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 animate-fadeIn">
+                <div className="flex items-center space-x-2.5">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="font-bold text-sm text-emerald-950 block">{billingSuccess}</span>
+                    <span className="text-[11px] text-emerald-700">Customer receipt & A4 Invoice ready for immediate printing</span>
+                  </div>
+                </div>
+                {lastPostedInvoiceData && (
+                  <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handlePrintThermalReceipt(lastPostedInvoiceData)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>🖨️ Print Customer Receipt (Thermal)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handlePrintA4Invoice(lastPostedInvoiceData)}
+                      className="px-3 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>📄 Print A4 Invoice</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -3749,42 +4897,66 @@ export default function PharmacyPOS({
       {/* Invoice logs Tab */}
       {activeSubTab === 'invoice_logs' && (
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 animate-fadeIn" id="today-receipts-history">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-4 gap-4">
+          <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-slate-100 pb-4 gap-4">
             <div className="flex items-center space-x-2.5">
               <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
                 <History className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-950">Invoice logs</h3>
-                <p className="text-[11px] text-slate-500 font-medium">History of today's issued medicine bills with standard reprint function</p>
+                <h3 className="text-sm font-bold text-slate-950">Invoice logs & Sales Reports</h3>
+                <p className="text-[11px] text-slate-500 font-medium">History of issued medicine bills with A4 invoices, thermal slips & daily sales audit reports</p>
               </div>
             </div>
 
-            {/* Toggle filters and Search bar */}
-            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
+            {/* Daily Report Print Trigger & Filters */}
+            <div className="flex flex-wrap items-center gap-2">
+              <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
+                <Calendar className="w-3.5 h-3.5 text-slate-500" />
+                <span className="text-xxs font-bold text-slate-500 uppercase">Date:</span>
+                <input
+                  type="date"
+                  value={selectedDailyReportDate}
+                  onChange={(e) => setSelectedDailyReportDate(e.target.value)}
+                  className="text-xs bg-transparent border-0 font-bold text-slate-800 focus:outline-none cursor-pointer"
+                />
+              </div>
+
+              <button
+                type="button"
+                onClick={() => handlePrintDailySalesReport(selectedDailyReportDate)}
+                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
+                title="Print daily medicine sales summary sheet on A4 paper"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>📊 Print Daily Sales Summary (A4)</span>
+              </button>
+
               <div className="relative">
                 <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
                 <input
                   type="text"
-                  placeholder=""
+                  placeholder="Search invoice or patient..."
                   value={searchHistoryQuery}
                   onChange={(e) => setSearchHistoryQuery(e.target.value)}
-                  className="w-full sm:w-48 text-xs border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-slate-50 focus:bg-white transition"
+                  className="w-full sm:w-44 text-xs border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-slate-50 focus:bg-white transition"
                 />
               </div>
 
               <div className="flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-[10px] font-bold uppercase shrink-0">
                 <button
                   type="button"
-                  onClick={() => setShowAllInvoicesInHistory(false)}
-                  className={`px-3 py-1 rounded-md transition ${!showAllInvoicesInHistory ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  onClick={() => {
+                    setShowAllInvoicesInHistory(false);
+                    setSelectedDailyReportDate(new Date().toISOString().split('T')[0]);
+                  }}
+                  className={`px-2.5 py-1 rounded-md transition ${!showAllInvoicesInHistory ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                 >
                   Today Only
                 </button>
                 <button
                   type="button"
                   onClick={() => setShowAllInvoicesInHistory(true)}
-                  className={`px-3 py-1 rounded-md transition ${showAllInvoicesInHistory ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  className={`px-2.5 py-1 rounded-md transition ${showAllInvoicesInHistory ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                 >
                   All History ({invoices.length})
                 </button>
@@ -3802,20 +4974,37 @@ export default function PharmacyPOS({
                   <th className="py-2.5 font-bold">Shift & Date</th>
                   <th className="py-2.5 font-bold">Dispatched Medications (Rx)</th>
                   <th className="py-2.5 text-right font-bold">Net Total Paid</th>
-                  <th className="py-2.5 text-center font-bold">Receipt actions</th>
+                  <th className="py-2.5 text-center font-bold">Print & Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
                 {filteredInvoices.length === 0 ? (
                   <tr>
                     <td colSpan={6} className="py-8 text-center text-slate-400 font-semibold bg-slate-50/50 rounded-lg">
-                      No patient dispatch receipts match the selected filters.
+                      No medicine dispatch receipts match the selected date or search filter.
                     </td>
                   </tr>
                 ) : (
                   filteredInvoices.map((inv) => {
                     const patientName = getPatientName(inv.PatientID);
                     const isToday = inv.InvoiceDate === new Date().toISOString().split('T')[0];
+                    const details = invoiceDetails.filter((d) => d.InvoiceNo === inv.InvoiceNo);
+                    const basket = details.map((d) => ({
+                      ItemID: d.ItemID,
+                      Qty: d.Qty,
+                      Price: d.Price,
+                      MedicineType: d.MedicineType
+                    }));
+                    const billObj = {
+                      patient: patients.find((p) => p.PatientID === inv.PatientID) || null,
+                      basket: basket,
+                      discount: inv.Discount,
+                      netAmount: inv.NetAmount,
+                      shift: inv.shift,
+                      invoiceNo: inv.InvoiceNo,
+                      invoiceDate: inv.InvoiceDate
+                    };
+
                     return (
                       <tr key={inv.InvoiceNo} className="hover:bg-slate-50/50 group transition duration-150">
                         <td className="py-3 font-mono font-bold text-xs text-slate-900">
@@ -3826,7 +5015,7 @@ export default function PharmacyPOS({
                         </td>
                         <td className="py-3">
                           <span className="font-bold text-slate-800 block text-xs">{patientName}</span>
-                          <span className="text-xxs text-slate-400 font-mono block">ID: {inv.PatientID}</span>
+                          <span className="text-xxs text-slate-400 font-mono block">ID: {inv.PatientID || 'Walk-in'}</span>
                         </td>
                         <td className="py-3">
                           <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${inv.shift === 1 ? 'bg-orange-50 text-orange-700 border border-orange-100' : 'bg-purple-50 text-purple-700 border border-purple-100'}`}>
@@ -3836,48 +5025,54 @@ export default function PharmacyPOS({
                         </td>
                         <td className="py-3 max-w-xs">
                           <div className="flex flex-wrap gap-1">
-                            {invoiceDetails
-                              .filter((d) => d.InvoiceNo === inv.InvoiceNo)
-                              .map((d, idx) => {
-                                const item = items.find((itm) => itm.ItemID === d.ItemID);
-                                return (
-                                  <span key={`${d.ItemID}-${idx}`} className="inline-flex items-center px-1.5 py-0.5 rounded text-xxs font-semibold bg-slate-100 text-slate-700 border border-slate-200/60 hover:bg-slate-200 transition">
-                                    {item ? item.ItemName : d.ItemID} <span className="text-[10px] text-slate-400 ml-1 font-mono">x{d.Qty}</span>
-                                  </span>
-                                );
-                              })}
+                            {details.map((d, idx) => {
+                              const item = items.find((itm) => itm.ItemID === d.ItemID);
+                              return (
+                                <span key={`${d.ItemID}-${idx}`} className="inline-flex items-center px-1.5 py-0.5 rounded text-xxs font-semibold bg-slate-100 text-slate-700 border border-slate-200/60 hover:bg-slate-200 transition">
+                                  {item ? item.ItemName : d.ItemID} <span className="text-[10px] text-slate-400 ml-1 font-mono">x{d.Qty}</span>
+                                </span>
+                              );
+                            })}
                           </div>
                         </td>
                         <td className="py-3 text-right font-mono font-bold text-sm text-slate-900">
                           Rs. {inv.NetAmount.toLocaleString()}
                         </td>
                         <td className="py-3 text-center">
-                          <div className="flex items-center justify-center space-x-1.5">
+                          <div className="flex items-center justify-center space-x-1">
+                            {/* A4 Print Button */}
+                            <button
+                              type="button"
+                              onClick={() => handlePrintA4Invoice(billObj)}
+                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xxs font-bold rounded border border-slate-300 transition flex items-center cursor-pointer shadow-xs"
+                              title="Print full A4 size invoice"
+                            >
+                              <FileText className="w-3 h-3 mr-1 text-slate-600" />
+                              A4 Print
+                            </button>
 
+                            {/* Thermal Slip Print Button */}
+                            <button
+                              type="button"
+                              onClick={() => handlePrintThermalReceipt(billObj)}
+                              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xxs font-bold rounded border border-emerald-300 transition flex items-center cursor-pointer shadow-xs"
+                              title="Print 80mm POS customer thermal receipt"
+                            >
+                              <Receipt className="w-3 h-3 mr-1 text-emerald-600" />
+                              Thermal
+                            </button>
+
+                            {/* Preview Modal Button */}
                             <button
                               type="button"
                               onClick={() => {
-                                const details = invoiceDetails.filter((d) => d.InvoiceNo === inv.InvoiceNo);
-                                const basket = details.map((d) => ({
-                                  ItemID: d.ItemID,
-                                  Qty: d.Qty,
-                                  Price: d.Price
-                                }));
-                                setPrintBillData({
-                                  patient: patients.find((p) => p.PatientID === inv.PatientID) || null,
-                                  basket: basket,
-                                  discount: inv.Discount,
-                                  netAmount: inv.NetAmount,
-                                  shift: inv.shift,
-                                  invoiceNo: inv.InvoiceNo,
-                                  invoiceDate: inv.InvoiceDate
-                                });
+                                setPrintBillData(billObj);
                                 setPrintModalOpen(true);
                               }}
-                              className="px-2.5 py-1.5 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 text-xxs font-extrabold uppercase rounded-lg transition-all flex items-center justify-center cursor-pointer shadow-xs"
+                              className="p-1 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded transition flex items-center justify-center cursor-pointer"
+                              title="Open visual print preview"
                             >
-                              <Printer className="w-3 h-3 mr-1" />
-                              Preview
+                              <Printer className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </td>
@@ -3903,8 +5098,34 @@ export default function PharmacyPOS({
             </h3>
 
             {storeSuccessMsg && (
-              <div className="p-3 bg-emerald-50 text-emerald-700 text-xs rounded-lg font-semibold border border-emerald-100">
-                {storeSuccessMsg}
+              <div className="p-4 bg-emerald-50 text-emerald-800 text-xs rounded-xl font-medium border border-emerald-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 animate-fadeIn">
+                <div className="flex items-center space-x-2.5">
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                  <div>
+                    <span className="font-bold text-sm text-emerald-950 block">{storeSuccessMsg}</span>
+                    <span className="text-[11px] text-emerald-700">Customer receipt & A4 Invoice ready for immediate printing</span>
+                  </div>
+                </div>
+                {lastPostedInvoiceData && (
+                  <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handlePrintThermalReceipt(lastPostedInvoiceData)}
+                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
+                    >
+                      <Printer className="w-3.5 h-3.5" />
+                      <span>🖨️ Print Customer Receipt (Thermal)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handlePrintA4Invoice(lastPostedInvoiceData)}
+                      className="px-3 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
+                    >
+                      <FileText className="w-3.5 h-3.5" />
+                      <span>📄 Print A4 Invoice</span>
+                    </button>
+                  </div>
+                )}
               </div>
             )}
 
@@ -4421,7 +5642,10 @@ export default function PharmacyPOS({
                   </label>
                   <select
                     value={invCategoryFilter}
-                    onChange={(e) => setInvCategoryFilter(e.target.value)}
+                    onChange={(e) => {
+                      setInvCategoryFilter(e.target.value);
+                      setInvCurrentPage(1);
+                    }}
                     className="w-full py-2 px-3 bg-slate-800 text-white border border-slate-700 rounded-xl text-xs font-bold shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
                   >
                     {navCategories.map((cat) => (
@@ -4467,13 +5691,19 @@ export default function PharmacyPOS({
                       type="text"
                       placeholder="Quick Search: Type Medicine Name, ID, Category, Batch #, or Barcode..."
                       value={invSearchQuery}
-                      onChange={(e) => setInvSearchQuery(e.target.value)}
+                      onChange={(e) => {
+                        setInvSearchQuery(e.target.value);
+                        setInvCurrentPage(1);
+                      }}
                       className="w-full text-xs border border-slate-700 bg-slate-950 text-white placeholder-slate-400 rounded-lg pl-9 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400 font-mono font-medium shadow-inner"
                     />
                     {invSearchQuery && (
                       <button
                         type="button"
-                        onClick={() => setInvSearchQuery('')}
+                        onClick={() => {
+                          setInvSearchQuery('');
+                          setInvCurrentPage(1);
+                        }}
                         className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
                       >
                         <X className="w-3.5 h-3.5" />
@@ -4485,7 +5715,10 @@ export default function PharmacyPOS({
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
                   <button
                     type="button"
-                    onClick={() => setInvLowStockFilter(!invLowStockFilter)}
+                    onClick={() => {
+                      setInvLowStockFilter(!invLowStockFilter);
+                      setInvCurrentPage(1);
+                    }}
                     className={`px-3 py-1.5 rounded-lg flex items-center transition cursor-pointer font-bold text-xs border ${
                       invLowStockFilter
                         ? 'bg-rose-600 text-white border-rose-500 shadow-xs ring-2 ring-rose-400'
@@ -4655,14 +5888,84 @@ export default function PharmacyPOS({
                   }
                 };
 
+                // Virtual Pagination Calculations
+                const totalItemsCount = processedItems.length;
+                const isAllPage = invPageSize === -1;
+                const effectivePageSize = isAllPage ? Math.max(1, totalItemsCount) : invPageSize;
+                const totalPages = isAllPage ? 1 : Math.max(1, Math.ceil(totalItemsCount / effectivePageSize));
+                const currentPageSafe = Math.min(Math.max(1, invCurrentPage), totalPages);
+                const startIndex = isAllPage ? 0 : (currentPageSafe - 1) * effectivePageSize;
+                const endIndex = isAllPage ? totalItemsCount : Math.min(startIndex + effectivePageSize, totalItemsCount);
+                const paginatedItems = isAllPage ? processedItems : processedItems.slice(startIndex, endIndex);
+
+                // Helper for generating visible page buttons
+                const getVisiblePages = () => {
+                  if (totalPages <= 7) {
+                    return Array.from({ length: totalPages }, (_, i) => i + 1);
+                  }
+                  const pages: (number | string)[] = [1];
+                  if (currentPageSafe > 3) pages.push('...');
+                  const start = Math.max(2, currentPageSafe - 1);
+                  const end = Math.min(totalPages - 1, currentPageSafe + 1);
+                  for (let i = start; i <= end; i++) {
+                    pages.push(i);
+                  }
+                  if (currentPageSafe < totalPages - 2) pages.push('...');
+                  pages.push(totalPages);
+                  return pages;
+                };
+
                 return (
-                  <div className="flex flex-col space-y-2">
+                  <div className="flex flex-col space-y-3">
+                    
+                    {/* Top Quick Pagination & Stats Bar */}
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 py-0.5 text-xs text-slate-700">
+                      <div className="flex items-center space-x-2 flex-wrap">
+                        <span className="font-bold text-slate-800">
+                          {totalItemsCount === 0 ? (
+                            '0 medicines'
+                          ) : (
+                            <>
+                              Showing <strong className="text-indigo-700 font-mono">{startIndex + 1}</strong> to{' '}
+                              <strong className="text-indigo-700 font-mono">{endIndex}</strong> of{' '}
+                              <strong className="text-slate-900 font-mono">{totalItemsCount}</strong> medicines
+                            </>
+                          )}
+                        </span>
+                        {invCategoryFilter === 'ALL' && (
+                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full font-bold text-[10px]">
+                            ⚡ High-Speed Virtual Mode (All Categories)
+                          </span>
+                        )}
+                      </div>
+
+                      {/* Top Page Size Selector */}
+                      <div className="flex items-center space-x-2 self-end sm:self-auto">
+                        <label className="text-[11px] font-bold text-slate-500">Rows per page:</label>
+                        <select
+                          value={invPageSize}
+                          onChange={(e) => {
+                            setInvPageSize(Number(e.target.value));
+                            setInvCurrentPage(1);
+                          }}
+                          className="py-1 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 shadow-2xs focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                        >
+                          <option value={25}>25 rows</option>
+                          <option value={50}>50 rows (Recommended)</option>
+                          <option value={100}>100 rows</option>
+                          <option value={200}>200 rows</option>
+                          <option value={500}>500 rows</option>
+                          <option value={-1}>All rows</option>
+                        </select>
+                      </div>
+                    </div>
+
                     {/* Excel Table Grid */}
                     <div className="overflow-x-auto border-2 border-slate-300 rounded-lg max-h-[560px] overflow-y-auto shadow-inner bg-slate-50">
                       <table className="w-full text-left border-collapse text-xs font-sans select-none">
                         <thead className="sticky top-0 bg-slate-200 text-slate-800 border-b-2 border-slate-300 font-extrabold uppercase tracking-wider text-[10px] z-10 shadow-xs">
                           <tr className="divide-x divide-slate-300">
-                            <th className="px-2 py-2 text-center w-10 bg-slate-300/80 text-slate-700">#</th>
+                            <th className="px-2 py-2 text-center w-12 bg-slate-300/80 text-slate-700">#</th>
                             <th 
                               onClick={() => toggleSort('ItemID')}
                               className="px-3 py-2 cursor-pointer hover:bg-slate-300 transition"
@@ -4708,7 +6011,7 @@ export default function PharmacyPOS({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 bg-white text-slate-800">
-                          {processedItems.length === 0 ? (
+                          {paginatedItems.length === 0 ? (
                             <tr>
                               <td colSpan={11} className="px-6 py-12 text-center text-slate-400 font-bold bg-white">
                                 {invLowStockFilter 
@@ -4717,20 +6020,21 @@ export default function PharmacyPOS({
                               </td>
                             </tr>
                           ) : (
-                            processedItems.map((itm, idx) => {
+                            paginatedItems.map((itm, idx) => {
                               const isLowStock = itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1);
                               const isClinical = itm.MedicineType === 'C';
+                              const absoluteRowNumber = startIndex + idx + 1;
 
                               return (
                                 <tr 
-                                  key={`${itm.ItemID}-${idx}`}
+                                  key={`${itm.ItemID}-${absoluteRowNumber}`}
                                   className={`divide-x divide-slate-200 hover:bg-blue-50/70 transition ${
                                     isLowStock ? 'bg-rose-50/60' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'
                                   }`}
                                 >
                                   {/* Row Header Number */}
                                   <td className="px-2 py-1.5 text-center font-mono text-[11px] font-bold text-slate-500 bg-slate-100/80">
-                                    {idx + 1}
+                                    {absoluteRowNumber}
                                   </td>
 
                                   {/* Item ID */}
@@ -4939,11 +6243,111 @@ export default function PharmacyPOS({
                       </table>
                     </div>
 
+                    {/* Bottom Pagination Controls Toolbar */}
+                    {!isAllPage && totalPages > 1 && (
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-100 p-2.5 rounded-xl border border-slate-200 text-xs">
+                        <div className="flex items-center space-x-1 text-slate-600 font-medium">
+                          <span>Page <strong className="text-slate-900">{currentPageSafe}</strong> of <strong className="text-slate-900">{totalPages}</strong></span>
+                          <span className="text-slate-400">({totalItemsCount} total medicines)</span>
+                        </div>
+
+                        {/* Page Navigation Buttons */}
+                        <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => setInvCurrentPage(1)}
+                            disabled={currentPageSafe <= 1}
+                            className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 transition cursor-pointer"
+                            title="First Page"
+                          >
+                            <ChevronsLeft className="w-4 h-4" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setInvCurrentPage(prev => Math.max(1, prev - 1))}
+                            disabled={currentPageSafe <= 1}
+                            className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-bold flex items-center space-x-1 transition cursor-pointer"
+                          >
+                            <ChevronLeft className="w-3.5 h-3.5" />
+                            <span>Prev</span>
+                          </button>
+
+                          {/* Dynamic Page Pills */}
+                          <div className="flex items-center space-x-1">
+                            {getVisiblePages().map((p, pIdx) => {
+                              if (p === '...') {
+                                return (
+                                  <span key={`dots-${pIdx}`} className="px-2 py-1 text-slate-400 font-bold">
+                                    ...
+                                  </span>
+                                );
+                              }
+                              const pageNum = Number(p);
+                              const isActive = pageNum === currentPageSafe;
+                              return (
+                                <button
+                                  key={`page-${pageNum}`}
+                                  type="button"
+                                  onClick={() => setInvCurrentPage(pageNum)}
+                                  className={`w-8 h-8 rounded-lg font-bold text-xs transition cursor-pointer font-mono ${
+                                    isActive
+                                      ? 'bg-indigo-600 text-white shadow-xs'
+                                      : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
+                                  }`}
+                                >
+                                  {pageNum}
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => setInvCurrentPage(prev => Math.min(totalPages, prev + 1))}
+                            disabled={currentPageSafe >= totalPages}
+                            className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-bold flex items-center space-x-1 transition cursor-pointer"
+                          >
+                            <span>Next</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => setInvCurrentPage(totalPages)}
+                            disabled={currentPageSafe >= totalPages}
+                            className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 transition cursor-pointer"
+                            title="Last Page"
+                          >
+                            <ChevronsRight className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        {/* Direct Jump to Page */}
+                        <div className="flex items-center space-x-1.5">
+                          <label className="text-[11px] font-bold text-slate-500">Go to:</label>
+                          <input
+                            type="number"
+                            min={1}
+                            max={totalPages}
+                            value={currentPageSafe}
+                            onChange={(e) => {
+                              const v = Number(e.target.value);
+                              if (v >= 1 && v <= totalPages) {
+                                setInvCurrentPage(v);
+                              }
+                            }}
+                            className="w-14 py-1 px-1.5 text-center text-xs font-mono font-bold bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     {/* Excel Sheet Status Bar */}
                     <div className="bg-slate-800 text-slate-200 px-4 py-2 rounded-xl text-xs font-mono flex flex-wrap items-center justify-between gap-3 border border-slate-700 shadow-inner">
                       <div className="flex items-center space-x-4">
                         <span>
-                          Total Grid Rows: <strong className="text-white">{processedItems.length}</strong> / {items.length}
+                          Total Filtered Rows: <strong className="text-white">{processedItems.length}</strong> / {items.length}
                         </span>
                         <span className="text-slate-500">|</span>
                         <span>
@@ -5495,198 +6899,293 @@ export default function PharmacyPOS({
         </div>
       )}
 
-      {/* Pharmacy Invoice Print-Preview Modal Overlay */}
+      {/* Pharmacy Invoice Print-Preview Modal Overlay (Supports A4 & Thermal POS Receipt) */}
       {printModalOpen && printBillData && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full max-h-[90vh] flex flex-col print:shadow-none print:border-0 print:max-h-full print:w-full print:rounded-none">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-[9999] overflow-y-auto animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden">
             
-            {/* Fail-safe Dynamic Print Style Injector */}
-            <style dangerouslySetInnerHTML={{ __html: `
-              @media print {
-                body * {
-                  visibility: hidden !important;
-                }
-                #printable-pharmacy-bill, #printable-pharmacy-bill * {
-                  visibility: visible !important;
-                }
-                #printable-pharmacy-bill {
-                  position: absolute !important;
-                  left: 0 !important;
-                  top: 0 !important;
-                  width: 100% !important;
-                  padding: 1.5rem !important;
-                  box-shadow: none !important;
-                  border: none !important;
-                }
-              }
-            ` }} />
-
-            {/* Modal Controls (Hidden in Print) */}
-            <div className="p-4 border-b border-slate-150 flex items-center justify-between bg-slate-50 rounded-t-2xl print:hidden shrink-0">
-              <div className="flex items-center space-x-2">
-                <Printer className="w-5 h-5 text-blue-600 shrink-0" />
+            {/* Modal Controls Header */}
+            <div className="p-4 border-b border-slate-150 flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 gap-3 shrink-0">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
+                  <Printer className="w-5 h-5" />
+                </div>
                 <div>
-                  <span className="text-sm font-bold text-slate-900 block">Pharmacy Cash Receipt</span>
-                  <span className="text-xxs text-slate-500 font-semibold">Verify details and print computer-generated invoice</span>
+                  <div className="flex items-center space-x-2">
+                    <span className="text-sm font-bold text-slate-900 block">Print Invoice / Receipt</span>
+                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 font-mono font-bold text-[10px] rounded">
+                      {printBillData.invoiceNo}
+                    </span>
+                  </div>
+                  <span className="text-xxs text-slate-500 font-medium">Select output format: Standard A4 printer vs 80mm Thermal Receipt</span>
                 </div>
               </div>
-              <div className="flex space-x-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (currentUser?.Role !== 'Administrator' && (currentUser?.Permissions?.canPrintPOSInvoice === false || userRights.find(r => r.MenuID === 'pharmacy')?.PrintRec === false)) {
-                      alert("Printing Pharmacy POS Bills is restricted by administrator permissions.");
-                      return;
-                    }
-                    window.print();
-                  }}
-                  className="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xxs rounded-lg flex items-center shadow-md transition cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5 mr-1" />
-                  <span>Standard Print</span>
-                </button>
+
+              {/* Format Toggle & Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex rounded-lg border border-slate-200 p-0.5 bg-white text-[11px] font-bold">
+                  <button
+                    type="button"
+                    onClick={() => setPrintModalFormat('a4')}
+                    className={`px-2.5 py-1 rounded-md transition flex items-center space-x-1 cursor-pointer ${printModalFormat === 'a4' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    <FileText className="w-3 h-3" />
+                    <span>A4 Size</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPrintModalFormat('thermal')}
+                    className={`px-2.5 py-1 rounded-md transition flex items-center space-x-1 cursor-pointer ${printModalFormat === 'thermal' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
+                  >
+                    <Receipt className="w-3 h-3" />
+                    <span>80mm Thermal</span>
+                  </button>
+                </div>
+
+                {printModalFormat === 'a4' ? (
+                  <button
+                    type="button"
+                    onClick={() => handlePrintA4Invoice(printBillData)}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>🖨️ Print A4 Invoice</span>
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => handlePrintThermalReceipt(printBillData)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
+                  >
+                    <Receipt className="w-3.5 h-3.5" />
+                    <span>🧾 Print Customer Receipt (Thermal)</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={() => {
                     setPrintModalOpen(false);
                     setPrintBillData(null);
                   }}
-                  className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-[10px] rounded-lg transition cursor-pointer"
+                  className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-lg transition cursor-pointer"
                 >
                   Close
                 </button>
               </div>
             </div>
 
-            {/* Printable Content Container */}
-            <div className="flex-1 overflow-y-auto p-6" id="printable-pharmacy-bill">
-              <div className="space-y-4 font-sans text-xs text-slate-800">
-                
-                {/* Header */}
-                <div className="text-center border-b border-dashed border-slate-200 pb-4">
-                  <h2 className="text-sm font-bold text-slate-900 uppercase tracking-wide">
-                    {clinicSettings?.ClinicName || "PUNJAB CLINIC"}
-                  </h2>
-                  <p className="text-[10px] text-slate-500 font-medium mt-0.5">
-                    {clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore"}
-                  </p>
-                  <p className="text-[10px] text-slate-500 font-medium">
-                    Phone: {clinicSettings?.PhoneNo || "042-3111222"}
-                  </p>
-                  <div className="mt-3 inline-block bg-slate-100 px-3 py-1 rounded-full text-xxs font-extrabold uppercase text-slate-700 tracking-wider">
-                    PHARMACY CASH RECEIPT
+            {/* Live Interactive Preview Container */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100 flex justify-center">
+              {printModalFormat === 'a4' ? (
+                /* A4 Sheet Preview */
+                <div className="bg-white border-2 border-slate-900 rounded-lg shadow-md w-full max-w-xl p-5 text-slate-800 text-xs font-sans space-y-4">
+                  {/* A4 Header */}
+                  <div className="flex items-center justify-between border-b-2 border-slate-900 pb-3">
+                    <div>
+                      <h2 className="text-base font-black text-indigo-950 uppercase tracking-tight">
+                        {clinicSettings?.ClinicName || "PUNJAB HOMEOPATHIC CLINIC & PHARMACY"}
+                      </h2>
+                      <p className="text-[10px] text-slate-500 font-medium">
+                        {clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore"} • Ph: {clinicSettings?.PhoneNo || "042-3111222"}
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <span className="inline-block bg-slate-900 text-white text-[10px] font-black px-2.5 py-1 rounded uppercase tracking-wider">
+                        A4 OFFICIAL INVOICE
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Metadata Boxes */}
+                  <div className="grid grid-cols-2 gap-3 text-xxs">
+                    <div className="bg-slate-50 p-2.5 rounded border border-slate-200 space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-semibold">Invoice No:</span>
+                        <strong className="text-slate-950 font-mono">{printBillData.invoiceNo}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-semibold">Date:</span>
+                        <strong className="text-slate-900">{printBillData.invoiceDate}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-semibold">Operational Shift:</span>
+                        <strong className="text-slate-900">{printBillData.shift === 1 ? 'Morning Shift (1)' : 'Evening Shift (2)'}</strong>
+                      </div>
+                    </div>
+
+                    <div className="bg-slate-50 p-2.5 rounded border border-slate-200 space-y-1">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-semibold">Patient/Customer:</span>
+                        <strong className="text-slate-950 truncate max-w-[130px]">{printBillData.patient ? printBillData.patient.PatientName : "Walk-in Guest"}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-semibold">Patient ID:</span>
+                        <strong className="text-slate-900 font-mono">{printBillData.patient ? printBillData.patient.PatientID : "WALK-IN"}</strong>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-semibold">Status:</span>
+                        <strong className="text-emerald-700">PAID IN CASH</strong>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Table */}
+                  <div className="border border-slate-200 rounded overflow-hidden">
+                    <table className="w-full text-left text-xxs">
+                      <thead className="bg-slate-900 text-white font-bold uppercase">
+                        <tr>
+                          <th className="p-2 w-8 text-center">#</th>
+                          <th className="p-2">Item Description</th>
+                          <th className="p-2 w-12 text-center">Qty</th>
+                          <th className="p-2 w-20 text-right">Rate</th>
+                          <th className="p-2 w-24 text-right">Net Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {printBillData.basket.map((b, idx) => {
+                          const item = items.find(i => i.ItemID === b.ItemID);
+                          const lineTotal = b.Qty * b.Price;
+                          return (
+                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
+                              <td className="p-2 text-center font-bold text-slate-400">{idx + 1}</td>
+                              <td className="p-2">
+                                <strong className="text-slate-900 block text-xs">{item ? item.ItemName : b.ItemID}</strong>
+                                <span className="text-[10px] text-indigo-600 font-semibold">{item?.Category || (b.MedicineType === 'C' ? 'Clinical' : (item?.Unit || 'Patent'))}</span>
+                              </td>
+                              <td className="p-2 text-center font-bold font-mono">{b.Qty}</td>
+                              <td className="p-2 text-right font-mono">Rs. {b.Price.toFixed(0)}</td>
+                              <td className="p-2 text-right font-bold font-mono text-slate-950">Rs. {lineTotal.toLocaleString()}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Bottom Financial Summary & Notes */}
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <div className="text-xxs text-slate-500 space-y-1">
+                      <strong className="text-slate-800 uppercase block font-bold">Policy & Instructions:</strong>
+                      <p>• Returns accepted within 3 days with this invoice.</p>
+                      <p>• Clinical & opened medicines non-returnable.</p>
+                      <p className="italic text-indigo-900 font-semibold mt-1">In Words: {convertNumberToWords(printBillData.netAmount)}</p>
+                    </div>
+
+                    <div className="bg-slate-50 p-2.5 rounded border border-slate-900 space-y-1 text-xxs">
+                      <div className="flex justify-between">
+                        <span className="text-slate-500 font-semibold">Subtotal:</span>
+                        <strong className="font-mono">Rs. {printBillData.basket.reduce((sum, item) => sum + item.Qty * item.Price, 0).toLocaleString()}</strong>
+                      </div>
+                      {printBillData.discount > 0 && (
+                        <div className="flex justify-between text-red-600">
+                          <span className="font-semibold">Discount:</span>
+                          <strong className="font-mono">- Rs. {printBillData.discount.toLocaleString()}</strong>
+                        </div>
+                      )}
+                      <div className="flex justify-between border-t-2 border-slate-900 pt-1.5 text-xs font-black text-emerald-800">
+                        <span>NET PAYABLE:</span>
+                        <span className="font-mono text-sm">Rs. {printBillData.netAmount.toLocaleString()}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Signature block */}
+                  <div className="flex justify-between pt-6 border-t border-slate-200 text-xxs font-bold text-slate-600">
+                    <div className="text-center w-32 border-t border-slate-800 pt-1">
+                      Duty Pharmacist
+                    </div>
+                    <div className="text-center font-mono text-xs font-black tracking-widest text-slate-400">
+                      * {printBillData.invoiceNo} *
+                    </div>
+                    <div className="text-center w-32 border-t border-slate-800 pt-1">
+                      Customer Signature
+                    </div>
                   </div>
                 </div>
+              ) : (
+                /* Thermal 80mm Receipt Preview */
+                <div className="bg-white border border-slate-300 rounded shadow-md max-w-xs w-full p-4 font-mono text-xs text-black space-y-3">
+                  <div className="text-center space-y-1">
+                    <h3 className="font-bold text-xs uppercase">{clinicSettings?.ClinicName || "PUNJAB CLINIC & PHARMACY"}</h3>
+                    <p className="text-[10px]">{clinicSettings?.Address || "Mall Road, Lahore"}</p>
+                    <p className="text-[10px]">Ph: {clinicSettings?.PhoneNo || "042-3111222"}</p>
+                    <div className="border-t border-b border-black py-0.5 my-1 font-bold text-[11px]">
+                      *** CUSTOMER RECEIPT ***
+                    </div>
+                  </div>
 
-                {/* Metadata Grid */}
-                <div className="grid grid-cols-2 gap-y-2 gap-x-4 text-xxs border-b border-slate-100 pb-3 font-semibold text-slate-600">
-                  <div>
-                    <span className="text-slate-400 block font-normal uppercase">Invoice No:</span>
-                    <strong className="text-slate-900 font-mono font-bold text-xs">{printBillData.invoiceNo}</strong>
+                  <div className="space-y-0.5 text-xxs">
+                    <div className="flex justify-between">
+                      <span>Inv #:</span>
+                      <strong className="font-bold">{printBillData.invoiceNo}</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Date:</span>
+                      <span>{printBillData.invoiceDate}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Customer:</span>
+                      <strong className="truncate max-w-[130px]">{printBillData.patient ? printBillData.patient.PatientName : "Walk-in Customer"}</strong>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Shift:</span>
+                      <span>{printBillData.shift === 1 ? 'Morning (1)' : 'Evening (2)'}</span>
+                    </div>
                   </div>
-                  <div>
-                    <span className="text-slate-400 block font-normal uppercase">Date:</span>
-                    <strong className="text-slate-900">{printBillData.invoiceDate}</strong>
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block font-normal uppercase">Patient Customer:</span>
-                    <strong className="text-slate-900 text-xs">
-                      {printBillData.patient ? printBillData.patient.PatientName : "Walk-in Guest"}
-                    </strong>
-                    {printBillData.patient && (
-                      <span className="text-[10px] text-slate-400 font-mono block">ID: {printBillData.patient.PatientID}</span>
-                    )}
-                  </div>
-                  <div>
-                    <span className="text-slate-400 block font-normal uppercase">Operational Shift:</span>
-                    <strong className="text-slate-900">
-                      {printBillData.shift === 1 ? "Morning Shift (1)" : "Evening Shift (2)"}
-                    </strong>
-                  </div>
-                </div>
 
-                {/* Items List */}
-                <div className="space-y-2.5">
-                  <span className="text-xxs font-bold text-slate-400 uppercase tracking-wider block">Billed Item Details</span>
-                  <div className="space-y-1.5 divide-y divide-slate-100">
+                  <div className="border-t border-dashed border-black pt-1 space-y-1 text-xxs">
+                    <div className="flex justify-between font-bold border-b border-dashed border-black pb-1">
+                      <span>ITEM</span>
+                      <span className="w-10 text-center">QTY</span>
+                      <span className="w-16 text-right">TOTAL</span>
+                    </div>
                     {printBillData.basket.map((b, idx) => {
-                      const item = items.find((i) => i.ItemID === b.ItemID);
-                      const isClinical = b.Price === 0 || b.MedicineType === 'C' || item?.MedicineType === 'C';
-                      const pVisits = printBillData.patient 
-                        ? visits.filter(v => v.PatientID === printBillData.patient.PatientID)
-                        : [];
-                      const latestPVisit = pVisits.length > 0 
-                        ? pVisits[pVisits.length - 1]
-                        : null;
-                      const clinicalPayment = latestPVisit?.ClinicalMedicinePayment 
-                        ? Number(latestPVisit.ClinicalMedicinePayment)
-                        : 0;
-
+                      const itm = items.find(i => i.ItemID === b.ItemID);
+                      const lineTotal = b.Qty * b.Price;
                       return (
-                        <div key={idx} className="flex justify-between items-start pt-1.5 first:pt-0 font-medium text-slate-700">
-                          <div className="min-w-0 pr-2">
-                            <p className="font-bold text-slate-900 text-xxs">{item ? item.ItemName : b.ItemID}</p>
-                            <p className="text-[10px] text-slate-400 font-mono">
-                              {isClinical ? (
-                                <span className="text-emerald-600 font-bold">Clinical Medicine (Already paid to Doctor for Clinical Medicine)</span>
-                              ) : (
-                                `${b.Qty} unit(s) x Rs. ${b.Price.toFixed(1)}`
-                              )}
-                            </p>
+                        <div key={idx} className="space-y-0.5">
+                          <div className="font-bold truncate">{itm ? itm.ItemName : b.ItemID}</div>
+                          <div className="flex justify-between text-slate-600">
+                            <span>@ Rs. {b.Price.toFixed(0)}</span>
+                            <span className="w-10 text-center font-bold text-black">{b.Qty}</span>
+                            <span className="w-16 text-right font-bold text-black">Rs. {lineTotal.toLocaleString()}</span>
                           </div>
-                          <span className="font-mono text-slate-900 font-bold">
-                            {isClinical ? (
-                              <span className="text-emerald-600 font-bold">Rs. {clinicalPayment.toLocaleString()}</span>
-                            ) : (
-                              `Rs. ${(b.Qty * b.Price).toLocaleString()}`
-                            )}
-                          </span>
                         </div>
                       );
                     })}
                   </div>
-                </div>
 
-                {/* Totals Summary */}
-                <div className="border-t border-dashed border-slate-200 pt-3 mt-4 space-y-1.5 text-slate-600 font-semibold">
-                  <div className="flex justify-between">
-                    <span className="text-xxs font-bold text-slate-400 uppercase">Gross Amount:</span>
-                    <span className="font-mono text-slate-900">
-                      Rs. {printBillData.basket.reduce((sum, item) => sum + item.Qty * item.Price, 0).toLocaleString()}
-                    </span>
-                  </div>
-                  {printBillData.discount > 0 && (
-                    <div className="flex justify-between text-red-600">
-                      <span className="text-xxs font-bold uppercase">Discount Given:</span>
-                      <span className="font-mono">- Rs. {printBillData.discount.toLocaleString()}</span>
+                  <div className="border-t border-dashed border-black pt-1 space-y-0.5 text-xxs">
+                    <div className="flex justify-between">
+                      <span>Subtotal:</span>
+                      <span>Rs. {printBillData.basket.reduce((sum, item) => sum + item.Qty * item.Price, 0).toLocaleString()}</span>
                     </div>
-                  )}
-                  <div className="flex justify-between border-t border-slate-100 pt-2 text-sm">
-                    <span className="font-bold text-slate-900 uppercase text-xxs">Net Amount Paid:</span>
-                    <strong className="text-base font-extrabold text-emerald-600 font-mono">
-                      Rs. {printBillData.netAmount.toLocaleString()}
-                    </strong>
-                  </div>
-                </div>
-
-                {/* Footer and Signature block */}
-                <div className="text-center pt-8 border-t border-slate-100 mt-6 space-y-4">
-                  <div className="flex justify-between text-[10px] text-slate-400 font-semibold px-4">
-                    <div className="text-center">
-                      <div className="h-8 border-b border-slate-200 w-24 mx-auto" />
-                      <span className="mt-1 block">Duty Pharmacist</span>
+                    {printBillData.discount > 0 && (
+                      <div className="flex justify-between text-red-600">
+                        <span>Discount:</span>
+                        <span>- Rs. {printBillData.discount.toLocaleString()}</span>
+                      </div>
+                    )}
+                    <div className="flex justify-between font-bold text-sm border-t border-b border-black py-1 my-1">
+                      <span>TOTAL:</span>
+                      <span>Rs. {printBillData.netAmount.toLocaleString()}</span>
                     </div>
-                    <div className="text-center">
-                      <div className="h-8 border-b border-slate-200 w-24 mx-auto" />
-                      <span className="mt-1 block">Customer Copy</span>
+                    <div className="flex justify-between text-[10px]">
+                      <span>Paid:</span>
+                      <strong>CASH (POSTED)</strong>
                     </div>
                   </div>
-                  <p className="text-[10px] text-slate-400 italic">
-                    Thank you for choosing PHC Clinic Pharmacy. Get well soon!
-                  </p>
-                </div>
 
-              </div>
+                  <div className="text-center pt-2 space-y-1 text-xxs">
+                    <div className="tracking-widest font-bold">||| {printBillData.invoiceNo} |||</div>
+                    <div className="border-t border-dashed border-black pt-1 text-[9px] text-slate-700">
+                      Returns accepted within 3 days with receipt.<br/>
+                      <strong>* THANK YOU & GET WELL SOON *</strong>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
           </div>

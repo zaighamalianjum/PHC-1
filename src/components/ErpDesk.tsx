@@ -41,11 +41,17 @@ import {
   Pencil,
   Save,
   Lock,
-  PhoneCall
+  PhoneCall,
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
 import ReportingDesk from './ReportingDesk';
+import { GrnPrintPreviewModal } from './GrnPrintPreviewModal';
 
 import {
   ErpVendor,
@@ -126,6 +132,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [medicineSearchTerm, setMedicineSearchTerm] = useState('');
   const [medicineFilterMode, setMedicineFilterMode] = useState<'all' | 'lowStock' | 'selected'>('all');
   const [poCategoryFilter, setPoCategoryFilter] = useState<string>('all');
+  const [poGridPage, setPoGridPage] = useState<number>(1);
+  const [poGridPageSize, setPoGridPageSize] = useState<number>(24);
 
   // Dynamic Medicine Categories List
   const medicineCategories = useMemo(() => {
@@ -913,6 +921,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [bulkGrnDragActive, setBulkGrnDragActive] = useState(false);
   const [bulkGrnFileError, setBulkGrnFileError] = useState('');
   const bulkGrnFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Dedicated GRN Print Preview Modal State
+  const [showGrnPrintPreviewModal, setShowGrnPrintPreviewModal] = useState<boolean>(false);
+  const [grnPrintPreviewData, setGrnPrintPreviewData] = useState<ErpGrn | null>(null);
 
   // Pay Vendor Popup Modal State
   const [payVendorModalData, setPayVendorModalData] = useState<{
@@ -2529,7 +2541,49 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     }
   };
 
+  const handleOpenGrnPrintPreview = (grn: ErpGrn) => {
+    setGrnPrintPreviewData(grn);
+    setShowGrnPrintPreviewModal(true);
+  };
+
+  const handlePreviewCurrentGrnForm = () => {
+    if (!grnForm.Items || grnForm.Items.length === 0) {
+      alert('Please add or select at least one medicine item to preview GRN.');
+      return;
+    }
+    const previewGrnObj: ErpGrn = {
+      GRNID: grnForm.GRNID || `GRN-${Math.floor(1000 + Math.random() * 9000)}`,
+      POID: grnForm.POID || 'PO-DIRECT',
+      VendorID: grnForm.VendorID || '',
+      VendorName: grnForm.VendorName || 'Selected Supplier',
+      ReceivedDate: grnForm.ReceivedDate || new Date().toISOString().split('T')[0],
+      ChallanNo: grnForm.ChallanNo,
+      SupplierInvoiceNo: grnForm.SupplierInvoiceNo,
+      Remarks: grnForm.Remarks,
+      CreatedBy: currentUser?.FullName || 'Warehouse Officer',
+      TotalAmount: grnForm.Items.reduce((acc, i) => acc + ((Number(i.ReceivedQty) || 0) * (Number(i.UnitPrice) || 0)), 0),
+      Status: 'Draft',
+      Items: grnForm.Items.map(i => ({
+        ItemID: i.ItemID,
+        ItemName: i.ItemName,
+        OrderedQty: Number(i.OrderedQty) || 0,
+        ReceivedQty: Number(i.ReceivedQty) || 0,
+        UnitPrice: Number(i.UnitPrice) || 0,
+        LineTotal: (Number(i.ReceivedQty) || 0) * (Number(i.UnitPrice) || 0),
+        BatchNo: i.BatchNo,
+        MfgDate: i.MfgDate,
+        ExpiryDate: i.ExpiryDate
+      }))
+    };
+    setGrnPrintPreviewData(previewGrnObj);
+    setShowGrnPrintPreviewModal(true);
+  };
+
   const handlePrintGrn = (grn: ErpGrn) => {
+    handleOpenGrnPrintPreview(grn);
+  };
+
+  const handleLegacyPrintGrn = (grn: ErpGrn) => {
     const printWin = window.open('', '_blank', 'width=900,height=900');
     if (!printWin) return alert('Popup blocked. Allow popups to print Goods Received Note.');
 
@@ -6039,12 +6093,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                           <div className="flex items-center justify-center space-x-1.5">
                             <button
                               type="button"
-                              onClick={() => handlePrintGrn(grn)}
-                              className="px-2 py-1 text-slate-700 hover:bg-slate-100 rounded transition cursor-pointer flex items-center space-x-1 font-bold border border-slate-200 text-[11px]"
-                              title="Print Official GRN Voucher"
+                              onClick={() => handleOpenGrnPrintPreview(grn)}
+                              className="px-2.5 py-1 text-emerald-800 bg-emerald-50 hover:bg-emerald-100 rounded-lg transition cursor-pointer flex items-center space-x-1 font-bold border border-emerald-200 text-[11px]"
+                              title="Print Preview & Dedicated A4 Official GRN Template"
                             >
-                              <Printer className="w-3.5 h-3.5 text-slate-600" />
-                              <span>Print GRN</span>
+                              <Eye className="w-3.5 h-3.5 text-emerald-600" />
+                              <span>Print Preview</span>
                             </button>
                             <button
                               type="button"
@@ -6688,7 +6742,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                           type="text"
                           placeholder="Search medicine name, ID, category..."
                           value={medicineSearchTerm}
-                          onChange={e => setMedicineSearchTerm(e.target.value)}
+                          onChange={e => {
+                            setMedicineSearchTerm(e.target.value);
+                            setPoGridPage(1);
+                          }}
                           className="w-full pl-8 pr-3 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium"
                         />
                       </div>
@@ -6706,7 +6763,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   <div className="w-full sm:w-auto">
                     <select
                       value={poCategoryFilter}
-                      onChange={e => setPoCategoryFilter(e.target.value)}
+                      onChange={e => {
+                        setPoCategoryFilter(e.target.value);
+                        setPoGridPage(1);
+                      }}
                       className="w-full sm:w-auto py-1.5 px-3 bg-white border border-slate-200 rounded-xl text-xs font-bold text-indigo-900 cursor-pointer shadow-2xs"
                     >
                       <option value="all">🏷️ All Medicine Categories</option>
@@ -6719,7 +6779,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   <div className="flex items-center space-x-1 self-start sm:self-auto text-xs">
                     <button
                       type="button"
-                      onClick={() => setMedicineFilterMode('all')}
+                      onClick={() => {
+                        setMedicineFilterMode('all');
+                        setPoGridPage(1);
+                      }}
                       className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
                         medicineFilterMode === 'all' ? 'bg-indigo-600 text-white' : 'bg-white text-slate-600 border'
                       }`}
@@ -6728,7 +6791,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                     </button>
                     <button
                       type="button"
-                      onClick={() => setMedicineFilterMode('lowStock')}
+                      onClick={() => {
+                        setMedicineFilterMode('lowStock');
+                        setPoGridPage(1);
+                      }}
                       className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
                         medicineFilterMode === 'lowStock' ? 'bg-amber-600 text-white' : 'bg-white text-slate-600 border'
                       }`}
@@ -6737,7 +6803,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                     </button>
                     <button
                       type="button"
-                      onClick={() => setMedicineFilterMode('selected')}
+                      onClick={() => {
+                        setMedicineFilterMode('selected');
+                        setPoGridPage(1);
+                      }}
                       className={`px-2.5 py-1 rounded-lg font-bold transition cursor-pointer ${
                         medicineFilterMode === 'selected' ? 'bg-emerald-600 text-white' : 'bg-white text-slate-600 border'
                       }`}
@@ -6747,138 +6816,234 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   </div>
                 </div>
 
-                {/* MEDICINES GRID VIEW */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[380px] overflow-y-auto p-1">
-                  {inventoryItems
-                    .filter(med => {
-                      const itemName = String(med.ItemName || med.Name || med.title || '');
-                      const itemId = String(med.ItemID || med.id || '');
-                      const medCat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
-                      const matchCategory = poCategoryFilter === 'all' || medCat.toLowerCase().includes(poCategoryFilter.toLowerCase());
-                      const sTerm = medicineSearchTerm.toLowerCase().trim();
-                      const matchSearch = !sTerm ||
-                                          itemName.toLowerCase().includes(sTerm) ||
-                                          itemId.toLowerCase().includes(sTerm) ||
-                                          medCat.toLowerCase().includes(sTerm);
-                      const cStock = med.CStock ?? med.Stock ?? 0;
-                      const minStock = (med.MinStock !== undefined && med.MinStock !== null) ? med.MinStock : 1;
-                      if (!matchSearch || !matchCategory) return false;
-                      if (medicineFilterMode === 'lowStock') return cStock <= minStock;
-                      if (medicineFilterMode === 'selected') return isMedicineSelectedInPo(med.ItemID || itemId, med.ItemName || itemName);
-                      return true;
-                    })
-                    .map((med, idx) => {
-                      const cStock = med.CStock ?? med.Stock ?? 0;
-                      const minStock = (med.MinStock !== undefined && med.MinStock !== null) ? med.MinStock : 1;
-                      const isLow = cStock <= minStock;
-                      const reqQty = getRequiredQty(med);
-                      const isSelected = isMedicineSelectedInPo(med.ItemID, med.ItemName);
-                      const currentPoItem = poForm.Items.find(i => (i.ItemID && i.ItemID === med.ItemID) || i.ItemName === med.ItemName);
-                      const medCat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
+                {/* MEDICINES GRID VIEW WITH PAGINATION */}
+                {(() => {
+                  const filteredPoMedicines = inventoryItems.filter(med => {
+                    const itemName = String(med.ItemName || med.Name || med.title || '');
+                    const itemId = String(med.ItemID || med.id || '');
+                    const medCat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
+                    const matchCategory = poCategoryFilter === 'all' || medCat.toLowerCase().includes(poCategoryFilter.toLowerCase());
+                    const sTerm = medicineSearchTerm.toLowerCase().trim();
+                    const matchSearch = !sTerm ||
+                                        itemName.toLowerCase().includes(sTerm) ||
+                                        itemId.toLowerCase().includes(sTerm) ||
+                                        medCat.toLowerCase().includes(sTerm);
+                    const cStock = med.CStock ?? med.Stock ?? 0;
+                    const minStock = (med.MinStock !== undefined && med.MinStock !== null) ? med.MinStock : 1;
+                    if (!matchSearch || !matchCategory) return false;
+                    if (medicineFilterMode === 'lowStock') return cStock <= minStock;
+                    if (medicineFilterMode === 'selected') return isMedicineSelectedInPo(med.ItemID || itemId, med.ItemName || itemName);
+                    return true;
+                  });
 
-                      return (
-                        <div
-                          key={idx}
-                          className={`p-3 rounded-xl border transition flex flex-col justify-between ${
-                            isSelected
-                              ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-400/40 shadow-xs'
-                              : isLow
-                              ? 'bg-amber-50/60 border-amber-200 hover:border-amber-400'
-                              : 'bg-white border-slate-200 hover:border-indigo-300'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-start justify-between gap-1">
-                              <div>
-                                <p className="font-bold text-xs text-slate-900 leading-tight">{med.ItemName}</p>
-                                <p className="text-[10px] font-mono text-slate-500">{med.ItemID || 'ITM'}</p>
-                              </div>
-                              <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
-                                isLow ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
-                              }`}>
-                                {isLow ? 'LOW STOCK' : 'In Stock'}
-                              </span>
-                            </div>
+                  const totalPoItems = filteredPoMedicines.length;
+                  const isAll = poGridPageSize === -1;
+                  const effectiveSize = isAll ? Math.max(1, totalPoItems) : poGridPageSize;
+                  const totalPoPages = isAll ? 1 : Math.max(1, Math.ceil(totalPoItems / effectiveSize));
+                  const safePoPage = Math.min(Math.max(1, poGridPage), totalPoPages);
+                  const startPoIdx = isAll ? 0 : (safePoPage - 1) * effectiveSize;
+                  const endPoIdx = isAll ? totalPoItems : Math.min(startPoIdx + effectiveSize, totalPoItems);
+                  const paginatedPoMedicines = isAll ? filteredPoMedicines : filteredPoMedicines.slice(startPoIdx, endPoIdx);
 
-                            {/* Medicine Category Badge */}
-                            <div className="mt-1.5 flex items-center">
-                              <span className="text-[9.5px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-150 flex items-center space-x-1">
-                                <span>🏷️</span>
-                                <span>{medCat}</span>
-                              </span>
-                            </div>
+                  return (
+                    <div className="space-y-2.5">
+                      {/* Sub-header info bar */}
+                      <div className="flex items-center justify-between text-xs text-indigo-900 px-1">
+                        <span className="font-semibold">
+                          Showing <strong className="font-mono">{totalPoItems === 0 ? 0 : startPoIdx + 1}–{endPoIdx}</strong> of <strong className="font-mono">{totalPoItems}</strong> medicines
+                        </span>
+                        <div className="flex items-center space-x-1.5">
+                          <label className="text-[11px] text-slate-500 font-bold">Cards per view:</label>
+                          <select
+                            value={poGridPageSize}
+                            onChange={(e) => {
+                              setPoGridPageSize(Number(e.target.value));
+                              setPoGridPage(1);
+                            }}
+                            className="py-0.5 px-2 bg-white border border-indigo-200 rounded-lg text-xs font-bold text-indigo-900 cursor-pointer shadow-2xs"
+                          >
+                            <option value={12}>12 cards</option>
+                            <option value={24}>24 cards (Fast)</option>
+                            <option value={48}>48 cards</option>
+                            <option value={96}>96 cards</option>
+                            <option value={-1}>All cards</option>
+                          </select>
+                        </div>
+                      </div>
 
-                            <div className="mt-2 text-[11px] space-y-0.5 text-slate-600">
-                              <div className="flex justify-between">
-                                <span>Current Stock:</span>
-                                <span className={`font-bold ${isLow ? 'text-amber-700' : 'text-slate-800'}`}>
-                                  {cStock} {med.Unit || 'Tab'}
-                                </span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span>Required Demand:</span>
-                                <span className="font-extrabold text-indigo-700 bg-indigo-100/60 px-1 rounded">
-                                  +{reqQty} {med.Unit || 'Tab'}
-                                </span>
-                              </div>
-                            </div>
+                      {/* Card Grid */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[380px] overflow-y-auto p-1">
+                        {paginatedPoMedicines.length === 0 ? (
+                          <div className="col-span-full py-10 text-center text-slate-400 font-bold bg-white rounded-xl border border-dashed border-slate-300">
+                            No medicines found matching the current search & category filter.
                           </div>
+                        ) : (
+                          paginatedPoMedicines.map((med, idx) => {
+                            const cStock = med.CStock ?? med.Stock ?? 0;
+                            const minStock = (med.MinStock !== undefined && med.MinStock !== null) ? med.MinStock : 1;
+                            const isLow = cStock <= minStock;
+                            const reqQty = getRequiredQty(med);
+                            const isSelected = isMedicineSelectedInPo(med.ItemID, med.ItemName);
+                            const currentPoItem = poForm.Items.find(i => (i.ItemID && i.ItemID === med.ItemID) || i.ItemName === med.ItemName);
+                            const medCat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
 
-                          <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between gap-1">
-                            {isSelected ? (
-                              <div className="flex items-center justify-between w-full">
-                                <span className="text-[10px] font-extrabold text-emerald-700 flex items-center">
-                                  <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-600" />
-                                  In PO List
-                                </span>
-                                <div className="flex items-center space-x-1">
-                                  <label className="text-[10px] text-slate-500 font-bold">Qty:</label>
-                                  <input
-                                    type="number"
-                                    min="1"
-                                    value={currentPoItem?.Qty ?? reqQty}
-                                    onChange={e => {
-                                      const val = Math.max(1, Number(e.target.value));
-                                      setPoForm(prev => ({
-                                        ...prev,
-                                        Items: prev.Items.map(i =>
-                                          (i.ItemID === med.ItemID || i.ItemName === med.ItemName)
-                                            ? { ...i, Qty: val }
-                                            : i
-                                        )
-                                      }));
-                                    }}
-                                    className="w-14 p-0.5 text-center text-xs border rounded font-bold bg-white"
-                                  />
-                                  <button
-                                    type="button"
-                                    onClick={() => handleToggleMedicineForPo(med)}
-                                    className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1 cursor-pointer"
-                                    title="Remove from PO"
-                                  >
-                                    ✕
-                                  </button>
-                                </div>
-                              </div>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleToggleMedicineForPo(med)}
-                                className={`w-full py-1 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1 cursor-pointer ${
-                                  isLow
-                                    ? 'bg-amber-600 hover:bg-amber-700 text-white'
-                                    : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700'
+                            return (
+                              <div
+                                key={idx}
+                                className={`p-3 rounded-xl border transition flex flex-col justify-between ${
+                                  isSelected
+                                    ? 'bg-emerald-50 border-emerald-300 ring-2 ring-emerald-400/40 shadow-xs'
+                                    : isLow
+                                    ? 'bg-amber-50/60 border-amber-200 hover:border-amber-400'
+                                    : 'bg-white border-slate-200 hover:border-indigo-300'
                                 }`}
                               >
-                                <Plus className="w-3.5 h-3.5" />
-                                <span>Add to Requisition (+{reqQty})</span>
-                              </button>
-                            )}
+                                <div>
+                                  <div className="flex items-start justify-between gap-1">
+                                    <div>
+                                      <p className="font-bold text-xs text-slate-900 leading-tight">{med.ItemName}</p>
+                                      <p className="text-[10px] font-mono text-slate-500">{med.ItemID || 'ITM'}</p>
+                                    </div>
+                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${
+                                      isLow ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                                    }`}>
+                                      {isLow ? 'LOW STOCK' : 'In Stock'}
+                                    </span>
+                                  </div>
+
+                                  {/* Medicine Category Badge */}
+                                  <div className="mt-1.5 flex items-center">
+                                    <span className="text-[9.5px] font-extrabold text-indigo-700 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-150 flex items-center space-x-1">
+                                      <span>🏷️</span>
+                                      <span>{medCat}</span>
+                                    </span>
+                                  </div>
+
+                                  <div className="mt-2 text-[11px] space-y-0.5 text-slate-600">
+                                    <div className="flex justify-between">
+                                      <span>Current Stock:</span>
+                                      <span className={`font-bold ${isLow ? 'text-amber-700' : 'text-slate-800'}`}>
+                                        {cStock} {med.Unit || 'Tab'}
+                                      </span>
+                                    </div>
+                                    <div className="flex justify-between">
+                                      <span>Required Demand:</span>
+                                      <span className="font-extrabold text-indigo-700 bg-indigo-100/60 px-1 rounded">
+                                        +{reqQty} {med.Unit || 'Tab'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="mt-2.5 pt-2 border-t border-slate-200/60 flex items-center justify-between gap-1">
+                                  {isSelected ? (
+                                    <div className="flex items-center justify-between w-full">
+                                      <span className="text-[10px] font-extrabold text-emerald-700 flex items-center">
+                                        <CheckCircle2 className="w-3 h-3 mr-1 text-emerald-600" />
+                                        In PO List
+                                      </span>
+                                      <div className="flex items-center space-x-1">
+                                        <label className="text-[10px] text-slate-500 font-bold">Qty:</label>
+                                        <input
+                                          type="number"
+                                          min="1"
+                                          value={currentPoItem?.Qty ?? reqQty}
+                                          onChange={e => {
+                                            const val = Math.max(1, Number(e.target.value));
+                                            setPoForm(prev => ({
+                                              ...prev,
+                                              Items: prev.Items.map(i =>
+                                                (i.ItemID === med.ItemID || i.ItemName === med.ItemName)
+                                                  ? { ...i, Qty: val }
+                                                  : i
+                                              )
+                                            }));
+                                          }}
+                                          className="w-14 p-0.5 text-center text-xs border rounded font-bold bg-white"
+                                        />
+                                        <button
+                                          type="button"
+                                          onClick={() => handleToggleMedicineForPo(med)}
+                                          className="text-[10px] text-rose-600 hover:text-rose-800 font-bold px-1 cursor-pointer"
+                                          title="Remove from PO"
+                                        >
+                                          ✕
+                                        </button>
+                                      </div>
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleToggleMedicineForPo(med)}
+                                      className={`w-full py-1 rounded-lg text-xs font-bold transition flex items-center justify-center space-x-1 cursor-pointer ${
+                                        isLow
+                                          ? 'bg-amber-600 hover:bg-amber-700 text-white'
+                                          : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700'
+                                      }`}
+                                    >
+                                      <Plus className="w-3.5 h-3.5" />
+                                      <span>Add to Requisition (+{reqQty})</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+
+                      {/* Pagination Controls */}
+                      {!isAll && totalPoPages > 1 && (
+                        <div className="flex items-center justify-between pt-1 text-xs border-t border-indigo-100">
+                          <span className="text-[11px] text-indigo-800 font-medium">
+                            Page <strong>{safePoPage}</strong> of <strong>{totalPoPages}</strong>
+                          </span>
+                          <div className="flex items-center space-x-1">
+                            <button
+                              type="button"
+                              onClick={() => setPoGridPage(1)}
+                              disabled={safePoPage <= 1}
+                              className="p-1 rounded bg-white border border-indigo-200 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-800 cursor-pointer"
+                              title="First Page"
+                            >
+                              <ChevronsLeft className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPoGridPage(prev => Math.max(1, prev - 1))}
+                              disabled={safePoPage <= 1}
+                              className="px-2 py-1 rounded bg-white border border-indigo-200 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-800 font-bold flex items-center space-x-1 cursor-pointer"
+                            >
+                              <ChevronLeft className="w-3 h-3" />
+                              <span>Prev</span>
+                            </button>
+                            <span className="px-2 py-0.5 bg-indigo-600 text-white rounded font-mono font-bold text-[11px]">
+                              {safePoPage}
+                            </span>
+                            <button
+                              type="button"
+                              onClick={() => setPoGridPage(prev => Math.min(totalPoPages, prev + 1))}
+                              disabled={safePoPage >= totalPoPages}
+                              className="px-2 py-1 rounded bg-white border border-indigo-200 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-800 font-bold flex items-center space-x-1 cursor-pointer"
+                            >
+                              <span>Next</span>
+                              <ChevronRight className="w-3 h-3" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setPoGridPage(totalPoPages)}
+                              disabled={safePoPage >= totalPoPages}
+                              className="p-1 rounded bg-white border border-indigo-200 hover:bg-indigo-50 disabled:opacity-40 disabled:cursor-not-allowed text-indigo-800 cursor-pointer"
+                              title="Last Page"
+                            >
+                              <ChevronsRight className="w-3.5 h-3.5" />
+                            </button>
                           </div>
                         </div>
-                      );
-                    })}
-                </div>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
 
               {/* REQUISITION ORDER SUMMARY TABLE */}
@@ -7290,7 +7455,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
       {/* MODAL: UPLOAD BULK GRN RECEIVED STOCK (EXCEL / PASTE) */}
       {showUploadBulkGrnModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-[70] animate-in fade-in duration-150">
           <div className="bg-white rounded-2xl max-w-5xl w-full p-6 shadow-2xl border border-slate-100 space-y-4 max-h-[92vh] flex flex-col">
             {/* Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
@@ -7913,6 +8078,16 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 </div>
 
                 <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={handlePreviewCurrentGrnForm}
+                    disabled={grnForm.Items.length === 0}
+                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition border border-slate-300 flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                    title="Preview Printable A4 GRN Document"
+                  >
+                    <Eye className="w-4 h-4 text-slate-600" />
+                    <span>Print Preview</span>
+                  </button>
                   <button
                     type="button"
                     onClick={() => setShowGrnModal(false)}
@@ -9899,6 +10074,18 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           Unit: itm.Unit || 'Pack'
         }))}
         clinicName="ERP Pharmacy Operations"
+      />
+
+      {/* Dedicated GRN Print Preview Modal */}
+      <GrnPrintPreviewModal
+        isOpen={showGrnPrintPreviewModal}
+        onClose={() => {
+          setShowGrnPrintPreviewModal(false);
+          setGrnPrintPreviewData(null);
+        }}
+        grn={grnPrintPreviewData}
+        clinicSettings={clinicSettings}
+        currentUser={currentUser}
       />
     </div>
   );
