@@ -94,6 +94,7 @@ export default function ReportingDesk({
   posSales = [],
   invoices = [],
   invoiceDetails = [],
+  salesReturns = [],
   visits = [],
   patients = [],
   currentUser,
@@ -109,10 +110,11 @@ export default function ReportingDesk({
   const [fetchedExpenses, setFetchedExpenses] = useState<ErpExpense[]>([]);
   const [fetchedInvoices, setFetchedInvoices] = useState<any[]>([]);
   const [fetchedInvoiceDetails, setFetchedInvoiceDetails] = useState<any[]>([]);
+  const [fetchedSalesReturns, setFetchedSalesReturns] = useState<any[]>([]);
 
   const loadReportData = React.useCallback(async () => {
     try {
-      const [itRes, vRes, poRes, grnRes, txRes, payRes, expRes, invRes, invDetRes] = await Promise.all([
+      const [itRes, vRes, poRes, grnRes, txRes, payRes, expRes, billingRes, invRes, invDetRes, srRes] = await Promise.all([
         fetch('/api/query/items').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_vendors').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_purchase_orders').then(r => r.ok ? r.json() : []).catch(() => []),
@@ -120,8 +122,10 @@ export default function ReportingDesk({
         fetch('/api/query/erp_transactions').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_payroll').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_expenses').then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch('/api/query/invoices').then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch('/api/query/invoice_details').then(r => r.ok ? r.json() : []).catch(() => [])
+        fetch('/api/billing/invoices').then(r => r.ok ? r.json() : null).catch(() => null),
+        fetch('/api/query/invoice_headers').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/invoice_details').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/sales_returns').then(r => r.ok ? r.json() : []).catch(() => [])
       ]);
       if (Array.isArray(itRes) && itRes.length > 0) setFetchedItems(itRes);
       if (Array.isArray(vRes) && vRes.length > 0) setFetchedVendors(vRes);
@@ -130,8 +134,20 @@ export default function ReportingDesk({
       if (Array.isArray(txRes) && txRes.length > 0) setFetchedTxns(txRes);
       if (Array.isArray(payRes) && payRes.length > 0) setFetchedPayrolls(payRes);
       if (Array.isArray(expRes) && expRes.length > 0) setFetchedExpenses(expRes);
-      if (Array.isArray(invRes) && invRes.length > 0) setFetchedInvoices(invRes);
-      if (Array.isArray(invDetRes) && invDetRes.length > 0) setFetchedInvoiceDetails(invDetRes);
+      if (Array.isArray(srRes) && srRes.length > 0) setFetchedSalesReturns(srRes);
+      
+      let allInvs: any[] = [];
+      let allDet: any[] = [];
+      if (billingRes && Array.isArray(billingRes.headers)) allInvs = billingRes.headers;
+      if (billingRes && Array.isArray(billingRes.details)) allDet = billingRes.details;
+      if (Array.isArray(invRes) && invRes.length > 0) {
+        allInvs = [...allInvs, ...invRes.filter(r => !allInvs.some(h => (h.InvoiceNo || h.id) === (r.InvoiceNo || r.id)))];
+      }
+      if (Array.isArray(invDetRes) && invDetRes.length > 0) {
+        allDet = [...allDet, ...invDetRes];
+      }
+      if (allInvs.length > 0) setFetchedInvoices(allInvs);
+      if (allDet.length > 0) setFetchedInvoiceDetails(allDet);
     } catch (err) {
       console.error('ReportingDesk fetch error:', err);
     }
@@ -200,6 +216,12 @@ export default function ReportingDesk({
     return [];
   }, [invoiceDetails, fetchedInvoiceDetails]);
 
+  const effectiveSalesReturns = useMemo(() => {
+    if (Array.isArray(salesReturns) && salesReturns.length > 0) return salesReturns;
+    if (Array.isArray(fetchedSalesReturns) && fetchedSalesReturns.length > 0) return fetchedSalesReturns;
+    return [];
+  }, [salesReturns, fetchedSalesReturns]);
+
   // Helper stock extractors
   const getItemStock = (item: any) => {
     if (!item) return 0;
@@ -233,6 +255,33 @@ export default function ReportingDesk({
   // Search & Category Filter
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [selectedCategory, setSelectedCategory] = useState<string>('all');
+  const [storeMedicineTypeFilter, setStoreMedicineTypeFilter] = useState<'all' | 'P' | 'C'>('all');
+  const [storeSortField, setStoreSortField] = useState<'itemId' | 'itemName' | 'category' | 'company' | 'qtySold' | 'unitPurchasePrice' | 'unitSalePrice' | 'totalCogs' | 'totalGrossSales' | 'totalDiscount' | 'totalNetSales' | 'grossProfit' | 'marginPct'>('totalNetSales');
+  const [storeSortOrder, setStoreSortOrder] = useState<'asc' | 'desc'>('desc');
+
+  const parseCleanDate = (raw: any): string => {
+    if (!raw) return '';
+    const str = String(raw).trim();
+    if (str.includes('T')) return str.split('T')[0];
+    if (str.includes(' ')) return str.split(' ')[0];
+    if (str.includes('/')) {
+      const parts = str.split('/');
+      if (parts.length === 3) {
+        if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+      }
+    }
+    return str;
+  };
+
+  // Helper check date range
+  const isWithinDateRange = (dateStr?: string) => {
+    if (!dateStr) return true;
+    if (datePreset === 'all') return true;
+    const cleanDate = parseCleanDate(dateStr).slice(0, 10);
+    if (!cleanDate) return true;
+    return cleanDate >= startDate && cleanDate <= endDate;
+  };
 
   // Handle Preset Changes
   const handlePresetChange = (preset: typeof datePreset) => {
@@ -265,14 +314,6 @@ export default function ReportingDesk({
       setStartDate('2020-01-01');
       setEndDate('2030-12-31');
     }
-  };
-
-  // Helper check date range
-  const isWithinDateRange = (dateStr?: string) => {
-    if (!dateStr) return true;
-    if (datePreset === 'all') return true;
-    const cleanDate = dateStr.slice(0, 10);
-    return cleanDate >= startDate && cleanDate <= endDate;
   };
 
   // Report 1: Pending Vendor Payments
@@ -521,21 +562,6 @@ export default function ReportingDesk({
       netProfit
     };
   }, [appointments, posSales, transactions, payrolls, expenses, startDate, endDate, datePreset]);
-
-  const parseCleanDate = (raw: any): string => {
-    if (!raw) return '';
-    const str = String(raw).trim();
-    if (str.includes('T')) return str.split('T')[0];
-    if (str.includes(' ')) return str.split(' ')[0];
-    if (str.includes('/')) {
-      const parts = str.split('/');
-      if (parts.length === 3) {
-        if (parts[0].length === 4) return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-        if (parts[2].length === 4) return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-      }
-    }
-    return str;
-  };
 
   // Report 9: Shift-Wise Collection Summary Report Data
   const shiftCollectionData = useMemo(() => {
@@ -786,13 +812,21 @@ export default function ReportingDesk({
       return isNotReversed && isWithinDateRange(invDate);
     });
 
-    const validInvoiceNos = new Set(validInvoices.map(i => i.InvoiceNo || i.invoiceNo || i.id));
+    const validInvoiceMap = new Map<string, any>();
+    validInvoices.forEach(inv => {
+      const invNo = String(inv.InvoiceNo || inv.invoiceNo || inv.id || '');
+      if (invNo) validInvoiceMap.set(invNo, inv);
+    });
+
+    // Track which invoice details have been processed to prevent duplicates
+    const processedInvoiceNos = new Set<string>();
 
     const itemSalesMap: Record<string, {
       itemId: string;
       itemName: string;
       category: string;
       company: string;
+      medicineType: string;
       qtySold: number;
       unitPurchasePrice: number;
       unitSalePrice: number;
@@ -802,6 +836,7 @@ export default function ReportingDesk({
       totalCogs: number;
       grossProfit: number;
       marginPct: number;
+      markupPct: number;
     }> = {};
 
     let totalGrossSalesAll = 0;
@@ -809,32 +844,59 @@ export default function ReportingDesk({
     let totalNetSalesAll = 0;
     let totalCogsAll = 0;
 
-    // Process detail lines
-    effectiveInvoiceDetails.forEach(detail => {
-      const invNo = detail.InvoiceNo || detail.invoiceNo;
-      if (!validInvoiceNos.has(invNo)) return;
+    // Helper to register / aggregate detail line
+    const aggregateItemLine = (
+      rawItemId: string,
+      rawQty: number,
+      rawPrice: number,
+      rawCost: number | null,
+      rawDiscount: number | null,
+      parentInvoice: any,
+      explicitMedType?: string
+    ) => {
+      const itemId = String(rawItemId || 'UNKNOWN').trim().toUpperCase();
+      const itemObj = effectiveItems.find(it => 
+        String(it.ItemID || it.id || '').toUpperCase() === itemId ||
+        String(it.ItemName || it.itemName || '').toLowerCase() === itemId.toLowerCase()
+      );
 
-      const itemId = detail.ItemID || detail.itemId || 'UNKNOWN';
-      const itemObj = effectiveItems.find(it => it.ItemID === itemId || it.id === itemId);
-      
-      const itemName = itemObj?.ItemName || itemObj?.itemName || detail.ItemName || detail.itemName || itemId;
-      const category = itemObj?.Category || itemObj?.category || detail.Category || 'Pharmacy Store';
-      const company = itemObj?.Company || itemObj?.company || itemObj?.Brand || detail.Company || '-';
+      const itemName = itemObj?.ItemName || itemObj?.itemName || itemId;
+      const category = itemObj?.Category || itemObj?.category || itemObj?.Unit || 'Pharmacy Store';
+      const company = itemObj?.Company || itemObj?.company || itemObj?.Brand || '-';
+      const medType = explicitMedType || itemObj?.MedicineType || 'P';
 
-      const qty = Number(detail.Qty || detail.qty || detail.quantity) || 0;
-      const salePrice = Number(detail.SalePrice || detail.salePrice || detail.Price || itemObj?.SalePrice || itemObj?.Price) || 0;
-      
-      const purPrice = Number(detail.CostPrice || detail.costPrice || detail.PurchasePrice || itemObj?.PurchasePrice || itemObj?.TP || itemObj?.costPrice) || (salePrice > 0 ? Math.round(salePrice * 0.75) : 0);
+      const qty = Number(rawQty) || 0;
+      if (qty <= 0) return;
 
-      const detailGross = Number(detail.TotalAmount || detail.GAmount) || (qty * salePrice);
-      const detailDisc = Number(detail.Discount || detail.discount) || 0;
-      const detailNet = Number(detail.NetAmount || detail.netAmount) || (detailGross - detailDisc);
-      const detailCogs = qty * purPrice;
+      const salePrice = Number(rawPrice) > 0 
+        ? Number(rawPrice) 
+        : (Number(itemObj?.Price ?? itemObj?.SalePrice) || 0);
 
-      totalGrossSalesAll += detailGross;
-      totalDiscountsAll += detailDisc;
-      totalNetSalesAll += detailNet;
-      totalCogsAll += detailCogs;
+      const purPrice = rawCost !== null && Number(rawCost) > 0
+        ? Number(rawCost)
+        : (Number(itemObj?.PurchasePrice ?? itemObj?.TP ?? itemObj?.costPrice) || (salePrice > 0 ? Math.round(salePrice * 0.75) : 0));
+
+      const lineGross = qty * salePrice;
+
+      // Allocate discount: explicit line discount OR proportional header discount
+      let lineDisc = 0;
+      if (rawDiscount !== null && Number(rawDiscount) > 0) {
+        lineDisc = Number(rawDiscount);
+      } else if (parentInvoice) {
+        const invGross = Number(parentInvoice.GAmount || parentInvoice.TotalAmount || parentInvoice.GrandTotal) || 0;
+        const invDisc = Number(parentInvoice.Discount) || 0;
+        if (invDisc > 0 && invGross > 0) {
+          lineDisc = Math.round((lineGross / invGross) * invDisc);
+        }
+      }
+
+      const lineNet = Math.max(0, lineGross - lineDisc);
+      const lineCogs = qty * purPrice;
+
+      totalGrossSalesAll += lineGross;
+      totalDiscountsAll += lineDisc;
+      totalNetSalesAll += lineNet;
+      totalCogsAll += lineCogs;
 
       if (!itemSalesMap[itemId]) {
         itemSalesMap[itemId] = {
@@ -842,6 +904,7 @@ export default function ReportingDesk({
           itemName,
           category,
           company,
+          medicineType: medType,
           qtySold: 0,
           unitPurchasePrice: purPrice,
           unitSalePrice: salePrice,
@@ -850,91 +913,115 @@ export default function ReportingDesk({
           totalNetSales: 0,
           totalCogs: 0,
           grossProfit: 0,
-          marginPct: 0
+          marginPct: 0,
+          markupPct: 0
         };
       }
 
       itemSalesMap[itemId].qtySold += qty;
-      itemSalesMap[itemId].totalGrossSales += detailGross;
-      itemSalesMap[itemId].totalDiscount += detailDisc;
-      itemSalesMap[itemId].totalNetSales += detailNet;
-      itemSalesMap[itemId].totalCogs += detailCogs;
+      itemSalesMap[itemId].totalGrossSales += lineGross;
+      itemSalesMap[itemId].totalDiscount += lineDisc;
+      itemSalesMap[itemId].totalNetSales += lineNet;
+      itemSalesMap[itemId].totalCogs += lineCogs;
+      if (purPrice > 0) itemSalesMap[itemId].unitPurchasePrice = purPrice;
+      if (salePrice > 0) itemSalesMap[itemId].unitSalePrice = salePrice;
+    };
+
+    // 1. Process explicit detail lines in effectiveInvoiceDetails
+    effectiveInvoiceDetails.forEach(detail => {
+      const invNo = String(detail.InvoiceNo || detail.invoiceNo || '');
+      if (!invNo || !validInvoiceMap.has(invNo)) return;
+
+      processedInvoiceNos.add(invNo);
+      const parentInv = validInvoiceMap.get(invNo);
+
+      aggregateItemLine(
+        detail.ItemID || detail.itemId,
+        Number(detail.Qty || detail.qty || detail.quantity) || 1,
+        Number(detail.Price || detail.price || detail.SalePrice || detail.salePrice) || 0,
+        detail.CostPrice !== undefined ? Number(detail.CostPrice) : null,
+        detail.Discount !== undefined ? Number(detail.Discount) : null,
+        parentInv,
+        detail.MedicineType
+      );
     });
 
-    // Fallback if invoiceDetails array is empty or partial: inspect invoice basket/items arrays
-    if (effectiveInvoiceDetails.length === 0) {
-      validInvoices.forEach(inv => {
-        const invItems = inv.items || inv.basket || inv.InvoiceDetails || [];
-        const invDisc = Number(inv.Discount) || 0;
+    // 2. Process invoices that had items embedded in invoice headers
+    validInvoices.forEach(inv => {
+      const invNo = String(inv.InvoiceNo || inv.invoiceNo || inv.id || '');
+      if (processedInvoiceNos.has(invNo)) return;
+
+      const invItems = inv.items || inv.basket || inv.InvoiceDetails || [];
+      if (Array.isArray(invItems) && invItems.length > 0) {
+        invItems.forEach((it: any) => {
+          aggregateItemLine(
+            it.ItemID || it.itemId || it.id,
+            Number(it.Qty || it.qty) || 1,
+            Number(it.Price || it.price || it.SalePrice || it.salePrice) || 0,
+            it.CostPrice !== undefined ? Number(it.CostPrice) : (it.PurchasePrice !== undefined ? Number(it.PurchasePrice) : null),
+            it.Discount !== undefined ? Number(it.Discount) : null,
+            inv,
+            it.MedicineType
+          );
+        });
+      } else {
+        // Flat invoice summary fallback
         const invGross = Number(inv.GAmount || inv.GrandTotal || inv.TotalAmount) || 0;
+        const invDisc = Number(inv.Discount) || 0;
         const invNet = Number(inv.NetAmount || inv.NetPayable) || (invGross - invDisc);
+        const estCogs = Math.round(invNet * 0.75);
 
-        if (Array.isArray(invItems) && invItems.length > 0) {
-          invItems.forEach((it: any) => {
-            const itemId = it.ItemID || it.itemId || 'ITEM';
-            const itemObj = effectiveItems.find(i => i.ItemID === itemId);
-            const itemName = itemObj?.ItemName || it.ItemName || itemId;
-            const category = itemObj?.Category || 'Pharmacy Store';
-            const company = itemObj?.Company || '-';
-            const qty = Number(it.Qty || it.qty) || 1;
-            const salePrice = Number(it.SalePrice || it.price || itemObj?.SalePrice) || 0;
-            const purPrice = Number(it.CostPrice || itemObj?.PurchasePrice || itemObj?.TP) || Math.round(salePrice * 0.75);
+        totalGrossSalesAll += invGross;
+        totalDiscountsAll += invDisc;
+        totalNetSalesAll += invNet;
+        totalCogsAll += estCogs;
+      }
+    });
 
-            const gross = qty * salePrice;
-            const disc = Number(it.Discount) || (invGross > 0 ? Math.round((gross / invGross) * invDisc) : 0);
-            const net = gross - disc;
-            const cogs = qty * purPrice;
+    // 3. Process Sales Returns within date range
+    if (Array.isArray(effectiveSalesReturns) && effectiveSalesReturns.length > 0) {
+      effectiveSalesReturns.forEach(sr => {
+        const srDate = parseCleanDate(sr.ReturnDate || sr.date || sr.Date);
+        if (!isWithinDateRange(srDate)) return;
 
-            totalGrossSalesAll += gross;
-            totalDiscountsAll += disc;
-            totalNetSalesAll += net;
-            totalCogsAll += cogs;
+        const returnedItems = sr.returnedItems || sr.items || sr.details || [];
+        if (Array.isArray(returnedItems) && returnedItems.length > 0) {
+          returnedItems.forEach((rItm: any) => {
+            const rItemId = String(rItm.ItemID || rItm.itemId || '').trim().toUpperCase();
+            const rQty = Number(rItm.QtyReturned || rItm.Qty || rItm.qty) || 0;
+            const rPrice = Number(rItm.PriceRef || rItm.Price || rItm.price) || 0;
+            const rAmount = Number(rItm.LineTotal) || (rQty * rPrice);
 
-            if (!itemSalesMap[itemId]) {
-              itemSalesMap[itemId] = {
-                itemId,
-                itemName,
-                category,
-                company,
-                qtySold: 0,
-                unitPurchasePrice: purPrice,
-                unitSalePrice: salePrice,
-                totalGrossSales: 0,
-                totalDiscount: 0,
-                totalNetSales: 0,
-                totalCogs: 0,
-                grossProfit: 0,
-                marginPct: 0
-              };
+            if (itemSalesMap[rItemId] && rQty > 0) {
+              const purPrice = itemSalesMap[rItemId].unitPurchasePrice;
+              const rCogs = rQty * purPrice;
+
+              itemSalesMap[rItemId].qtySold = Math.max(0, itemSalesMap[rItemId].qtySold - rQty);
+              itemSalesMap[rItemId].totalGrossSales = Math.max(0, itemSalesMap[rItemId].totalGrossSales - rAmount);
+              itemSalesMap[rItemId].totalNetSales = Math.max(0, itemSalesMap[rItemId].totalNetSales - rAmount);
+              itemSalesMap[rItemId].totalCogs = Math.max(0, itemSalesMap[rItemId].totalCogs - rCogs);
+
+              totalGrossSalesAll = Math.max(0, totalGrossSalesAll - rAmount);
+              totalNetSalesAll = Math.max(0, totalNetSalesAll - rAmount);
+              totalCogsAll = Math.max(0, totalCogsAll - rCogs);
             }
-
-            itemSalesMap[itemId].qtySold += qty;
-            itemSalesMap[itemId].totalGrossSales += gross;
-            itemSalesMap[itemId].totalDiscount += disc;
-            itemSalesMap[itemId].totalNetSales += net;
-            itemSalesMap[itemId].totalCogs += cogs;
           });
-        } else {
-          totalGrossSalesAll += invGross;
-          totalDiscountsAll += invDisc;
-          totalNetSalesAll += invNet;
-          const estCogs = Math.round(invNet * 0.75);
-          totalCogsAll += estCogs;
         }
       });
     }
 
+    // Finalize item calculations
     const rows = Object.values(itemSalesMap).map(row => {
       const profit = row.totalNetSales - row.totalCogs;
       const margin = row.totalNetSales > 0 ? (profit / row.totalNetSales) * 100 : 0;
+      const markup = row.totalCogs > 0 ? (profit / row.totalCogs) * 100 : 0;
       return {
         ...row,
         grossProfit: profit,
-        marginPct: margin
+        marginPct: margin,
+        markupPct: markup
       };
     });
-
-    rows.sort((a, b) => b.totalNetSales - a.totalNetSales);
 
     const totalGrossProfitAll = totalNetSalesAll - totalCogsAll;
     const overallMarginPctAll = totalNetSalesAll > 0 ? (totalGrossProfitAll / totalNetSalesAll) * 100 : 0;
@@ -949,13 +1036,27 @@ export default function ReportingDesk({
       totalGrossProfitAll,
       overallMarginPctAll
     };
-  }, [effectiveInvoices, effectiveInvoiceDetails, effectiveItems, startDate, endDate, datePreset]);
+  }, [effectiveInvoices, effectiveInvoiceDetails, effectiveItems, effectiveSalesReturns, startDate, endDate, datePreset]);
 
+  // Filtered & Sorted Store Medicine Rows
   const filteredStoreMedicineRows = useMemo(() => {
-    let list = storeMedicineReportData.rows;
+    let list = [...storeMedicineReportData.rows];
+
+    // Category Filter
     if (selectedCategory && selectedCategory !== 'all') {
       list = list.filter(r => r.category?.toLowerCase() === selectedCategory.toLowerCase());
     }
+
+    // Medicine Type Filter
+    if (storeMedicineTypeFilter && storeMedicineTypeFilter !== 'all') {
+      if (storeMedicineTypeFilter === 'P') {
+        list = list.filter(r => r.medicineType === 'P' || r.medicineType === 'S');
+      } else if (storeMedicineTypeFilter === 'C') {
+        list = list.filter(r => r.medicineType === 'C');
+      }
+    }
+
+    // Search Query Filter
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(r =>
@@ -965,8 +1066,48 @@ export default function ReportingDesk({
         r.category.toLowerCase().includes(q)
       );
     }
+
+    // Dynamic Multi-Column Sort
+    list.sort((a, b) => {
+      let aVal: any = a[storeSortField];
+      let bVal: any = b[storeSortField];
+
+      if (typeof aVal === 'string') {
+        aVal = aVal.toLowerCase();
+        bVal = (bVal || '').toString().toLowerCase();
+        return storeSortOrder === 'asc' ? aVal.localeCompare(bVal) : bVal.localeCompare(aVal);
+      }
+
+      aVal = Number(aVal) || 0;
+      bVal = Number(bVal) || 0;
+      return storeSortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+    });
+
     return list;
-  }, [storeMedicineReportData.rows, selectedCategory, searchQuery]);
+  }, [storeMedicineReportData.rows, selectedCategory, storeMedicineTypeFilter, searchQuery, storeSortField, storeSortOrder]);
+
+  // Computed Totals for the Filtered Rows (guarantee exact numbers in UI / Print / CSV)
+  const filteredStoreMedicineSummary = useMemo(() => {
+    const count = filteredStoreMedicineRows.length;
+    const totalQtySold = filteredStoreMedicineRows.reduce((sum, r) => sum + r.qtySold, 0);
+    const totalGrossSales = filteredStoreMedicineRows.reduce((sum, r) => sum + r.totalGrossSales, 0);
+    const totalDiscount = filteredStoreMedicineRows.reduce((sum, r) => sum + r.totalDiscount, 0);
+    const totalNetSales = filteredStoreMedicineRows.reduce((sum, r) => sum + r.totalNetSales, 0);
+    const totalCogs = filteredStoreMedicineRows.reduce((sum, r) => sum + r.totalCogs, 0);
+    const totalGrossProfit = totalNetSales - totalCogs;
+    const overallMarginPct = totalNetSales > 0 ? (totalGrossProfit / totalNetSales) * 100 : 0;
+
+    return {
+      count,
+      totalQtySold,
+      totalGrossSales,
+      totalDiscount,
+      totalNetSales,
+      totalCogs,
+      totalGrossProfit,
+      overallMarginPct
+    };
+  }, [filteredStoreMedicineRows]);
 
   // Available Item Categories
   const categoriesList = useMemo(() => {
@@ -1160,15 +1301,15 @@ export default function ReportingDesk({
         '',
         '',
         '',
-        filteredStoreMedicineRows.reduce((a, b) => a + b.qtySold, 0),
+        filteredStoreMedicineSummary.totalQtySold,
         '',
         '',
-        storeMedicineReportData.totalCogsAll,
-        storeMedicineReportData.totalGrossSalesAll,
-        storeMedicineReportData.totalDiscountsAll,
-        storeMedicineReportData.totalNetSalesAll,
-        storeMedicineReportData.totalGrossProfitAll,
-        storeMedicineReportData.overallMarginPctAll.toFixed(1) + '%'
+        filteredStoreMedicineSummary.totalCogs,
+        filteredStoreMedicineSummary.totalGrossSales,
+        filteredStoreMedicineSummary.totalDiscount,
+        filteredStoreMedicineSummary.totalNetSales,
+        filteredStoreMedicineSummary.totalGrossProfit,
+        filteredStoreMedicineSummary.overallMarginPct.toFixed(1) + '%'
       ]);
     }
 
@@ -1626,16 +1767,16 @@ export default function ReportingDesk({
           </tbody>
           <tfoot>
             <tr style="background: #0f172a; color: white; font-weight: bold;">
-              <td colspan="4">GRAND TOTALS (${storeMedicineReportData.rows.length} MEDICINES)</td>
-              <td style="text-align: right">${filteredStoreMedicineRows.reduce((a, b) => a + b.qtySold, 0)}</td>
+              <td colspan="4">TOTALS (${filteredStoreMedicineSummary.count} MEDICINES)</td>
+              <td style="text-align: right">${filteredStoreMedicineSummary.totalQtySold}</td>
               <td></td>
               <td></td>
-              <td style="text-align: right; color: #cbd5e1;">Rs. ${storeMedicineReportData.totalCogsAll.toLocaleString()}</td>
-              <td style="text-align: right; color: #cbd5e1;">Rs. ${storeMedicineReportData.totalGrossSalesAll.toLocaleString()}</td>
-              <td style="text-align: right; color: #fde68a;">Rs. ${storeMedicineReportData.totalDiscountsAll.toLocaleString()}</td>
-              <td style="text-align: right; color: #38bdf8; font-size: 13px;">Rs. ${storeMedicineReportData.totalNetSalesAll.toLocaleString()}</td>
-              <td style="text-align: right; color: #4ade80; font-size: 13px;">Rs. ${storeMedicineReportData.totalGrossProfitAll.toLocaleString()}</td>
-              <td style="text-align: right; color: #facc15; font-size: 13px;">${storeMedicineReportData.overallMarginPctAll.toFixed(1)}%</td>
+              <td style="text-align: right; color: #cbd5e1;">Rs. ${filteredStoreMedicineSummary.totalCogs.toLocaleString()}</td>
+              <td style="text-align: right; color: #cbd5e1;">Rs. ${filteredStoreMedicineSummary.totalGrossSales.toLocaleString()}</td>
+              <td style="text-align: right; color: #fde68a;">Rs. ${filteredStoreMedicineSummary.totalDiscount.toLocaleString()}</td>
+              <td style="text-align: right; color: #38bdf8; font-size: 13px;">Rs. ${filteredStoreMedicineSummary.totalNetSales.toLocaleString()}</td>
+              <td style="text-align: right; color: #4ade80; font-size: 13px;">Rs. ${filteredStoreMedicineSummary.totalGrossProfit.toLocaleString()}</td>
+              <td style="text-align: right; color: #facc15; font-size: 13px;">${filteredStoreMedicineSummary.overallMarginPct.toFixed(1)}%</td>
             </tr>
           </tfoot>
         </table>
@@ -2197,6 +2338,20 @@ export default function ReportingDesk({
               className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
             />
           </div>
+
+          {activeReport === 'store_medicine_report' && (
+            <div className="flex items-center space-x-2 w-full sm:w-auto">
+              <select
+                value={storeMedicineTypeFilter}
+                onChange={e => setStoreMedicineTypeFilter(e.target.value as any)}
+                className="px-3 py-1.5 bg-indigo-50/80 border border-indigo-200 rounded-xl text-xs font-bold text-indigo-900 focus:outline-hidden"
+              >
+                <option value="all">All Medicine Types</option>
+                <option value="P">Pharmacy / Patent Store Only</option>
+                <option value="C">Clinical Dispenses Only</option>
+              </select>
+            </div>
+          )}
 
           {(activeReport === 'expense_analysis' || activeReport === 'current_stock' || activeReport === 'minimum_stock' || activeReport === 'required_stock' || activeReport === 'store_medicine_report') && (
             <div className="flex items-center space-x-2 w-full sm:w-auto">
@@ -3152,9 +3307,9 @@ export default function ReportingDesk({
               <div className="bg-sky-50 border border-sky-200 rounded-2xl p-4 flex items-center justify-between">
                 <div>
                   <div className="text-xs font-bold text-sky-600 uppercase tracking-wider">Gross Pharmacy Sales</div>
-                  <div className="text-2xl font-black text-sky-950 mt-1">Rs. {storeMedicineReportData.totalGrossSalesAll.toLocaleString()}</div>
+                  <div className="text-2xl font-black text-sky-950 mt-1">Rs. {filteredStoreMedicineSummary.totalGrossSales.toLocaleString()}</div>
                   <div className="text-[11px] font-medium text-sky-700 mt-0.5">
-                    {storeMedicineReportData.validInvoicesCount} Invoices • {storeMedicineReportData.rows.length} Items Sold
+                    {filteredStoreMedicineSummary.count} Medicines • {filteredStoreMedicineSummary.totalQtySold} Units Sold
                   </div>
                 </div>
                 <ShoppingCart className="w-8 h-8 text-sky-500 opacity-80" />
@@ -3162,9 +3317,11 @@ export default function ReportingDesk({
 
               <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between">
                 <div>
-                  <div className="text-xs font-bold text-amber-600 uppercase tracking-wider">Discounts & Concessions</div>
-                  <div className="text-2xl font-black text-amber-950 mt-1">Rs. {storeMedicineReportData.totalDiscountsAll.toLocaleString()}</div>
-                  <div className="text-[11px] font-medium text-amber-700 mt-0.5">Discounts given on POS sales</div>
+                  <div className="text-xs font-bold text-amber-600 uppercase tracking-wider">Discounts Allowed</div>
+                  <div className="text-2xl font-black text-amber-950 mt-1">Rs. {filteredStoreMedicineSummary.totalDiscount.toLocaleString()}</div>
+                  <div className="text-[11px] font-medium text-amber-700 mt-0.5">
+                    Net: Rs. {filteredStoreMedicineSummary.totalNetSales.toLocaleString()}
+                  </div>
                 </div>
                 <DollarSign className="w-8 h-8 text-amber-500 opacity-80" />
               </div>
@@ -3172,8 +3329,8 @@ export default function ReportingDesk({
               <div className="bg-purple-50 border border-purple-200 rounded-2xl p-4 flex items-center justify-between">
                 <div>
                   <div className="text-xs font-bold text-purple-600 uppercase tracking-wider">Purchase Cost (COGS)</div>
-                  <div className="text-2xl font-black text-purple-950 mt-1">Rs. {storeMedicineReportData.totalCogsAll.toLocaleString()}</div>
-                  <div className="text-[11px] font-medium text-purple-700 mt-0.5">Total stock acquisition cost</div>
+                  <div className="text-2xl font-black text-purple-950 mt-1">Rs. {filteredStoreMedicineSummary.totalCogs.toLocaleString()}</div>
+                  <div className="text-[11px] font-medium text-purple-700 mt-0.5">Stock cost of sold goods</div>
                 </div>
                 <Boxes className="w-8 h-8 text-purple-500 opacity-80" />
               </div>
@@ -3181,12 +3338,12 @@ export default function ReportingDesk({
               <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between">
                 <div>
                   <div className="text-xs font-bold text-emerald-600 uppercase tracking-wider">Net Gross Profit & Margin</div>
-                  <div className="text-2xl font-black text-emerald-950 mt-1">Rs. {storeMedicineReportData.totalGrossProfitAll.toLocaleString()}</div>
+                  <div className="text-2xl font-black text-emerald-950 mt-1">Rs. {filteredStoreMedicineSummary.totalGrossProfit.toLocaleString()}</div>
                   <div className="text-[11px] font-extrabold text-emerald-700 mt-0.5 flex items-center space-x-1">
                     <span className="px-1.5 py-0.5 bg-emerald-200 text-emerald-900 rounded-md">
-                      {storeMedicineReportData.overallMarginPctAll.toFixed(1)}% Margin
+                      {filteredStoreMedicineSummary.overallMarginPct.toFixed(1)}% Margin
                     </span>
-                    <span>• Net: Rs. {storeMedicineReportData.totalNetSalesAll.toLocaleString()}</span>
+                    <span>• {filteredStoreMedicineSummary.count} Items</span>
                   </div>
                 </div>
                 <TrendingUp className="w-8 h-8 text-emerald-500 opacity-80" />
@@ -3199,31 +3356,137 @@ export default function ReportingDesk({
                 <div>
                   <h4 className="font-bold text-sm text-white">Store Medicine Sales, Cost Price & Profit Margin Ledger</h4>
                   <p className="text-xs text-slate-300">
-                    Comprehensive audit statement showing itemized purchase costs (COGS), sale prices, discounts, net revenue, and gross profit margins.
+                    Comprehensive audit statement showing itemized purchase costs (COGS), sale prices, discounts, net revenue, and gross profit margins. Click column headers to sort.
                   </p>
                 </div>
-                <span className="text-xs font-bold text-slate-300 bg-slate-800 px-3 py-1 rounded-full border border-slate-700 self-start sm:self-auto">
-                  {filteredStoreMedicineRows.length} Medicines Found
-                </span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold text-slate-300 bg-slate-800 px-3 py-1 rounded-full border border-slate-700">
+                    {filteredStoreMedicineRows.length} of {storeMedicineReportData.rows.length} Medicines
+                  </span>
+                </div>
               </div>
 
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
-                    <tr className="bg-slate-100 text-slate-800 font-extrabold border-b border-slate-300 text-[11px] uppercase">
-                      <th className="p-3 border-r border-slate-200">Item ID</th>
-                      <th className="p-3 border-r border-slate-200">Medicine / Item Name</th>
-                      <th className="p-3 border-r border-slate-200">Category</th>
-                      <th className="p-3 border-r border-slate-200">Company</th>
-                      <th className="p-3 text-right border-r border-slate-200">Qty Sold</th>
-                      <th className="p-3 text-right border-r border-slate-200">Unit Pur. Price</th>
-                      <th className="p-3 text-right border-r border-slate-200">Unit Sale Price</th>
-                      <th className="p-3 text-right border-r border-slate-200 text-purple-900 bg-purple-50/50">Total Cost (COGS)</th>
-                      <th className="p-3 text-right border-r border-slate-200">Gross Sales</th>
-                      <th className="p-3 text-right border-r border-slate-200 text-amber-900">Discount</th>
-                      <th className="p-3 text-right border-r border-slate-200 text-sky-900 bg-sky-50/50">Net Revenue</th>
-                      <th className="p-3 text-right border-r border-slate-200 text-emerald-950 bg-emerald-50/50">Gross Profit</th>
-                      <th className="p-3 text-center">Profit Margin %</th>
+                    <tr className="bg-slate-100 text-slate-800 font-extrabold border-b border-slate-300 text-[11px] uppercase select-none">
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'itemId') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('itemId'); setStoreSortOrder('asc'); }
+                        }}
+                        className="p-3 border-r border-slate-200 cursor-pointer hover:bg-slate-200"
+                      >
+                        Item ID {storeSortField === 'itemId' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'itemName') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('itemName'); setStoreSortOrder('asc'); }
+                        }}
+                        className="p-3 border-r border-slate-200 cursor-pointer hover:bg-slate-200"
+                      >
+                        Medicine / Item Name {storeSortField === 'itemName' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'category') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('category'); setStoreSortOrder('asc'); }
+                        }}
+                        className="p-3 border-r border-slate-200 cursor-pointer hover:bg-slate-200"
+                      >
+                        Category {storeSortField === 'category' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'company') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('company'); setStoreSortOrder('asc'); }
+                        }}
+                        className="p-3 border-r border-slate-200 cursor-pointer hover:bg-slate-200"
+                      >
+                        Company {storeSortField === 'company' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'qtySold') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('qtySold'); setStoreSortOrder('desc'); }
+                        }}
+                        className="p-3 text-right border-r border-slate-200 cursor-pointer hover:bg-slate-200"
+                      >
+                        Qty Sold {storeSortField === 'qtySold' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'unitPurchasePrice') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('unitPurchasePrice'); setStoreSortOrder('desc'); }
+                        }}
+                        className="p-3 text-right border-r border-slate-200 cursor-pointer hover:bg-slate-200"
+                      >
+                        Unit Pur. Price {storeSortField === 'unitPurchasePrice' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'unitSalePrice') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('unitSalePrice'); setStoreSortOrder('desc'); }
+                        }}
+                        className="p-3 text-right border-r border-slate-200 cursor-pointer hover:bg-slate-200"
+                      >
+                        Unit Sale Price {storeSortField === 'unitSalePrice' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'totalCogs') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('totalCogs'); setStoreSortOrder('desc'); }
+                        }}
+                        className="p-3 text-right border-r border-slate-200 text-purple-900 bg-purple-50/50 cursor-pointer hover:bg-purple-100"
+                      >
+                        Total Cost (COGS) {storeSortField === 'totalCogs' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'totalGrossSales') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('totalGrossSales'); setStoreSortOrder('desc'); }
+                        }}
+                        className="p-3 text-right border-r border-slate-200 cursor-pointer hover:bg-slate-200"
+                      >
+                        Gross Sales {storeSortField === 'totalGrossSales' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'totalDiscount') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('totalDiscount'); setStoreSortOrder('desc'); }
+                        }}
+                        className="p-3 text-right border-r border-slate-200 text-amber-900 cursor-pointer hover:bg-amber-100"
+                      >
+                        Discount {storeSortField === 'totalDiscount' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'totalNetSales') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('totalNetSales'); setStoreSortOrder('desc'); }
+                        }}
+                        className="p-3 text-right border-r border-slate-200 text-sky-900 bg-sky-50/50 cursor-pointer hover:bg-sky-100"
+                      >
+                        Net Revenue {storeSortField === 'totalNetSales' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'grossProfit') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('grossProfit'); setStoreSortOrder('desc'); }
+                        }}
+                        className="p-3 text-right border-r border-slate-200 text-emerald-950 bg-emerald-50/50 cursor-pointer hover:bg-emerald-100"
+                      >
+                        Gross Profit {storeSortField === 'grossProfit' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
+                      <th 
+                        onClick={() => {
+                          if (storeSortField === 'marginPct') setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
+                          else { setStoreSortField('marginPct'); setStoreSortOrder('desc'); }
+                        }}
+                        className="p-3 text-center cursor-pointer hover:bg-slate-200"
+                      >
+                        Margin % {storeSortField === 'marginPct' && (storeSortOrder === 'asc' ? '▲' : '▼')}
+                      </th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 font-medium text-slate-800">
@@ -3276,30 +3539,30 @@ export default function ReportingDesk({
                   <tfoot>
                     <tr className="bg-slate-900 text-white font-extrabold text-xs">
                       <td className="p-3 uppercase tracking-wider" colSpan={4}>
-                        Grand Totals ({filteredStoreMedicineRows.length} Items)
+                        Summary Totals ({filteredStoreMedicineSummary.count} Items)
                       </td>
                       <td className="p-3 text-right text-slate-100 font-black">
-                        {filteredStoreMedicineRows.reduce((a, b) => a + b.qtySold, 0)}
+                        {filteredStoreMedicineSummary.totalQtySold}
                       </td>
                       <td></td>
                       <td></td>
                       <td className="p-3 text-right font-black text-purple-300 bg-slate-800 font-mono">
-                        Rs. {storeMedicineReportData.totalCogsAll.toLocaleString()}
+                        Rs. {filteredStoreMedicineSummary.totalCogs.toLocaleString()}
                       </td>
                       <td className="p-3 text-right text-slate-200 font-mono">
-                        Rs. {storeMedicineReportData.totalGrossSalesAll.toLocaleString()}
+                        Rs. {filteredStoreMedicineSummary.totalGrossSales.toLocaleString()}
                       </td>
                       <td className="p-3 text-right text-amber-300 font-mono">
-                        Rs. {storeMedicineReportData.totalDiscountsAll.toLocaleString()}
+                        Rs. {filteredStoreMedicineSummary.totalDiscount.toLocaleString()}
                       </td>
                       <td className="p-3 text-right font-black text-sky-300 bg-slate-800 font-mono">
-                        Rs. {storeMedicineReportData.totalNetSalesAll.toLocaleString()}
+                        Rs. {filteredStoreMedicineSummary.totalNetSales.toLocaleString()}
                       </td>
                       <td className="p-3 text-right font-black text-emerald-400 bg-slate-950 font-mono text-sm">
-                        Rs. {storeMedicineReportData.totalGrossProfitAll.toLocaleString()}
+                        Rs. {filteredStoreMedicineSummary.totalGrossProfit.toLocaleString()}
                       </td>
                       <td className="p-3 text-center font-black text-amber-300 bg-slate-950 font-mono text-sm">
-                        {storeMedicineReportData.overallMarginPctAll.toFixed(1)}%
+                        {filteredStoreMedicineSummary.overallMarginPct.toFixed(1)}%
                       </td>
                     </tr>
                   </tfoot>
