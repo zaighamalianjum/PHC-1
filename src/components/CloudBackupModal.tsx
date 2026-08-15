@@ -135,8 +135,13 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
       addLog(`Authenticated with Google account: ${res.user.email}`);
       loadRecentBackups(res.accessToken);
     } catch (err: any) {
-      console.error('Login error:', err);
-      setAuthError(err.message || 'Google Authentication failed. Please try again.');
+      if (err?.code === 'auth/popup-closed-by-user' || err?.code === 'auth/cancelled-popup-request') {
+        setAuthError('Sign-in window was closed. Click "Connect Google Drive" when you are ready to sign in.');
+      } else if (err?.code === 'auth/popup-blocked') {
+        setAuthError('Popup window was blocked by your browser. Please allow popups for this site and try again.');
+      } else {
+        setAuthError(err.message || 'Google Authentication failed. Please try again.');
+      }
     } finally {
       setIsAuthenticating(false);
     }
@@ -223,6 +228,46 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
       setCurrentStepText(`Backup upload failed: ${err.message || 'Unknown network error'}`);
       addLog(`❌ ERROR: ${err.message || 'Failed to upload backup to Google Drive.'}`);
       setAuthError(err.message || 'Upload failed. Please check network connectivity or permissions.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleExportOfflineZip = async () => {
+    setIsProcessing(true);
+    setActiveStage('extracting');
+    setStepPercent(0);
+    setLogs([]);
+    setAuthError(null);
+
+    try {
+      addLog(`🚀 Starting Local Offline ZIP Database Snapshot Export...`);
+      const zipRes = await generateDatabaseZip(targetDbName, (msg, pct) => {
+        setCurrentStepText(msg);
+        setStepPercent(pct);
+        addLog(msg);
+      });
+
+      setLastZipResult(zipRes);
+      setStepPercent(100);
+      setActiveStage('complete');
+      setCurrentStepText('Database ZIP archive compiled and ready for download!');
+      addLog(`✨ All ${BACKUP_COLLECTIONS.length} database tables archived into ${zipRes.fileName} (${zipRes.compressedKb.toLocaleString()} KB).`);
+      
+      // Auto trigger download
+      const url = window.URL.createObjectURL(zipRes.zipBlob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = zipRes.fileName;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      window.URL.revokeObjectURL(url);
+      addLog(`📥 Browser download triggered for: ${zipRes.fileName}`);
+    } catch (err: any) {
+      console.error('Offline export error:', err);
+      setActiveStage('error');
+      setAuthError(err.message || 'Failed to generate database ZIP archive.');
     } finally {
       setIsProcessing(false);
     }
@@ -372,24 +417,37 @@ export const CloudBackupModal: React.FC<CloudBackupModalProps> = ({
                 </p>
               </div>
 
-              <button
-                type="button"
-                onClick={handleStartCloudBackup}
-                disabled={isProcessing || !googleUser}
-                className="px-4 py-2.5 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 active:from-sky-700 active:to-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-sky-950/50 border border-sky-400/40 transition flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
-              >
-                {isProcessing ? (
-                  <>
-                    <RefreshCw className="w-4 h-4 animate-spin text-white" />
-                    <span>Processing Cloud Sync...</span>
-                  </>
-                ) : (
-                  <>
-                    <CloudUpload className="w-4 h-4 text-sky-200" />
-                    <span>Upload Backup to Drive</span>
-                  </>
-                )}
-              </button>
+              <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleExportOfflineZip}
+                  disabled={isProcessing}
+                  className="px-3 py-2 bg-slate-800 hover:bg-slate-750 text-slate-200 font-bold text-xs rounded-xl border border-slate-700 transition flex items-center justify-center space-x-1.5 cursor-pointer disabled:opacity-40"
+                  title="Download compressed ZIP database snapshot to this computer"
+                >
+                  <Download className="w-3.5 h-3.5 text-slate-400" />
+                  <span>Download ZIP</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleStartCloudBackup}
+                  disabled={isProcessing || !googleUser}
+                  className="px-4 py-2.5 bg-gradient-to-r from-sky-600 via-blue-600 to-indigo-600 hover:from-sky-500 hover:to-indigo-500 active:from-sky-700 active:to-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-lg shadow-sky-950/50 border border-sky-400/40 transition flex items-center justify-center space-x-2 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed shrink-0"
+                >
+                  {isProcessing ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin text-white" />
+                      <span>Processing Cloud Sync...</span>
+                    </>
+                  ) : (
+                    <>
+                      <CloudUpload className="w-4 h-4 text-sky-200" />
+                      <span>Upload to Drive</span>
+                    </>
+                  )}
+                </button>
+              </div>
             </div>
 
             {/* Live Progress Bar & Stage Indicator */}

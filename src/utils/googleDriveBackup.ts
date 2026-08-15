@@ -69,7 +69,11 @@ export const googleSignIn = async (): Promise<{ user: User; accessToken: string 
     cachedGoogleUser = result.user;
     return { user: result.user, accessToken: cachedAccessToken };
   } catch (error: any) {
-    console.error('Google Sign In Error:', error);
+    if (error?.code === 'auth/popup-closed-by-user' || error?.code === 'auth/cancelled-popup-request') {
+      console.info('Google sign-in window was closed by the user.');
+    } else {
+      console.warn('Google Sign In Issue:', error?.message || error);
+    }
     throw error;
   } finally {
     isSigningIn = false;
