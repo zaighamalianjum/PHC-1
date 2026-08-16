@@ -295,9 +295,12 @@ export default function App() {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
-          // Filter out any legacy dummy records
+          // Filter out any legacy dummy records or test patient tokens
           const cleanList = parsed.filter((item: any) => {
             if (!item) return false;
+            if (item.PatientID && typeof item.PatientID === 'string' && (item.PatientID.startsWith('PAT-') || item.PatientID === 'PAT-0075422')) {
+              return false;
+            }
             const id = item.PatientID || item.SID || item.ItemID || item.ExpenseID || item.AssetID || item.TransactionID || item.POID || item.PayrollID || item.VendorID || item.EmployeeID || '';
             if (typeof id === 'string' && (id.startsWith('TEST-') || id === 'PAT-001' || id === 'PAT-002' || id === 'PAT-003' || id.startsWith('NHC-100') || id.startsWith('EXP-50') || id.startsWith('AST-10') || id.startsWith('TXN-80') || id.startsWith('PAY-2026-07') || id.startsWith('PO-100') || id.startsWith('EMP-10') || id.startsWith('VND-00') || id.startsWith('SUP-00'))) {
               return false;
@@ -377,6 +380,24 @@ export default function App() {
   useEffect(() => { localStorage.setItem('cms_voucher_details', JSON.stringify(voucherDetails)); }, [voucherDetails]);
   useEffect(() => { localStorage.setItem('cms_ac_ledger', JSON.stringify(acLedger)); }, [acLedger]);
 
+  // One-time startup purge of any legacy phantom tokens or appointments with PAT- ID
+  useEffect(() => {
+    setTokens((prev) => {
+      const clean = prev.filter(t => t && t.PatientID && !t.PatientID.startsWith('PAT-') && t.PatientID !== 'PAT-0075422');
+      if (clean.length !== prev.length) {
+        localStorage.setItem('cms_tokens', JSON.stringify(clean));
+      }
+      return clean;
+    });
+    setAppointments((prev) => {
+      const clean = prev.filter(a => a && a.PatientID && !a.PatientID.startsWith('PAT-') && a.PatientID !== 'PAT-0075422');
+      if (clean.length !== prev.length) {
+        localStorage.setItem('cms_appointments', JSON.stringify(clean));
+      }
+      return clean;
+    });
+  }, []);
+
   useEffect(() => {
     // Auto-sync general ledger postings to MongoDB
     if (mongoDbSettings.SyncEnabled && acLedger.length > 0) {
@@ -417,8 +438,16 @@ export default function App() {
         fetch(`${bridgeUrl}/api/items`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setItems(data)).catch(() => {}),
         fetch(`${bridgeUrl}/api/lab-tests`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setLabTests(data)).catch(() => {}),
         fetch(`${bridgeUrl}/api/smart-locator`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setSmartLocatorMedicines(data)).catch(() => {}),
-        fetch(`${bridgeUrl}/api/appointments`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setAppointments(data)).catch(() => {}),
-        fetch(`${bridgeUrl}/api/tokens`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setTokens(data)).catch(() => {}),
+        fetch(`${bridgeUrl}/api/appointments`).then(r => r.ok ? r.json() : null).then(data => {
+          if (Array.isArray(data)) {
+            setAppointments(data.filter((a: any) => a && a.PatientID && !a.PatientID.startsWith('PAT-') && a.PatientID !== 'PAT-0075422'));
+          }
+        }).catch(() => {}),
+        fetch(`${bridgeUrl}/api/tokens`).then(r => r.ok ? r.json() : null).then(data => {
+          if (Array.isArray(data)) {
+            setTokens(data.filter((t: any) => t && t.PatientID && !t.PatientID.startsWith('PAT-') && t.PatientID !== 'PAT-0075422'));
+          }
+        }).catch(() => {}),
         fetch(`${bridgeUrl}/api/visits`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setVisits(data)).catch(() => {}),
         fetch(`${bridgeUrl}/api/visit-medicines`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setVisitMedicines(data)).catch(() => {}),
         fetch(`${bridgeUrl}/api/billing/invoices`).then(r => r.ok ? r.json() : null).then(data => {

@@ -3189,7 +3189,7 @@ export default function PharmacyPOS({
     setBillingShift(userShift);
     setStoreShift(userShift);
   }, [currentUser?.UserID, currentUser?.AssignedShift]);
-  const [storeDiscountPercent, setStoreDiscountPercent] = useState<0 | 5 | 10 | 15>(0);
+  const [storeDiscountPercent, setStoreDiscountPercent] = useState<number | null>(0);
   const [storeDiscountInput, setStoreDiscountInput] = useState<number | string>('');
   const [storeBasket, setStoreBasket] = useState<{ ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[]>([]);
   const [storeRowItemId, setStoreRowItemId] = useState('');
@@ -3934,19 +3934,24 @@ export default function PharmacyPOS({
   // Store Patent Medicine Sales (Store Sales) Helpers & Actions
   const calculateStoreTotals = () => {
     const gAmount = storeBasket.reduce((sum, item) => sum + item.Qty * item.Price, 0);
-    const discVal = storeDiscountInput === '' ? 0 : (Number(storeDiscountInput) || 0);
+    const rawDisc = storeDiscountInput === '' ? 0 : (Number(storeDiscountInput) || 0);
+    const discVal = Math.min(gAmount, Math.max(0, rawDisc));
     const netAmount = Math.max(0, gAmount - discVal);
-    return { storeGAmount: gAmount, storeNetAmount: netAmount, storeDiscVal: discVal };
+    const calculatedPercent = gAmount > 0 && discVal > 0 ? (discVal / gAmount) * 100 : 0;
+    return { 
+      storeGAmount: gAmount, 
+      storeNetAmount: netAmount, 
+      storeDiscVal: discVal,
+      storeCalculatedPercent: calculatedPercent
+    };
   };
 
-  const { storeGAmount, storeNetAmount, storeDiscVal } = calculateStoreTotals();
+  const { storeGAmount, storeNetAmount, storeDiscVal, storeCalculatedPercent } = calculateStoreTotals();
 
   useEffect(() => {
-    if (storeDiscountPercent > 0) {
+    if (storeDiscountPercent !== null && storeDiscountPercent > 0) {
       const computed = Math.round((storeGAmount * storeDiscountPercent) / 100);
       setStoreDiscountInput(computed);
-    } else {
-      setStoreDiscountInput(0);
     }
   }, [storeGAmount, storeDiscountPercent]);
 
@@ -5350,29 +5355,49 @@ export default function PharmacyPOS({
           </div>
 
           {/* Checkout Totals & Calculations Card */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-[480px]">
+          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between min-h-[520px]">
             <div>
-              <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">Store Ticket Checkout</h3>
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-bold text-slate-900">Store Ticket Checkout</h3>
+                <span className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded uppercase">Retail POS</span>
+              </div>
               
-              <div className="mt-4 space-y-3 text-xs text-slate-600">
-                <div className="flex justify-between font-semibold">
-                  <span>Gross Total (GAmount):</span>
-                  <span className="font-mono text-slate-900 font-bold">Rs. {storeGAmount.toLocaleString()}</span>
+              <div className="mt-4 space-y-3.5 text-xs text-slate-600">
+                <div className="flex justify-between items-center bg-slate-50 border border-slate-200/80 px-3 py-2 rounded-lg font-semibold">
+                  <span className="text-slate-700">Gross Total (GAmount):</span>
+                  <span className="font-mono text-slate-950 font-black text-sm">Rs. {storeGAmount.toLocaleString()}</span>
                 </div>
 
-                <div className="space-y-2">
-                  <label className="block text-xxs font-bold text-slate-400 uppercase tracking-wider">
-                    Discount Percentage (5%, 10%, 15% Only)
-                  </label>
+                {/* Discount Section */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <label className="block text-xxs font-bold text-slate-500 uppercase tracking-wider">
+                      Discount Presets (5%, 10%, 15%)
+                    </label>
+                    {storeDiscVal > 0 && (
+                      <span className="text-[10px] font-bold text-emerald-700 font-mono">
+                        Active: {storeCalculatedPercent % 1 === 0 ? storeCalculatedPercent.toFixed(0) : storeCalculatedPercent.toFixed(1)}% OFF
+                      </span>
+                    )}
+                  </div>
+
+                  {/* Preset Pills */}
                   <div className="grid grid-cols-4 gap-1.5">
                     {([0, 5, 10, 15] as const).map((pct) => {
                       const discAmt = Math.round((storeGAmount * pct) / 100);
-                      const isSelected = storeDiscountPercent === pct;
+                      const isSelected = (pct === 0 && storeDiscVal === 0) || (pct > 0 && Math.abs(storeCalculatedPercent - pct) < 0.1);
                       return (
                         <button
                           key={pct}
                           type="button"
-                          onClick={() => setStoreDiscountPercent(pct)}
+                          onClick={() => {
+                            setStoreDiscountPercent(pct);
+                            if (pct === 0) {
+                              setStoreDiscountInput('');
+                            } else {
+                              setStoreDiscountInput(Math.round((storeGAmount * pct) / 100));
+                            }
+                          }}
                           className={`py-2 px-1 rounded-xl border text-xs font-bold transition-all flex flex-col items-center justify-center cursor-pointer ${
                             isSelected
                               ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-300'
@@ -5387,22 +5412,95 @@ export default function PharmacyPOS({
                       );
                     })}
                   </div>
-                  {storeDiscountPercent > 0 && (
-                    <div className="flex justify-between items-center bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-800">
-                      <span>Applied {storeDiscountPercent}% Discount:</span>
-                      <span className="font-mono text-emerald-950 font-extrabold">- Rs. {storeDiscVal.toLocaleString()}</span>
+
+                  {/* Custom Discount Input Box with Auto-Calculated Percentage */}
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 space-y-2">
+                    <div className="flex items-center justify-between">
+                      <label className="text-[11px] font-bold text-slate-800 flex items-center">
+                        <span>Custom Discount Box (Rs.)</span>
+                        <span className="ml-1.5 text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold uppercase">
+                          Auto %
+                        </span>
+                      </label>
+                      {storeDiscVal > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStoreDiscountPercent(0);
+                            setStoreDiscountInput('');
+                          }}
+                          className="text-[10px] font-bold text-red-600 hover:text-red-700 cursor-pointer"
+                        >
+                          Clear Discount
+                        </button>
+                      )}
                     </div>
-                  )}
+
+                    <div className="relative flex items-center">
+                      <span className="absolute left-3 text-xs font-bold font-mono text-slate-500 pointer-events-none">Rs.</span>
+                      <input
+                        type="number"
+                        min="0"
+                        max={storeGAmount}
+                        placeholder={storeGAmount > 0 ? "Enter price/discount (e.g. 150)" : "Add items to calculate"}
+                        value={storeDiscountInput}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setStoreDiscountInput(val);
+                          const num = parseFloat(val) || 0;
+                          if (storeGAmount > 0) {
+                            const p = (num / storeGAmount) * 100;
+                            if (Math.abs(p - 5) < 0.01) {
+                              setStoreDiscountPercent(5);
+                            } else if (Math.abs(p - 10) < 0.01) {
+                              setStoreDiscountPercent(10);
+                            } else if (Math.abs(p - 15) < 0.01) {
+                              setStoreDiscountPercent(15);
+                            } else if (num === 0 || val === '') {
+                              setStoreDiscountPercent(0);
+                            } else {
+                              setStoreDiscountPercent(null);
+                            }
+                          }
+                        }}
+                        className="w-full text-xs font-mono font-bold border border-slate-300 bg-white rounded-lg pl-9 pr-24 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 text-slate-900 shadow-sm"
+                      />
+                      {storeCalculatedPercent > 0 && (
+                        <div className="absolute right-2 flex items-center bg-emerald-600 text-white text-[10px] font-mono font-black px-2 py-0.5 rounded shadow-xs">
+                          <span>{storeCalculatedPercent % 1 === 0 ? storeCalculatedPercent.toFixed(0) : storeCalculatedPercent.toFixed(1)}% OFF</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Dynamic Auto-Calculated Percentage Details */}
+                    {storeDiscVal > 0 && (
+                      <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-2.5 text-xs text-emerald-950 space-y-1">
+                        <div className="flex justify-between items-center font-bold">
+                          <span className="flex items-center space-x-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 inline-block"></span>
+                            <span>Auto-Calculated Discount %:</span>
+                          </span>
+                          <span className="font-mono text-emerald-900 font-extrabold text-sm">
+                            {storeCalculatedPercent % 1 === 0 ? storeCalculatedPercent.toFixed(0) : storeCalculatedPercent.toFixed(2)}% Concession
+                          </span>
+                        </div>
+                        <div className="text-[10px] text-emerald-800 flex justify-between font-medium">
+                          <span>Discount Amount: <strong>- Rs. {storeDiscVal.toLocaleString()}</strong></span>
+                          <span>(Rs. {storeDiscVal} ÷ Rs. {storeGAmount} × 100)</span>
+                        </div>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
-                <div className="border-t border-slate-100 pt-3 flex justify-between items-center text-sm">
+                <div className="border-t border-slate-200 pt-3 flex justify-between items-center text-sm">
                   <span className="font-bold text-slate-900">Net Amount Paid:</span>
-                  <strong className="text-lg font-bold text-emerald-600 font-mono">Rs. {storeNetAmount.toLocaleString()}</strong>
+                  <strong className="text-xl font-bold text-emerald-600 font-mono">Rs. {storeNetAmount.toLocaleString()}</strong>
                 </div>
               </div>
 
               {/* Account distribution preview */}
-              <div className="mt-5 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xxs text-slate-500 space-y-1.5 font-medium">
+              <div className="mt-4 bg-slate-50 border border-slate-200 rounded-xl p-3 text-xxs text-slate-500 space-y-1.5 font-medium">
                 <span className="font-bold text-slate-400 uppercase">Expected Double-Entry Distribution:</span>
                 <div className="flex justify-between">
                   <span>Debit StoreCIH_ Cash Account:</span>
@@ -5410,8 +5508,8 @@ export default function PharmacyPOS({
                 </div>
                 {storeDiscVal > 0 && (
                   <div className="flex justify-between">
-                    <span>Debit StoreDisc_ Discount:</span>
-                    <span className="text-slate-800 font-bold font-mono">Rs. {storeDiscVal.toLocaleString()}</span>
+                    <span>Debit StoreDisc_ Discount ({storeCalculatedPercent % 1 === 0 ? storeCalculatedPercent.toFixed(0) : storeCalculatedPercent.toFixed(1)}%):</span>
+                    <span className="text-emerald-700 font-bold font-mono">Rs. {storeDiscVal.toLocaleString()}</span>
                   </div>
                 )}
                 <div className="flex justify-between">

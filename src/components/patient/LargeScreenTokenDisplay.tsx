@@ -19,6 +19,14 @@ export default function LargeScreenTokenDisplay({
   isFullScreenMode,
   setIsFullScreenMode
 }: LargeScreenTokenDisplayProps) {
+  const realTodayStr = new Date().toISOString().split('T')[0];
+  const activeTokens = (tokens || []).filter(t => {
+    if (!t || !t.PatientID || t.PatientID.startsWith('PAT-') || t.PatientID === 'PAT-0075422') return false;
+    const tokDate = t.Date || realTodayStr;
+    if (tokDate !== realTodayStr) return false;
+    return (patients || []).some(p => p.PatientID === t.PatientID);
+  });
+
   const getPatientName = (patientId: string): string => {
     if (!patientId) return 'Unknown Patient';
     const match = patients.find((p) => p.PatientID === patientId);
@@ -103,14 +111,14 @@ export default function LargeScreenTokenDisplay({
                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                   <span className="text-base font-black tracking-wide text-amber-500 uppercase">Morning Shift (08:30 - 12:30)</span>
                   <span className="text-xxs bg-slate-800 text-slate-300 font-bold px-2.5 py-1 rounded">
-                    {tokens.filter(t => t.Shift === 1 && t.Status === 1).length} Patients Remaining
+                    {activeTokens.filter(t => t.Shift === 1 && t.Status === 1).length} Patients Remaining
                   </span>
                 </div>
 
                 {/* Currently Consulting */}
                 <div className="bg-slate-950 p-5 rounded-xl border-2 border-emerald-500/30 flex flex-col items-center justify-center text-center space-y-2 relative overflow-hidden">
                   <div className="absolute top-0 left-0 bg-emerald-500 text-slate-950 font-black text-[9px] tracking-widest px-3 py-1 uppercase">CURRENTLY IN ASSESSMENT</div>
-                  {tokens.filter(t => t.Shift === 1 && t.Status === 2).length === 0 ? (
+                  {activeTokens.filter(t => t.Shift === 1 && t.Status === 2).length === 0 ? (
                     <div className="py-6">
                       <span className="text-2xl font-black text-slate-600 font-mono">-- NONE --</span>
                       <p className="text-xxs text-slate-500 font-semibold mt-1">Doctor ready for next token...</p>
@@ -118,10 +126,10 @@ export default function LargeScreenTokenDisplay({
                   ) : (
                     <div className="py-4 space-y-1">
                       <span className="text-5xl font-black text-emerald-400 font-mono tracking-wider animate-bounce block">
-                        #{tokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.TokenNo).pop()}
+                        #{activeTokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.TokenNo).pop()}
                       </span>
                       <span className="text-sm font-extrabold text-slate-200 uppercase block">
-                        {getPatientName(tokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.PatientID).pop() || '')}
+                        {getPatientName(activeTokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.PatientID).pop() || '')}
                       </span>
                     </div>
                   )}
@@ -130,11 +138,11 @@ export default function LargeScreenTokenDisplay({
                 {/* Waiting Pool */}
                 <div className="space-y-3">
                   <span className="text-xxs font-black tracking-widest text-slate-400 uppercase">WAITING QUEUE (NEXT UP)</span>
-                  {tokens.filter(t => t.Shift === 1 && t.Status === 1).length === 0 ? (
+                  {activeTokens.filter(t => t.Shift === 1 && t.Status === 1).length === 0 ? (
                     <p className="text-xs text-slate-500 font-semibold text-center py-6">No patients in Morning waitlist.</p>
                   ) : (
                     <div className="grid grid-cols-4 gap-2.5">
-                      {tokens.filter(t => t.Shift === 1 && t.Status === 1).map((tok, idx) => (
+                      {activeTokens.filter(t => t.Shift === 1 && t.Status === 1).map((tok, idx) => (
                         <div key={`tok-w1-${tok.TokenNo}-${idx}`} className="bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-center font-mono">
                           <span className="text-lg font-black text-blue-400">#{tok.TokenNo}</span>
                           <p className="text-[8px] text-slate-500 font-sans truncate font-bold mt-1 uppercase">{getPatientName(tok.PatientID)}</p>
@@ -152,14 +160,14 @@ export default function LargeScreenTokenDisplay({
                 <div className="flex items-center justify-between border-b border-slate-800 pb-3">
                   <span className="text-base font-black tracking-wide text-indigo-400 uppercase">Evening Shift (17:00 - 21:00)</span>
                   <span className="text-xxs bg-slate-800 text-slate-300 font-bold px-2.5 py-1 rounded">
-                    {tokens.filter(t => t.Shift === 2 && t.Status === 1).length} Patients Remaining
+                    {activeTokens.filter(t => t.Shift === 2 && t.Status === 1).length} Patients Remaining
                   </span>
                 </div>
 
                 {/* Currently Consulting */}
                 <div className="bg-slate-950 p-5 rounded-xl border-2 border-emerald-500/30 flex flex-col items-center justify-center text-center space-y-2 relative overflow-hidden">
                   <div className="absolute top-0 left-0 bg-emerald-500 text-slate-950 font-black text-[9px] tracking-widest px-3 py-1 uppercase">CURRENTLY IN ASSESSMENT</div>
-                  {tokens.filter(t => t.Shift === 2 && t.Status === 2).length === 0 ? (
+                  {activeTokens.filter(t => t.Shift === 2 && t.Status === 2).length === 0 ? (
                     <div className="py-6">
                       <span className="text-2xl font-black text-slate-600 font-mono">-- NONE --</span>
                       <p className="text-xxs text-slate-500 font-semibold mt-1">Doctor ready for next token...</p>
@@ -167,10 +175,10 @@ export default function LargeScreenTokenDisplay({
                   ) : (
                     <div className="py-4 space-y-1">
                       <span className="text-5xl font-black text-emerald-400 font-mono tracking-wider animate-bounce block">
-                        #{tokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.TokenNo).pop()}
+                        #{activeTokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.TokenNo).pop()}
                       </span>
                       <span className="text-sm font-extrabold text-slate-200 uppercase block">
-                        {getPatientName(tokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.PatientID).pop() || '')}
+                        {getPatientName(activeTokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.PatientID).pop() || '')}
                       </span>
                     </div>
                   )}
@@ -179,11 +187,11 @@ export default function LargeScreenTokenDisplay({
                 {/* Waiting Pool */}
                 <div className="space-y-3">
                   <span className="text-xxs font-black tracking-widest text-slate-400 uppercase">WAITING QUEUE (NEXT UP)</span>
-                  {tokens.filter(t => t.Shift === 2 && t.Status === 1).length === 0 ? (
+                  {activeTokens.filter(t => t.Shift === 2 && t.Status === 1).length === 0 ? (
                     <p className="text-xs text-slate-500 font-semibold text-center py-6">No patients in Evening waitlist.</p>
                   ) : (
                     <div className="grid grid-cols-4 gap-2.5">
-                      {tokens.filter(t => t.Shift === 2 && t.Status === 1).map((tok, idx) => (
+                      {activeTokens.filter(t => t.Shift === 2 && t.Status === 1).map((tok, idx) => (
                         <div key={`tok-w2-${tok.TokenNo}-${idx}`} className="bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-center font-mono">
                           <span className="text-lg font-black text-indigo-400">#{tok.TokenNo}</span>
                           <p className="text-[8px] text-slate-500 font-sans truncate font-bold mt-1 uppercase">{getPatientName(tok.PatientID)}</p>
@@ -246,13 +254,13 @@ export default function LargeScreenTokenDisplay({
                 <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                   <span className="text-xl font-black tracking-wide text-amber-500 uppercase">Morning Shift (08:30 - 12:30)</span>
                   <span className="text-xs bg-slate-800 text-slate-300 font-bold px-4 py-2 rounded">
-                    {tokens.filter(t => t.Shift === 1 && t.Status === 1).length} Patients Remaining
+                    {activeTokens.filter(t => t.Shift === 1 && t.Status === 1).length} Patients Remaining
                   </span>
                 </div>
 
                 <div className="bg-slate-950 p-10 rounded-2xl border-4 border-emerald-500/50 flex flex-col items-center justify-center text-center space-y-4 relative overflow-hidden flex-1 min-h-[200px]">
                   <div className="absolute top-0 left-0 bg-emerald-500 text-slate-950 font-black text-xs tracking-widest px-6 py-2 uppercase">CURRENTLY IN ASSESSMENT</div>
-                  {tokens.filter(t => t.Shift === 1 && t.Status === 2).length === 0 ? (
+                  {activeTokens.filter(t => t.Shift === 1 && t.Status === 2).length === 0 ? (
                     <div className="py-12">
                       <span className="text-4xl font-black text-slate-600 font-mono">-- NONE --</span>
                       <p className="text-sm text-slate-500 font-semibold mt-2">Doctor ready for next token...</p>
@@ -260,10 +268,10 @@ export default function LargeScreenTokenDisplay({
                   ) : (
                     <div className="py-8 space-y-3">
                       <span className="text-7xl md:text-8xl font-black text-emerald-400 font-mono tracking-wider animate-bounce block">
-                        #{tokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.TokenNo).pop()}
+                        #{activeTokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.TokenNo).pop()}
                       </span>
                       <span className="text-2xl md:text-3xl font-extrabold text-slate-200 uppercase block tracking-wider truncate max-w-full">
-                        {getPatientName(tokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.PatientID).pop() || '')}
+                        {getPatientName(activeTokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.PatientID).pop() || '')}
                       </span>
                     </div>
                   )}
@@ -271,11 +279,11 @@ export default function LargeScreenTokenDisplay({
 
                 <div className="space-y-4">
                   <span className="text-xs font-black tracking-widest text-slate-400 uppercase block">WAITING QUEUE (NEXT UP)</span>
-                  {tokens.filter(t => t.Shift === 1 && t.Status === 1).length === 0 ? (
+                  {activeTokens.filter(t => t.Shift === 1 && t.Status === 1).length === 0 ? (
                     <p className="text-sm text-slate-500 font-semibold text-center py-6">No patients in Morning waitlist.</p>
                   ) : (
                     <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
-                      {tokens.filter(t => t.Shift === 1 && t.Status === 1).slice(0, 18).map((tok, idx) => (
+                      {activeTokens.filter(t => t.Shift === 1 && t.Status === 1).slice(0, 18).map((tok, idx) => (
                         <div key={`tok-fs1-${tok.TokenNo}-${idx}`} className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl text-center font-mono">
                           <span className="text-xl md:text-2xl font-black text-blue-400 block">#{tok.TokenNo}</span>
                           <p className="text-[9px] text-slate-400 font-sans truncate font-bold mt-1.5 uppercase">{getPatientName(tok.PatientID)}</p>
@@ -292,13 +300,13 @@ export default function LargeScreenTokenDisplay({
                 <div className="flex items-center justify-between border-b border-slate-800 pb-4">
                   <span className="text-xl font-black tracking-wide text-indigo-400 uppercase">Evening Shift (17:00 - 21:00)</span>
                   <span className="text-xs bg-slate-800 text-slate-300 font-bold px-4 py-2 rounded">
-                    {tokens.filter(t => t.Shift === 2 && t.Status === 1).length} Patients Remaining
+                    {activeTokens.filter(t => t.Shift === 2 && t.Status === 1).length} Patients Remaining
                   </span>
                 </div>
 
                 <div className="bg-slate-950 p-10 rounded-2xl border-4 border-emerald-500/50 flex flex-col items-center justify-center text-center space-y-4 relative overflow-hidden flex-1 min-h-[200px]">
                   <div className="absolute top-0 left-0 bg-emerald-500 text-slate-950 font-black text-xs tracking-widest px-6 py-2 uppercase">CURRENTLY IN ASSESSMENT</div>
-                  {tokens.filter(t => t.Shift === 2 && t.Status === 2).length === 0 ? (
+                  {activeTokens.filter(t => t.Shift === 2 && t.Status === 2).length === 0 ? (
                     <div className="py-12">
                       <span className="text-4xl font-black text-slate-600 font-mono">-- NONE --</span>
                       <p className="text-sm text-slate-500 font-semibold mt-2">Doctor ready for next token...</p>
@@ -306,10 +314,10 @@ export default function LargeScreenTokenDisplay({
                   ) : (
                     <div className="py-8 space-y-3">
                       <span className="text-7xl md:text-8xl font-black text-emerald-400 font-mono tracking-wider animate-bounce block">
-                        #{tokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.TokenNo).pop()}
+                        #{activeTokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.TokenNo).pop()}
                       </span>
                       <span className="text-2xl md:text-3xl font-extrabold text-slate-200 uppercase block tracking-wider truncate max-w-full">
-                        {getPatientName(tokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.PatientID).pop() || '')}
+                        {getPatientName(activeTokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.PatientID).pop() || '')}
                       </span>
                     </div>
                   )}
@@ -317,11 +325,11 @@ export default function LargeScreenTokenDisplay({
 
                 <div className="space-y-4">
                   <span className="text-xs font-black tracking-widest text-slate-400 uppercase block">WAITING QUEUE (NEXT UP)</span>
-                  {tokens.filter(t => t.Shift === 2 && t.Status === 1).length === 0 ? (
+                  {activeTokens.filter(t => t.Shift === 2 && t.Status === 1).length === 0 ? (
                     <p className="text-sm text-slate-500 font-semibold text-center py-6">No patients in Evening waitlist.</p>
                   ) : (
                     <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
-                      {tokens.filter(t => t.Shift === 2 && t.Status === 1).slice(0, 18).map((tok, idx) => (
+                      {activeTokens.filter(t => t.Shift === 2 && t.Status === 1).slice(0, 18).map((tok, idx) => (
                         <div key={`tok-fs2-${tok.TokenNo}-${idx}`} className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl text-center font-mono">
                           <span className="text-xl md:text-2xl font-black text-indigo-400 block">#{tok.TokenNo}</span>
                           <p className="text-[9px] text-slate-400 font-sans truncate font-bold mt-1.5 uppercase">{getPatientName(tok.PatientID)}</p>

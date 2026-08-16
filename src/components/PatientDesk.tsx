@@ -5830,13 +5830,21 @@ Healing Naturally. Restoring Balance.`;
 
   // Find Patient Details helper
   const getPatientName = (id: string) => {
+    if (!id) return 'Unknown';
     const p = patients.find((pat) => pat.PatientID === id);
-    return p ? p.PatientName : 'Unknown';
+    if (p) return p.PatientName;
+    const nhc = (nhcPatients || []).find((n) => n.PatientID === id);
+    if (nhc) return nhc.PatientName;
+    return `Patient (${id})`;
   };
 
   const getPatientPhone = (id: string) => {
+    if (!id) return 'N/A';
     const p = patients.find((pat) => pat.PatientID === id);
-    return p ? p.PhoneMobile : 'N/A';
+    if (p) return p.PhoneMobile;
+    const nhc = (nhcPatients || []).find((n) => n.PatientID === id);
+    if (nhc) return nhc.PhoneMobile || 'N/A';
+    return 'N/A';
   };
 
   return (
@@ -10662,9 +10670,10 @@ Healing Naturally. Restoring Balance.`;
 
 
       {activeSubTab === 'queue' && (() => {
+        const realTodayStr = new Date().toISOString().split('T')[0];
+
         const isTokenCompleted = (tok: Token) => {
           if (tok.Status === 2) return true;
-          const realTodayStr = new Date().toISOString().split('T')[0];
           const tokDate = tok.Date || realTodayStr;
           const hasVisit = (visits || []).some(
             (v) => v.PatientID === tok.PatientID && (v.VisitDate ? v.VisitDate.split('T')[0] === tokDate : false)
@@ -10679,9 +10688,18 @@ Healing Naturally. Restoring Balance.`;
         const showMorningQueue = userShift === 1 || userShift === 'Both' || !userShift;
         const showEveningQueue = userShift === 2 || userShift === 'Both' || !userShift;
 
-        const morningWaiting = tokens.filter((t) => t.Shift === 1 && t.Status === 1 && !isTokenCompleted(t));
-        const eveningWaiting = tokens.filter((t) => t.Shift === 2 && t.Status === 1 && !isTokenCompleted(t));
-        const completedList = tokens.filter((t) => isTokenCompleted(t) || t.Status === 2);
+        // Clean & valid tokens for active queue (exclude legacy PAT- phantom IDs and only include valid registered patients for today)
+        const validTokens = (tokens || []).filter((t) => {
+          if (!t || !t.PatientID || t.PatientID.startsWith('PAT-') || t.PatientID === 'PAT-0075422') return false;
+          const tokDate = t.Date || realTodayStr;
+          if (tokDate !== realTodayStr) return false;
+          const patientExists = (patients || []).some((p) => p.PatientID === t.PatientID) || (nhcPatients || []).some((n) => n.PatientID === t.PatientID);
+          return patientExists;
+        });
+
+        const morningWaiting = validTokens.filter((t) => t.Shift === 1 && t.Status === 1 && !isTokenCompleted(t));
+        const eveningWaiting = validTokens.filter((t) => t.Shift === 2 && t.Status === 1 && !isTokenCompleted(t));
+        const completedList = validTokens.filter((t) => isTokenCompleted(t) || t.Status === 2);
 
         const visibleBoxesCount = (showMorningQueue ? 1 : 0) + (showEveningQueue ? 1 : 0) + 1;
         const gridColsClass = visibleBoxesCount === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 lg:grid-cols-3';
