@@ -204,6 +204,204 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     return result;
   }, [inventoryItems, getMedicineItemCategory]);
 
+  // Intelligent Category Matcher & Auto-Detector (Handles raw strings, inventory items, PO items, and medicine names)
+  const resolveSmartMedicineCategory = useCallback((
+    rawCategoryStr?: string,
+    matchedInv?: any,
+    matchedPoItem?: any,
+    medicineName?: string
+  ): string => {
+    const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Check against all available categories & aliases
+    const matchCategoryCandidate = (candidate?: string): string | null => {
+      if (!candidate || typeof candidate !== 'string') return null;
+      const clean = candidate.trim();
+      if (!clean) return null;
+      const lower = clean.toLowerCase();
+      const normCand = norm(clean);
+
+      // 1. Exact case-insensitive match
+      const exactMatch = medicineCategories.find(c => c.toLowerCase() === lower);
+      if (exactMatch) return exactMatch;
+
+      // 2. Alphanumeric normalized match
+      const normMatch = medicineCategories.find(c => norm(c) === normCand);
+      if (normMatch) return normMatch;
+
+      // 3. Known Aliases mapping to standard categories
+      if (normCand.startsWith('bm') || normCand.includes('bmdrop')) {
+        const bm = medicineCategories.find(c => norm(c).includes('bmdrop') || c === 'BM Drops');
+        if (bm) return bm;
+      }
+      if (normCand === 'qd' || normCand.includes('qddrop') || normCand.includes('mothertincture') || normCand === 'mt' || normCand === 'q' || normCand === 'qdrops') {
+        const qd = medicineCategories.find(c => norm(c).includes('qddrop') || norm(c).includes('mothertincture') || c.includes('Mother Tincture') || c === 'Q D DROPS (Mother Tincture)');
+        if (qd) return qd;
+      }
+      if (normCand === '30' || normCand === '30c' || normCand === '30ch' || normCand === '30x' || normCand.includes('potency30') || normCand.includes('30potency')) {
+        const p30 = medicineCategories.find(c => norm(c).includes('potency30') || c === 'Potency 30');
+        if (p30) return p30;
+      }
+      if (normCand === '200' || normCand === '200c' || normCand === '200ch' || normCand === '200x' || normCand.includes('potency200') || normCand.includes('200potency')) {
+        const p200 = medicineCategories.find(c => norm(c).includes('potency200') || c === 'Potency 200');
+        if (p200) return p200;
+      }
+      if (normCand.includes('syrup') || normCand === 'syp') {
+        const syp = medicineCategories.find(c => norm(c) === 'syrup' || norm(c).includes('syrup'));
+        if (syp) return syp;
+      }
+      if (normCand === 'drop' || normCand === 'drops' || normCand.includes('drops')) {
+        const drops = medicineCategories.find(c => c === 'Drops' || norm(c) === 'drops');
+        if (drops) return drops;
+      }
+      if (normCand.includes('tab') || normCand.includes('tablet') || normCand.includes('cap') || normCand.includes('capsule')) {
+        const tab = medicineCategories.find(c => norm(c).includes('tablet') || norm(c).includes('capsule') || c === 'Tablet / Capsule');
+        if (tab) return tab;
+      }
+      if (normCand.includes('ointment') || normCand.includes('cream') || normCand.includes('gel')) {
+        const oint = medicineCategories.find(c => norm(c).includes('ointment') || norm(c).includes('cream') || c === 'Ointment / Cream');
+        if (oint) return oint;
+      }
+      if (normCand.includes('inj') || normCand.includes('injection') || normCand.includes('ampoule')) {
+        const inj = medicineCategories.find(c => norm(c).includes('injection') || norm(c).includes('ampoule') || c === 'Injection / Ampoule');
+        if (inj) return inj;
+      }
+      if (normCand === 'c' || normCand === 'clinical' || normCand.includes('compounding') || normCand === 'clinicalcompounding') {
+        const clin = medicineCategories.find(c => norm(c).includes('clinical') || c === 'Clinical Compounding (/C)');
+        if (clin) return clin;
+      }
+      if (normCand === 'p' || normCand === 'patent' || normCand.includes('prepackaged') || normCand === 'patentmedicine') {
+        const pat = medicineCategories.find(c => norm(c).includes('patent') || c === 'Patent Medicine (/P)');
+        if (pat) return pat;
+      }
+
+      // 4. Substring / partial match with custom categories
+      const subMatch = medicineCategories.find(c => {
+        const nc = norm(c);
+        return nc.length > 2 && (normCand.includes(nc) || nc.includes(normCand));
+      });
+      if (subMatch) return subMatch;
+
+      return clean;
+    };
+
+    // 1. First priority: explicit category string provided in file/text
+    if (rawCategoryStr && rawCategoryStr.trim()) {
+      const match = matchCategoryCandidate(rawCategoryStr);
+      if (match) return match;
+    }
+
+    // 2. Second priority: PO Item category
+    if (matchedPoItem && (matchedPoItem as any).Category) {
+      const match = matchCategoryCandidate((matchedPoItem as any).Category);
+      if (match) return match;
+    }
+
+    // 3. Third priority: Matched Master Inventory Item attributes (Category, Unit, MedicineType)
+    if (matchedInv) {
+      const invCat = matchedInv.Category || matchedInv.category || matchedInv.Unit || matchedInv.unit;
+      if (invCat) {
+        const match = matchCategoryCandidate(invCat);
+        if (match) return match;
+      }
+      if (matchedInv.MedicineType === 'C') {
+        const clin = medicineCategories.find(c => norm(c).includes('clinical') || c === 'Clinical Compounding (/C)');
+        if (clin) return clin;
+      }
+      if (matchedInv.MedicineType === 'P') {
+        const pat = medicineCategories.find(c => norm(c).includes('patent') || c === 'Patent Medicine (/P)');
+        if (pat) return pat;
+      }
+    }
+
+    // 4. Fourth priority: Smart auto-inference from Medicine Name itself!
+    if (medicineName && medicineName.trim()) {
+      const name = medicineName.trim();
+      const normName = norm(name);
+
+      // Check if medicine starts with or contains BM pattern (e.g. BM 101, BM-25, BM#12)
+      if (/^bm[- #_0-9]/i.test(name) || /\bbm[- #_0-9]/i.test(name) || /^bm\b/i.test(name) || (normName.startsWith('bm') && /\d/.test(normName.slice(0, 5)))) {
+        const bm = medicineCategories.find(c => norm(c).includes('bmdrop') || c === 'BM Drops');
+        if (bm) return bm;
+      }
+
+      // Check if ends with Q, MT, Q.D., or Mother Tincture
+      if (/\b(q|mt|q\.d\.|qd)\b/i.test(name) || /(mother\s*tincture|q\s*d\s*drops)/i.test(name) || /\s+q$/i.test(name)) {
+        const qd = medicineCategories.find(c => norm(c).includes('qddrop') || norm(c).includes('mothertincture') || c.includes('Mother Tincture') || c === 'Q D DROPS (Mother Tincture)');
+        if (qd) return qd;
+      }
+
+      // Check Potency 30 (e.g. Acid Phos 30, Arnica 30C, 30CH, 30X)
+      if (/\b30(c|ch|x|k)?\b/i.test(name) || /\bpotency\s*30\b/i.test(name) || /\s+30$/i.test(name)) {
+        const p30 = medicineCategories.find(c => norm(c).includes('potency30') || c === 'Potency 30');
+        if (p30) return p30;
+      }
+
+      // Check Potency 200 (e.g. Belladonna 200, Nux Vomica 200C, 200CH)
+      if (/\b200(c|ch|x|k)?\b/i.test(name) || /\bpotency\s*200\b/i.test(name) || /\s+200$/i.test(name)) {
+        const p200 = medicineCategories.find(c => norm(c).includes('potency200') || c === 'Potency 200');
+        if (p200) return p200;
+      }
+
+      // Check Potency 1M / 10M / CM
+      if (/\b(1m|10m|cm)\b/i.test(name)) {
+        const pHigh = medicineCategories.find(c => norm(c).includes('1m') || norm(c).includes('potency200') || c === 'Potency 200');
+        if (pHigh) return pHigh;
+      }
+
+      // Check Syrup
+      if (/\b(syrup|syp)\b/i.test(name)) {
+        const syp = medicineCategories.find(c => norm(c) === 'syrup' || norm(c).includes('syrup'));
+        if (syp) return syp;
+      }
+
+      // Check Drops
+      if (/\b(drops?|gtts?)\b/i.test(name)) {
+        const drops = medicineCategories.find(c => c === 'Drops' || norm(c) === 'drops');
+        if (drops) return drops;
+      }
+
+      // Check Tablet / Capsule
+      if (/\b(tabs?|tablets?|caps?|capsules?)\b/i.test(name)) {
+        const tab = medicineCategories.find(c => norm(c).includes('tablet') || norm(c).includes('capsule') || c === 'Tablet / Capsule');
+        if (tab) return tab;
+      }
+
+      // Check Ointment / Cream
+      if (/\b(ointments?|creams?|gels?|lotions?)\b/i.test(name)) {
+        const oint = medicineCategories.find(c => norm(c).includes('ointment') || norm(c).includes('cream') || c === 'Ointment / Cream');
+        if (oint) return oint;
+      }
+
+      // Check Injection
+      if (/\b(injections?|inj|ampoules?|vials?)\b/i.test(name)) {
+        const inj = medicineCategories.find(c => norm(c).includes('injection') || norm(c).includes('ampoule') || c === 'Injection / Ampoule');
+        if (inj) return inj;
+      }
+
+      // Check Clinical / Patent suffixes
+      if (name.includes('/C') || /\bclinical\b/i.test(name)) {
+        const clin = medicineCategories.find(c => norm(c).includes('clinical') || c === 'Clinical Compounding (/C)');
+        if (clin) return clin;
+      }
+      if (name.includes('/P') || /\bpatent\b/i.test(name)) {
+        const pat = medicineCategories.find(c => norm(c).includes('patent') || c === 'Patent Medicine (/P)');
+        if (pat) return pat;
+      }
+
+      // Check custom categories by matching words
+      for (const cat of medicineCategories) {
+        const nc = norm(cat);
+        if (nc.length >= 3 && normName.includes(nc)) {
+          return cat;
+        }
+      }
+    }
+
+    // 5. Default fallback
+    return medicineCategories[0] || 'BM Drops';
+  }, [medicineCategories]);
+
   // Selected Vendor for Statement View
   const selectedVendor = useMemo(() => {
     if (!selectedVendorId && vendors.length > 0) {
@@ -1826,12 +2024,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         return invName === searchName || invName.replace(/[^a-z0-9]/g, '') === searchName.replace(/[^a-z0-9]/g, '');
       });
 
+      const cat = resolveSmartMedicineCategory((row as any).category, matched, null, cleanName);
+
       if (matched) {
         const unitPrice = (customPrice !== undefined && customPrice >= 0)
           ? customPrice
           : (matched.PurchasePrice ?? matched.Price ?? 0);
-
-        const cat = getMedicineItemCategory(matched);
 
         result.push({
           ItemID: matched.ItemID || matched._id || `ITM-${Math.floor(100 + Math.random() * 900)}`,
@@ -1848,7 +2046,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         result.push({
           ItemID: `ITM-${Math.floor(100 + Math.random() * 900)}`,
           ItemName: cleanName,
-          Category: medicineCategories[0] || 'BM Drops',
+          Category: cat,
           Qty: qty,
           UnitPrice: unitPrice,
           BatchNo: `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
@@ -2013,10 +2211,16 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         (pi.ItemID && norm(pi.ItemID) === normRowName)
       );
 
-      // Match against master inventory items
+      // Match against master inventory items (exact or normalized or relaxed match)
       const matchedInv = (inventoryItems || []).find((inv: any) => {
         const invName = String(inv.ItemName || inv.Name || '').toLowerCase().trim();
-        return invName === cleanName.toLowerCase() || norm(invName) === normRowName;
+        if (invName === cleanName.toLowerCase() || norm(invName) === normRowName) return true;
+        // Substring / word match
+        const normInv = norm(invName);
+        if (normInv.length >= 4 && normRowName.length >= 4) {
+          return normInv === normRowName || normInv.startsWith(normRowName) || normRowName.startsWith(normInv);
+        }
+        return false;
       });
 
       const orderedQty = matchedPoItem ? matchedPoItem.OrderedQty : (selectedPo?.Items?.find(i => norm(i.ItemName) === normRowName)?.Qty || 0);
@@ -2034,18 +2238,13 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       const todayStr = new Date().toISOString().split('T')[0];
       const twoYearsStr = new Date(Date.now() + 365 * 2 * 86400000).toISOString().split('T')[0];
 
-      let matchedCategory = '';
-      if (row.category) {
-        const rowCatLower = row.category.toLowerCase().trim();
-        const found = medicineCategories.find(c => c.toLowerCase().trim() === rowCatLower || c.toLowerCase().includes(rowCatLower) || rowCatLower.includes(c.toLowerCase()));
-        matchedCategory = found || row.category.trim();
-      } else if ((matchedPoItem as any)?.Category) {
-        matchedCategory = (matchedPoItem as any).Category;
-      } else if (matchedInv) {
-        matchedCategory = getMedicineItemCategory(matchedInv);
-      } else {
-        matchedCategory = medicineCategories[0] || 'BM Drops';
-      }
+      // Auto-match & select Category intelligently
+      const matchedCategory = resolveSmartMedicineCategory(
+        row.category,
+        matchedInv,
+        matchedPoItem,
+        cleanName
+      );
 
       result.push({
         ItemID: matchedPoItem?.ItemID || matchedInv?.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
@@ -2115,7 +2314,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             const foundExp = firstRow.findIndex(c => c.includes('exp') || c.includes('expiry') || c.includes('expiration') || c.includes('best before'));
             const foundPrice = firstRow.findIndex(c => c.includes('price') || c.includes('rate') || c.includes('cost') || c.includes('unit') || c.includes('tp'));
             const foundQty = firstRow.findIndex(c => c.includes('recv') || c.includes('received') || c.includes('qty') || c.includes('quantity') || c.includes('inward'));
-            const foundCategory = firstRow.findIndex(c => c.includes('cat') || c.includes('category') || c.includes('type') || c.includes('group'));
+            const foundCategory = firstRow.findIndex(c => c.includes('cat') || c.includes('category') || c.includes('type') || c.includes('group') || c.includes('unit'));
 
             if (foundName >= 0) nameIdx = foundName;
             if (foundBatch >= 0) batchIdx = foundBatch;
@@ -2180,6 +2379,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const lines = text.split(/\r?\n/);
     const parsedRows: Array<{ name: string; batchNo?: string; mfgDate?: string; expiryDate?: string; price?: number; qty?: number; category?: string }> = [];
 
+    const isNumericStr = (s: string) => !isNaN(parseFloat(s)) && isFinite(Number(s));
+
     lines.forEach((line, idx) => {
       const trimmed = line.trim();
       if (!trimmed) return;
@@ -2211,30 +2412,73 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           qtyVal = parseFloat(parts[5].trim()) || 0;
           category = parts[6].trim() || undefined;
         } else if (parts.length === 6) {
-          batchNo = parts[1].trim() || undefined;
-          mfgDate = parts[2].trim() || undefined;
-          expiryDate = parts[3].trim() || undefined;
-          const p = parseFloat(parts[4].trim());
-          priceVal = !isNaN(p) ? p : undefined;
-          qtyVal = parseFloat(parts[5].trim()) || 0;
+          const lastCol = parts[5].trim();
+          if (!isNumericStr(lastCol) && lastCol.length > 0) {
+            batchNo = parts[1].trim() || undefined;
+            mfgDate = parts[2].trim() || undefined;
+            expiryDate = parts[3].trim() || undefined;
+            qtyVal = parseFloat(parts[4].trim()) || 0;
+            category = lastCol;
+          } else {
+            batchNo = parts[1].trim() || undefined;
+            mfgDate = parts[2].trim() || undefined;
+            expiryDate = parts[3].trim() || undefined;
+            const p = parseFloat(parts[4].trim());
+            priceVal = !isNaN(p) ? p : undefined;
+            qtyVal = parseFloat(parts[5].trim()) || 0;
+          }
         } else if (parts.length === 5) {
-          mfgDate = parts[1].trim() || undefined;
-          expiryDate = parts[2].trim() || undefined;
-          const num1 = parseFloat(parts[3].trim());
-          const num2 = parseFloat(parts[4].trim());
-          priceVal = !isNaN(num1) ? num1 : undefined;
-          qtyVal = !isNaN(num2) ? num2 : 0;
+          const lastCol = parts[4].trim();
+          if (!isNumericStr(lastCol) && lastCol.length > 0) {
+            batchNo = parts[1].trim() || undefined;
+            expiryDate = parts[2].trim() || undefined;
+            qtyVal = parseFloat(parts[3].trim()) || 0;
+            category = lastCol;
+          } else {
+            mfgDate = parts[1].trim() || undefined;
+            expiryDate = parts[2].trim() || undefined;
+            const num1 = parseFloat(parts[3].trim());
+            const num2 = parseFloat(parts[4].trim());
+            priceVal = !isNaN(num1) ? num1 : undefined;
+            qtyVal = !isNaN(num2) ? num2 : 0;
+          }
         } else if (parts.length === 4) {
-          expiryDate = parts[1].trim() || undefined;
-          const p = parseFloat(parts[2].trim());
-          priceVal = !isNaN(p) ? p : undefined;
-          qtyVal = parseFloat(parts[3].trim()) || 0;
+          const lastCol = parts[3].trim();
+          if (!isNumericStr(lastCol) && lastCol.length > 0) {
+            const p = parseFloat(parts[1].trim());
+            const q = parseFloat(parts[2].trim());
+            if (!isNaN(p) && !isNaN(q)) {
+              priceVal = p;
+              qtyVal = q;
+            } else {
+              batchNo = parts[1].trim() || undefined;
+              qtyVal = parseFloat(parts[2].trim()) || 0;
+            }
+            category = lastCol;
+          } else {
+            expiryDate = parts[1].trim() || undefined;
+            const p = parseFloat(parts[2].trim());
+            priceVal = !isNaN(p) ? p : undefined;
+            qtyVal = parseFloat(parts[3].trim()) || 0;
+          }
         } else if (parts.length === 3) {
-          qtyVal = parseFloat(parts[1].trim()) || 0;
-          const p = parseFloat(parts[2].trim());
-          priceVal = !isNaN(p) ? p : undefined;
+          const lastCol = parts[2].trim();
+          if (!isNumericStr(lastCol) && lastCol.length > 0) {
+            qtyVal = parseFloat(parts[1].trim()) || 0;
+            category = lastCol;
+          } else {
+            qtyVal = parseFloat(parts[1].trim()) || 0;
+            const p = parseFloat(parts[2].trim());
+            priceVal = !isNaN(p) ? p : undefined;
+          }
         } else if (parts.length === 2) {
-          qtyVal = parseFloat(parts[1].trim()) || 0;
+          const col1 = parts[1].trim();
+          if (!isNumericStr(col1) && col1.length > 0) {
+            category = col1;
+            qtyVal = 0;
+          } else {
+            qtyVal = parseFloat(col1) || 0;
+          }
         }
 
         parsedRows.push({
