@@ -1153,10 +1153,19 @@ export default function ReportingDesk({
         i.ItemID || i._id,
         i.ItemName || i.name,
         i.Category || i.category || 'General',
-        i.CStock || 0,
-        i.PurchasePrice || i.Price || 0,
-        i.Price || 0,
-        (Number(i.CStock) || 0) * (Number(i.PurchasePrice) || Number(i.Price) || 0)
+        getItemStock(i),
+        Number(i.PurchasePrice ?? i.purchasePrice ?? i.Price ?? i.price ?? 0),
+        Number(i.Price ?? i.price ?? 0),
+        getItemStock(i) * Number(i.PurchasePrice ?? i.purchasePrice ?? i.Price ?? i.price ?? 0)
+      ]);
+      rows.push([
+        'TOTAL',
+        `Grand Total (${currentStockSummary.totalItems} Items)`,
+        '—',
+        currentStockSummary.totalStockUnits,
+        '—',
+        currentStockSummary.totalRetailValuation,
+        currentStockSummary.totalPurchaseValuation
       ]);
     } else if (activeReport === 'minimum_stock') {
       headers = ['Item ID', 'Medicine Name', 'Category', 'Current Stock', 'Min Threshold', 'Deficit'];
@@ -1512,11 +1521,20 @@ export default function ReportingDesk({
             }).join('')}
           </tbody>
           <tfoot>
-            <tr style="background: #f1f5f9; font-weight: bold;">
-              <td colspan="3" style="text-align: right">TOTAL INVENTORY SUMMARY:</td>
-              <td style="text-align: center; font-size: 12px;">${currentStockSummary.totalStockUnits.toLocaleString()} Units</td>
-              <td colspan="2" style="text-align: right">TOTAL PURCHASE VALUATION:</td>
-              <td style="text-align: right; color: #0369a1; font-size: 13px; font-weight: 900;">Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}</td>
+            <tr style="background: #f1f5f9; font-weight: 900; border-top: 2px solid #334155;">
+              <td colspan="3" style="text-align: right; font-weight: 900; font-size: 11.5px; text-transform: uppercase;">
+                GRAND TOTAL (${currentStockSummary.totalItems} MEDICINES):
+              </td>
+              <td style="text-align: center; font-size: 12px; font-weight: 900; color: #4338ca;">
+                ${currentStockSummary.totalStockUnits.toLocaleString()} Units
+              </td>
+              <td style="text-align: right; color: #64748b; font-size: 11px;">—</td>
+              <td style="text-align: right; font-size: 12px; font-weight: 900; color: #047857;">
+                Rs. ${currentStockSummary.totalRetailValuation.toLocaleString()}
+              </td>
+              <td style="text-align: right; color: #0369a1; font-size: 13px; font-weight: 900; background: #e0f2fe;">
+                Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}
+              </td>
             </tr>
           </tfoot>
         </table>
@@ -2831,6 +2849,23 @@ export default function ReportingDesk({
                   })
                 )}
               </tbody>
+              <tfoot className="bg-slate-100 border-t-2 border-slate-300 font-extrabold text-slate-900">
+                <tr>
+                  <td colSpan={3} className="p-3.5 text-right font-black uppercase text-xs tracking-wider text-slate-800">
+                    Grand Total ({currentStockSummary.totalItems} Medicines):
+                  </td>
+                  <td className="p-3.5 text-center font-black font-mono text-xs text-indigo-700">
+                    {currentStockSummary.totalStockUnits.toLocaleString()} Units
+                  </td>
+                  <td className="p-3.5 text-right text-slate-400 font-semibold text-[11px]">—</td>
+                  <td className="p-3.5 text-right font-black font-mono text-xs text-emerald-700">
+                    Rs. {currentStockSummary.totalRetailValuation.toLocaleString()}
+                  </td>
+                  <td className="p-3.5 text-right font-black font-mono text-xs text-sky-900 bg-sky-50/70">
+                    Rs. {currentStockSummary.totalPurchaseValuation.toLocaleString()}
+                  </td>
+                </tr>
+              </tfoot>
             </table>
           </div>
         )}

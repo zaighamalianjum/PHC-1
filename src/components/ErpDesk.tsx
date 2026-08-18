@@ -4333,7 +4333,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
           <!-- Official Report Banner & Meta Details -->
           <div class="report-banner">
-            <span class="report-banner-title">OFFICIAL PURCHASE ORDER (PO) ${hasGrns ? '- GRN RECEIVING REPORT' : '- STOCK REQUISITION'}</span>
+            <span class="report-banner-title">OFFICIAL PURCHASE ORDER (PO)</span>
             <span class="report-banner-ref">REF: PHC-PO-${po.POID}</span>
           </div>
 
@@ -4363,10 +4363,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             <div class="meta-item">
               <span class="meta-label">Total Line Items</span>
               <span class="meta-value" style="color: #881337;">${po.Items.length} Medicines</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Total Order Est Amount</span>
-              <span class="meta-value">Rs. ${(po.TotalAmount || 0).toLocaleString()}</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">Audit Prepared By</span>
@@ -4545,10 +4541,15 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
       {/* SIDEBAR NAVIGATION & MAIN ERP CONTENT AREA */}
       <div className="flex flex-col lg:flex-row gap-6 items-start">
-        {/* LEFT SIDEBAR TABS NAVIGATION */}
-        <div className="w-full lg:w-64 shrink-0 bg-white rounded-2xl border border-slate-200 p-3.5 shadow-sm space-y-1.5 sticky top-4">
-          <div className="px-3 py-1 text-[10px] font-black uppercase text-slate-400 tracking-wider">
-            ERP Navigation
+        {/* LEFT SIDEBAR TABS NAVIGATION - STYLISH HOVER-TO-EXPAND */}
+        <div className="group/sidebar w-full lg:w-[68px] lg:hover:w-64 shrink-0 bg-white rounded-2xl border border-slate-200 p-2.5 shadow-sm space-y-1.5 sticky top-4 transition-all duration-300 ease-in-out overflow-hidden z-20 hover:shadow-lg hover:border-indigo-200">
+          <div className="flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase text-slate-400 tracking-wider">
+            <span className="opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 transition-opacity duration-300 whitespace-nowrap overflow-hidden max-w-full lg:max-w-0 lg:group-hover/sidebar:max-w-full">
+              ERP Navigation
+            </span>
+            <span className="hidden lg:block lg:group-hover/sidebar:hidden text-[9px] font-black text-slate-400 text-center w-full">
+              ERP
+            </span>
           </div>
           {[
             { id: 'overview', label: 'ERP Dashboard', icon: PieChart },
@@ -4567,18 +4568,23 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               <button
                 key={tab.id}
                 onClick={() => setActiveTab(tab.id as any)}
-                className={`w-full px-3.5 py-2.5 rounded-xl font-bold text-xs transition flex items-center justify-between cursor-pointer ${
+                title={tab.label}
+                className={`w-full p-2.5 rounded-xl font-bold text-xs transition-all duration-200 flex items-center justify-between cursor-pointer group/btn ${
                   isActive
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                <div className="flex items-center space-x-2.5 min-w-0">
-                  <Icon className="w-4 h-4 shrink-0" />
-                  <span className="truncate">{tab.label}</span>
+                <div className="flex items-center space-x-3 min-w-0">
+                  <div className="w-5 h-5 flex items-center justify-center shrink-0">
+                    <Icon className={`w-4 h-4 transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover/btn:scale-110'}`} />
+                  </div>
+                  <span className="truncate whitespace-nowrap opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 max-w-full lg:max-w-0 lg:group-hover/sidebar:max-w-xs transition-all duration-300 overflow-hidden">
+                    {tab.label}
+                  </span>
                 </div>
                 {isActive && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-white shrink-0" />
+                  <div className="w-1.5 h-1.5 rounded-full bg-white shrink-0 ml-1 opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 transition-opacity duration-300" />
                 )}
               </button>
             );
