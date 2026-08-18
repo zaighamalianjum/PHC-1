@@ -7350,24 +7350,22 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                           <tr className="text-slate-600 font-bold border-b border-slate-200">
                             <th className="p-2.5 w-10 text-center">#</th>
                             <th className="p-2.5">Medicine Name</th>
-                            <th className="p-2.5 w-40">Category</th>
-                            <th className="p-2.5 w-32">Batch No. (Opt)</th>
-                            <th className="p-2.5 w-24 text-center">Required Qty</th>
-                            <th className="p-2.5 w-28 text-center">Unit Price (Rs.)</th>
-                            <th className="p-2.5 w-28 text-right">Est. Total (Rs.)</th>
+                            <th className="p-2.5 w-44">Medicine Category</th>
+                            <th className="p-2.5 w-36">Batch No. (Optional)</th>
+                            <th className="p-2.5 w-32 text-center">Required Order Qty</th>
                             <th className="p-2.5 w-12 text-center">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {poForm.Items.length === 0 ? (
                             <tr>
-                              <td colSpan={8} className="p-6 text-center text-slate-400 font-medium">
+                              <td colSpan={6} className="p-6 text-center text-slate-400 font-medium">
                                 No medicines selected yet. Choose items from the grid above or auto-select low stock items!
                               </td>
                             </tr>
                           ) : filteredPoSelectedItems.length === 0 ? (
                             <tr>
-                              <td colSpan={8} className="p-6 text-center text-slate-500 font-medium bg-amber-50/50">
+                              <td colSpan={6} className="p-6 text-center text-slate-500 font-medium bg-amber-50/50">
                                 <p className="font-bold text-slate-700">No selected order items match the active search query or filter.</p>
                                 <p className="text-xs text-slate-500 mt-1">({poForm.Items.length} items exist in the total purchase requisition list)</p>
                                 <button
@@ -7385,10 +7383,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                             </tr>
                           ) : (
                             filteredPoSelectedItems.map(({ item, originalIndex }, filteredIdx) => {
-                              const itemUnitPrice = Number(item.UnitPrice) || 0;
-                              const itemQty = Number(item.Qty) || 1;
-                              const lineTotal = itemUnitPrice * itemQty;
-
                               return (
                                 <tr key={originalIndex} className="hover:bg-slate-50">
                                   <td className="p-2.5 text-center font-bold text-slate-400 font-mono">
@@ -7430,41 +7424,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                       placeholder="1"
                                       value={item.Qty}
                                       onChange={e => handleUpdatePoItem(originalIndex, 'Qty', Math.max(1, Number(e.target.value)))}
-                                      className="w-20 mx-auto p-1.5 border border-indigo-300 rounded-lg text-xs text-center font-black font-mono bg-indigo-50/40 text-indigo-950"
+                                      className="w-24 mx-auto p-1.5 border border-indigo-300 rounded-lg text-xs text-center font-black font-mono bg-indigo-50/40 text-indigo-950"
                                     />
-                                  </td>
-                                  <td className="p-2 text-center">
-                                    <div className="relative">
-                                      <input
-                                        type="number"
-                                        min="0"
-                                        step="any"
-                                        placeholder="0"
-                                        value={item.UnitPrice ?? 0}
-                                        onChange={e => handleUpdatePoItem(originalIndex, 'UnitPrice', Math.max(0, Number(e.target.value)))}
-                                        className={`w-24 mx-auto p-1.5 border rounded-lg text-xs text-center font-black font-mono ${
-                                          itemUnitPrice > 0
-                                            ? 'bg-emerald-50/50 border-emerald-300 text-emerald-950'
-                                            : 'bg-amber-50/50 border-amber-300 text-amber-900'
-                                        }`}
-                                      />
-                                      {itemUnitPrice === 0 && (
-                                        <span className="block text-[9px] text-amber-700 font-bold mt-0.5">
-                                          Not Mentioned
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className="p-2 text-right font-mono font-extrabold text-slate-800">
-                                    {lineTotal > 0 ? (
-                                      <span className="text-indigo-900 font-bold">
-                                        Rs. {lineTotal.toLocaleString()}
-                                      </span>
-                                    ) : (
-                                      <span className="text-slate-400 text-[11px] italic">
-                                        — (Rs. 0)
-                                      </span>
-                                    )}
                                   </td>
                                   <td className="p-2 text-center">
                                     <button
