@@ -109,6 +109,83 @@ export function generateWhatsAppRegistrationUrl(data: {
   }
 }
 
+export interface WhatsAppPurchaseOrderPayload {
+  poId: string;
+  vendorName: string;
+  vendorPhone?: string;
+  orderDate?: string;
+  expectedDeliveryDate?: string;
+  totalAmount?: number;
+  items: Array<{
+    ItemName: string;
+    Qty: number | string;
+    UnitPrice?: number | string;
+    Category?: string;
+    BatchNo?: string;
+  }>;
+  notes?: string;
+  clinicName?: string;
+  clinicAddress?: string;
+  clinicPhone?: string;
+  preparedBy?: string;
+}
+
+export function generateWhatsAppPurchaseOrderText(data: WhatsAppPurchaseOrderPayload): string {
+  const clinic = data.clinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
+  const address = data.clinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+  const clinicPhone = data.clinicPhone || '+92 300 1234567';
+
+  let msg = `🏥 *${clinic}*\n`;
+  msg += `📋 *PURCHASE ORDER & REQUISITION*\n`;
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `🔖 *PO Number:* ${data.poId}\n`;
+  msg += `🏢 *Vendor / Supplier:* ${data.vendorName}\n`;
+  msg += `📅 *Order Date:* ${data.orderDate || new Date().toISOString().split('T')[0]}\n`;
+  if (data.expectedDeliveryDate) {
+    msg += `🚚 *Expected Delivery:* ${data.expectedDeliveryDate}\n`;
+  }
+  if (data.preparedBy) {
+    msg += `👤 *Authorized By:* ${data.preparedBy}\n`;
+  }
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `📦 *ORDER ITEMS (${data.items.length} Medicines):*\n`;
+
+  data.items.forEach((item, idx) => {
+    const qty = Number(item.Qty) || 1;
+    const rate = Number(item.UnitPrice) || 0;
+    const catStr = item.Category ? ` [${item.Category}]` : '';
+    const rateStr = rate > 0 ? ` @ Rs. ${rate.toLocaleString()}` : '';
+    msg += `${idx + 1}. *${item.ItemName}*${catStr}\n   ▫️ Qty: *${qty}*${rateStr}\n`;
+  });
+
+  if (data.totalAmount && Number(data.totalAmount) > 0) {
+    msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `💰 *Est. Total Value:* Rs. ${Number(data.totalAmount).toLocaleString()}\n`;
+  }
+
+  if (data.notes && data.notes.trim()) {
+    msg += `📝 *Instructions / Notes:*\n${data.notes.trim()}\n`;
+  }
+
+  msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `📍 *Delivery Address:* ${address}\n`;
+  msg += `📞 *Clinic Contact:* ${clinicPhone}\n`;
+  msg += `📄 _Please process this Purchase Order. Official PDF copy attached._`;
+
+  return msg;
+}
+
+export function generateWhatsAppPurchaseOrderUrl(data: WhatsAppPurchaseOrderPayload): string {
+  const cleanPhone = formatWhatsAppPhone(data.vendorPhone || '');
+  const message = generateWhatsAppPurchaseOrderText(data);
+  const encodedText = encodeURIComponent(message);
+  if (cleanPhone) {
+    return `https://wa.me/${cleanPhone}?text=${encodedText}`;
+  } else {
+    return `https://api.whatsapp.com/send?text=${encodedText}`;
+  }
+}
+
 export function openWhatsAppUrl(url: string, useDesktopApp: boolean = true): void {
   try {
     let targetUrl = url;

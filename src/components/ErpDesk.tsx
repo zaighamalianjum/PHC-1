@@ -52,6 +52,18 @@ import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
 import ReportingDesk from './ReportingDesk';
 import { GrnPrintPreviewModal } from './GrnPrintPreviewModal';
+import {
+  openWhatsAppUrl,
+  generateWhatsAppPurchaseOrderUrl,
+  generateWhatsAppPurchaseOrderText,
+  formatWhatsAppPhone
+} from '../utils/whatsappUtils';
+
+const WhatsAppIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.573-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c-.001 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+  </svg>
+);
 
 import {
   ErpVendor,
@@ -135,6 +147,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [poGridPage, setPoGridPage] = useState<number>(1);
   const [poGridPageSize, setPoGridPageSize] = useState<number>(24);
   const [customCategoryUpdate, setCustomCategoryUpdate] = useState<number>(0);
+
+  // WhatsApp PO Share State
+  const [selectedPoForWhatsApp, setSelectedPoForWhatsApp] = useState<ErpPurchaseOrder | null>(null);
+  const [whatsAppTargetPhone, setWhatsAppTargetPhone] = useState<string>('');
+  const [whatsAppCustomNote, setWhatsAppCustomNote] = useState<string>('');
+  const [showWhatsAppPoModal, setShowWhatsAppPoModal] = useState<boolean>(false);
 
   // Helper to extract clean category matching Stock Manager / Pharmacy POS
   const getMedicineItemCategory = useCallback((item: any): string => {
@@ -2829,6 +2847,52 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     }
   };
 
+  const handleOpenPoWhatsAppModal = (po: ErpPurchaseOrder) => {
+    // Find vendor phone number
+    const targetVendor = vendors.find(v =>
+      (po.VendorID && (v.VendorID === po.VendorID || (v as any).SupplierID === po.VendorID)) ||
+      (po.VendorName && v.VendorName && v.VendorName.trim().toLowerCase() === po.VendorName.trim().toLowerCase())
+    );
+    const phone = targetVendor?.Phone || (po as any).VendorPhone || '';
+    setSelectedPoForWhatsApp(po);
+    setWhatsAppTargetPhone(phone);
+    setWhatsAppCustomNote(po.Notes || '');
+    setShowWhatsAppPoModal(true);
+  };
+
+  const handleSendPoWhatsApp = (includePdfPrint: boolean = false) => {
+    if (!selectedPoForWhatsApp) return;
+
+    const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
+    const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cPhone = clinicSettings?.PhoneMobile || '+92 300 1234567';
+
+    const url = generateWhatsAppPurchaseOrderUrl({
+      poId: selectedPoForWhatsApp.POID,
+      vendorName: selectedPoForWhatsApp.VendorName,
+      vendorPhone: whatsAppTargetPhone,
+      orderDate: selectedPoForWhatsApp.OrderDate,
+      expectedDeliveryDate: selectedPoForWhatsApp.ExpectedDeliveryDate,
+      totalAmount: selectedPoForWhatsApp.TotalAmount,
+      items: selectedPoForWhatsApp.Items || [],
+      notes: whatsAppCustomNote,
+      clinicName: cName,
+      clinicAddress: cAddress,
+      clinicPhone: cPhone,
+      preparedBy: currentUser?.FullName || 'Mr. Zaigham Ali Anjum (Admin)'
+    });
+
+    openWhatsAppUrl(url, false);
+
+    if (includePdfPrint) {
+      handlePrintPo(selectedPoForWhatsApp);
+    }
+
+    setSyncMessage(`Purchase Order ${selectedPoForWhatsApp.POID} shared to WhatsApp!`);
+    setTimeout(() => setSyncMessage(null), 3500);
+    setShowWhatsAppPoModal(false);
+  };
+
   const handleDeletePo = async (po: ErpPurchaseOrder) => {
     if (!confirm(`Delete Purchase Order ${po.POID}? This will also remove linked Goods Received Notes and revert inventory stock.`)) return;
     const targetId = po._id || po.POID;
@@ -4972,8 +5036,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             }
             .financial-grid {
               display: grid;
-              grid-template-columns: 1.5fr 1fr 1fr 1.2fr;
-              gap: 10px;
+              grid-template-columns: 1fr 1fr;
+              gap: 12px;
             }
             .financial-stat {
               background: #f8fafc;
@@ -5150,12 +5214,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               <span class="meta-value" style="color: #881337;">${po.Items.length} Medicines</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Vendor Invoice No(s)</span>
-              <span class="meta-value" style="color: #0284c7; font-family: monospace;">
-                ${supplierInvoiceNumbers.length > 0 ? supplierInvoiceNumbers.join(', ') : 'Awaiting Inward GRN / Bill'}
-              </span>
-            </div>
-            <div class="meta-item">
               <span class="meta-label">Audit Prepared By</span>
               <span class="meta-value">${currentUser?.FullName || 'Staff Accountant'}</span>
             </div>
@@ -5172,20 +5230,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               <span style="font-size: 9.5px; font-weight: bold; color: #475569;">Vendor Code: ${po.VendorID || 'N/A'}</span>
             </div>
             <div class="financial-grid">
-              <div class="financial-stat" style="border-left: 3px solid #1e293b;">
-                <span class="financial-stat-label">Total PO Order Value</span>
-                <span class="financial-stat-value" style="color: #0f172a;">Rs. ${effectivePoBilledValue.toLocaleString()}</span>
-                <span class="financial-stat-sub">${hasGrns ? 'Billed via Inward GRN' : 'Estimated PO Value'}</span>
-              </div>
               <div class="financial-stat" style="border-left: 3px solid #047857; background: #f0fdf4;">
                 <span class="financial-stat-label" style="color: #047857;">Total Payments Settled</span>
                 <span class="financial-stat-value" style="color: #047857;">Rs. ${totalPoPaymentsPaid.toLocaleString()}</span>
                 <span class="financial-stat-sub">${poPayments.length} Payment Voucher(s) Paid</span>
-              </div>
-              <div class="financial-stat" style="border-left: 3px solid #b45309; background: #fffbeb;">
-                <span class="financial-stat-label" style="color: #92400e;">Latest Pending Dues (This PO)</span>
-                <span class="financial-stat-value" style="color: #b45309;">Rs. ${pendingPoDues.toLocaleString()}</span>
-                <span class="financial-stat-sub">${pendingPoDues === 0 ? '✓ Fully Cleared & Paid' : 'Outstanding Balance for this PO'}</span>
               </div>
               <div class="financial-stat" style="border-left: 3px solid #881337; background: #fff1f2;">
                 <span class="financial-stat-label" style="color: #9f1239;">Vendor Total Outstanding</span>
@@ -5276,8 +5324,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           </div>
 
           {/* Timeframe Scope Buttons & Sync Action */}
-          <div className="flex flex-wrap items-center gap-2">
-            <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <div className="inline-flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-2xs">
               {[
                 { id: 'today', label: '☀️ Daily' },
                 { id: 'this_week', label: '📅 Weekly' },
@@ -5289,10 +5337,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 <button
                   key={p.id}
                   onClick={() => setCashBookDateFilter(p.id as any)}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                  className={`h-8 px-3 text-xs font-bold rounded-lg transition whitespace-nowrap shrink-0 inline-flex items-center justify-center cursor-pointer ${
                     cashBookDateFilter === p.id
                       ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
                   }`}
                 >
                   {p.label}
@@ -5301,9 +5349,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
 
             {syncMessage && (
-              <div className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200 flex items-center space-x-1.5 animate-pulse">
-                <CheckCircle2 className="w-4 h-4" />
-                <span>{syncMessage}</span>
+              <div className="h-10 px-3 py-1.5 rounded-xl bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200 inline-flex items-center space-x-1.5 animate-pulse shrink-0">
+                <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                <span className="whitespace-nowrap">{syncMessage}</span>
               </div>
             )}
 
@@ -5311,53 +5359,53 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               type="button"
               onClick={fetchErpData}
               disabled={loading}
-              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition flex items-center space-x-1.5 border border-slate-200 cursor-pointer shrink-0"
+              className="h-10 px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition inline-flex items-center justify-center space-x-1.5 border border-slate-200 cursor-pointer shrink-0 shadow-2xs"
               title="Sync ERP data from database"
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-indigo-600' : ''}`} />
-              <span>Sync Data</span>
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-indigo-600' : 'text-slate-600'}`} />
+              <span className="whitespace-nowrap">Sync Data</span>
             </button>
           </div>
         </div>
 
         {/* Custom Range Date Pickers */}
         {cashBookDateFilter === 'custom' && (
-          <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-3 animate-fadeIn">
+          <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-3 animate-fadeIn">
             <div className="flex items-center space-x-2">
-              <span className="text-xs font-bold text-slate-700">From Date:</span>
+              <span className="text-xs font-bold text-slate-700 whitespace-nowrap">From Date:</span>
               <input
                 type="date"
                 value={cashBookStartDate}
                 onChange={(e) => setCashBookStartDate(e.target.value)}
-                className="text-xs font-bold p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="text-xs font-bold h-8 px-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:bg-white"
               />
             </div>
             <div className="flex items-center space-x-2">
-              <span className="text-xs font-bold text-slate-700">To Date:</span>
+              <span className="text-xs font-bold text-slate-700 whitespace-nowrap">To Date:</span>
               <input
                 type="date"
                 value={cashBookEndDate}
                 onChange={(e) => setCashBookEndDate(e.target.value)}
-                className="text-xs font-bold p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+                className="text-xs font-bold h-8 px-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:bg-white"
               />
             </div>
           </div>
         )}
 
         {/* Active Scope Badge */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs bg-indigo-50/70 border border-indigo-100 rounded-xl px-3 py-1.5 gap-2">
-          <span className="font-bold text-indigo-950 flex items-center text-xs">
-            <BarChart3 className="w-3.5 h-3.5 text-indigo-600 mr-1.5 shrink-0" />
-            Active Scope:{' '}
-            <span className="ml-1 font-extrabold text-indigo-800">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs bg-indigo-50/70 border border-indigo-100 rounded-xl px-3.5 py-2 gap-2">
+          <div className="font-bold text-indigo-950 inline-flex items-center text-xs flex-wrap gap-1">
+            <BarChart3 className="w-3.5 h-3.5 text-indigo-600 mr-1 shrink-0" />
+            <span>Active Scope:</span>
+            <span className="font-extrabold text-indigo-800">
               {cashBookDateFilter === 'today' ? `Daily (${new Date().toLocaleDateString('en-GB')})` :
                cashBookDateFilter === 'this_week' ? 'Weekly (Past 7 Days)' :
                cashBookDateFilter === 'this_month' ? `Monthly (${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })})` :
                cashBookDateFilter === 'this_year' ? `Yearly (${new Date().getFullYear()})` :
                cashBookDateFilter === 'custom' ? `Custom (${cashBookStartDate} to ${cashBookEndDate})` : 'All Time History'}
             </span>
-          </span>
-          <span className="text-[10.5px] font-extrabold text-indigo-800 bg-white px-2 py-0.5 rounded-full border border-indigo-200 self-start sm:self-auto">
+          </div>
+          <span className="text-[10.5px] font-extrabold text-indigo-800 bg-white px-2.5 py-1 rounded-full border border-indigo-200 inline-flex items-center shrink-0 shadow-2xs self-start sm:self-auto">
             {cashBookMetrics.activeDaysCount} Active Operational {cashBookMetrics.activeDaysCount === 1 ? 'Day' : 'Days'} Records
           </span>
         </div>
@@ -6778,38 +6826,49 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                             {po.Status === 'Received' ? '✓ Fully Received' : po.Status === 'Partially Received' ? '⚡ Partially Received' : po.Status}
                           </span>
                         </td>
-                        <td className="p-3 text-center space-x-1.5 whitespace-nowrap">
-                          {po.Status !== 'Received' ? (
+                        <td className="p-3 text-center whitespace-nowrap">
+                          <div className="inline-flex items-center justify-center gap-1.5 align-middle">
+                            {po.Status !== 'Received' ? (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenGrnForPo(po)}
+                                className="h-7 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition inline-flex items-center justify-center space-x-1 cursor-pointer shrink-0"
+                                title="Process GRN stock inward for this PO"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span className="whitespace-nowrap">{po.Status === 'Partially Received' ? 'Receive Next' : 'Receive Stock'}</span>
+                              </button>
+                            ) : (
+                              <span className="h-7 px-2.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[11px] font-extrabold inline-flex items-center justify-center shrink-0">
+                                Stock Added
+                              </span>
+                            )}
                             <button
                               type="button"
-                              onClick={() => handleOpenGrnForPo(po)}
-                              className="px-2.5 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition inline-flex items-center space-x-1 cursor-pointer"
-                              title="Process GRN stock inward for this PO"
+                              onClick={() => handleOpenPoWhatsAppModal(po)}
+                              className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition inline-flex items-center justify-center space-x-1 cursor-pointer shadow-xs shrink-0"
+                              title="Send Purchase Order & PDF to Vendor via WhatsApp"
                             >
-                              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                              <span>{po.Status === 'Partially Received' ? 'Receive Next Batch' : 'Receive Stock (GRN)'}</span>
+                              <WhatsAppIcon className="w-3.5 h-3.5 text-white" />
+                              <span className="whitespace-nowrap">WhatsApp</span>
                             </button>
-                          ) : (
-                            <span className="text-[11px] font-extrabold text-emerald-600 px-2 py-1 bg-emerald-50 rounded-lg">
-                              Stock Added
-                            </span>
-                          )}
-                          <button
-                            type="button"
-                            onClick={() => handlePrintPo(po)}
-                            className="p-1 text-slate-600 hover:bg-slate-100 rounded transition cursor-pointer"
-                            title="Print Official PO"
-                          >
-                            <Printer className="w-4 h-4 text-slate-700" />
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleDeletePo(po)}
-                            className="p-1 text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                            title="Delete PO"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
+                            <button
+                              type="button"
+                              onClick={() => handlePrintPo(po)}
+                              className="w-7 h-7 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shrink-0 shadow-2xs"
+                              title="Print Official PO"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePo(po)}
+                              className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shrink-0 shadow-2xs"
+                              title="Delete PO"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -11386,6 +11445,141 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         clinicSettings={clinicSettings}
         currentUser={currentUser}
       />
+
+      {/* WhatsApp Purchase Order Modal */}
+      {showWhatsAppPoModal && selectedPoForWhatsApp && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white rounded-2xl max-w-xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150 my-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 shrink-0 bg-white rounded-t-2xl">
+              <div className="flex items-center space-x-2.5">
+                <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs shrink-0">
+                  <WhatsAppIcon className="w-4 h-4 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">Send Purchase Order via WhatsApp</h3>
+                  <p className="text-[11px] text-slate-500">Send formatted order details & PDF directly to Vendor</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowWhatsAppPoModal(false)}
+                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Scrollable Body */}
+            <div className="flex-1 overflow-y-auto px-5 py-3.5 space-y-3">
+              {/* PO & Vendor Brief Summary */}
+              <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
+                <div>
+                  <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Purchase Order</div>
+                  <div className="text-xs sm:text-sm font-black font-mono text-emerald-950">{selectedPoForWhatsApp.POID}</div>
+                  <div className="text-xs font-bold text-slate-800 truncate max-w-[200px] sm:max-w-xs">{selectedPoForWhatsApp.VendorName}</div>
+                </div>
+                <div className="text-right shrink-0">
+                  <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Total Amount</div>
+                  <div className="text-xs sm:text-sm font-extrabold text-emerald-900 font-mono">
+                    Rs. {Number(selectedPoForWhatsApp.TotalAmount || 0).toLocaleString()}
+                  </div>
+                  <div className="text-[10px] font-bold text-slate-600">
+                    {selectedPoForWhatsApp.Items?.length || 0} Medicines Ordered
+                  </div>
+                </div>
+              </div>
+
+              {/* Vendor WhatsApp Phone Number Input */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">
+                  Vendor WhatsApp Number <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. 03001234567 or +923001234567"
+                  value={whatsAppTargetPhone}
+                  onChange={e => setWhatsAppTargetPhone(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+                <p className="text-[10.5px] text-slate-500 leading-tight">
+                  Enter vendor mobile number (e.g. 03001234567 or international 923001234567).
+                </p>
+              </div>
+
+              {/* Custom Notes / Delivery Instructions */}
+              <div className="space-y-1">
+                <label className="block text-xs font-bold text-slate-700">
+                  Special Delivery Instructions / Urgency (Optional)
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Urgent delivery needed by tomorrow afternoon..."
+                  value={whatsAppCustomNote}
+                  onChange={e => setWhatsAppCustomNote(e.target.value)}
+                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+
+              {/* WhatsApp Text Preview */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold text-slate-700">WhatsApp Message Preview</label>
+                  <span className="text-[9.5px] font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded">Auto-Formatted</span>
+                </div>
+                <div className="p-2.5 bg-slate-900 text-slate-100 rounded-xl text-[10.5px] font-mono whitespace-pre-wrap max-h-32 sm:max-h-36 overflow-y-auto border border-slate-800 leading-relaxed shadow-inner">
+                  {generateWhatsAppPurchaseOrderText({
+                    poId: selectedPoForWhatsApp.POID,
+                    vendorName: selectedPoForWhatsApp.VendorName,
+                    vendorPhone: whatsAppTargetPhone,
+                    orderDate: selectedPoForWhatsApp.OrderDate,
+                    expectedDeliveryDate: selectedPoForWhatsApp.ExpectedDeliveryDate,
+                    totalAmount: selectedPoForWhatsApp.TotalAmount,
+                    items: selectedPoForWhatsApp.Items || [],
+                    notes: whatsAppCustomNote,
+                    clinicName: clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY',
+                    clinicAddress: clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore',
+                    clinicPhone: clinicSettings?.PhoneMobile || '+92 300 1234567',
+                    preparedBy: currentUser?.FullName || 'Mr. Zaigham Ali Anjum'
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Fixed Footer */}
+            <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50/90 rounded-b-2xl shrink-0">
+              <button
+                type="button"
+                onClick={() => setShowWhatsAppPoModal(false)}
+                className="w-full sm:w-auto px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+              >
+                Cancel
+              </button>
+
+              <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => handleSendPoWhatsApp(false)}
+                  className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
+                >
+                  <WhatsAppIcon className="w-4 h-4 text-white" />
+                  <span className="whitespace-nowrap">Send Text on WhatsApp</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendPoWhatsApp(true)}
+                  className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs border border-slate-700"
+                  title="Opens WhatsApp AND generates official PO PDF print so you can attach it to the vendor"
+                >
+                  <Printer className="w-4 h-4 text-emerald-400" />
+                  <span className="whitespace-nowrap">Send on WhatsApp & PDF</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
