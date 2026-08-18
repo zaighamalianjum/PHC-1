@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import {
   Building2,
   Users,
@@ -135,23 +135,74 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [poGridPage, setPoGridPage] = useState<number>(1);
   const [poGridPageSize, setPoGridPageSize] = useState<number>(24);
 
-  // Dynamic Medicine Categories List
+  // Helper to extract clean category matching Stock Manager / Pharmacy POS
+  const getMedicineItemCategory = useCallback((item: any): string => {
+    if (!item) return 'Patent / Pre-packaged';
+    const c = item.Category || item.category;
+    if (c && typeof c === 'string' && c.trim()) return c.trim();
+    if (item.MedicineType === 'C') return 'Clinical Compounding (/C)';
+    const u = item.Unit || item.unit;
+    if (u && typeof u === 'string' && u.trim()) return u.trim();
+    if (item.MedicineType === 'P') return 'Patent Medicine (/P)';
+    return 'Tablet / Capsule';
+  }, []);
+
+  // Dynamic Medicine Categories List (Fully Synchronized with Stock Manager & Pharmacy POS)
   const medicineCategories = useMemo(() => {
     const defaultCats = [
-      'Tablet / Capsule',
-      'Syrup / Liquid',
-      'Injection / Ampoule',
-      'Ointment / Cream',
+      'BM Drops',
+      'Clinical Compounding (/C)',
+      'Patent Medicine (/P)',
+      'Q D DROPS (Mother Tincture)',
+      'Potency 30',
+      'Potency 200',
+      'Syrup',
       'Drops',
+      'Tablet / Capsule',
+      'Ointment / Cream',
+      'Injection / Ampoule',
       'Clinical / Compounded',
       'Patent / Pre-packaged',
       'Surgical / Supplies'
     ];
+
+    const customCats: string[] = [];
+    try {
+      const saved = localStorage.getItem('pharmacy_custom_categories');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((cat: any) => {
+            if (cat && typeof cat === 'string' && cat.trim()) {
+              customCats.push(cat.trim());
+            }
+          });
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
     const itemCats = (inventoryItems || [])
-      .map((i: any) => i.Category || (i.MedicineType === 'C' ? 'Clinical / Compounded' : i.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule'))
+      .map((i: any) => getMedicineItemCategory(i))
       .filter(Boolean);
-    return Array.from(new Set([...defaultCats, ...itemCats]));
-  }, [inventoryItems]);
+
+    // Combine and deduplicate preserving case-insensitivity
+    const seen = new Set<string>();
+    const result: string[] = [];
+
+    [...defaultCats, ...customCats, ...itemCats].forEach((cat) => {
+      if (!cat) return;
+      const clean = cat.trim();
+      const lower = clean.toLowerCase();
+      if (!seen.has(lower)) {
+        seen.add(lower);
+        result.push(clean);
+      }
+    });
+
+    return result;
+  }, [inventoryItems, getMedicineItemCategory]);
 
   // Selected Vendor for Statement View
   const selectedVendor = useMemo(() => {
@@ -1677,7 +1728,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       const reqQty = getRequiredQty(med);
       const priceInfo = getMedicinePriceInfo(med);
       const unitPrice = priceInfo.unitPrice ?? 0;
-      const cat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
+      const cat = getMedicineItemCategory(med);
       setPoForm(prev => ({
         ...prev,
         Items: [
@@ -1707,7 +1758,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       return {
         ItemID: med.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
         ItemName: med.ItemName,
-        Category: med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule'),
+        Category: getMedicineItemCategory(med),
         Qty: getRequiredQty(med),
         UnitPrice: priceInfo.unitPrice ?? 0,
         BatchNo: med.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
@@ -1734,7 +1785,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         newItems.push({
           ItemID: med.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
           ItemName: med.ItemName,
-          Category: med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule'),
+          Category: getMedicineItemCategory(med),
           Qty: getRequiredQty(med),
           UnitPrice: priceInfo.unitPrice ?? 0,
           BatchNo: med.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
@@ -1780,7 +1831,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           ? customPrice
           : (matched.PurchasePrice ?? matched.Price ?? 0);
 
-        const cat = matched.Category || (matched.MedicineType === 'C' ? 'Clinical / Compounded' : matched.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
+        const cat = getMedicineItemCategory(matched);
 
         result.push({
           ItemID: matched.ItemID || matched._id || `ITM-${Math.floor(100 + Math.random() * 900)}`,
@@ -1797,7 +1848,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         result.push({
           ItemID: `ITM-${Math.floor(100 + Math.random() * 900)}`,
           ItemName: cleanName,
-          Category: 'Tablet / Capsule',
+          Category: medicineCategories[0] || 'BM Drops',
           Qty: qty,
           UnitPrice: unitPrice,
           BatchNo: `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
@@ -1983,10 +2034,23 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       const todayStr = new Date().toISOString().split('T')[0];
       const twoYearsStr = new Date(Date.now() + 365 * 2 * 86400000).toISOString().split('T')[0];
 
+      let matchedCategory = '';
+      if (row.category) {
+        const rowCatLower = row.category.toLowerCase().trim();
+        const found = medicineCategories.find(c => c.toLowerCase().trim() === rowCatLower || c.toLowerCase().includes(rowCatLower) || rowCatLower.includes(c.toLowerCase()));
+        matchedCategory = found || row.category.trim();
+      } else if ((matchedPoItem as any)?.Category) {
+        matchedCategory = (matchedPoItem as any).Category;
+      } else if (matchedInv) {
+        matchedCategory = getMedicineItemCategory(matchedInv);
+      } else {
+        matchedCategory = medicineCategories[0] || 'BM Drops';
+      }
+
       result.push({
         ItemID: matchedPoItem?.ItemID || matchedInv?.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
         ItemName: matchedPoItem?.ItemName || matchedInv?.ItemName || cleanName,
-        Category: row.category || (matchedPoItem as any)?.Category || matchedInv?.Category || 'Tablet / Capsule',
+        Category: matchedCategory,
         OrderedQty: Number(orderedQty) || 0,
         AlreadyReceivedQty: Number(alreadyRecv) || 0,
         PendingQty: Number(pendingQty) || 0,
@@ -7009,8 +7073,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   const filteredPoMedicines = inventoryItems.filter(med => {
                     const itemName = String(med.ItemName || med.Name || med.title || '');
                     const itemId = String(med.ItemID || med.id || '');
-                    const medCat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
-                    const matchCategory = poCategoryFilter === 'all' || medCat.toLowerCase().includes(poCategoryFilter.toLowerCase());
+                    const medCat = getMedicineItemCategory(med);
+                    const matchCategory = poCategoryFilter === 'all' || 
+                                          medCat.toLowerCase() === poCategoryFilter.toLowerCase() ||
+                                          medCat.toLowerCase().includes(poCategoryFilter.toLowerCase()) ||
+                                          poCategoryFilter.toLowerCase().includes(medCat.toLowerCase());
                     const sTerm = medicineSearchTerm.toLowerCase().trim();
                     const matchSearch = !sTerm ||
                                         itemName.toLowerCase().includes(sTerm) ||
@@ -7086,7 +7153,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                             const reqQty = getRequiredQty(med);
                             const isSelected = isMedicineSelectedInPo(med.ItemID, med.ItemName);
                             const currentPoItem = poForm.Items.find(i => (i.ItemID && i.ItemID === med.ItemID) || i.ItemName === med.ItemName);
-                            const medCat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
+                            const medCat = getMedicineItemCategory(med);
                             const priceInfo = getMedicinePriceInfo(med);
                             const unitPrice = priceInfo.unitPrice;
                             const estTotalCost = unitPrice ? unitPrice * reqQty : null;
@@ -8084,7 +8151,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                               </td>
                               <td className="p-2">
                                 <select
-                                  value={item.Category || 'Tablet / Capsule'}
+                                  value={item.Category || medicineCategories[0] || 'BM Drops'}
                                   onChange={(e) => {
                                     const val = e.target.value;
                                     setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, Category: val } : it));
@@ -8094,6 +8161,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   {medicineCategories.map((cat, catIdx) => (
                                     <option key={catIdx} value={cat}>{cat}</option>
                                   ))}
+                                  {item.Category && !medicineCategories.includes(item.Category) && (
+                                    <option value={item.Category}>{item.Category}</option>
+                                  )}
                                 </select>
                               </td>
                               <td className="p-2 text-right font-extrabold text-slate-900 text-xs font-mono">
