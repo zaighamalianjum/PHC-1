@@ -134,6 +134,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [poCategoryFilter, setPoCategoryFilter] = useState<string>('all');
   const [poGridPage, setPoGridPage] = useState<number>(1);
   const [poGridPageSize, setPoGridPageSize] = useState<number>(24);
+  const [customCategoryUpdate, setCustomCategoryUpdate] = useState<number>(0);
 
   // Helper to extract clean category matching Stock Manager / Pharmacy POS
   const getMedicineItemCategory = useCallback((item: any): string => {
@@ -202,7 +203,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     });
 
     return result;
-  }, [inventoryItems, getMedicineItemCategory]);
+  }, [inventoryItems, getMedicineItemCategory, customCategoryUpdate]);
 
   // Intelligent Category Matcher & Auto-Detector (Handles raw strings, inventory items, PO items, and medicine names)
   const resolveSmartMedicineCategory = useCallback((
@@ -1170,6 +1171,20 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [bulkGrnDragActive, setBulkGrnDragActive] = useState(false);
   const [bulkGrnFileError, setBulkGrnFileError] = useState('');
   const bulkGrnFileInputRef = React.useRef<HTMLInputElement>(null);
+
+  // Unmatched Category Resolution Prompt Modal State
+  const [unmatchedCategoryDialog, setUnmatchedCategoryDialog] = useState<{
+    isOpen: boolean;
+    unmatchedList: Array<{
+      originalCategory: string;
+      count: number;
+      sampleItems: string[];
+      action: 'new' | 'map';
+      mappedTo: string;
+    }>;
+    parsedRows: Array<{ name: string; batchNo?: string; mfgDate?: string; expiryDate?: string; price?: number; qty?: number; category?: string }>;
+    targetPoId?: string;
+  } | null>(null);
 
   // Dedicated GRN Print Preview Modal State
   const [showGrnPrintPreviewModal, setShowGrnPrintPreviewModal] = useState<boolean>(false);
@@ -2189,13 +2204,62 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   // HANDLERS FOR BULK GRN STOCK INWARD UPLOAD
   const parseAndMatchBulkGrnData = (
     parsedRows: Array<{ name: string; batchNo?: string; mfgDate?: string; expiryDate?: string; price?: number; qty?: number; category?: string }>,
-    targetPoId?: string
+    targetPoId?: string,
+    explicitCategoryMappings?: Record<string, string>,
+    bypassPrompt: boolean = false
   ) => {
+    if (!parsedRows || parsedRows.length === 0) {
+      setBulkGrnParsedItems([]);
+      return;
+    }
+
+    const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // Step 1: Detect unmatched categories in the uploaded file / paste data
+    if (!bypassPrompt) {
+      const unmatchedMap = new Map<string, { count: number; items: string[] }>();
+
+      parsedRows.forEach((row) => {
+        const rawCat = (row.category || '').trim();
+        if (rawCat) {
+          if (explicitCategoryMappings && explicitCategoryMappings[rawCat]) return;
+          const exactOrNorm = medicineCategories.find(c => c.toLowerCase() === rawCat.toLowerCase() || norm(c) === norm(rawCat));
+          if (!exactOrNorm) {
+            const entry = unmatchedMap.get(rawCat) || { count: 0, items: [] };
+            entry.count++;
+            if (entry.items.length < 3 && row.name) {
+              entry.items.push(row.name.trim());
+            }
+            unmatchedMap.set(rawCat, entry);
+          }
+        }
+      });
+
+      if (unmatchedMap.size > 0) {
+        const promptList = Array.from(unmatchedMap.entries()).map(([catName, data]) => {
+          const suggested = resolveSmartMedicineCategory(catName, null, null, catName);
+          return {
+            originalCategory: catName,
+            count: data.count,
+            sampleItems: data.items,
+            action: 'new' as const,
+            mappedTo: (suggested && suggested !== catName) ? suggested : (medicineCategories[0] || 'BM Drops')
+          };
+        });
+
+        setUnmatchedCategoryDialog({
+          isOpen: true,
+          unmatchedList: promptList,
+          parsedRows,
+          targetPoId
+        });
+        return; // Halt and prompt user!
+      }
+    }
+
     const poIdToUse = targetPoId || bulkGrnSelectedPoId || grnForm.POID;
     const selectedPo = purchaseOrders.find(p => p.POID === poIdToUse);
     const poPendingItems = selectedPo ? getPoItemsReceiptInfo(selectedPo) : [];
-
-    const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
     const result: typeof bulkGrnParsedItems = [];
 
@@ -2238,13 +2302,22 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       const todayStr = new Date().toISOString().split('T')[0];
       const twoYearsStr = new Date(Date.now() + 365 * 2 * 86400000).toISOString().split('T')[0];
 
-      // Auto-match & select Category intelligently
-      const matchedCategory = resolveSmartMedicineCategory(
-        row.category,
-        matchedInv,
-        matchedPoItem,
-        cleanName
-      );
+      // Auto-match & select Category strictly with mappings and smart detection
+      let matchedCategory = '';
+      const rawCat = (row.category || '').trim();
+      if (rawCat && explicitCategoryMappings && explicitCategoryMappings[rawCat]) {
+        matchedCategory = explicitCategoryMappings[rawCat];
+      } else if (rawCat) {
+        const exact = medicineCategories.find(c => c.toLowerCase() === rawCat.toLowerCase() || norm(c) === norm(rawCat));
+        matchedCategory = exact || rawCat;
+      } else {
+        matchedCategory = resolveSmartMedicineCategory(
+          row.category,
+          matchedInv,
+          matchedPoItem,
+          cleanName
+        );
+      }
 
       result.push({
         ItemID: matchedPoItem?.ItemID || matchedInv?.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
@@ -2265,6 +2338,49 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     });
 
     setBulkGrnParsedItems(result);
+  };
+
+  const handleResolveUnmatchedCategories = () => {
+    if (!unmatchedCategoryDialog) return;
+
+    const { unmatchedList, parsedRows, targetPoId } = unmatchedCategoryDialog;
+    const mappings: Record<string, string> = {};
+    const newCategoriesToAdd: string[] = [];
+
+    unmatchedList.forEach((item) => {
+      if (item.action === 'new') {
+        const catName = item.originalCategory.trim();
+        mappings[item.originalCategory] = catName;
+        if (catName && !medicineCategories.some(c => c.toLowerCase() === catName.toLowerCase())) {
+          newCategoriesToAdd.push(catName);
+        }
+      } else {
+        mappings[item.originalCategory] = item.mappedTo;
+      }
+    });
+
+    if (newCategoriesToAdd.length > 0) {
+      try {
+        const saved = localStorage.getItem('pharmacy_custom_categories');
+        let currentCustom: string[] = [];
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) currentCustom = parsed;
+        }
+        newCategoriesToAdd.forEach((newCat) => {
+          if (!currentCustom.some(c => c.toLowerCase() === newCat.toLowerCase())) {
+            currentCustom.push(newCat);
+          }
+        });
+        localStorage.setItem('pharmacy_custom_categories', JSON.stringify(currentCustom));
+        setCustomCategoryUpdate(prev => prev + 1);
+      } catch (err) {
+        console.error('Error saving custom categories:', err);
+      }
+    }
+
+    setUnmatchedCategoryDialog(null);
+    parseAndMatchBulkGrnData(parsedRows, targetPoId, mappings, true);
   };
 
   const handleBulkGrnExcelRead = (file: File) => {
@@ -8451,6 +8567,179 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   </button>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* POPUP MODAL: UNMATCHED CATEGORIES CONFIRMATION & MAPPING */}
+      {unmatchedCategoryDialog?.isOpen && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-[90] animate-in fade-in duration-150">
+          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-amber-300 space-y-4 max-h-[90vh] flex flex-col">
+            {/* Header */}
+            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 font-black text-xl shrink-0">
+                  ⚠️
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base flex items-center space-x-2">
+                    <span>Unmatched Categories Detected</span>
+                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300">
+                      {unmatchedCategoryDialog.unmatchedList.length} Categories
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    The following categories were found in your Excel/Paste data but do not exist in the system. Choose to add them as new categories or map them to existing categories.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setUnmatchedCategoryDialog(null)}
+                className="text-slate-400 hover:text-slate-700 text-xl font-bold leading-none p-1 rounded-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Quick Bulk Toggle Actions */}
+            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
+              <span className="font-bold text-slate-700">Quick Actions:</span>
+              <div className="flex items-center space-x-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUnmatchedCategoryDialog(prev => {
+                      if (!prev) return null;
+                      return {
+                        ...prev,
+                        unmatchedList: prev.unmatchedList.map(item => ({ ...item, action: 'new' }))
+                      };
+                    });
+                  }}
+                  className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 font-bold rounded-lg text-[11px] transition cursor-pointer"
+                >
+                  ➕ Set All: Add as New Category
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setUnmatchedCategoryDialog(prev => {
+                      if (!prev) return null;
+                      return {
+                        ...prev,
+                        unmatchedList: prev.unmatchedList.map(item => ({ ...item, action: 'map' }))
+                      };
+                    });
+                  }}
+                  className="px-2.5 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 border border-indigo-300 font-bold rounded-lg text-[11px] transition cursor-pointer"
+                >
+                  🔄 Set All: Map to Existing
+                </button>
+              </div>
+            </div>
+
+            {/* Scrollable list of unmatched categories */}
+            <div className="overflow-y-auto max-h-[48vh] space-y-3 pr-1">
+              {unmatchedCategoryDialog.unmatchedList.map((item, idx) => (
+                <div key={idx} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-50 space-y-2.5 transition">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <span className="font-black text-xs px-2.5 py-1 rounded-lg bg-amber-200/80 text-amber-900 border border-amber-300 font-mono">
+                        "{item.originalCategory}"
+                      </span>
+                      <span className="text-[11px] font-bold text-slate-500">
+                        ({item.count} items: {item.sampleItems.slice(0, 2).join(', ')}{item.count > 2 ? '...' : ''})
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
+                    {/* Option 1: Add as new */}
+                    <label className={`flex items-start space-x-2 p-2 rounded-lg border cursor-pointer transition ${item.action === 'new' ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-bold' : 'bg-white border-slate-200 text-slate-600'}`}>
+                      <input
+                        type="radio"
+                        name={`cat-action-${idx}`}
+                        checked={item.action === 'new'}
+                        onChange={() => {
+                          setUnmatchedCategoryDialog(prev => {
+                            if (!prev) return null;
+                            const nextList = [...prev.unmatchedList];
+                            nextList[idx] = { ...nextList[idx], action: 'new' };
+                            return { ...prev, unmatchedList: nextList };
+                          });
+                        }}
+                        className="mt-0.5 accent-emerald-600 cursor-pointer"
+                      />
+                      <div className="text-xs">
+                        <div className="font-bold">Add as New Category</div>
+                        <div className="text-[10px] text-slate-500 mt-0.5">Creates permanent category in system</div>
+                      </div>
+                    </label>
+
+                    {/* Option 2: Map to existing */}
+                    <label className={`flex flex-col space-y-1 p-2 rounded-lg border cursor-pointer transition ${item.action === 'map' ? 'bg-indigo-50 border-indigo-400 text-indigo-950 font-bold' : 'bg-white border-slate-200 text-slate-600'}`}>
+                      <div className="flex items-center space-x-2">
+                        <input
+                          type="radio"
+                          name={`cat-action-${idx}`}
+                          checked={item.action === 'map'}
+                          onChange={() => {
+                            setUnmatchedCategoryDialog(prev => {
+                              if (!prev) return null;
+                              const nextList = [...prev.unmatchedList];
+                              nextList[idx] = { ...nextList[idx], action: 'map' };
+                              return { ...prev, unmatchedList: nextList };
+                            });
+                          }}
+                          className="accent-indigo-600 cursor-pointer"
+                        />
+                        <span className="text-xs font-bold">Map to Existing</span>
+                      </div>
+                      {item.action === 'map' && (
+                        <select
+                          value={item.mappedTo}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setUnmatchedCategoryDialog(prev => {
+                              if (!prev) return null;
+                              const nextList = [...prev.unmatchedList];
+                              nextList[idx] = { ...nextList[idx], mappedTo: val };
+                              return { ...prev, unmatchedList: nextList };
+                            });
+                          }}
+                          className="w-full mt-1 p-1 text-xs border border-indigo-300 rounded bg-white text-indigo-900 font-bold"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          {medicineCategories.map((c, cIdx) => (
+                            <option key={cIdx} value={c}>{c}</option>
+                          ))}
+                        </select>
+                      )}
+                    </label>
+                  </div>
+                </div>
+              ))}
+            </div>
+
+            {/* Footer actions */}
+            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setUnmatchedCategoryDialog(null)}
+                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleResolveUnmatchedCategories}
+                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md transition flex items-center space-x-1.5 cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4" />
+                <span>Apply Categories & Continue GRN</span>
+              </button>
             </div>
           </div>
         </div>
