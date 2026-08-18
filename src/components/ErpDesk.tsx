@@ -4593,6 +4593,17 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     );
     const hasGrns = poGrns.length > 0;
 
+    // Collect all unique Supplier / Vendor Invoice Numbers linked to this PO via GRNs
+    const supplierInvoiceNumbers = Array.from(new Set(
+      poGrns.map(g => (g.SupplierInvoiceNo || g.VendorInvoiceNo || g.ChallanNo || '').trim()).filter(Boolean)
+    ));
+
+    // Resolve matching Vendor profile
+    const targetVendor = vendors.find(v => 
+      (po.VendorID && (v.VendorID === po.VendorID || (v as any).SupplierID === po.VendorID)) ||
+      (po.VendorName && v.VendorName && v.VendorName.trim().toLowerCase() === po.VendorName.trim().toLowerCase())
+    );
+
     // Calculate aggregated received quantity per item
     const receivedQtyMap: Record<string, number> = {};
     poGrns.forEach(grn => {
@@ -4604,6 +4615,35 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         if (keyName && keyName !== key) receivedQtyMap[keyName] = (receivedQtyMap[keyName] || 0) + qty;
       });
     });
+
+    // Calculate Total PO Value & Total GRN Invoiced Value for this PO
+    const poTotalAmount = Number(po.TotalAmount || 0);
+    const grnTotalAmount = poGrns.reduce((sum, g) => sum + Number(g.TotalAmount || 0), 0);
+    const effectivePoBilledValue = grnTotalAmount > 0 ? grnTotalAmount : poTotalAmount;
+
+    // Find all payment transactions linked to this PO or its GRN Supplier Invoice Numbers
+    const poPayments = (transactions || []).filter(t => {
+      const isVendorMatch = targetVendor 
+        ? (t.VendorID === targetVendor.VendorID || (t.VendorName && t.VendorName.toLowerCase() === targetVendor.VendorName.toLowerCase()))
+        : (po.VendorID && t.VendorID === po.VendorID) || (po.VendorName && t.VendorName && t.VendorName.toLowerCase() === po.VendorName.toLowerCase());
+      
+      const isPay = t.Type === 'VendorPayment' || t.Category === 'Vendor Payment' || (t.Type === 'Expense' && (t.VendorID || t.VendorName));
+      if (!isPay) return false;
+
+      // Match by PO ID or Supplier Invoice Number
+      const ref = (t.ReferenceNo || '').trim();
+      const desc = (t.Description || '').trim();
+      const matchesPo = ref === po.POID || desc.includes(po.POID);
+      const matchesInvoice = supplierInvoiceNumbers.length > 0 && supplierInvoiceNumbers.some(inv => ref === inv || desc.includes(inv));
+      
+      return matchesPo || matchesInvoice;
+    });
+
+    const totalPoPaymentsPaid = poPayments.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
+    const pendingPoDues = Math.max(0, effectivePoBilledValue - totalPoPaymentsPaid);
+
+    // Vendor overall ledger dues (if vendor found)
+    const vendorTotalOutstandingBalance = targetVendor ? Number(targetVendor.Balance || 0) : pendingPoDues;
 
     const totalItems = po.Items.length;
     const colSize = Math.max(1, Math.ceil(totalItems / (hasGrns ? 2 : 3)));
@@ -4673,6 +4713,55 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const col1Html = renderColumnTable(col1Items, 0);
     const col2Html = renderColumnTable(col2Items, colSize);
     const col3Html = !hasGrns ? renderColumnTable(col3Items, colSize * 2) : '';
+
+    // Build Payments Settlement Table if any payments recorded against this PO
+    let paymentHistoryHtml = '';
+    if (poPayments.length > 0) {
+      const payRows = poPayments.map((p, pIdx) => `
+        <tr style="border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 4px 6px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; color: #64748b;">${pIdx + 1}</td>
+          <td style="padding: 4px 6px; border: 1px solid #cbd5e1; font-family: monospace; font-weight: bold; color: #334155;">${p.Date || 'N/A'}</td>
+          <td style="padding: 4px 6px; border: 1px solid #cbd5e1; font-family: monospace; font-weight: bold; color: #4338ca;">${p.TransactionID || 'N/A'}</td>
+          <td style="padding: 4px 6px; border: 1px solid #cbd5e1; font-family: monospace; font-weight: bold; color: #0369a1;">${p.ReferenceNo || 'N/A'}</td>
+          <td style="padding: 4px 6px; border: 1px solid #cbd5e1; color: #334155;">${p.Description || 'Payment Voucher Recorded'}</td>
+          <td style="padding: 4px 6px; border: 1px solid #cbd5e1; text-align: center; font-weight: 700; color: #475569;">${p.PaymentMethod || 'Bank'}</td>
+          <td style="padding: 4px 6px; border: 1px solid #cbd5e1; text-align: right; font-family: monospace; font-weight: 900; color: #047857;">Rs. ${Number(p.Amount || 0).toLocaleString()}</td>
+        </tr>
+      `).join('');
+
+      paymentHistoryHtml = `
+        <div style="margin-top: 14px; border: 1.5px solid #4338ca; border-radius: 8px; overflow: hidden; background: #eef2ff;">
+          <div style="background: #4338ca; color: #ffffff; padding: 6px 12px; font-weight: 900; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center;">
+            <span>💳 BILL PAYMENTS & SETTLEMENT HISTORY (RECORDED PAYMENTS)</span>
+            <span>${poPayments.length} Payment Voucher(s) Paid</span>
+          </div>
+          <div style="padding: 8px; background: #ffffff;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
+              <thead>
+                <tr style="background: #f1f5f9; color: #334155; font-size: 8.5px; text-transform: uppercase;">
+                  <th style="padding: 4px 6px; border: 1px solid #cbd5e1; width: 24px; text-align: center;">#</th>
+                  <th style="padding: 4px 6px; border: 1px solid #cbd5e1; width: 75px; text-align: left;">Date</th>
+                  <th style="padding: 4px 6px; border: 1px solid #cbd5e1; width: 100px; text-align: left;">Voucher / TXN #</th>
+                  <th style="padding: 4px 6px; border: 1px solid #cbd5e1; width: 100px; text-align: left;">Vendor Inv #</th>
+                  <th style="padding: 4px 6px; border: 1px solid #cbd5e1; text-align: left;">Payment Narration</th>
+                  <th style="padding: 4px 6px; border: 1px solid #cbd5e1; width: 65px; text-align: center;">Method</th>
+                  <th style="padding: 4px 6px; border: 1px solid #cbd5e1; width: 95px; text-align: right;">Amount Paid</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${payRows}
+              </tbody>
+              <tfoot>
+                <tr style="background: #f8fafc; font-weight: 900; border-top: 1.5px solid #4338ca;">
+                  <td colspan="6" style="padding: 6px; text-align: right; text-transform: uppercase; color: #1e293b;">Total Bill Payments Settled:</td>
+                  <td style="padding: 6px; text-align: right; font-family: monospace; font-size: 11px; color: #047857;">Rs. ${totalPoPaymentsPaid.toLocaleString()}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
 
     // Build Received Goods Summary HTML if GRNs exist
     let grnSummaryHtml = '';
@@ -4836,7 +4925,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               border: 1.5px solid #cbd5e1;
               border-radius: 8px;
               padding: 10px 14px;
-              margin-bottom: 12px;
+              margin-bottom: 10px;
               display: grid;
               grid-template-columns: 1fr 1fr 1fr;
               gap: 8px;
@@ -4858,6 +4947,60 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               font-weight: 700;
               color: #0f172a;
               margin-top: 1px;
+            }
+
+            .financial-summary-card {
+              background: #ffffff;
+              border: 2px solid #0f172a;
+              border-radius: 8px;
+              padding: 10px 14px;
+              margin-bottom: 12px;
+              box-shadow: 0 1px 3px rgba(0,0,0,0.05);
+            }
+            .financial-title {
+              font-size: 11px;
+              font-weight: 900;
+              color: #0f172a;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              border-bottom: 1.5px solid #e2e8f0;
+              padding-bottom: 5px;
+              margin-bottom: 8px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+            }
+            .financial-grid {
+              display: grid;
+              grid-template-columns: 1.5fr 1fr 1fr 1.2fr;
+              gap: 10px;
+            }
+            .financial-stat {
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 6px;
+              padding: 7px 10px;
+              display: flex;
+              flex-direction: column;
+            }
+            .financial-stat-label {
+              font-size: 8.5px;
+              font-weight: 800;
+              color: #64748b;
+              text-transform: uppercase;
+              letter-spacing: 0.3px;
+            }
+            .financial-stat-value {
+              font-size: 13px;
+              font-weight: 900;
+              font-family: monospace;
+              margin-top: 2px;
+            }
+            .financial-stat-sub {
+              font-size: 8.5px;
+              color: #64748b;
+              margin-top: 2px;
+              font-weight: 600;
             }
 
             .grid-container {
@@ -5007,12 +5150,48 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               <span class="meta-value" style="color: #881337;">${po.Items.length} Medicines</span>
             </div>
             <div class="meta-item">
+              <span class="meta-label">Vendor Invoice No(s)</span>
+              <span class="meta-value" style="color: #0284c7; font-family: monospace;">
+                ${supplierInvoiceNumbers.length > 0 ? supplierInvoiceNumbers.join(', ') : 'Awaiting Inward GRN / Bill'}
+              </span>
+            </div>
+            <div class="meta-item">
               <span class="meta-label">Audit Prepared By</span>
               <span class="meta-value">${currentUser?.FullName || 'Staff Accountant'}</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">Responsible Manager</span>
               <span class="meta-value" style="color: #881337;">Mr. Zaigham Ali Anjum</span>
+            </div>
+          </div>
+
+          <!-- FINANCIAL SUMMARY & OUTSTANDING DUES CARD -->
+          <div class="financial-summary-card">
+            <div class="financial-title">
+              <span>📊 PO Financial Status, Payments & Outstanding Dues</span>
+              <span style="font-size: 9.5px; font-weight: bold; color: #475569;">Vendor Code: ${po.VendorID || 'N/A'}</span>
+            </div>
+            <div class="financial-grid">
+              <div class="financial-stat" style="border-left: 3px solid #1e293b;">
+                <span class="financial-stat-label">Total PO Order Value</span>
+                <span class="financial-stat-value" style="color: #0f172a;">Rs. ${effectivePoBilledValue.toLocaleString()}</span>
+                <span class="financial-stat-sub">${hasGrns ? 'Billed via Inward GRN' : 'Estimated PO Value'}</span>
+              </div>
+              <div class="financial-stat" style="border-left: 3px solid #047857; background: #f0fdf4;">
+                <span class="financial-stat-label" style="color: #047857;">Total Payments Settled</span>
+                <span class="financial-stat-value" style="color: #047857;">Rs. ${totalPoPaymentsPaid.toLocaleString()}</span>
+                <span class="financial-stat-sub">${poPayments.length} Payment Voucher(s) Paid</span>
+              </div>
+              <div class="financial-stat" style="border-left: 3px solid #b45309; background: #fffbeb;">
+                <span class="financial-stat-label" style="color: #92400e;">Latest Pending Dues (This PO)</span>
+                <span class="financial-stat-value" style="color: #b45309;">Rs. ${pendingPoDues.toLocaleString()}</span>
+                <span class="financial-stat-sub">${pendingPoDues === 0 ? '✓ Fully Cleared & Paid' : 'Outstanding Balance for this PO'}</span>
+              </div>
+              <div class="financial-stat" style="border-left: 3px solid #881337; background: #fff1f2;">
+                <span class="financial-stat-label" style="color: #9f1239;">Vendor Total Outstanding</span>
+                <span class="financial-stat-value" style="color: #9f1239;">Rs. ${vendorTotalOutstandingBalance.toLocaleString()}</span>
+                <span class="financial-stat-sub">Cumulative Payable Balance</span>
+              </div>
             </div>
           </div>
 
@@ -5027,6 +5206,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
           <!-- Items Received via GRN Breakdown Section -->
           ${grnSummaryHtml}
+
+          <!-- Bill Payments Settlement Section -->
+          ${paymentHistoryHtml}
 
           <!-- Executive Signatures & Stamps Block -->
           <div class="signature-section">
