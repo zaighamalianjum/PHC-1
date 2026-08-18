@@ -1859,24 +1859,62 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     return diff > 0 ? diff : (minStock > 0 ? minStock * 2 : 10);
   };
 
-  const getMedicinePriceInfo = (med: any) => {
-    if (!med) return { unitPrice: null, priceSource: 'none' as const, label: 'Price: Not Mentioned', grnInfo: null, hasPrice: false };
+  const getMedicinePriceInfo = useCallback((med: any, targetVendorName?: string, targetVendorId?: string) => {
+    if (!med) return { unitPrice: null, priceSource: 'none' as const, label: 'Price: Not Mentioned', grnInfo: null, hasPrice: false, grnNo: '', grnDate: '' };
 
     const medId = String(med.ItemID || med.id || '').toUpperCase().trim();
     const medName = String(med.ItemName || med.name || '').toLowerCase().trim();
+    const cleanNorm = (s: string) => s.toLowerCase().replace(/[^a-z0-9]/g, '');
 
-    // 1. Look up in previous GRNs (sorted newest first)
+    const currentVName = targetVendorName || poForm?.VendorName || '';
+    const currentVId = targetVendorId || poForm?.VendorID || '';
+
+    // 1. Look up in previous GRNs (sorted newest first by ReceivedDate)
     const sortedGrns = [...(grns || [])].sort((a, b) => {
       const dateA = new Date(a.ReceivedDate || 0).getTime();
       const dateB = new Date(b.ReceivedDate || 0).getTime();
       return dateB - dateA;
     });
 
+    // 1A. If vendor is specified, prioritize previous GRNs from THIS same vendor
+    if (currentVName || currentVId) {
+      const vendorGrns = sortedGrns.filter(g => 
+        (currentVId && g.VendorID === currentVId) ||
+        (currentVName && g.VendorName && g.VendorName.trim().toLowerCase() === currentVName.trim().toLowerCase())
+      );
+
+      for (const grn of vendorGrns) {
+        if (grn.Items && Array.isArray(grn.Items)) {
+          const match = grn.Items.find(gi => 
+            (medId && String(gi.ItemID || '').toUpperCase().trim() === medId) ||
+            (medName && String(gi.ItemName || '').toLowerCase().trim() === medName) ||
+            (medName && cleanNorm(String(gi.ItemName || '')) === cleanNorm(medName))
+          );
+          if (match && match.UnitPrice !== undefined && match.UnitPrice !== null && match.UnitPrice !== '') {
+            const p = Number(match.UnitPrice);
+            if (p > 0) {
+              return {
+                unitPrice: p,
+                priceSource: 'grn' as const,
+                label: `Vendor GRN Price (GRN #${grn.GRNID})`,
+                grnInfo: `GRN #${grn.GRNID} • ${grn.VendorName || currentVName} • ${grn.ReceivedDate || 'Recent'}`,
+                hasPrice: true,
+                grnNo: grn.GRNID,
+                grnDate: grn.ReceivedDate || ''
+              };
+            }
+          }
+        }
+      }
+    }
+
+    // 1B. Search across all recent GRNs from any vendor
     for (const grn of sortedGrns) {
       if (grn.Items && Array.isArray(grn.Items)) {
         const match = grn.Items.find(gi => 
           (medId && String(gi.ItemID || '').toUpperCase().trim() === medId) ||
-          (medName && String(gi.ItemName || '').toLowerCase().trim() === medName)
+          (medName && String(gi.ItemName || '').toLowerCase().trim() === medName) ||
+          (medName && cleanNorm(String(gi.ItemName || '')) === cleanNorm(medName))
         );
         if (match && match.UnitPrice !== undefined && match.UnitPrice !== null && match.UnitPrice !== '') {
           const p = Number(match.UnitPrice);
@@ -1885,23 +1923,27 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               unitPrice: p,
               priceSource: 'grn' as const,
               label: `Last GRN Price (GRN #${grn.GRNID})`,
-              grnInfo: `GRN #${grn.GRNID} • ${grn.ReceivedDate || 'Recent'}`,
-              hasPrice: true
+              grnInfo: `GRN #${grn.GRNID} • ${grn.VendorName || 'Vendor'} • ${grn.ReceivedDate || 'Recent'}`,
+              hasPrice: true,
+              grnNo: grn.GRNID,
+              grnDate: grn.ReceivedDate || ''
             };
           }
         }
       }
     }
 
-    // 2. Check Item Master PurchasePrice / TP / costPrice
-    const pPrice = Number(med.PurchasePrice ?? med.purchasePrice ?? med.TP ?? med.costPrice);
+    // 2. Check Item Master PurchasePrice / TP / costPrice / Price
+    const pPrice = Number(med.PurchasePrice ?? med.purchasePrice ?? med.TP ?? med.costPrice ?? med.Price);
     if (pPrice > 0) {
       return {
         unitPrice: pPrice,
         priceSource: 'master' as const,
         label: 'Master TP Price',
         grnInfo: 'Master TP Price',
-        hasPrice: true
+        hasPrice: true,
+        grnNo: '',
+        grnDate: ''
       };
     }
 
@@ -1912,7 +1954,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         priceSource: 'entered' as const,
         label: 'Unit Price',
         grnInfo: 'Configured Price',
-        hasPrice: true
+        hasPrice: true,
+        grnNo: '',
+        grnDate: ''
       };
     }
 
@@ -1922,9 +1966,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       priceSource: 'none' as const,
       label: 'Price: Not Mentioned',
       grnInfo: null,
-      hasPrice: false
+      hasPrice: false,
+      grnNo: '',
+      grnDate: ''
     };
-  };
+  }, [grns, poForm?.VendorID, poForm?.VendorName]);
 
   const isMedicineSelectedInPo = (itemId: string, itemName: string) => {
     return poForm.Items.some(i => (i.ItemID && i.ItemID === itemId) || i.ItemName === itemName);
@@ -2042,9 +2088,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       const cat = resolveSmartMedicineCategory((row as any).category, matched, null, cleanName);
 
       if (matched) {
+        const priceInfo = getMedicinePriceInfo(matched);
         const unitPrice = (customPrice !== undefined && customPrice >= 0)
           ? customPrice
-          : (matched.PurchasePrice ?? matched.Price ?? 0);
+          : (priceInfo.unitPrice ?? (matched.PurchasePrice ?? matched.Price ?? 0));
 
         result.push({
           ItemID: matched.ItemID || matched._id || `ITM-${Math.floor(100 + Math.random() * 900)}`,
@@ -2057,7 +2104,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           stockInHand: matched.CStock ?? matched.Stock ?? 0
         });
       } else {
-        const unitPrice = (customPrice !== undefined && customPrice >= 0) ? customPrice : 0;
+        const priceInfo = getMedicinePriceInfo({ ItemName: cleanName });
+        const unitPrice = (customPrice !== undefined && customPrice >= 0) ? customPrice : (priceInfo.unitPrice ?? 0);
         result.push({
           ItemID: `ITM-${Math.floor(100 + Math.random() * 900)}`,
           ItemName: cleanName,
@@ -2676,14 +2724,52 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const handleAddPoItem = () => {
     setPoForm(prev => ({
       ...prev,
-      Items: [...prev.Items, { ItemID: `ITM-${Date.now().toString().slice(-3)}`, ItemName: '', Category: 'Tablet / Capsule', Qty: 0, UnitPrice: 100, BatchNo: `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}` }]
+      Items: [
+        ...prev.Items,
+        {
+          ItemID: `ITM-${Date.now().toString().slice(-4)}`,
+          ItemName: '',
+          Category: 'Tablet / Capsule',
+          Qty: 1,
+          UnitPrice: 0,
+          BatchNo: `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
+        }
+      ]
     }));
   };
 
   const handleUpdatePoItem = (index: number, field: string, value: any) => {
     setPoForm(prev => {
       const updated = [...prev.Items];
-      updated[index] = { ...updated[index], [field]: value };
+      const current = { ...updated[index], [field]: value };
+
+      // When medicine name is changed or selected, auto-resolve category and fetch latest GRN/Master unit price!
+      if (field === 'ItemName') {
+        const trimmed = String(value || '').trim();
+        const matched = (inventoryItems || []).find((inv: any) => {
+          const invName = String(inv.ItemName || inv.Name || '').toLowerCase().trim();
+          return invName === trimmed.toLowerCase() || invName.replace(/[^a-z0-9]/g, '') === trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
+        });
+
+        if (matched) {
+          current.ItemID = matched.ItemID || current.ItemID;
+          current.Category = getMedicineItemCategory(matched);
+          const priceInfo = getMedicinePriceInfo(matched);
+          if (priceInfo.unitPrice && priceInfo.unitPrice > 0) {
+            current.UnitPrice = priceInfo.unitPrice;
+          }
+          if (matched.BatchNo && !current.BatchNo) {
+            current.BatchNo = matched.BatchNo;
+          }
+        } else if (trimmed) {
+          const priceInfo = getMedicinePriceInfo({ ItemName: trimmed });
+          if (priceInfo.unitPrice && priceInfo.unitPrice > 0) {
+            current.UnitPrice = priceInfo.unitPrice;
+          }
+        }
+      }
+
+      updated[index] = current;
       return { ...prev, Items: updated };
     });
   };
@@ -2698,13 +2784,15 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     try {
       const selectedVendor = vendors.find(v => v.VendorName === poForm.VendorName);
       const nextPoId = generateNextPoNumber();
+      const totalPoValuation = poForm.Items.reduce((sum, i) => sum + ((Number(i.Qty) || 0) * (Number(i.UnitPrice) || 0)), 0);
+
       const newPo: ErpPurchaseOrder = {
         POID: nextPoId,
         VendorID: poForm.VendorID || selectedVendor?.VendorID || `VND-${Math.floor(100 + Math.random() * 900)}`,
         VendorName: poForm.VendorName,
         OrderDate: new Date().toISOString().split('T')[0],
         ExpectedDeliveryDate: poForm.ExpectedDeliveryDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
-        TotalAmount: 0, // Valuation determined when invoice is entered in GRN
+        TotalAmount: totalPoValuation,
         PaidAmount: 0,
         Status: 'Sent',
         Notes: poForm.Notes || '',
@@ -2714,7 +2802,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           Category: i.Category || 'General Medicine',
           Qty: Number(i.Qty) || 1,
           UnitPrice: Number(i.UnitPrice || 0),
-          LineTotal: 0,
+          LineTotal: (Number(i.Qty) || 0) * (Number(i.UnitPrice) || 0),
           BatchNo: i.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
         }))
       };
@@ -7802,27 +7890,37 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                     </div>
 
                     <div className="border border-slate-200 rounded-xl overflow-hidden max-h-[380px] overflow-y-auto">
+                      <datalist id="inventory-med-picker-datalist">
+                        {inventoryItems.map((inv: any, invIdx: number) => (
+                          <option key={invIdx} value={inv.ItemName || inv.Name}>
+                            {inv.ItemID ? `[${inv.ItemID}] ` : ''}{inv.ItemName || inv.Name} - {getMedicineItemCategory(inv)}
+                          </option>
+                        ))}
+                      </datalist>
+
                       <table className="w-full text-left text-xs">
                         <thead className="sticky top-0 z-10 bg-slate-100 shadow-2xs">
                           <tr className="text-slate-600 font-bold border-b border-slate-200">
                             <th className="p-2.5 w-10 text-center">#</th>
                             <th className="p-2.5">Medicine Name</th>
-                            <th className="p-2.5 w-44">Medicine Category</th>
-                            <th className="p-2.5 w-36">Batch No. (Optional)</th>
-                            <th className="p-2.5 w-32 text-center">Required Order Qty</th>
+                            <th className="p-2.5 w-36">Category</th>
+                            <th className="p-2.5 w-28">Batch No.</th>
+                            <th className="p-2.5 w-24 text-center">Required Qty</th>
+                            <th className="p-2.5 w-36 text-center">Unit Price (GRN / Rate)</th>
+                            <th className="p-2.5 w-28 text-right">Est. Total</th>
                             <th className="p-2.5 w-12 text-center">Action</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {poForm.Items.length === 0 ? (
                             <tr>
-                              <td colSpan={6} className="p-6 text-center text-slate-400 font-medium">
+                              <td colSpan={8} className="p-6 text-center text-slate-400 font-medium">
                                 No medicines selected yet. Choose items from the grid above or auto-select low stock items!
                               </td>
                             </tr>
                           ) : filteredPoSelectedItems.length === 0 ? (
                             <tr>
-                              <td colSpan={6} className="p-6 text-center text-slate-500 font-medium bg-amber-50/50">
+                              <td colSpan={8} className="p-6 text-center text-slate-500 font-medium bg-amber-50/50">
                                 <p className="font-bold text-slate-700">No selected order items match the active search query or filter.</p>
                                 <p className="text-xs text-slate-500 mt-1">({poForm.Items.length} items exist in the total purchase requisition list)</p>
                                 <button
@@ -7840,6 +7938,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                             </tr>
                           ) : (
                             filteredPoSelectedItems.map(({ item, originalIndex }, filteredIdx) => {
+                              const rowPriceInfo = getMedicinePriceInfo(item);
+                              const lineValuation = (Number(item.Qty) || 0) * (Number(item.UnitPrice) || 0);
+
                               return (
                                 <tr key={originalIndex} className="hover:bg-slate-50">
                                   <td className="p-2.5 text-center font-bold text-slate-400 font-mono">
@@ -7848,11 +7949,17 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   <td className="p-2 font-medium">
                                     <input
                                       type="text"
-                                      placeholder="Enter medicine name..."
+                                      list="inventory-med-picker-datalist"
+                                      placeholder="Search or enter medicine..."
                                       value={item.ItemName}
                                       onChange={e => handleUpdatePoItem(originalIndex, 'ItemName', e.target.value)}
                                       className="w-full p-1.5 border rounded-lg text-xs font-bold text-slate-900 bg-white"
                                     />
+                                    {item.ItemID && (
+                                      <span className="text-[10px] font-mono text-slate-400 block mt-0.5">
+                                        ID: {item.ItemID}
+                                      </span>
+                                    )}
                                   </td>
                                   <td className="p-2">
                                     <select
@@ -7868,7 +7975,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   <td className="p-2">
                                     <input
                                       type="text"
-                                      placeholder="Batch / Ref #"
+                                      placeholder="Batch / Ref"
                                       value={item.BatchNo || ''}
                                       onChange={e => handleUpdatePoItem(originalIndex, 'BatchNo', e.target.value)}
                                       className="w-full p-1.5 border rounded-lg text-xs font-mono font-bold bg-amber-50/60 text-amber-900 text-center"
@@ -7881,8 +7988,50 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                       placeholder="1"
                                       value={item.Qty}
                                       onChange={e => handleUpdatePoItem(originalIndex, 'Qty', Math.max(1, Number(e.target.value)))}
-                                      className="w-24 mx-auto p-1.5 border border-indigo-300 rounded-lg text-xs text-center font-black font-mono bg-indigo-50/40 text-indigo-950"
+                                      className="w-20 mx-auto p-1.5 border border-indigo-300 rounded-lg text-xs text-center font-black font-mono bg-indigo-50/40 text-indigo-950"
                                     />
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <div className="space-y-1">
+                                      <div className="relative">
+                                        <span className="absolute left-1.5 top-1.5 text-[10px] text-slate-400 font-bold">Rs.</span>
+                                        <input
+                                          type="number"
+                                          min="0"
+                                          step="any"
+                                          placeholder="0"
+                                          value={item.UnitPrice ?? 0}
+                                          onChange={e => handleUpdatePoItem(originalIndex, 'UnitPrice', Math.max(0, Number(e.target.value)))}
+                                          className="w-28 mx-auto pl-6 pr-1.5 py-1 border border-emerald-300 rounded-lg text-xs text-right font-black font-mono bg-emerald-50/50 text-emerald-950"
+                                        />
+                                      </div>
+                                      {rowPriceInfo.hasPrice && rowPriceInfo.priceSource === 'grn' && (
+                                        <span
+                                          className="inline-block text-[9.5px] font-extrabold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300 max-w-[130px] truncate cursor-help"
+                                          title={rowPriceInfo.grnInfo || ''}
+                                        >
+                                          🏷️ GRN #{rowPriceInfo.grnNo || 'Rate'}
+                                        </span>
+                                      )}
+                                      {rowPriceInfo.hasPrice && rowPriceInfo.priceSource === 'master' && (
+                                        <span
+                                          className="inline-block text-[9.5px] font-bold text-indigo-800 bg-indigo-100 px-1.5 py-0.5 rounded border border-indigo-250 max-w-[130px] truncate cursor-help"
+                                          title="Master Item TP Cost Price"
+                                        >
+                                          📦 Master TP
+                                        </span>
+                                      )}
+                                      {!rowPriceInfo.hasPrice && (
+                                        <span className="inline-block text-[9px] font-bold text-amber-700 bg-amber-50 px-1 py-0.5 rounded">
+                                          Manual Rate
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="p-2 text-right">
+                                    <span className="font-mono font-bold text-slate-900 text-xs">
+                                      Rs. {lineValuation.toLocaleString()}
+                                    </span>
                                   </td>
                                   <td className="p-2 text-center">
                                     <button
