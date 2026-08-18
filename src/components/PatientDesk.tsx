@@ -8818,6 +8818,33 @@ Healing Naturally. Restoring Balance.`;
         });
         const masterPatientsList = Array.from(masterMap.values());
 
+        // Effective date filter calculation (active across grid, stats, and print)
+        let effStart = gridViewStartDate;
+        let effEnd = gridViewEndDate;
+        if (gridViewDatePreset !== 'all' && gridViewDatePreset !== 'custom') {
+          const now = new Date();
+          const todayStr = getLocalDateString(now);
+          if (gridViewDatePreset === 'today') {
+            effStart = todayStr;
+            effEnd = todayStr;
+          } else if (gridViewDatePreset === 'yesterday') {
+            const y = new Date(now);
+            y.setDate(y.getDate() - 1);
+            const yStr = getLocalDateString(y);
+            effStart = yStr;
+            effEnd = yStr;
+          } else if (gridViewDatePreset === 'this_week') {
+            const w = new Date(now);
+            w.setDate(w.getDate() - 6);
+            effStart = getLocalDateString(w);
+            effEnd = todayStr;
+          } else if (gridViewDatePreset === 'this_month') {
+            const m = new Date(now.getFullYear(), now.getMonth(), 1);
+            effStart = getLocalDateString(m);
+            effEnd = todayStr;
+          }
+        }
+
         // Filter patients
         let rawFilteredPatients = masterPatientsList.filter((pt) => {
           const ptVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
@@ -8832,33 +8859,6 @@ Healing Naturally. Restoring Balance.`;
             return true;
           });
           const allPtVisits = [...ptVisits, ...ptNhc];
-
-          // Date filter calculation
-          let effStart = gridViewStartDate;
-          let effEnd = gridViewEndDate;
-          if (gridViewDatePreset !== 'all' && gridViewDatePreset !== 'custom') {
-            const now = new Date();
-            const todayStr = getLocalDateString(now);
-            if (gridViewDatePreset === 'today') {
-              effStart = todayStr;
-              effEnd = todayStr;
-            } else if (gridViewDatePreset === 'yesterday') {
-              const y = new Date(now);
-              y.setDate(y.getDate() - 1);
-              const yStr = getLocalDateString(y);
-              effStart = yStr;
-              effEnd = yStr;
-            } else if (gridViewDatePreset === 'this_week') {
-              const w = new Date(now);
-              w.setDate(w.getDate() - 6);
-              effStart = getLocalDateString(w);
-              effEnd = todayStr;
-            } else if (gridViewDatePreset === 'this_month') {
-              const m = new Date(now.getFullYear(), now.getMonth(), 1);
-              effStart = getLocalDateString(m);
-              effEnd = todayStr;
-            }
-          }
 
           if (effStart || effEnd) {
             const ptRegDate = parseDateToISOKey(pt.RegistrationDate);
@@ -8968,8 +8968,76 @@ Healing Naturally. Restoring Balance.`;
           return (Number(b.PatientID) || 0) - (Number(a.PatientID) || 0);
         });
 
-        const totalVisitsCount = visits ? visits.length : 0;
-        const totalMedicinesCount = visitMedicines ? visitMedicines.length : 0;
+        // Dynamic summary metrics based on date preset & filters
+        const activeFilteredPatientIds = new Set(filteredPatients.map(p => String(p.PatientID || '').trim().toLowerCase()));
+        const isPatientFilterActive = filteredPatients.length < masterPatientsList.length;
+
+        // Filter visits according to date range (and patient filter if active)
+        const dateFilteredVisits = (visits || []).filter(v => {
+          const vDate = parseDateToISOKey(v.VisitDate);
+          if (effStart && (!vDate || vDate < effStart)) return false;
+          if (effEnd && (!vDate || vDate > effEnd)) return false;
+          if (isPatientFilterActive) {
+            return activeFilteredPatientIds.has(String(v.PatientID || '').trim().toLowerCase());
+          }
+          return true;
+        });
+
+        // Also include NHC visits in date range
+        const existingVisitIds = new Set(dateFilteredVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
+        const existingPtDates = new Set(dateFilteredVisits.map(v => `${String(v.PatientID || '').trim().toLowerCase()}_${parseDateToISOKey(v.VisitDate)}`));
+
+        const dateFilteredNhcVisits = (pvNhcHistory || []).filter(nhc => {
+          const nDate = parseDateToISOKey(nhc.date || (nhc as any).VisitDate);
+          if (effStart && (!nDate || nDate < effStart)) return false;
+          if (effEnd && (!nDate || nDate > effEnd)) return false;
+          if (isPatientFilterActive) {
+            if (!activeFilteredPatientIds.has(String(nhc.PatientID || '').trim().toLowerCase())) return false;
+          }
+          const id = String(nhc.VisitID || '').trim().toLowerCase();
+          if (id && existingVisitIds.has(id)) return false;
+          if (nDate && existingPtDates.has(`${String(nhc.PatientID || '').trim().toLowerCase()}_${nDate}`)) return false;
+          return true;
+        });
+
+        // Dynamic Total Patients Count
+        const totalPatientsCount = filteredPatients.length;
+
+        // Dynamic Total Visits Count
+        const totalVisitsCount = (effStart || effEnd || isPatientFilterActive)
+          ? (dateFilteredVisits.length + dateFilteredNhcVisits.length)
+          : (visits.length + dateFilteredNhcVisits.length);
+
+        // Dynamic Total Prescribed Medicines Count
+        const dateFilteredVisitIdSet = new Set(dateFilteredVisits.map(v => v.VisitID).filter(Boolean));
+
+        let totalMedicinesCount = 0;
+
+        if (!effStart && !effEnd && !isPatientFilterActive) {
+          totalMedicinesCount = visitMedicines ? visitMedicines.length : 0;
+          (pvNhcHistory || []).forEach(nhc => {
+            if (Array.isArray((nhc as any).medicines)) {
+              totalMedicinesCount += (nhc as any).medicines.length;
+            } else if (typeof (nhc as any).medicines === 'string' && (nhc as any).medicines.trim()) {
+              totalMedicinesCount += (nhc as any).medicines.split(',').filter((s: string) => s.trim().length > 0).length;
+            } else if (typeof (nhc as any).PrescribedMedicines === 'string' && (nhc as any).PrescribedMedicines.trim()) {
+              totalMedicinesCount += (nhc as any).PrescribedMedicines.split(',').filter((s: string) => s.trim().length > 0).length;
+            }
+          });
+        } else {
+          const matchingMeds = (visitMedicines || []).filter(m => dateFilteredVisitIdSet.has(m.VisitID));
+          totalMedicinesCount += matchingMeds.length;
+
+          dateFilteredNhcVisits.forEach(nhc => {
+            if (Array.isArray((nhc as any).medicines)) {
+              totalMedicinesCount += (nhc as any).medicines.length;
+            } else if (typeof (nhc as any).medicines === 'string' && (nhc as any).medicines.trim()) {
+              totalMedicinesCount += (nhc as any).medicines.split(',').filter((s: string) => s.trim().length > 0).length;
+            } else if (typeof (nhc as any).PrescribedMedicines === 'string' && (nhc as any).PrescribedMedicines.trim()) {
+              totalMedicinesCount += (nhc as any).PrescribedMedicines.split(',').filter((s: string) => s.trim().length > 0).length;
+            }
+          });
+        }
 
         return (
           <div className="space-y-4" id="patients-view-grid-tab">
@@ -8996,7 +9064,7 @@ Healing Naturally. Restoring Balance.`;
                 <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
                   <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/15 flex items-center space-x-2">
                     <Users className="w-4 h-4 text-blue-300" />
-                    <span>Total Patients: <strong className="text-white text-sm font-black">{patients.length}</strong></span>
+                    <span>Total Patients: <strong className="text-white text-sm font-black">{totalPatientsCount}</strong></span>
                   </div>
                   <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/15 flex items-center space-x-2">
                     <Stethoscope className="w-4 h-4 text-emerald-300" />
@@ -9175,22 +9243,22 @@ Healing Naturally. Restoring Balance.`;
                         let pInvoices = (invoices || []).filter(inv => isSamePatient(inv.PatientID, p.PatientID));
                         let pApps = (appointments || []).filter(a => isSamePatient(a.PatientID, p.PatientID) && a.Status !== 3);
 
-                        if (gridViewStartDate || gridViewEndDate) {
+                        if (effStart || effEnd) {
                           pVisits = pVisits.filter(v => {
                             const d = parseDateToISOKey(v.VisitDate);
-                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
                           });
                           pNhc = pNhc.filter(nhc => {
                             const d = parseDateToISOKey(nhc.date || (nhc as any).VisitDate);
-                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
                           });
                           pApps = pApps.filter(a => {
                             const d = parseDateToISOKey(a.AppointmentDate);
-                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
                           });
                           pInvoices = pInvoices.filter(inv => {
                             const d = parseDateToISOKey(inv.InvoiceDate);
-                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
                           });
                         }
 
@@ -9410,22 +9478,22 @@ Healing Naturally. Restoring Balance.`;
                         let ptInvoices = (invoices || []).filter(inv => isSamePatient(inv.PatientID, pt.PatientID));
                         let ptApps = (appointments || []).filter(a => isSamePatient(a.PatientID, pt.PatientID) && a.Status !== 3);
 
-                        if (gridViewStartDate || gridViewEndDate) {
+                        if (effStart || effEnd) {
                           ptVisits = ptVisits.filter(v => {
                             const d = parseDateToISOKey(v.VisitDate);
-                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
                           });
                           ptNhc = ptNhc.filter(nhc => {
                             const d = parseDateToISOKey(nhc.date || (nhc as any).VisitDate);
-                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
                           });
                           ptApps = ptApps.filter(a => {
                             const d = parseDateToISOKey(a.AppointmentDate);
-                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
                           });
                           ptInvoices = ptInvoices.filter(inv => {
                             const d = parseDateToISOKey(inv.InvoiceDate);
-                            return d && (!gridViewStartDate || d >= gridViewStartDate) && (!gridViewEndDate || d <= gridViewEndDate);
+                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
                           });
                         }
 
