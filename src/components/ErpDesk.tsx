@@ -1939,7 +1939,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
   // HANDLERS FOR BULK GRN STOCK INWARD UPLOAD
   const parseAndMatchBulkGrnData = (
-    parsedRows: Array<{ name: string; mfgDate?: string; expiryDate?: string; qty?: number; price?: number; batchNo?: string }>,
+    parsedRows: Array<{ name: string; batchNo?: string; mfgDate?: string; expiryDate?: string; price?: number; qty?: number; category?: string }>,
     targetPoId?: string
   ) => {
     const poIdToUse = targetPoId || bulkGrnSelectedPoId || grnForm.POID;
@@ -1986,7 +1986,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       result.push({
         ItemID: matchedPoItem?.ItemID || matchedInv?.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
         ItemName: matchedPoItem?.ItemName || matchedInv?.ItemName || cleanName,
-        Category: matchedInv?.Category || 'Tablet / Capsule',
+        Category: row.category || (matchedPoItem as any)?.Category || matchedInv?.Category || 'Tablet / Capsule',
         OrderedQty: Number(orderedQty) || 0,
         AlreadyReceivedQty: Number(alreadyRecv) || 0,
         PendingQty: Number(pendingQty) || 0,
@@ -1994,7 +1994,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         UnitPrice: parsedPrice,
         MfgDate: row.mfgDate || todayStr,
         ExpiryDate: row.expiryDate || twoYearsStr,
-        BatchNo: row.batchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+        BatchNo: row.batchNo || matchedPoItem?.BatchNo || matchedInv?.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
         isMatchedPo: Boolean(matchedPoItem),
         isMatchedInventory: Boolean(matchedInv),
         stockInHand: matchedInv?.CStock ?? matchedInv?.Stock ?? 0
@@ -2029,57 +2029,71 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           }
 
           let nameIdx = 0;
+          let batchIdx = -1;
           let mfgIdx = -1;
           let expIdx = -1;
-          let qtyIdx = 1;
-          let priceIdx = 2;
-          let batchIdx = -1;
+          let priceIdx = -1;
+          let qtyIdx = -1;
+          let categoryIdx = -1;
           let startRow = 0;
 
           const firstRow = rawData[0].map(c => String(c || '').toLowerCase().trim());
           const hasHeader = firstRow.some(c =>
             c.includes('item') || c.includes('name') || c.includes('qty') ||
-            c.includes('mfg') || c.includes('exp') || c.includes('price') || c.includes('rate')
+            c.includes('mfg') || c.includes('exp') || c.includes('price') || c.includes('rate') || c.includes('cat') || c.includes('batch')
           );
 
           if (hasHeader) {
             startRow = 1;
             const foundName = firstRow.findIndex(c => c.includes('item') || c.includes('name') || c.includes('medicine') || c.includes('desc'));
-            const foundMfg = firstRow.findIndex(c => c.includes('mfg') || c.includes('mfd') || c.includes('manufactur') || c.includes('prod date'));
+            const foundBatch = firstRow.findIndex(c => c.includes('batch') || c.includes('lot') || c.includes('ref'));
+            const foundMfg = firstRow.findIndex(c => c.includes('mfg') || c.includes('mfd') || c.includes('manufactur') || c.includes('prod'));
             const foundExp = firstRow.findIndex(c => c.includes('exp') || c.includes('expiry') || c.includes('expiration') || c.includes('best before'));
+            const foundPrice = firstRow.findIndex(c => c.includes('price') || c.includes('rate') || c.includes('cost') || c.includes('unit') || c.includes('tp'));
             const foundQty = firstRow.findIndex(c => c.includes('recv') || c.includes('received') || c.includes('qty') || c.includes('quantity') || c.includes('inward'));
-            const foundPrice = firstRow.findIndex(c => c.includes('price') || c.includes('rate') || c.includes('cost') || c.includes('unit') || c.includes('invoice'));
-            const foundBatch = firstRow.findIndex(c => c.includes('batch') || c.includes('lot'));
+            const foundCategory = firstRow.findIndex(c => c.includes('cat') || c.includes('category') || c.includes('type') || c.includes('group'));
 
             if (foundName >= 0) nameIdx = foundName;
+            if (foundBatch >= 0) batchIdx = foundBatch;
             if (foundMfg >= 0) mfgIdx = foundMfg;
             if (foundExp >= 0) expIdx = foundExp;
-            if (foundQty >= 0) qtyIdx = foundQty;
             if (foundPrice >= 0) priceIdx = foundPrice;
-            if (foundBatch >= 0) batchIdx = foundBatch;
+            if (foundQty >= 0) qtyIdx = foundQty;
+            if (foundCategory >= 0) categoryIdx = foundCategory;
+          } else {
+            // Default 7-column order: Name (0), Batch (1), Mfg (2), Expiry (3), Price (4), QTY (5), Category (6)
+            if (rawData[0].length >= 7) {
+              nameIdx = 0; batchIdx = 1; mfgIdx = 2; expIdx = 3; priceIdx = 4; qtyIdx = 5; categoryIdx = 6;
+            } else if (rawData[0].length === 6) {
+              nameIdx = 0; batchIdx = 1; mfgIdx = 2; expIdx = 3; priceIdx = 4; qtyIdx = 5;
+            } else if (rawData[0].length === 5) {
+              nameIdx = 0; mfgIdx = 1; expIdx = 2; priceIdx = 3; qtyIdx = 4;
+            }
           }
 
-          const parsedRows: Array<{ name: string; mfgDate?: string; expiryDate?: string; qty?: number; price?: number; batchNo?: string }> = [];
+          const parsedRows: Array<{ name: string; batchNo?: string; mfgDate?: string; expiryDate?: string; price?: number; qty?: number; category?: string }> = [];
           for (let i = startRow; i < rawData.length; i++) {
             const row = rawData[i];
             if (!row || row.length === 0) continue;
             const nameStr = String(row[nameIdx] || '').trim();
             if (!nameStr) continue;
 
+            const batchStr = batchIdx >= 0 && row[batchIdx] ? String(row[batchIdx]).trim() : undefined;
             const mfgStr = mfgIdx >= 0 && row[mfgIdx] ? String(row[mfgIdx]).trim() : undefined;
             const expStr = expIdx >= 0 && row[expIdx] ? String(row[expIdx]).trim() : undefined;
-            const qtyVal = parseFloat(String(row[qtyIdx] || '0')) || 0;
             const priceRaw = priceIdx >= 0 && row[priceIdx] !== undefined && row[priceIdx] !== null ? parseFloat(String(row[priceIdx])) : NaN;
             const priceVal = !isNaN(priceRaw) ? priceRaw : undefined;
-            const batchStr = batchIdx >= 0 && row[batchIdx] ? String(row[batchIdx]).trim() : undefined;
+            const qtyVal = qtyIdx >= 0 ? (parseFloat(String(row[qtyIdx] || '0')) || 0) : 0;
+            const catStr = categoryIdx >= 0 && row[categoryIdx] ? String(row[categoryIdx]).trim() : undefined;
 
             parsedRows.push({
               name: nameStr,
+              batchNo: batchStr,
               mfgDate: mfgStr,
               expiryDate: expStr,
-              qty: qtyVal,
               price: priceVal,
-              batchNo: batchStr
+              qty: qtyVal,
+              category: catStr
             });
           }
 
@@ -2100,7 +2114,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     }
 
     const lines = text.split(/\r?\n/);
-    const parsedRows: Array<{ name: string; mfgDate?: string; expiryDate?: string; qty?: number; price?: number; batchNo?: string }> = [];
+    const parsedRows: Array<{ name: string; batchNo?: string; mfgDate?: string; expiryDate?: string; price?: number; qty?: number; category?: string }> = [];
 
     lines.forEach((line, idx) => {
       const trimmed = line.trim();
@@ -2116,27 +2130,41 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           return;
         }
 
-        // Support formats:
-        // 5 columns: Item Name, Mfg Date, Expiry Date, Received QTY, Unit Price
-        // 4 columns: Item Name, Expiry Date, Received QTY, Unit Price
-        // 3 columns: Item Name, Received Qty, Unit Price
-        // 2 columns: Item Name, Received Qty
+        // Supported order: Item name, batch, mfg, expiry, price, QTY, Category
+        let batchNo: string | undefined;
         let mfgDate: string | undefined;
         let expiryDate: string | undefined;
-        let qtyVal = 0;
         let priceVal: number | undefined;
+        let qtyVal = 0;
+        let category: string | undefined;
 
-        if (parts.length >= 5) {
-          mfgDate = parts[1].trim() || undefined;
-          expiryDate = parts[2].trim() || undefined;
-          qtyVal = parseFloat(parts[3].trim()) || 0;
+        if (parts.length >= 7) {
+          batchNo = parts[1].trim() || undefined;
+          mfgDate = parts[2].trim() || undefined;
+          expiryDate = parts[3].trim() || undefined;
           const p = parseFloat(parts[4].trim());
           priceVal = !isNaN(p) ? p : undefined;
+          qtyVal = parseFloat(parts[5].trim()) || 0;
+          category = parts[6].trim() || undefined;
+        } else if (parts.length === 6) {
+          batchNo = parts[1].trim() || undefined;
+          mfgDate = parts[2].trim() || undefined;
+          expiryDate = parts[3].trim() || undefined;
+          const p = parseFloat(parts[4].trim());
+          priceVal = !isNaN(p) ? p : undefined;
+          qtyVal = parseFloat(parts[5].trim()) || 0;
+        } else if (parts.length === 5) {
+          mfgDate = parts[1].trim() || undefined;
+          expiryDate = parts[2].trim() || undefined;
+          const num1 = parseFloat(parts[3].trim());
+          const num2 = parseFloat(parts[4].trim());
+          priceVal = !isNaN(num1) ? num1 : undefined;
+          qtyVal = !isNaN(num2) ? num2 : 0;
         } else if (parts.length === 4) {
           expiryDate = parts[1].trim() || undefined;
-          qtyVal = parseFloat(parts[2].trim()) || 0;
-          const p = parseFloat(parts[3].trim());
+          const p = parseFloat(parts[2].trim());
           priceVal = !isNaN(p) ? p : undefined;
+          qtyVal = parseFloat(parts[3].trim()) || 0;
         } else if (parts.length === 3) {
           qtyVal = parseFloat(parts[1].trim()) || 0;
           const p = parseFloat(parts[2].trim());
@@ -2147,10 +2175,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
         parsedRows.push({
           name: col0,
+          batchNo,
           mfgDate,
           expiryDate,
+          price: priceVal,
           qty: qtyVal,
-          price: priceVal
+          category
         });
       }
     });
@@ -7887,15 +7917,15 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                     <div className="flex items-center justify-between">
                       <label className="text-xs font-bold text-slate-700 flex items-center space-x-1">
                         <FileText className="w-3.5 h-3.5 text-emerald-600" />
-                        <span>Paste 5-Column Text Data</span>
+                        <span>Paste 7-Column Text Data</span>
                       </label>
-                      <span className="text-[10px] text-slate-400 font-mono font-medium">Name, Mfg, Exp, Recv, Price</span>
+                      <span className="text-[10px] text-slate-400 font-mono font-medium">Item name, Batch, Mfg, Expiry, Price, QTY, Category</span>
                     </div>
                     <textarea
                       rows={6}
                       value={bulkGrnRawText}
                       onChange={(e) => handleParseBulkGrnText(e.target.value)}
-                      placeholder={`Paste tab/comma separated rows from Excel:\nItem Name\tMfg Date\tExpiry Date\tReceived QTY\tUnit Price\nPanadol Extra 500mg\t2026-01-10\t2028-01-10\t100\t12.50\nAmoxicillin 250mg\t2026-02-01\t2027-12-31\t50\t45.00\nBrufen 400mg\t2026-01-15\t2028-06-30\t200\t8.75`}
+                      placeholder={`Paste tab/comma separated rows from Excel:\nItem Name\tBatch\tMfg Date\tExpiry Date\tPrice\tQTY\tCategory\nPanadol Extra 500mg\tB-2026-101\t2026-01-10\t2028-01-10\t12.50\t100\tTablet / Capsule\nAmoxicillin 250mg\tB-2026-202\t2026-02-01\t2027-12-31\t45.00\t50\tSyrup / Suspension\nBrufen 400mg\tB-2026-303\t2026-01-15\t2028-06-30\t8.75\t200\tTablet / Capsule`}
                       className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
                     />
                   </div>
@@ -7957,19 +7987,20 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                       <div className="p-8 text-center text-slate-400 space-y-1">
                         <FileSpreadsheet className="w-8 h-8 mx-auto text-slate-300" />
                         <p className="text-xs font-bold text-slate-600">No items loaded yet</p>
-                        <p className="text-[11px]">Upload an Excel file or paste rows with Name, Mfg Date, Expiry Date, Received Qty, and Unit Price.</p>
+                        <p className="text-[11px]">Upload an Excel file or paste rows with Item name, Batch, Mfg, Expiry, Price, QTY, Category.</p>
                       </div>
                     ) : (
-                      <table className="w-full text-left text-xs min-w-[650px]">
+                      <table className="w-full text-left text-xs min-w-[760px]">
                         <thead className="bg-slate-100 text-slate-700 text-[10px] uppercase font-extrabold sticky top-0 border-b border-slate-200">
                           <tr>
                             <th className="p-2 w-7 text-center">#</th>
                             <th className="p-2 min-w-[120px]">Item Name</th>
-                            <th className="p-2 w-16 text-center">PO Qty</th>
-                            <th className="p-2 w-24 text-center">Mfg Date</th>
-                            <th className="p-2 w-24 text-center">Expiry Date</th>
-                            <th className="p-2 w-16 text-center">Recv Qty</th>
+                            <th className="p-2 w-28 text-center">Batch</th>
+                            <th className="p-2 w-24 text-center">Mfg</th>
+                            <th className="p-2 w-24 text-center">Expiry</th>
                             <th className="p-2 w-20 text-right">Price (Rs.)</th>
+                            <th className="p-2 w-16 text-center">QTY</th>
+                            <th className="p-2 w-32">Category</th>
                             <th className="p-2 w-20 text-right">Subtotal</th>
                             <th className="p-2 w-7 text-center"></th>
                           </tr>
@@ -7983,7 +8014,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                 <div className="flex items-center space-x-1 mt-0.5">
                                   {item.isMatchedPo ? (
                                     <span className="px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded font-bold text-[9px]">
-                                      In PO
+                                      In PO ({item.OrderedQty} ordered)
                                     </span>
                                   ) : (
                                     <span className="px-1 py-0.2 bg-amber-100 text-amber-800 rounded font-bold text-[9px]">
@@ -7992,8 +8023,17 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   )}
                                 </div>
                               </td>
-                              <td className="p-2 text-center font-bold text-indigo-700 bg-indigo-50/40">
-                                {item.OrderedQty || 0}
+                              <td className="p-2 text-center">
+                                <input
+                                  type="text"
+                                  placeholder="Batch #"
+                                  value={item.BatchNo || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, BatchNo: val } : it));
+                                  }}
+                                  className="w-24 p-1 border border-slate-200 rounded text-[11px] font-mono font-bold bg-amber-50/50 text-amber-900 text-center"
+                                />
                               </td>
                               <td className="p-2 text-center">
                                 <input
@@ -8017,18 +8057,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   className="w-24 p-1 border border-slate-200 rounded text-[11px] font-mono bg-white"
                                 />
                               </td>
-                              <td className="p-2 text-center">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={item.ReceivedQty}
-                                  onChange={(e) => {
-                                    const val = Number(e.target.value);
-                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, ReceivedQty: val } : it));
-                                  }}
-                                  className="w-14 p-1 border border-emerald-300 rounded text-center text-xs font-bold bg-emerald-50/60 text-emerald-950"
-                                />
-                              </td>
                               <td className="p-2 text-right">
                                 <input
                                   type="number"
@@ -8042,7 +8070,33 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                   className="w-16 p-1 border border-slate-200 rounded text-right text-xs font-bold bg-white"
                                 />
                               </td>
-                              <td className="p-2 text-right font-extrabold text-slate-900 text-xs">
+                              <td className="p-2 text-center">
+                                <input
+                                  type="number"
+                                  min="0"
+                                  value={item.ReceivedQty}
+                                  onChange={(e) => {
+                                    const val = Number(e.target.value);
+                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, ReceivedQty: val } : it));
+                                  }}
+                                  className="w-14 p-1 border border-emerald-300 rounded text-center text-xs font-bold bg-emerald-50/60 text-emerald-950"
+                                />
+                              </td>
+                              <td className="p-2">
+                                <select
+                                  value={item.Category || 'Tablet / Capsule'}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, Category: val } : it));
+                                  }}
+                                  className="w-full p-1 border border-indigo-200 rounded text-[11px] font-bold text-indigo-900 bg-indigo-50/50 cursor-pointer"
+                                >
+                                  {medicineCategories.map((cat, catIdx) => (
+                                    <option key={catIdx} value={cat}>{cat}</option>
+                                  ))}
+                                </select>
+                              </td>
+                              <td className="p-2 text-right font-extrabold text-slate-900 text-xs font-mono">
                                 Rs. {((Number(item.ReceivedQty) || 0) * (Number(item.UnitPrice) || 0)).toLocaleString()}
                               </td>
                               <td className="p-2 text-center">
