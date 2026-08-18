@@ -99,35 +99,44 @@ export default function GlobalSearchHeader({
   };
 
   return (
-    <div className="relative shrink-0" ref={containerRef} id="global-header-search-container">
-      {/* Search Bar Input */}
-      <div className="relative flex items-center">
-        <Search className="w-3 h-3 text-blue-300 absolute left-2 pointer-events-none" />
-        <input
-          type="text"
-          value={searchTerm}
-          onChange={(e) => {
-            setSearchTerm(e.target.value);
-            setIsOpen(true);
-          }}
-          onFocus={() => setIsOpen(true)}
-          placeholder=""
-          className="w-28 xs:w-36 sm:w-52 md:w-60 lg:w-64 pl-7 pr-6 py-1 bg-blue-950/70 text-white placeholder-blue-300/70 text-[10px] sm:text-[10.5px] rounded-md border border-blue-700/60 focus:outline-none focus:ring-1 focus:ring-emerald-400/80 focus:border-transparent transition shadow-inner"
-          id="global-header-search-input"
-        />
-        {searchTerm && (
-          <button
-            type="button"
-            onClick={() => {
-              setSearchTerm('');
-              setIsOpen(false);
+    <div className="relative shrink-0 group" ref={containerRef} id="global-header-search-container">
+      {/* Search Bar Input - Collapsed by default, expands smoothly on hover / focus */}
+      <div 
+        className="flex items-center space-x-1 bg-blue-900/40 hover:bg-blue-800/90 focus-within:bg-blue-950/95 px-1.5 sm:px-2 py-1 rounded-md border border-blue-800 hover:border-blue-700 focus-within:border-emerald-400/80 shadow-xs transition-all duration-300 cursor-pointer"
+        title="Hover to search patients and invoices"
+      >
+        <Search className="w-3.5 h-3.5 text-blue-300 group-hover:text-emerald-300 shrink-0 transition-colors pointer-events-none" />
+        <div className={`transition-all duration-300 ease-in-out flex items-center ${
+          searchTerm || isOpen 
+            ? 'max-w-[260px] opacity-100 pl-1' 
+            : 'max-w-0 overflow-hidden group-hover:max-w-[260px] focus-within:max-w-[260px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-1 focus-within:pl-1'
+        }`}>
+          <input
+            type="text"
+            value={searchTerm}
+            onChange={(e) => {
+              setSearchTerm(e.target.value);
+              setIsOpen(true);
             }}
-            className="absolute right-1.5 text-blue-300 hover:text-white transition cursor-pointer"
-            title="Clear search"
-          >
-            <X className="w-3 h-3" />
-          </button>
-        )}
+            onFocus={() => setIsOpen(true)}
+            placeholder="Search patient, invoice..."
+            className="w-36 sm:w-48 md:w-56 bg-transparent text-white placeholder-blue-300/60 text-[10px] sm:text-[10.5px] focus:outline-none"
+            id="global-header-search-input"
+          />
+          {searchTerm && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setIsOpen(false);
+              }}
+              className="text-blue-300 hover:text-white transition cursor-pointer pl-1 shrink-0"
+              title="Clear search"
+            >
+              <X className="w-3 h-3" />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Dropdown Overlay Results */}

@@ -1114,7 +1114,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     VendorName: '',
     ExpectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
     Notes: '',
-    Items: [{ ItemID: 'ITM-001', ItemName: 'Panadol Extra 500mg', Category: 'Tablet / Capsule', Qty: 100, UnitPrice: 120, BatchNo: 'B-2026-001' }]
+    Items: []
   });
 
   const [txnForm, setTxnForm] = useState<Partial<ErpTransaction> & { VendorID?: string; VendorName?: string }>({
@@ -1361,7 +1361,27 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   // Universal Database Helper (Insert, Retrieve, Delete)
   const saveToDatabase = async (collection: string, data: any, forceMethod?: 'PUT' | 'POST') => {
     try {
-      const id = data._id || data.VendorID || data.SID || data.SupplierID || data.TransactionID || data.ExpenseID || data.EmployeeID || data.AssetID || data.POID || data.GRNID;
+      let id = data._id;
+      if (collection === 'erp_purchase_orders') {
+        id = id || data.POID;
+      } else if (collection === 'erp_grn') {
+        id = id || data.GRNID;
+      } else if (collection === 'erp_vendors') {
+        id = id || data.VendorID || data.SID || data.SupplierID;
+      } else if (collection === 'erp_transactions') {
+        id = id || data.TransactionID || data.VoucherNo;
+      } else if (collection === 'erp_expenses') {
+        id = id || data.ExpenseID;
+      } else if (collection === 'erp_employees') {
+        id = id || data.EmployeeID;
+      } else if (collection === 'erp_assets') {
+        id = id || data.AssetID;
+      } else if (collection === 'erp_payroll') {
+        id = id || data.PayrollID;
+      } else {
+        id = id || data.POID || data.GRNID || data.VendorID || data.TransactionID || data.ExpenseID;
+      }
+
       const method = forceMethod || (id ? 'PUT' : 'POST');
       const url = (method === 'PUT' && id) ? `/api/query/${collection}/${encodeURIComponent(id)}` : `/api/query/${collection}`;
       const res = await fetch(url, {
@@ -2072,6 +2092,33 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     setTimeout(() => setSyncMessage(null), 4000);
   };
 
+  // Helper to generate guaranteed unique, sequential PO numbers (e.g. PO-1001, PO-1002, etc.)
+  const generateNextPoNumber = () => {
+    const existingNums = purchaseOrders
+      .map(p => {
+        const match = String(p.POID || '').match(/PO-(\d+)/i);
+        return match ? parseInt(match[1], 10) : 0;
+      })
+      .filter(n => !isNaN(n) && n > 0);
+    const maxNum = existingNums.length > 0 ? Math.max(...existingNums, 1000) : 1000;
+    return `PO-${maxNum + 1}`;
+  };
+
+  // Dedicated opener for creating a FRESH new Purchase Order
+  const handleOpenNewPoModal = (vendor?: { VendorID?: string; VendorName?: string }) => {
+    const defaultDelivery = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
+    setPoForm({
+      VendorID: vendor?.VendorID || '',
+      VendorName: vendor?.VendorName || '',
+      ExpectedDeliveryDate: defaultDelivery,
+      Notes: '',
+      Items: []
+    });
+    setMedicineSearchTerm('');
+    setPoGridPage(1);
+    setShowPoModal(true);
+  };
+
   const handleAddPoItem = () => {
     setPoForm(prev => ({
       ...prev,
@@ -2096,16 +2143,17 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     setIsSubmitting(true);
     try {
       const selectedVendor = vendors.find(v => v.VendorName === poForm.VendorName);
+      const nextPoId = generateNextPoNumber();
       const newPo: ErpPurchaseOrder = {
-        POID: `PO-${Math.floor(1000 + Math.random() * 9000)}`,
+        POID: nextPoId,
         VendorID: poForm.VendorID || selectedVendor?.VendorID || `VND-${Math.floor(100 + Math.random() * 900)}`,
         VendorName: poForm.VendorName,
         OrderDate: new Date().toISOString().split('T')[0],
-        ExpectedDeliveryDate: poForm.ExpectedDeliveryDate,
+        ExpectedDeliveryDate: poForm.ExpectedDeliveryDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
         TotalAmount: 0, // Valuation determined when invoice is entered in GRN
         PaidAmount: 0,
         Status: 'Sent',
-        Notes: poForm.Notes,
+        Notes: poForm.Notes || '',
         Items: poForm.Items.map(i => ({
           ItemID: i.ItemID,
           ItemName: i.ItemName || 'General Item',
@@ -2117,11 +2165,21 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         }))
       };
 
-      await saveToDatabase('erp_purchase_orders', newPo);
+      // Always POST to ensure a brand new document is inserted and existing POs are never overwritten
+      await saveToDatabase('erp_purchase_orders', newPo, 'POST');
       setPurchaseOrders(prev => [newPo, ...prev]);
+
+      // Reset form completely for subsequent orders
+      setPoForm({
+        VendorID: '',
+        VendorName: '',
+        ExpectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+        Notes: '',
+        Items: []
+      });
       setShowPoModal(false);
-      setSyncMessage('Purchase Order saved successfully!');
-      setTimeout(() => setSyncMessage(null), 3000);
+      setSyncMessage(`New Purchase Order ${nextPoId} created successfully for ${newPo.VendorName}!`);
+      setTimeout(() => setSyncMessage(null), 3500);
     } catch (err: any) {
       alert('Error creating Purchase Order: ' + err.message);
     } finally {
@@ -4384,35 +4442,104 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
   return (
     <div className="min-h-full bg-slate-50 text-slate-800 p-4 md:p-6 space-y-6 pb-24">
-      {/* HEADER BAR */}
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-5 flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center space-x-3.5">
-          <div className="w-12 h-12 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100">
-            <Building2 className="w-6 h-6" />
+      {/* FINANCIAL TIMEFRAME SCOPE HEADER BAR (Replaces Mini ERP System banner) */}
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-5 space-y-3">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="flex items-center space-x-3.5">
+            <div className="w-11 h-11 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-md shadow-indigo-100 shrink-0">
+              <Calendar className="w-5 h-5" />
+            </div>
+            <div>
+              <h1 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight">Financial Timeframe Scope</h1>
+              <p className="text-xs text-slate-500">Filter Dashboard Metrics by Daily, Weekly, Monthly, Yearly or Custom Date Range</p>
+            </div>
           </div>
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Mini ERP System</h1>
-            <p className="text-xs text-slate-500">Integrated Procurement, General Ledger, HR & Payroll, Assets & Operating Expenses</p>
+
+          {/* Timeframe Scope Buttons & Sync Action */}
+          <div className="flex flex-wrap items-center gap-2">
+            <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+              {[
+                { id: 'today', label: '☀️ Daily' },
+                { id: 'this_week', label: '📅 Weekly' },
+                { id: 'this_month', label: '📊 Monthly' },
+                { id: 'this_year', label: '📈 Yearly' },
+                { id: 'custom', label: '📆 Custom' },
+                { id: 'all_time', label: '🌐 All Time' }
+              ].map(p => (
+                <button
+                  key={p.id}
+                  onClick={() => setCashBookDateFilter(p.id as any)}
+                  className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                    cashBookDateFilter === p.id
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+
+            {syncMessage && (
+              <div className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200 flex items-center space-x-1.5 animate-pulse">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>{syncMessage}</span>
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={fetchErpData}
+              disabled={loading}
+              className="px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition flex items-center space-x-1.5 border border-slate-200 cursor-pointer shrink-0"
+              title="Sync ERP data from database"
+            >
+              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-indigo-600' : ''}`} />
+              <span>Sync Data</span>
+            </button>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
-          {syncMessage && (
-            <div className="px-3 py-1.5 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-semibold border border-emerald-200 flex items-center space-x-1.5 animate-pulse">
-              <CheckCircle2 className="w-4 h-4" />
-              <span>{syncMessage}</span>
+        {/* Custom Range Date Pickers */}
+        {cashBookDateFilter === 'custom' && (
+          <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-3 animate-fadeIn">
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-bold text-slate-700">From Date:</span>
+              <input
+                type="date"
+                value={cashBookStartDate}
+                onChange={(e) => setCashBookStartDate(e.target.value)}
+                className="text-xs font-bold p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              />
             </div>
-          )}
+            <div className="flex items-center space-x-2">
+              <span className="text-xs font-bold text-slate-700">To Date:</span>
+              <input
+                type="date"
+                value={cashBookEndDate}
+                onChange={(e) => setCashBookEndDate(e.target.value)}
+                className="text-xs font-bold p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
+              />
+            </div>
+          </div>
+        )}
 
-          <button
-            type="button"
-            onClick={fetchErpData}
-            disabled={loading}
-            className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold text-xs transition flex items-center space-x-1.5 border border-slate-200 cursor-pointer"
-          >
-            <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin text-indigo-600' : ''}`} />
-            <span>Sync Data</span>
-          </button>
+        {/* Active Scope Badge */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs bg-indigo-50/70 border border-indigo-100 rounded-xl px-3 py-1.5 gap-2">
+          <span className="font-bold text-indigo-950 flex items-center text-xs">
+            <BarChart3 className="w-3.5 h-3.5 text-indigo-600 mr-1.5 shrink-0" />
+            Active Scope:{' '}
+            <span className="ml-1 font-extrabold text-indigo-800">
+              {cashBookDateFilter === 'today' ? `Daily (${new Date().toLocaleDateString('en-GB')})` :
+               cashBookDateFilter === 'this_week' ? 'Weekly (Past 7 Days)' :
+               cashBookDateFilter === 'this_month' ? `Monthly (${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })})` :
+               cashBookDateFilter === 'this_year' ? `Yearly (${new Date().getFullYear()})` :
+               cashBookDateFilter === 'custom' ? `Custom (${cashBookStartDate} to ${cashBookEndDate})` : 'All Time History'}
+            </span>
+          </span>
+          <span className="text-[10.5px] font-extrabold text-indigo-800 bg-white px-2 py-0.5 rounded-full border border-indigo-200 self-start sm:self-auto">
+            {cashBookMetrics.activeDaysCount} Active Operational {cashBookMetrics.activeDaysCount === 1 ? 'Day' : 'Days'} Records
+          </span>
         </div>
       </div>
 
@@ -4464,86 +4591,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       {/* TAB 1: OVERVIEW DASHBOARD */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* FINANCIAL TIMEFRAME SELECTOR BAR */}
-          <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2.5 bg-indigo-50 text-indigo-700 rounded-xl">
-                  <Calendar className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-extrabold text-slate-900">Financial Timeframe Scope</h3>
-                  <p className="text-xs text-slate-500 font-medium">Filter Dashboard Metrics by Daily, Weekly, Monthly, Yearly or Custom Date Range</p>
-                </div>
-              </div>
-
-              {/* Timeframe Scope Buttons */}
-              <div className="flex flex-wrap items-center gap-1.5 bg-slate-100 p-1.5 rounded-xl border border-slate-200">
-                {[
-                  { id: 'today', label: '☀️ Daily (Today)' },
-                  { id: 'this_week', label: '📅 Weekly (Past 7 Days)' },
-                  { id: 'this_month', label: '📊 Monthly (This Month)' },
-                  { id: 'this_year', label: '📈 Yearly (This Year)' },
-                  { id: 'custom', label: '📆 Custom Period' },
-                  { id: 'all_time', label: '🌐 All Time' }
-                ].map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => setCashBookDateFilter(p.id as any)}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
-                      cashBookDateFilter === p.id
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Custom Range Date Pickers */}
-            {cashBookDateFilter === 'custom' && (
-              <div className="pt-2 border-t border-slate-100 flex flex-wrap items-center gap-3">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold text-slate-700">From Date:</span>
-                  <input
-                    type="date"
-                    value={cashBookStartDate}
-                    onChange={(e) => setCashBookStartDate(e.target.value)}
-                    className="text-xs font-bold p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold text-slate-700">To Date:</span>
-                  <input
-                    type="date"
-                    value={cashBookEndDate}
-                    onChange={(e) => setCashBookEndDate(e.target.value)}
-                    className="text-xs font-bold p-1.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-            )}
-
-            {/* Active Scope Badge */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs bg-indigo-50/70 border border-indigo-100 rounded-xl px-3.5 py-2 gap-2">
-              <span className="font-bold text-indigo-950 flex items-center">
-                <BarChart3 className="w-4 h-4 text-indigo-600 mr-1.5 shrink-0" />
-                Active Timeframe Scope: {
-                  cashBookDateFilter === 'today' ? `Daily Operations (${new Date().toLocaleDateString('en-GB')})` :
-                  cashBookDateFilter === 'this_week' ? 'Weekly Performance (Past 7 Days)' :
-                  cashBookDateFilter === 'this_month' ? `Monthly P&L Ledger (${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })})` :
-                  cashBookDateFilter === 'this_year' ? `Yearly Annual P&L (Year ${new Date().getFullYear()})` :
-                  cashBookDateFilter === 'custom' ? `Custom Range (${cashBookStartDate} to ${cashBookEndDate})` : 'All Time Historical Data'
-                }
-              </span>
-              <span className="text-[11px] font-extrabold text-indigo-800 bg-white px-2.5 py-0.5 rounded-full border border-indigo-200 self-start sm:self-auto">
-                {cashBookMetrics.activeDaysCount} Active Operational {cashBookMetrics.activeDaysCount === 1 ? 'Day' : 'Days'} Records
-              </span>
-            </div>
-          </div>
-
           {/* KPI CARDS */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
@@ -4805,7 +4852,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 </button>
 
                 <button
-                  onClick={() => setShowPoModal(true)}
+                  onClick={() => handleOpenNewPoModal()}
                   className="w-full p-3 rounded-xl bg-slate-50 hover:bg-indigo-50 hover:border-indigo-200 border border-slate-200 text-left transition flex items-center justify-between group cursor-pointer"
                 >
                   <div className="flex items-center space-x-3">
@@ -5756,7 +5803,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   <span>Process GRN (Receive Goods)</span>
                 </button>
                 <button
-                  onClick={() => setShowPoModal(true)}
+                  onClick={() => handleOpenNewPoModal()}
                   className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center space-x-1.5 cursor-pointer shadow-xs"
                 >
                   <Plus className="w-4 h-4" />
@@ -6640,11 +6687,16 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           <div className="bg-white rounded-2xl max-w-5xl w-full p-6 shadow-xl border space-y-5 max-h-[92vh] overflow-y-auto">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <div>
-                <h3 className="font-bold text-slate-900 text-lg flex items-center space-x-2">
-                  <ShoppingCart className="w-5 h-5 text-indigo-600" />
-                  <span>Create Purchase Order & Stock Requisition</span>
-                </h3>
-                <p className="text-xs text-slate-500">Pick medicines directly from inventory stock list or auto-fill required stock quantities</p>
+                <div className="flex items-center space-x-2">
+                  <h3 className="font-bold text-slate-900 text-lg flex items-center space-x-2">
+                    <ShoppingCart className="w-5 h-5 text-indigo-600" />
+                    <span>Create Purchase Order & Stock Requisition</span>
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    {generateNextPoNumber()}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">Pick medicines directly from inventory stock list or auto-fill required stock quantities</p>
               </div>
               <button
                 type="button"
@@ -9498,13 +9550,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                     <button
                       type="button"
                       onClick={() => {
-                        setVendorPoModalData(null);
-                        setPoForm(prev => ({
-                          ...prev,
+                        const targetVendor = {
                           VendorID: vendorPoModalData.VendorID || '',
                           VendorName: vendorPoModalData.VendorName || ''
-                        }));
-                        setShowPoModal(true);
+                        };
+                        setVendorPoModalData(null);
+                        handleOpenNewPoModal(targetVendor);
                       }}
                       className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition inline-flex items-center space-x-1.5 shadow-xs cursor-pointer"
                     >
@@ -9529,13 +9580,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                     <button
                       type="button"
                       onClick={() => {
-                        setVendorPoModalData(null);
-                        setPoForm(prev => ({
-                          ...prev,
+                        const targetVendor = {
                           VendorID: vendorPoModalData.VendorID || '',
                           VendorName: vendorPoModalData.VendorName || ''
-                        }));
-                        setShowPoModal(true);
+                        };
+                        setVendorPoModalData(null);
+                        handleOpenNewPoModal(targetVendor);
                       }}
                       className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition inline-flex items-center space-x-1 cursor-pointer"
                     >

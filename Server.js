@@ -622,92 +622,7 @@ async function runAutoSeeder() {
       console.log('🌱 Seeded default smart locator clinical matcher.');
     }
 
-    // 🧹 STRICT PURGE: Permanently remove all legacy dummy/seed records from database collections
-    await Promise.allSettled([
-      // Operational Expenses Dummy Data Clean
-      db.collection('erp_expenses').deleteMany({
-        $or: [
-          { ExpenseID: /^EXP-50/ },
-          { ExpenseID: /^TEST-/ },
-          { Description: /LESCO Electricity Monthly Bill|Clinic & Pharmacy Premises Monthly Rent|Tea, Coffee & Water Refreshments|Air Conditioner Service & Refrigeration/i }
-        ]
-      }),
-      // Fixed Assets Register Dummy Data Clean
-      db.collection('erp_assets').deleteMany({
-        $or: [
-          { AssetID: /^AST-10/ },
-          { AssetID: /^TEST-/ },
-          { AssetName: /Haier Medical Refrigerator|Thermal Receipt Printer|Doctor Consultation Desk/i }
-        ]
-      }),
-      // Financial Transactions Ledger Dummy Data Clean
-      db.collection('erp_transactions').deleteMany({
-        $or: [
-          { TransactionID: /^TXN-80/ },
-          { TransactionID: /^TEST-/ },
-          { ReferenceNo: /POS-BATCH-20260801|LESCO-99214|CHQ-448102|PAY-JUL26/i }
-        ]
-      }),
-      // Payroll Dummy Data Clean
-      db.collection('erp_payroll').deleteMany({
-        $or: [
-          { PayrollID: /^PAY-2026-07/ },
-          { PayrollID: /^TEST-/ }
-        ]
-      }),
-      // Purchase Orders Dummy Data Clean
-      db.collection('erp_purchase_orders').deleteMany({
-        $or: [
-          { POID: /^PO-100/ },
-          { POID: /^TEST-/ }
-        ]
-      }),
-      // Employees Dummy Data Clean
-      db.collection('erp_employees').deleteMany({
-        $or: [
-          { EmployeeID: /^EMP-10/ },
-          { FullName: /Kashif Qadri|Ayesha Bibi|Muhammad Rizwan/i }
-        ]
-      }),
-      // Vendors Directory Dummy Data Clean
-      db.collection('erp_vendors').deleteMany({
-        $or: [
-          { VendorID: /^VND-00/ },
-          { VendorID: /^TEST-/ },
-          { VendorName: /High-Tech Pharma Distributors Ltd|MedCare Global Supplies|Homeo Care Labs Pakistan/i }
-        ]
-      }),
-      // Patients Dummy Data Clean
-      db.collection('patients').deleteMany({
-        $or: [
-          { PatientID: /^PAT-00/ },
-          { PatientName: /Zubair Ahmad Qureshi|Saima Parveen|Haris Ali SBP/i }
-        ]
-      }),
-      // Legacy Patient History Dummy Data Clean
-      db.collection('nhc_patient_history').deleteMany({
-        $or: [
-          { PatientID: /^NHC-100/ },
-          { PatientName: /Kashif Jameel|Zoya Fatima|Abid Hussain/i }
-        ]
-      }),
-      // Suppliers Dummy Data Clean
-      db.collection('suppliers').deleteMany({
-        $or: [
-          { SID: /^SUP-00/ },
-          { SupplierName: /Standipharm Pakistan Ltd|Getz Pharma Pakistan|GSK Pakistan|Searle Company Limited/i }
-        ]
-      }),
-      // Inventory Items Dummy Data Clean
-      db.collection('items').deleteMany({
-        $or: [
-          { ItemID: /^ITM-00/ },
-          { ItemName: /Panadol 500mg \(Paracetamol\)|Augmentin 625mg \(Co-Amoxiclav\)|Lofnac 50mg|Arinac Forte|Surbex-Z/i }
-        ]
-      })
-    ]);
-    console.log('🧹 Purged all dummy operational records from database successfully.');
-
+    // Flag system initialization
     await db.collection('system_init').updateOne(
       { _id: 'INIT_FLAG' },
       { $set: { _id: 'INIT_FLAG', seeded: true, initializedAt: new Date().toISOString() } },
@@ -949,81 +864,17 @@ app.delete('/api/patients/:id', async (req, res) => {
 app.post('/api/admin/purge-dummy-records', async (req, res) => {
   try {
     const purgeResults = await Promise.allSettled([
-      db.collection('erp_expenses').deleteMany({
-        $or: [
-          { ExpenseID: /^EXP-50/ },
-          { ExpenseID: /^TEST-/ },
-          { Description: /LESCO Electricity Monthly Bill|Clinic & Pharmacy Premises Monthly Rent|Tea, Coffee & Water Refreshments|Air Conditioner Service & Refrigeration/i }
-        ]
-      }),
-      db.collection('erp_assets').deleteMany({
-        $or: [
-          { AssetID: /^AST-10/ },
-          { AssetID: /^TEST-/ },
-          { AssetName: /Haier Medical Refrigerator|Thermal Receipt Printer|Doctor Consultation Desk/i }
-        ]
-      }),
-      db.collection('erp_transactions').deleteMany({
-        $or: [
-          { TransactionID: /^TXN-80/ },
-          { TransactionID: /^TEST-/ },
-          { ReferenceNo: /POS-BATCH-20260801|LESCO-99214|CHQ-448102|PAY-JUL26/i }
-        ]
-      }),
-      db.collection('erp_payroll').deleteMany({
-        $or: [
-          { PayrollID: /^PAY-2026-07/ },
-          { PayrollID: /^TEST-/ }
-        ]
-      }),
-      db.collection('erp_purchase_orders').deleteMany({
-        $or: [
-          { POID: /^PO-100/ },
-          { POID: /^TEST-/ }
-        ]
-      }),
-      db.collection('erp_employees').deleteMany({
-        $or: [
-          { EmployeeID: /^EMP-10/ },
-          { FullName: /Kashif Qadri|Ayesha Bibi|Muhammad Rizwan/i }
-        ]
-      }),
-      db.collection('erp_vendors').deleteMany({
-        $or: [
-          { VendorID: /^VND-00/ },
-          { VendorID: /^TEST-/ },
-          { VendorName: /High-Tech Pharma Distributors Ltd|MedCare Global Supplies|Homeo Care Labs Pakistan/i }
-        ]
-      }),
-      db.collection('patients').deleteMany({
-        $or: [
-          { PatientID: /^PAT-00/ },
-          { PatientName: /Zubair Ahmad Qureshi|Saima Parveen|Haris Ali SBP/i }
-        ]
-      }),
-      db.collection('nhc_patient_history').deleteMany({
-        $or: [
-          { PatientID: /^NHC-100/ },
-          { PatientName: /Kashif Jameel|Zoya Fatima|Abid Hussain/i }
-        ]
-      }),
-      db.collection('suppliers').deleteMany({
-        $or: [
-          { SID: /^SUP-00/ },
-          { SupplierName: /Standipharm Pakistan Ltd|Getz Pharma Pakistan|GSK Pakistan|Searle Company Limited/i }
-        ]
-      }),
-      db.collection('items').deleteMany({
-        $or: [
-          { ItemID: /^ITM-00/ },
-          { ItemName: /Panadol 500mg \(Paracetamol\)|Augmentin 625mg \(Co-Amoxiclav\)|Lofnac 50mg|Arinac Forte|Surbex-Z/i }
-        ]
-      })
+      db.collection('erp_expenses').deleteMany({ ExpenseID: /^TEST-/ }),
+      db.collection('erp_assets').deleteMany({ AssetID: /^TEST-/ }),
+      db.collection('erp_transactions').deleteMany({ TransactionID: /^TEST-/ }),
+      db.collection('erp_payroll').deleteMany({ PayrollID: /^TEST-/ }),
+      db.collection('erp_purchase_orders').deleteMany({ POID: /^TEST-/ }),
+      db.collection('erp_vendors').deleteMany({ VendorID: /^TEST-/ })
     ]);
 
     res.json({
       success: true,
-      message: 'All dummy and test records have been successfully purged from the database.'
+      message: 'Test records have been successfully purged from the database.'
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -3709,9 +3560,7 @@ app.delete('/api/smart-locator/all', async (req, res) => {
 // Handles 250MB+ JSON restores safely with chunking, upserting, and collection auto-mapping
 // ==========================================================================================
 const isExcludedNhcCollection = (name) => {
-  if (!name) return false;
-  const n = String(name).toLowerCase().replace(/[^a-z0-9_]/g, '');
-  return n === 'nhc_patient_history' || n === 'cms_nhc_patients' || n === 'nhc_patients' || n === 'nhcpatienthistory' || n === 'nhcpatienthistorydesk';
+  return false;
 };
 
 function sanitizeMongoDoc(rawDoc) {
@@ -3919,7 +3768,7 @@ app.post('/api/restore/full-database', async (req, res) => {
         else if (doc.InvoiceNo && doc.TotalAmount !== undefined) col = 'invoice_headers';
         else if (doc.InvoiceNo && doc.Quantity) col = 'invoice_details';
         else if (doc.AppointmentID || doc.AppointmentDate) col = 'appointments';
-        else if (doc.MedicineDetail) return; // Skip nhc_patient_history
+        else if (doc.MedicineDetail) col = 'nhc_patient_history';
         else if (doc.TokenNo) col = 'tokens';
         else if (doc.LabTestID || doc.TestName) col = 'lab_tests';
         else if (doc.VoucherNo) col = 'vouchers';
@@ -4038,8 +3887,16 @@ app.put('/api/query/:collection/:id', async (req, res) => {
       if (!db.collections[collection]) db.collections[collection] = [];
       const col = db.collections[collection];
       const index = col.findIndex(doc => {
+        if (doc._id === id) return true;
+        if (collection === 'erp_purchase_orders') return doc.POID === id;
+        if (collection === 'erp_grn') return doc.GRNID === id;
+        if (collection === 'erp_vendors') return doc.VendorID === id || doc.SID === id || doc.SupplierID === id;
+        if (collection === 'erp_transactions') return doc.TransactionID === id || doc.VoucherNo === id;
+        if (collection === 'erp_expenses') return doc.ExpenseID === id;
+        if (collection === 'erp_employees') return doc.EmployeeID === id;
+        if (collection === 'erp_assets') return doc.AssetID === id;
+        if (collection === 'erp_payroll') return doc.PayrollID === id;
         return (
-          doc._id === id ||
           doc.VendorID === id ||
           doc.SID === id ||
           doc.SupplierID === id ||
@@ -4068,23 +3925,41 @@ app.put('/api/query/:collection/:id', async (req, res) => {
       }
     } catch (e) {}
 
-    // Check business keys
-    queryConditions.push(
-      { VendorID: id },
-      { SID: id },
-      { SupplierID: id },
-      { PatientID: id },
-      { ItemID: id },
-      { VisitID: id },
-      { InvoiceNo: id },
-      { VoucherNo: id },
-      { TransactionID: id },
-      { ExpenseID: id },
-      { EmployeeID: id },
-      { AssetID: id },
-      { POID: id },
-      { GRNID: id }
-    );
+    // Check collection-specific business keys to prevent cross-document overwrites
+    if (collection === 'erp_purchase_orders') {
+      queryConditions.push({ POID: id });
+    } else if (collection === 'erp_grn') {
+      queryConditions.push({ GRNID: id });
+    } else if (collection === 'erp_vendors') {
+      queryConditions.push({ VendorID: id }, { SID: id }, { SupplierID: id });
+    } else if (collection === 'erp_transactions') {
+      queryConditions.push({ TransactionID: id }, { VoucherNo: id });
+    } else if (collection === 'erp_expenses') {
+      queryConditions.push({ ExpenseID: id });
+    } else if (collection === 'erp_employees') {
+      queryConditions.push({ EmployeeID: id });
+    } else if (collection === 'erp_assets') {
+      queryConditions.push({ AssetID: id });
+    } else if (collection === 'erp_payroll') {
+      queryConditions.push({ PayrollID: id });
+    } else {
+      queryConditions.push(
+        { VendorID: id },
+        { SID: id },
+        { SupplierID: id },
+        { PatientID: id },
+        { ItemID: id },
+        { VisitID: id },
+        { InvoiceNo: id },
+        { VoucherNo: id },
+        { TransactionID: id },
+        { ExpenseID: id },
+        { EmployeeID: id },
+        { AssetID: id },
+        { POID: id },
+        { GRNID: id }
+      );
+    }
 
     const query = { $or: queryConditions };
 
@@ -4107,8 +3982,16 @@ app.delete('/api/query/:collection/:id', async (req, res) => {
     if (db instanceof InMemoryDB) {
       if (db.collections[collection]) {
         db.collections[collection] = db.collections[collection].filter(doc => {
+          if (doc._id === id) return false;
+          if (collection === 'erp_purchase_orders') return doc.POID !== id;
+          if (collection === 'erp_grn') return doc.GRNID !== id;
+          if (collection === 'erp_vendors') return doc.VendorID !== id && doc.SID !== id && doc.SupplierID !== id;
+          if (collection === 'erp_transactions') return doc.TransactionID !== id && doc.VoucherNo !== id;
+          if (collection === 'erp_expenses') return doc.ExpenseID !== id;
+          if (collection === 'erp_employees') return doc.EmployeeID !== id;
+          if (collection === 'erp_assets') return doc.AssetID !== id;
+          if (collection === 'erp_payroll') return doc.PayrollID !== id;
           return !(
-            doc._id === id ||
             doc.VendorID === id ||
             doc.SID === id ||
             doc.SupplierID === id ||
@@ -4133,22 +4016,41 @@ app.delete('/api/query/:collection/:id', async (req, res) => {
       }
     } catch (e) {}
 
-    queryConditions.push(
-      { VendorID: id },
-      { SID: id },
-      { SupplierID: id },
-      { PatientID: id },
-      { ItemID: id },
-      { VisitID: id },
-      { InvoiceNo: id },
-      { VoucherNo: id },
-      { TransactionID: id },
-      { ExpenseID: id },
-      { EmployeeID: id },
-      { AssetID: id },
-      { POID: id },
-      { GRNID: id }
-    );
+    // Check collection-specific business keys
+    if (collection === 'erp_purchase_orders') {
+      queryConditions.push({ POID: id });
+    } else if (collection === 'erp_grn') {
+      queryConditions.push({ GRNID: id });
+    } else if (collection === 'erp_vendors') {
+      queryConditions.push({ VendorID: id }, { SID: id }, { SupplierID: id });
+    } else if (collection === 'erp_transactions') {
+      queryConditions.push({ TransactionID: id }, { VoucherNo: id });
+    } else if (collection === 'erp_expenses') {
+      queryConditions.push({ ExpenseID: id });
+    } else if (collection === 'erp_employees') {
+      queryConditions.push({ EmployeeID: id });
+    } else if (collection === 'erp_assets') {
+      queryConditions.push({ AssetID: id });
+    } else if (collection === 'erp_payroll') {
+      queryConditions.push({ PayrollID: id });
+    } else {
+      queryConditions.push(
+        { VendorID: id },
+        { SID: id },
+        { SupplierID: id },
+        { PatientID: id },
+        { ItemID: id },
+        { VisitID: id },
+        { InvoiceNo: id },
+        { VoucherNo: id },
+        { TransactionID: id },
+        { ExpenseID: id },
+        { EmployeeID: id },
+        { AssetID: id },
+        { POID: id },
+        { GRNID: id }
+      );
+    }
 
     const query = { $or: queryConditions };
 

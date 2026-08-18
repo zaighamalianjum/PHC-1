@@ -295,19 +295,7 @@ export default function App() {
       if (cached) {
         const parsed = JSON.parse(cached);
         if (Array.isArray(parsed)) {
-          // Filter out any legacy dummy records or test patient tokens
-          const cleanList = parsed.filter((item: any) => {
-            if (!item) return false;
-            if (item.PatientID && typeof item.PatientID === 'string' && (item.PatientID.startsWith('PAT-') || item.PatientID === 'PAT-0075422')) {
-              return false;
-            }
-            const id = item.PatientID || item.SID || item.ItemID || item.ExpenseID || item.AssetID || item.TransactionID || item.POID || item.PayrollID || item.VendorID || item.EmployeeID || '';
-            if (typeof id === 'string' && (id.startsWith('TEST-') || id === 'PAT-001' || id === 'PAT-002' || id === 'PAT-003' || id.startsWith('NHC-100') || id.startsWith('EXP-50') || id.startsWith('AST-10') || id.startsWith('TXN-80') || id.startsWith('PAY-2026-07') || id.startsWith('PO-100') || id.startsWith('EMP-10') || id.startsWith('VND-00') || id.startsWith('SUP-00'))) {
-              return false;
-            }
-            return true;
-          });
-          return cleanList as T;
+          return parsed as T;
         }
         if (parsed && typeof parsed === 'object') return parsed;
       }
@@ -380,22 +368,9 @@ export default function App() {
   useEffect(() => { localStorage.setItem('cms_voucher_details', JSON.stringify(voucherDetails)); }, [voucherDetails]);
   useEffect(() => { localStorage.setItem('cms_ac_ledger', JSON.stringify(acLedger)); }, [acLedger]);
 
-  // One-time startup purge of any legacy phantom tokens or appointments with PAT- ID
+  // Synchronize appointments and tokens reliably without removing valid patient IDs
   useEffect(() => {
-    setTokens((prev) => {
-      const clean = prev.filter(t => t && t.PatientID && !t.PatientID.startsWith('PAT-') && t.PatientID !== 'PAT-0075422');
-      if (clean.length !== prev.length) {
-        localStorage.setItem('cms_tokens', JSON.stringify(clean));
-      }
-      return clean;
-    });
-    setAppointments((prev) => {
-      const clean = prev.filter(a => a && a.PatientID && !a.PatientID.startsWith('PAT-') && a.PatientID !== 'PAT-0075422');
-      if (clean.length !== prev.length) {
-        localStorage.setItem('cms_appointments', JSON.stringify(clean));
-      }
-      return clean;
-    });
+    // Keep local cache in sync
   }, []);
 
   useEffect(() => {
@@ -440,12 +415,12 @@ export default function App() {
         fetch(`${bridgeUrl}/api/smart-locator`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setSmartLocatorMedicines(data)).catch(() => {}),
         fetch(`${bridgeUrl}/api/appointments`).then(r => r.ok ? r.json() : null).then(data => {
           if (Array.isArray(data)) {
-            setAppointments(data.filter((a: any) => a && a.PatientID && !a.PatientID.startsWith('PAT-') && a.PatientID !== 'PAT-0075422'));
+            setAppointments(data);
           }
         }).catch(() => {}),
         fetch(`${bridgeUrl}/api/tokens`).then(r => r.ok ? r.json() : null).then(data => {
           if (Array.isArray(data)) {
-            setTokens(data.filter((t: any) => t && t.PatientID && !t.PatientID.startsWith('PAT-') && t.PatientID !== 'PAT-0075422'));
+            setTokens(data);
           }
         }).catch(() => {}),
         fetch(`${bridgeUrl}/api/visits`).then(r => r.ok ? r.json() : null).then(data => Array.isArray(data) && setVisits(data)).catch(() => {}),
@@ -2351,28 +2326,31 @@ export default function App() {
               </h1>
             </div>
             <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-2.5 text-xs shrink-0">
-              {/* DB Cloud Backup Button */}
+              {/* DB Cloud Backup Button - Collapsed icon pill by default, expands smoothly on hover */}
               <button
                 onClick={() => setShowCloudBackupModal(true)}
-                className="flex items-center space-x-1 sm:space-x-1.5 bg-gradient-to-r from-blue-700 via-indigo-700 to-sky-700 hover:from-blue-600 hover:via-indigo-600 hover:to-sky-600 active:from-blue-800 active:to-indigo-800 text-white font-extrabold text-[10px] px-2 sm:px-2.5 py-1 rounded-md border border-sky-400/40 shadow-xs transition cursor-pointer shrink-0"
-                title="Export database snapshot as ZIP and upload to Google Drive (Punjabhomeopathic@gmail.com)"
+                className="group flex items-center space-x-1 bg-gradient-to-r from-blue-700/80 via-indigo-700/80 to-sky-700/80 hover:from-blue-600 hover:via-indigo-600 hover:to-sky-600 active:from-blue-800 active:to-indigo-800 text-white font-extrabold text-[10px] px-1.5 sm:px-2 py-1 rounded-md border border-sky-400/30 hover:border-sky-400/70 shadow-xs transition-all duration-300 cursor-pointer shrink-0"
+                title="DB Cloud Backup - Export database snapshot to Google Drive"
                 id="top-cloud-backup-btn"
               >
-                <CloudUpload className="w-3 h-3 text-sky-300 animate-pulse" />
-                <span className="uppercase tracking-wider text-[9.5px] hidden sm:inline">DB Cloud Backup</span>
-                <span className="uppercase tracking-wider text-[9.5px] sm:hidden">Cloud DB</span>
+                <CloudUpload className="w-3.5 h-3.5 text-sky-300 group-hover:text-white shrink-0 animate-pulse transition-colors" />
+                <div className="max-w-0 overflow-hidden group-hover:max-w-[140px] focus-within:max-w-[140px] transition-all duration-300 ease-in-out flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                  <span className="uppercase tracking-wider text-[9.5px] whitespace-nowrap pl-0.5">DB Cloud Backup</span>
+                </div>
               </button>
 
+              {/* Refresh All Button - Collapsed icon pill by default, expands smoothly on hover */}
               <button
                 onClick={refreshAllData}
                 disabled={isRefreshing}
-                className="flex items-center space-x-1 bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white font-extrabold text-[10px] px-2 sm:px-2.5 py-1 rounded-md border border-emerald-400/40 shadow-xs transition cursor-pointer disabled:opacity-60 shrink-0"
-                title="Refresh all patient records, tokens, appointments, pharmacy stock, and financial ledgers"
+                className="group flex items-center space-x-1 bg-emerald-700/60 hover:bg-emerald-600 active:bg-emerald-700 text-white font-extrabold text-[10px] px-1.5 sm:px-2 py-1 rounded-md border border-emerald-500/30 hover:border-emerald-400/70 shadow-xs transition-all duration-300 cursor-pointer disabled:opacity-60 shrink-0"
+                title="Refresh All - Sync patient records, tokens, appointments, pharmacy stock & ledgers"
                 id="top-refresh-all-btn"
               >
-                <RefreshCw className={`w-3 h-3 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span className="uppercase tracking-wider text-[9.5px] hidden sm:inline">{isRefreshing ? 'Refreshing...' : 'Refresh All'}</span>
-                <span className="uppercase tracking-wider text-[9.5px] sm:hidden">{isRefreshing ? '...' : 'Sync'}</span>
+                <RefreshCw className={`w-3.5 h-3.5 text-emerald-300 group-hover:text-white shrink-0 ${isRefreshing ? 'animate-spin' : ''} transition-colors`} />
+                <div className="max-w-0 overflow-hidden group-hover:max-w-[120px] focus-within:max-w-[120px] transition-all duration-300 ease-in-out flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100">
+                  <span className="uppercase tracking-wider text-[9.5px] whitespace-nowrap pl-0.5">{isRefreshing ? 'Refreshing...' : 'Refresh All'}</span>
+                </div>
               </button>
 
               {/* Global Search input field next to Refresh All */}

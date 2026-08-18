@@ -135,9 +135,7 @@ export default function UploadingDesk({
 
       // Helper to identify excluded legacy collections
       const isExcludedNhcCollection = (name: string) => {
-        if (!name) return false;
-        const n = String(name).toLowerCase().replace(/[^a-z0-9_]/g, '');
-        return n === 'nhc_patient_history' || n === 'cms_nhc_patients' || n === 'nhc_patients' || n === 'nhcpatienthistory' || n === 'nhcpatienthistorydesk';
+        return false;
       };
 
       // Helper to strip immutable _id field and format nested date/oid types
@@ -199,10 +197,9 @@ export default function UploadingDesk({
           const grouped: { [col: string]: any[] } = {};
           dataObj.forEach(doc => {
             if (!doc || typeof doc !== 'object') return;
-            if (doc.MedicineDetail) return; // Strictly skip nhc_patient_history
-
             let col = 'unknown_records';
-            if (doc.PatientID && (doc.PatientName || doc.MRNo)) col = 'patients';
+            if (doc.MedicineDetail) col = 'nhc_patient_history';
+            else if (doc.PatientID && (doc.PatientName || doc.MRNo)) col = 'patients';
             else if (doc.VisitID || doc.SymptomsDiagnosis) col = 'visits';
             else if (doc.ItemID || doc.ItemName) col = 'items';
             else if (doc.InvoiceNo && doc.TotalAmount !== undefined) col = 'invoice_headers';

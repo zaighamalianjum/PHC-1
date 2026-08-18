@@ -7,6 +7,10 @@ import { useState, useMemo } from 'react';
 import {
   Users,
   CalendarDays,
+  CalendarRange,
+  Calendar,
+  Sun,
+  Moon,
   Activity,
   DollarSign,
   AlertTriangle,
@@ -25,7 +29,9 @@ import {
   BarChart3,
   Pill,
   CreditCard,
-  Stethoscope
+  Stethoscope,
+  SlidersHorizontal,
+  History
 } from 'lucide-react';
 import {
   Patient,
@@ -323,68 +329,126 @@ export default function Dashboard({
             </span>
           </div>
 
-          {/* Date Scope Filter */}
+          {/* Date Scope Filter - Compact pills by default, smoothly expand label on hover/active */}
           <div className="flex flex-wrap items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs gap-1">
+            {/* Daily */}
             <button
               type="button"
               onClick={() => setDateFilter('today')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                dateFilter === 'today' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              title="Daily (Today)"
+              className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
+                dateFilter === 'today' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              Daily
+              <Sun className={`w-3.5 h-3.5 shrink-0 ${dateFilter === 'today' ? 'text-amber-500' : 'text-slate-500 group-hover:text-amber-500'} transition-colors`} />
+              <div className={`transition-all duration-300 ease-in-out flex items-center ${
+                dateFilter === 'today'
+                  ? 'max-w-[100px] opacity-100 pl-0.5'
+                  : 'max-w-0 overflow-hidden group-hover:max-w-[100px] focus-within:max-w-[100px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
+              }`}>
+                <span className="whitespace-nowrap text-xs">Daily</span>
+              </div>
             </button>
+
+            {/* Weekly */}
             <button
               type="button"
               onClick={() => setDateFilter('this_week')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                dateFilter === 'this_week' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              title="Weekly (Past 7 Days)"
+              className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
+                dateFilter === 'this_week' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              Weekly
+              <CalendarRange className={`w-3.5 h-3.5 shrink-0 ${dateFilter === 'this_week' ? 'text-blue-600' : 'text-slate-500 group-hover:text-blue-600'} transition-colors`} />
+              <div className={`transition-all duration-300 ease-in-out flex items-center ${
+                dateFilter === 'this_week'
+                  ? 'max-w-[100px] opacity-100 pl-0.5'
+                  : 'max-w-0 overflow-hidden group-hover:max-w-[100px] focus-within:max-w-[100px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
+              }`}>
+                <span className="whitespace-nowrap text-xs">Weekly</span>
+              </div>
             </button>
+
+            {/* Monthly */}
             <button
               type="button"
               onClick={() => setDateFilter('this_month')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                dateFilter === 'this_month' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              title="Monthly (This Month)"
+              className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
+                dateFilter === 'this_month' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              Monthly
+              <CalendarDays className={`w-3.5 h-3.5 shrink-0 ${dateFilter === 'this_month' ? 'text-indigo-600' : 'text-slate-500 group-hover:text-indigo-600'} transition-colors`} />
+              <div className={`transition-all duration-300 ease-in-out flex items-center ${
+                dateFilter === 'this_month'
+                  ? 'max-w-[100px] opacity-100 pl-0.5'
+                  : 'max-w-0 overflow-hidden group-hover:max-w-[100px] focus-within:max-w-[100px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
+              }`}>
+                <span className="whitespace-nowrap text-xs">Monthly</span>
+              </div>
             </button>
+
+            {/* Yearly */}
             <button
               type="button"
               onClick={() => setDateFilter('this_year')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                dateFilter === 'this_year' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              title="Yearly (This Year)"
+              className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
+                dateFilter === 'this_year' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              Yearly
+              <Calendar className={`w-3.5 h-3.5 shrink-0 ${dateFilter === 'this_year' ? 'text-emerald-600' : 'text-slate-500 group-hover:text-emerald-600'} transition-colors`} />
+              <div className={`transition-all duration-300 ease-in-out flex items-center ${
+                dateFilter === 'this_year'
+                  ? 'max-w-[100px] opacity-100 pl-0.5'
+                  : 'max-w-0 overflow-hidden group-hover:max-w-[100px] focus-within:max-w-[100px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
+              }`}>
+                <span className="whitespace-nowrap text-xs">Yearly</span>
+              </div>
             </button>
+
+            {/* Custom Range */}
             <button
               type="button"
               onClick={() => setDateFilter('custom')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer flex items-center space-x-1 ${
-                dateFilter === 'custom' ? 'bg-white text-amber-700 shadow-xs border border-amber-200' : 'text-slate-600 hover:text-slate-900'
+              title="Custom Date Range"
+              className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
+                dateFilter === 'custom' ? 'bg-white text-amber-700 shadow-xs border border-amber-200' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              <CalendarDays className="w-3.5 h-3.5 text-amber-600" />
-              <span>Custom Range</span>
+              <SlidersHorizontal className={`w-3.5 h-3.5 shrink-0 ${dateFilter === 'custom' ? 'text-amber-600' : 'text-slate-500 group-hover:text-amber-600'} transition-colors`} />
+              <div className={`transition-all duration-300 ease-in-out flex items-center ${
+                dateFilter === 'custom'
+                  ? 'max-w-[130px] opacity-100 pl-0.5'
+                  : 'max-w-0 overflow-hidden group-hover:max-w-[130px] focus-within:max-w-[130px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
+              }`}>
+                <span className="whitespace-nowrap text-xs">Custom</span>
+              </div>
             </button>
+
+            {/* All Time */}
             <button
               type="button"
               onClick={() => setDateFilter('all')}
-              className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                dateFilter === 'all' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900'
+              title="All Time History"
+              className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
+                dateFilter === 'all' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              All Time
+              <History className={`w-3.5 h-3.5 shrink-0 ${dateFilter === 'all' ? 'text-purple-600' : 'text-slate-500 group-hover:text-purple-600'} transition-colors`} />
+              <div className={`transition-all duration-300 ease-in-out flex items-center ${
+                dateFilter === 'all'
+                  ? 'max-w-[100px] opacity-100 pl-0.5'
+                  : 'max-w-0 overflow-hidden group-hover:max-w-[100px] focus-within:max-w-[100px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
+              }`}>
+                <span className="whitespace-nowrap text-xs">All Time</span>
+              </div>
             </button>
           </div>
 
           {/* Custom Date Inputs (shown when dateFilter === 'custom') */}
           {dateFilter === 'custom' && (
-            <div className="flex items-center space-x-2 bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-xl text-xs shadow-2xs">
+            <div className="flex items-center space-x-2 bg-amber-50 border border-amber-300 px-2.5 py-1 rounded-xl text-xs shadow-2xs animate-fadeIn">
               <div className="flex items-center space-x-1">
                 <span className="text-[10px] font-extrabold text-amber-900 uppercase">From:</span>
                 <input
@@ -406,52 +470,81 @@ export default function Dashboard({
             </div>
           )}
 
-          {/* Shift Filter */}
-          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+          {/* Shift Filter - Compact pills by default, smoothly expand on hover/active */}
+          <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs gap-1">
+            {/* Both Shifts */}
             <button
               type="button"
               onClick={() => setShiftFilter('all')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                shiftFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'
+              title="Both Shifts (Morning & Evening)"
+              className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
+                shiftFilter === 'all' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              Both Shifts
+              <Clock className={`w-3.5 h-3.5 shrink-0 ${shiftFilter === 'all' ? 'text-indigo-600' : 'text-slate-500 group-hover:text-indigo-600'} transition-colors`} />
+              <div className={`transition-all duration-300 ease-in-out flex items-center ${
+                shiftFilter === 'all'
+                  ? 'max-w-[120px] opacity-100 pl-0.5'
+                  : 'max-w-0 overflow-hidden group-hover:max-w-[120px] focus-within:max-w-[120px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
+              }`}>
+                <span className="whitespace-nowrap text-xs">Both Shifts</span>
+              </div>
             </button>
+
+            {/* Morning Shift */}
             <button
               type="button"
               onClick={() => setShiftFilter('morning')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                shiftFilter === 'morning' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600'
+              title="Morning Shift (Shift 1)"
+              className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
+                shiftFilter === 'morning' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              Morning
+              <Sun className={`w-3.5 h-3.5 shrink-0 ${shiftFilter === 'morning' ? 'text-amber-300' : 'text-amber-500 group-hover:text-amber-600'} transition-colors`} />
+              <div className={`transition-all duration-300 ease-in-out flex items-center ${
+                shiftFilter === 'morning'
+                  ? 'max-w-[100px] opacity-100 pl-0.5'
+                  : 'max-w-0 overflow-hidden group-hover:max-w-[100px] focus-within:max-w-[100px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
+              }`}>
+                <span className="whitespace-nowrap text-xs">Morning</span>
+              </div>
             </button>
+
+            {/* Evening Shift */}
             <button
               type="button"
               onClick={() => setShiftFilter('evening')}
-              className={`px-3 py-1 rounded-lg font-bold transition-all cursor-pointer ${
-                shiftFilter === 'evening' ? 'bg-amber-600 text-white shadow-xs' : 'text-slate-600'
+              title="Evening Shift (Shift 2)"
+              className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
+                shiftFilter === 'evening' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
             >
-              Evening
+              <Moon className={`w-3.5 h-3.5 shrink-0 ${shiftFilter === 'evening' ? 'text-purple-200' : 'text-purple-500 group-hover:text-purple-600'} transition-colors`} />
+              <div className={`transition-all duration-300 ease-in-out flex items-center ${
+                shiftFilter === 'evening'
+                  ? 'max-w-[100px] opacity-100 pl-0.5'
+                  : 'max-w-0 overflow-hidden group-hover:max-w-[100px] focus-within:max-w-[100px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
+              }`}>
+                <span className="whitespace-nowrap text-xs">Evening</span>
+              </div>
             </button>
           </div>
         </div>
       </div>
 
-      {/* Hero Banner: Grand Total Collection Both Shift-wise with Store Collection */}
-      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white rounded-3xl p-6 md:p-8 shadow-xl relative overflow-hidden border border-slate-800">
-        <div className="absolute top-0 right-0 -mt-8 -mr-8 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute bottom-0 left-1/3 -mb-12 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+      {/* Hero Banner: Grand Total Collection Both Shift-wise with Store Collection (Compact & Space-efficient) */}
+      <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white rounded-2xl p-3.5 md:p-4 shadow-md relative overflow-hidden border border-slate-800">
+        <div className="absolute top-0 right-0 -mt-6 -mr-6 w-48 h-48 bg-blue-500/10 rounded-full blur-2xl pointer-events-none" />
+        <div className="absolute bottom-0 left-1/3 -mb-8 w-56 h-56 bg-indigo-500/10 rounded-full blur-2xl pointer-events-none" />
 
-        <div className="relative z-10 space-y-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-700/80 pb-5">
+        <div className="relative z-10 space-y-3">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2.5 border-b border-slate-700/60">
             <div>
               <div className="flex items-center space-x-2">
-                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-extrabold uppercase tracking-widest bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span className="px-2 py-0.5 rounded-full text-[9.5px] font-extrabold uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
                   Unified Financial Summary
                 </span>
-                <span className="text-xs text-slate-400 font-medium">
+                <span className="text-[11px] text-slate-400 font-medium truncate max-w-xs sm:max-w-md">
                   {dateFilter === 'today'
                     ? "Today's Shift Ledger"
                     : dateFilter === 'this_week'
@@ -461,48 +554,49 @@ export default function Dashboard({
                     : dateFilter === 'this_year'
                     ? "Yearly Shift Ledger (This Year)"
                     : dateFilter === 'custom'
-                    ? `Custom Date Range (${customStartDate} to ${customEndDate})`
+                    ? `Custom (${customStartDate} to ${customEndDate})`
                     : 'All Register Entries'}
                 </span>
               </div>
-              <p className="text-xs text-slate-400 font-semibold uppercase tracking-wider mt-2">
-                Grand Total Collection (Both Shifts + Store Collection)
+              <p className="text-[10px] text-slate-400 font-semibold uppercase tracking-wider mt-1">
+                Grand Total Collection (Both Shifts + Store)
               </p>
-              <div className="flex items-baseline space-x-3 mt-1">
-                <h1 className="text-3xl md:text-4xl font-extrabold text-white font-mono tracking-tight">
-                  Rs. {grandTotalCollection.toLocaleString()}
-                </h1>
-                <span className="text-xs font-semibold text-emerald-400 flex items-center bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
-                  <ArrowUpRight className="w-3.5 h-3.5 mr-0.5" /> 100% Consolidated
-                </span>
-              </div>
+            </div>
+
+            <div className="flex items-center space-x-2.5 shrink-0">
+              <h1 className="text-xl md:text-2xl font-extrabold text-white font-mono tracking-tight">
+                Rs. {grandTotalCollection.toLocaleString()}
+              </h1>
+              <span className="text-[10px] font-semibold text-emerald-400 flex items-center bg-emerald-500/15 px-2 py-0.5 rounded-md border border-emerald-500/25 shrink-0">
+                <ArrowUpRight className="w-3 h-3 mr-0.5" /> 100% Consolidated
+              </span>
             </div>
           </div>
 
           {/* Quick Metrics Split Pill Row */}
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="bg-white/5 backdrop-blur-xs p-3.5 rounded-xl border border-white/10 space-y-1">
-              <p className="text-[10px] uppercase font-bold text-blue-300 tracking-wider">Morning OPD Collection</p>
-              <p className="text-base font-extrabold font-mono text-white">Rs. {morningOpdCollection.toLocaleString()}</p>
-              <p className="text-[10px] text-slate-400">{morningOpdApps.length} Appointments</p>
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+            <div className="bg-white/5 p-2 rounded-lg border border-white/10 space-y-0.5">
+              <p className="text-[9.5px] uppercase font-bold text-blue-300 tracking-wider truncate">Morning OPD</p>
+              <p className="text-xs sm:text-sm font-extrabold font-mono text-white truncate">Rs. {morningOpdCollection.toLocaleString()}</p>
+              <p className="text-[9.5px] text-slate-400 truncate">{morningOpdApps.length} Appointments</p>
             </div>
 
-            <div className="bg-white/5 backdrop-blur-xs p-3.5 rounded-xl border border-white/10 space-y-1">
-              <p className="text-[10px] uppercase font-bold text-amber-300 tracking-wider">Evening OPD Collection</p>
-              <p className="text-base font-extrabold font-mono text-white">Rs. {eveningOpdCollection.toLocaleString()}</p>
-              <p className="text-[10px] text-slate-400">{eveningOpdApps.length} Appointments</p>
+            <div className="bg-white/5 p-2 rounded-lg border border-white/10 space-y-0.5">
+              <p className="text-[9.5px] uppercase font-bold text-amber-300 tracking-wider truncate">Evening OPD</p>
+              <p className="text-xs sm:text-sm font-extrabold font-mono text-white truncate">Rs. {eveningOpdCollection.toLocaleString()}</p>
+              <p className="text-[9.5px] text-slate-400 truncate">{eveningOpdApps.length} Appointments</p>
             </div>
 
-            <div className="bg-white/5 backdrop-blur-xs p-3.5 rounded-xl border border-white/10 space-y-1">
-              <p className="text-[10px] uppercase font-bold text-emerald-300 tracking-wider">Morning Store Collection</p>
-              <p className="text-base font-extrabold font-mono text-white">Rs. {morningStoreCollection.toLocaleString()}</p>
-              <p className="text-[10px] text-slate-400">{morningInvoices.length} Store Invoices</p>
+            <div className="bg-white/5 p-2 rounded-lg border border-white/10 space-y-0.5">
+              <p className="text-[9.5px] uppercase font-bold text-emerald-300 tracking-wider truncate">Morning Store</p>
+              <p className="text-xs sm:text-sm font-extrabold font-mono text-white truncate">Rs. {morningStoreCollection.toLocaleString()}</p>
+              <p className="text-[9.5px] text-slate-400 truncate">{morningInvoices.length} Invoices</p>
             </div>
 
-            <div className="bg-white/5 backdrop-blur-xs p-3.5 rounded-xl border border-white/10 space-y-1">
-              <p className="text-[10px] uppercase font-bold text-purple-300 tracking-wider">Evening Store Collection</p>
-              <p className="text-base font-extrabold font-mono text-white">Rs. {eveningStoreCollection.toLocaleString()}</p>
-              <p className="text-[10px] text-slate-400">{eveningInvoices.length} Store Invoices</p>
+            <div className="bg-white/5 p-2 rounded-lg border border-white/10 space-y-0.5">
+              <p className="text-[9.5px] uppercase font-bold text-purple-300 tracking-wider truncate">Evening Store</p>
+              <p className="text-xs sm:text-sm font-extrabold font-mono text-white truncate">Rs. {eveningStoreCollection.toLocaleString()}</p>
+              <p className="text-[9.5px] text-slate-400 truncate">{eveningInvoices.length} Invoices</p>
             </div>
           </div>
         </div>

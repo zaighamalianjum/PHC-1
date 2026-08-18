@@ -4247,8 +4247,10 @@ export default function PharmacyPOS({
   // Filter invoices for today or all history
   const todayStr = new Date().toISOString().split('T')[0];
   const filteredInvoices = invoices.filter((inv) => {
-    // Date filter
-    if (!showAllInvoicesInHistory && inv.InvoiceDate !== todayStr) {
+    // Date filter: if not viewing all history, filter strictly by selected date (selectedDailyReportDate)
+    const targetDate = selectedDailyReportDate || todayStr;
+    const invDate = String(inv.InvoiceDate || '').trim().slice(0, 10);
+    if (!showAllInvoicesInHistory && invDate !== targetDate) {
       return false;
     }
     // Search query filter
@@ -4921,7 +4923,10 @@ export default function PharmacyPOS({
                 <input
                   type="date"
                   value={selectedDailyReportDate}
-                  onChange={(e) => setSelectedDailyReportDate(e.target.value)}
+                  onChange={(e) => {
+                    setSelectedDailyReportDate(e.target.value);
+                    setShowAllInvoicesInHistory(false);
+                  }}
                   className="text-xs bg-transparent border-0 font-bold text-slate-800 focus:outline-none cursor-pointer"
                 />
               </div>
@@ -4954,10 +4959,19 @@ export default function PharmacyPOS({
                     setShowAllInvoicesInHistory(false);
                     setSelectedDailyReportDate(new Date().toISOString().split('T')[0]);
                   }}
-                  className={`px-2.5 py-1 rounded-md transition ${!showAllInvoicesInHistory ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  className={`px-2.5 py-1 rounded-md transition ${!showAllInvoicesInHistory && selectedDailyReportDate === todayStr ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                 >
                   Today Only
                 </button>
+                {selectedDailyReportDate !== todayStr && !showAllInvoicesInHistory && (
+                  <button
+                    type="button"
+                    onClick={() => setShowAllInvoicesInHistory(false)}
+                    className="px-2.5 py-1 rounded-md bg-white text-blue-600 shadow-sm transition"
+                  >
+                    Selected Date ({filteredInvoices.length})
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setShowAllInvoicesInHistory(true)}
