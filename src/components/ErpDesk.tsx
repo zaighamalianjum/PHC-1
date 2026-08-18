@@ -1595,6 +1595,73 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     return diff > 0 ? diff : (minStock > 0 ? minStock * 2 : 10);
   };
 
+  const getMedicinePriceInfo = (med: any) => {
+    if (!med) return { unitPrice: null, priceSource: 'none' as const, label: 'Price: Not Mentioned', grnInfo: null, hasPrice: false };
+
+    const medId = String(med.ItemID || med.id || '').toUpperCase().trim();
+    const medName = String(med.ItemName || med.name || '').toLowerCase().trim();
+
+    // 1. Look up in previous GRNs (sorted newest first)
+    const sortedGrns = [...(grns || [])].sort((a, b) => {
+      const dateA = new Date(a.ReceivedDate || 0).getTime();
+      const dateB = new Date(b.ReceivedDate || 0).getTime();
+      return dateB - dateA;
+    });
+
+    for (const grn of sortedGrns) {
+      if (grn.Items && Array.isArray(grn.Items)) {
+        const match = grn.Items.find(gi => 
+          (medId && String(gi.ItemID || '').toUpperCase().trim() === medId) ||
+          (medName && String(gi.ItemName || '').toLowerCase().trim() === medName)
+        );
+        if (match && match.UnitPrice !== undefined && match.UnitPrice !== null && match.UnitPrice !== '') {
+          const p = Number(match.UnitPrice);
+          if (p > 0) {
+            return {
+              unitPrice: p,
+              priceSource: 'grn' as const,
+              label: `Last GRN Price (GRN #${grn.GRNID})`,
+              grnInfo: `GRN #${grn.GRNID} • ${grn.ReceivedDate || 'Recent'}`,
+              hasPrice: true
+            };
+          }
+        }
+      }
+    }
+
+    // 2. Check Item Master PurchasePrice / TP / costPrice
+    const pPrice = Number(med.PurchasePrice ?? med.purchasePrice ?? med.TP ?? med.costPrice);
+    if (pPrice > 0) {
+      return {
+        unitPrice: pPrice,
+        priceSource: 'master' as const,
+        label: 'Master TP Price',
+        grnInfo: 'Master TP Price',
+        hasPrice: true
+      };
+    }
+
+    // 3. Check if unit price was manually configured on med
+    if (med.UnitPrice !== undefined && Number(med.UnitPrice) > 0) {
+      return {
+        unitPrice: Number(med.UnitPrice),
+        priceSource: 'entered' as const,
+        label: 'Unit Price',
+        grnInfo: 'Configured Price',
+        hasPrice: true
+      };
+    }
+
+    // 4. No price exists
+    return {
+      unitPrice: null,
+      priceSource: 'none' as const,
+      label: 'Price: Not Mentioned',
+      grnInfo: null,
+      hasPrice: false
+    };
+  };
+
   const isMedicineSelectedInPo = (itemId: string, itemName: string) => {
     return poForm.Items.some(i => (i.ItemID && i.ItemID === itemId) || i.ItemName === itemName);
   };
@@ -1608,7 +1675,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       }));
     } else {
       const reqQty = getRequiredQty(med);
-      const unitPrice = med.PurchasePrice ?? med.Price ?? 0;
+      const priceInfo = getMedicinePriceInfo(med);
+      const unitPrice = priceInfo.unitPrice ?? 0;
       const cat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
       setPoForm(prev => ({
         ...prev,
@@ -1634,18 +1702,50 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       return;
     }
 
-    const newPoItems = lowStockItems.map(med => ({
-      ItemID: med.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
-      ItemName: med.ItemName,
-      Category: med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule'),
-      Qty: getRequiredQty(med),
-      UnitPrice: med.PurchasePrice ?? med.Price ?? 0,
-      BatchNo: med.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
-    }));
+    const newPoItems = lowStockItems.map(med => {
+      const priceInfo = getMedicinePriceInfo(med);
+      return {
+        ItemID: med.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
+        ItemName: med.ItemName,
+        Category: med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule'),
+        Qty: getRequiredQty(med),
+        UnitPrice: priceInfo.unitPrice ?? 0,
+        BatchNo: med.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
+      };
+    });
 
     setPoForm(prev => ({
       ...prev,
       Items: newPoItems
+    }));
+  };
+
+  const handleSelectAllFilteredMedicines = (filteredMeds: any[]) => {
+    if (!filteredMeds || filteredMeds.length === 0) {
+      alert('No medicines currently match the search or category filter.');
+      return;
+    }
+    const newItems = [...poForm.Items];
+    let addedCount = 0;
+    filteredMeds.forEach(med => {
+      const exists = newItems.some(i => (i.ItemID && i.ItemID === med.ItemID) || i.ItemName === med.ItemName);
+      if (!exists) {
+        const priceInfo = getMedicinePriceInfo(med);
+        newItems.push({
+          ItemID: med.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
+          ItemName: med.ItemName,
+          Category: med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule'),
+          Qty: getRequiredQty(med),
+          UnitPrice: priceInfo.unitPrice ?? 0,
+          BatchNo: med.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
+        });
+        addedCount++;
+      }
+    });
+
+    setPoForm(prev => ({
+      ...prev,
+      Items: newItems
     }));
   };
 
@@ -6777,7 +6877,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                       title="Auto-select all items where CStock <= MinStock"
                     >
                       <CheckCircle2 className="w-3.5 h-3.5" />
-                      <span>⚡ Auto-Select All Low Stock Items</span>
+                      <span>⚡ Auto-Select Low Stock</span>
                     </button>
                     {poForm.Items.length > 0 && (
                       <button
@@ -6906,11 +7006,24 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   return (
                     <div className="space-y-2.5">
                       {/* Sub-header info bar */}
-                      <div className="flex items-center justify-between text-xs text-indigo-900 px-1">
-                        <span className="font-semibold">
-                          Showing <strong className="font-mono">{totalPoItems === 0 ? 0 : startPoIdx + 1}–{endPoIdx}</strong> of <strong className="font-mono">{totalPoItems}</strong> medicines
-                        </span>
-                        <div className="flex items-center space-x-1.5">
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 text-xs text-indigo-900 px-1">
+                        <div className="flex items-center space-x-2 flex-wrap gap-1">
+                          <span className="font-semibold">
+                            Showing <strong className="font-mono">{totalPoItems === 0 ? 0 : startPoIdx + 1}–{endPoIdx}</strong> of <strong className="font-mono">{totalPoItems}</strong> medicines
+                          </span>
+                          {totalPoItems > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => handleSelectAllFilteredMedicines(filteredPoMedicines)}
+                              className="px-2.5 py-0.5 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[11px] transition shadow-2xs flex items-center space-x-1 cursor-pointer"
+                              title="Add all currently filtered medicines to requisition list"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>⚡ Add All {totalPoItems} Filtered to PO</span>
+                            </button>
+                          )}
+                        </div>
+                        <div className="flex items-center space-x-1.5 self-end sm:self-auto">
                           <label className="text-[11px] text-slate-500 font-bold">Cards per view:</label>
                           <select
                             value={poGridPageSize}
@@ -6944,6 +7057,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                             const isSelected = isMedicineSelectedInPo(med.ItemID, med.ItemName);
                             const currentPoItem = poForm.Items.find(i => (i.ItemID && i.ItemID === med.ItemID) || i.ItemName === med.ItemName);
                             const medCat = med.Category || (med.MedicineType === 'C' ? 'Clinical / Compounded' : med.MedicineType === 'P' ? 'Patent / Pre-packaged' : 'Tablet / Capsule');
+                            const priceInfo = getMedicinePriceInfo(med);
+                            const unitPrice = priceInfo.unitPrice;
+                            const estTotalCost = unitPrice ? unitPrice * reqQty : null;
 
                             return (
                               <div
@@ -6977,7 +7093,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                     </span>
                                   </div>
 
-                                  <div className="mt-2 text-[11px] space-y-0.5 text-slate-600">
+                                  <div className="mt-2 text-[11px] space-y-1 text-slate-600">
                                     <div className="flex justify-between">
                                       <span>Current Stock:</span>
                                       <span className={`font-bold ${isLow ? 'text-amber-700' : 'text-slate-800'}`}>
@@ -6989,6 +7105,41 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                                       <span className="font-extrabold text-indigo-700 bg-indigo-100/60 px-1 rounded">
                                         +{reqQty} {med.Unit || 'Tab'}
                                       </span>
+                                    </div>
+
+                                    {/* Unit Price (GRN or Last Price) */}
+                                    <div className="flex justify-between items-center pt-1 border-t border-slate-100">
+                                      <span className="text-slate-500 font-medium flex items-center space-x-1">
+                                        <span>Unit Price:</span>
+                                        {priceInfo.hasPrice && (
+                                          <span className="text-[9px] px-1 py-0.2 bg-emerald-100 text-emerald-800 font-extrabold rounded border border-emerald-200" title={priceInfo.grnInfo || ''}>
+                                            {priceInfo.priceSource === 'grn' ? 'Last GRN' : 'Master TP'}
+                                          </span>
+                                        )}
+                                      </span>
+                                      {priceInfo.hasPrice ? (
+                                        <span className="font-extrabold text-emerald-800 font-mono text-xs">
+                                          Rs. {unitPrice?.toLocaleString()}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[9.5px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
+                                          ⚠️ Price: Not Mentioned
+                                        </span>
+                                      )}
+                                    </div>
+
+                                    {/* Estimate Total Price */}
+                                    <div className="flex justify-between items-center pt-0.5">
+                                      <span className="text-slate-600 font-semibold">Est. Total Cost:</span>
+                                      {estTotalCost !== null ? (
+                                        <span className="font-black text-indigo-950 font-mono bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-200">
+                                          Rs. {estTotalCost.toLocaleString()}
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400 italic">
+                                          — (Price not mentioned)
+                                        </span>
+                                      )}
                                     </div>
                                   </div>
                                 </div>
@@ -7105,122 +7256,265 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               </div>
 
               {/* REQUISITION ORDER SUMMARY TABLE */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                    Selected Order Items Requisition List ({poForm.Items.length} Items)
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleAddPoItem}
-                    className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 cursor-pointer"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Custom Item Line</span>
-                  </button>
-                </div>
+              {(() => {
+                const sTerm = medicineSearchTerm.toLowerCase().trim();
+                const isFiltered = Boolean(sTerm || poCategoryFilter !== 'all' || medicineFilterMode !== 'all');
 
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="bg-slate-100 text-slate-600 font-bold border-b border-slate-200">
-                        <th className="p-2.5 w-10 text-center">#</th>
-                        <th className="p-2.5">Medicine Name</th>
-                        <th className="p-2.5 w-44">Medicine Category</th>
-                        <th className="p-2.5 w-36">Batch No. (Optional)</th>
-                        <th className="p-2.5 w-32 text-center">Required Order Qty</th>
-                        <th className="p-2.5 w-12 text-center">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {poForm.Items.length === 0 ? (
-                        <tr>
-                          <td colSpan={6} className="p-6 text-center text-slate-400 font-medium">
-                            No medicines selected yet. Choose items from the grid above or auto-select low stock items!
-                          </td>
-                        </tr>
-                      ) : (
-                        poForm.Items.map((item, idx) => {
-                          return (
-                            <tr key={idx} className="hover:bg-slate-50">
-                              <td className="p-2.5 text-center font-bold text-slate-400 font-mono">
-                                {idx + 1}
+                const filteredPoSelectedItems = poForm.Items
+                  .map((item, originalIndex) => ({ item, originalIndex }))
+                  .filter(({ item }) => {
+                    const itemName = String(item.ItemName || '').toLowerCase().trim();
+                    const itemId = String(item.ItemID || '').toLowerCase().trim();
+                    const category = String(item.Category || '').toLowerCase().trim();
+                    const batch = String(item.BatchNo || '').toLowerCase().trim();
+
+                    const matchSearch = !sTerm ||
+                      itemName.includes(sTerm) ||
+                      itemId.includes(sTerm) ||
+                      category.includes(sTerm) ||
+                      batch.includes(sTerm);
+
+                    const matchCategory = poCategoryFilter === 'all' || category.includes(poCategoryFilter.toLowerCase());
+
+                    if (!matchSearch || !matchCategory) return false;
+
+                    if (medicineFilterMode === 'lowStock') {
+                      const invMed = inventoryItems.find(i => (i.ItemID && i.ItemID === item.ItemID) || i.ItemName === item.ItemName);
+                      if (invMed) {
+                        const cStock = invMed.CStock ?? invMed.Stock ?? 0;
+                        const minStock = (invMed.MinStock !== undefined && invMed.MinStock !== null) ? invMed.MinStock : 1;
+                        return cStock <= minStock;
+                      }
+                    }
+
+                    return true;
+                  });
+
+                // Calculate summary metrics
+                const totalUnits = poForm.Items.reduce((sum, i) => sum + (Number(i.Qty) || 0), 0);
+                const totalEstValuation = poForm.Items.reduce((sum, i) => sum + ((Number(i.Qty) || 0) * (Number(i.UnitPrice) || 0)), 0);
+                const pricedItemsCount = poForm.Items.filter(i => (Number(i.UnitPrice) || 0) > 0).length;
+                const unpricedItemsCount = poForm.Items.length - pricedItemsCount;
+
+                return (
+                  <div className="space-y-2">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                      <div className="flex items-center space-x-2 flex-wrap gap-1">
+                        <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                          Selected Order Items Requisition List
+                        </label>
+                        {isFiltered ? (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                            Showing {filteredPoSelectedItems.length} of {poForm.Items.length} Items (Filtered)
+                          </span>
+                        ) : (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-bold bg-slate-100 text-slate-700">
+                            {poForm.Items.length} Items
+                          </span>
+                        )}
+                        {totalEstValuation > 0 && (
+                          <span className="px-2 py-0.5 rounded-full text-xs font-black bg-emerald-100 text-emerald-800 border border-emerald-200 font-mono">
+                            Est. Total: Rs. {totalEstValuation.toLocaleString()}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex items-center space-x-2">
+                        {isFiltered && poForm.Items.length > filteredPoSelectedItems.length && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMedicineSearchTerm('');
+                              setPoCategoryFilter('all');
+                              setMedicineFilterMode('all');
+                            }}
+                            className="text-xs font-bold text-indigo-600 hover:text-indigo-800 underline cursor-pointer"
+                          >
+                            Show All {poForm.Items.length} Selected Items
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleAddPoItem}
+                          className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 cursor-pointer bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-150"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>Add Custom Item Line</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="border border-slate-200 rounded-xl overflow-hidden max-h-[380px] overflow-y-auto">
+                      <table className="w-full text-left text-xs">
+                        <thead className="sticky top-0 z-10 bg-slate-100 shadow-2xs">
+                          <tr className="text-slate-600 font-bold border-b border-slate-200">
+                            <th className="p-2.5 w-10 text-center">#</th>
+                            <th className="p-2.5">Medicine Name</th>
+                            <th className="p-2.5 w-40">Category</th>
+                            <th className="p-2.5 w-32">Batch No. (Opt)</th>
+                            <th className="p-2.5 w-24 text-center">Required Qty</th>
+                            <th className="p-2.5 w-28 text-center">Unit Price (Rs.)</th>
+                            <th className="p-2.5 w-28 text-right">Est. Total (Rs.)</th>
+                            <th className="p-2.5 w-12 text-center">Action</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {poForm.Items.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="p-6 text-center text-slate-400 font-medium">
+                                No medicines selected yet. Choose items from the grid above or auto-select low stock items!
                               </td>
-                              <td className="p-2 font-medium">
-                                <input
-                                  type="text"
-                                  placeholder="Enter medicine name..."
-                                  value={item.ItemName}
-                                  onChange={e => handleUpdatePoItem(idx, 'ItemName', e.target.value)}
-                                  className="w-full p-1.5 border rounded-lg text-xs font-bold text-slate-900 bg-white"
-                                />
-                              </td>
-                              <td className="p-2">
-                                <select
-                                  value={item.Category || 'Tablet / Capsule'}
-                                  onChange={e => handleUpdatePoItem(idx, 'Category', e.target.value)}
-                                  className="w-full p-1.5 border rounded-lg text-xs font-bold text-indigo-900 bg-indigo-50/60 cursor-pointer"
-                                >
-                                  {medicineCategories.map((c, cIdx) => (
-                                    <option key={cIdx} value={c}>{c}</option>
-                                  ))}
-                                </select>
-                              </td>
-                              <td className="p-2">
-                                <input
-                                  type="text"
-                                  placeholder="Batch / Ref #"
-                                  value={item.BatchNo || ''}
-                                  onChange={e => handleUpdatePoItem(idx, 'BatchNo', e.target.value)}
-                                  className="w-full p-1.5 border rounded-lg text-xs font-mono font-bold bg-amber-50/60 text-amber-900 text-center"
-                                />
-                              </td>
-                              <td className="p-2 text-center">
-                                <input
-                                  type="number"
-                                  min="1"
-                                  placeholder="1"
-                                  value={item.Qty}
-                                  onChange={e => handleUpdatePoItem(idx, 'Qty', Math.max(1, Number(e.target.value)))}
-                                  className="w-24 mx-auto p-1.5 border border-indigo-300 rounded-lg text-xs text-center font-black font-mono bg-indigo-50/40 text-indigo-950"
-                                />
-                              </td>
-                              <td className="p-2 text-center">
+                            </tr>
+                          ) : filteredPoSelectedItems.length === 0 ? (
+                            <tr>
+                              <td colSpan={8} className="p-6 text-center text-slate-500 font-medium bg-amber-50/50">
+                                <p className="font-bold text-slate-700">No selected order items match the active search query or filter.</p>
+                                <p className="text-xs text-slate-500 mt-1">({poForm.Items.length} items exist in the total purchase requisition list)</p>
                                 <button
                                   type="button"
                                   onClick={() => {
-                                    setPoForm(prev => ({
-                                      ...prev,
-                                      Items: prev.Items.filter((_, i) => i !== idx)
-                                    }));
+                                    setMedicineSearchTerm('');
+                                    setPoCategoryFilter('all');
+                                    setMedicineFilterMode('all');
                                   }}
-                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                  title="Remove item"
+                                  className="mt-2 px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg font-bold text-xs cursor-pointer"
                                 >
-                                  <Trash2 className="w-4 h-4" />
+                                  Clear Search & View All Selected Items
                                 </button>
                               </td>
                             </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
+                          ) : (
+                            filteredPoSelectedItems.map(({ item, originalIndex }, filteredIdx) => {
+                              const itemUnitPrice = Number(item.UnitPrice) || 0;
+                              const itemQty = Number(item.Qty) || 1;
+                              const lineTotal = itemUnitPrice * itemQty;
+
+                              return (
+                                <tr key={originalIndex} className="hover:bg-slate-50">
+                                  <td className="p-2.5 text-center font-bold text-slate-400 font-mono">
+                                    {filteredIdx + 1}
+                                  </td>
+                                  <td className="p-2 font-medium">
+                                    <input
+                                      type="text"
+                                      placeholder="Enter medicine name..."
+                                      value={item.ItemName}
+                                      onChange={e => handleUpdatePoItem(originalIndex, 'ItemName', e.target.value)}
+                                      className="w-full p-1.5 border rounded-lg text-xs font-bold text-slate-900 bg-white"
+                                    />
+                                  </td>
+                                  <td className="p-2">
+                                    <select
+                                      value={item.Category || 'Tablet / Capsule'}
+                                      onChange={e => handleUpdatePoItem(originalIndex, 'Category', e.target.value)}
+                                      className="w-full p-1.5 border rounded-lg text-xs font-bold text-indigo-900 bg-indigo-50/60 cursor-pointer"
+                                    >
+                                      {medicineCategories.map((c, cIdx) => (
+                                        <option key={cIdx} value={c}>{c}</option>
+                                      ))}
+                                    </select>
+                                  </td>
+                                  <td className="p-2">
+                                    <input
+                                      type="text"
+                                      placeholder="Batch / Ref #"
+                                      value={item.BatchNo || ''}
+                                      onChange={e => handleUpdatePoItem(originalIndex, 'BatchNo', e.target.value)}
+                                      className="w-full p-1.5 border rounded-lg text-xs font-mono font-bold bg-amber-50/60 text-amber-900 text-center"
+                                    />
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <input
+                                      type="number"
+                                      min="1"
+                                      placeholder="1"
+                                      value={item.Qty}
+                                      onChange={e => handleUpdatePoItem(originalIndex, 'Qty', Math.max(1, Number(e.target.value)))}
+                                      className="w-20 mx-auto p-1.5 border border-indigo-300 rounded-lg text-xs text-center font-black font-mono bg-indigo-50/40 text-indigo-950"
+                                    />
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <div className="relative">
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        placeholder="0"
+                                        value={item.UnitPrice ?? 0}
+                                        onChange={e => handleUpdatePoItem(originalIndex, 'UnitPrice', Math.max(0, Number(e.target.value)))}
+                                        className={`w-24 mx-auto p-1.5 border rounded-lg text-xs text-center font-black font-mono ${
+                                          itemUnitPrice > 0
+                                            ? 'bg-emerald-50/50 border-emerald-300 text-emerald-950'
+                                            : 'bg-amber-50/50 border-amber-300 text-amber-900'
+                                        }`}
+                                      />
+                                      {itemUnitPrice === 0 && (
+                                        <span className="block text-[9px] text-amber-700 font-bold mt-0.5">
+                                          Not Mentioned
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="p-2 text-right font-mono font-extrabold text-slate-800">
+                                    {lineTotal > 0 ? (
+                                      <span className="text-indigo-900 font-bold">
+                                        Rs. {lineTotal.toLocaleString()}
+                                      </span>
+                                    ) : (
+                                      <span className="text-slate-400 text-[11px] italic">
+                                        — (Rs. 0)
+                                      </span>
+                                    )}
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setPoForm(prev => ({
+                                          ...prev,
+                                          Items: prev.Items.filter((_, i) => i !== originalIndex)
+                                        }));
+                                      }}
+                                      className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                      title="Remove item"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* FOOTER & REQUISITION QUANTITY TOTAL */}
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
-                <div className="text-xs space-y-0.5">
-                  <div className="flex items-center space-x-2">
-                    <span className="text-slate-500 font-bold">Total Requisition Demand:</span>
-                    <span className="text-sm font-black text-indigo-700 font-mono">
-                      {poForm.Items.reduce((sum, i) => sum + (Number(i.Qty) || 0), 0).toLocaleString()} Units
-                    </span>
-                    <span className="text-slate-400 font-medium">({poForm.Items.length} Selected Medicines)</span>
+                <div className="text-xs space-y-1">
+                  <div className="flex items-center space-x-3 flex-wrap gap-1">
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-slate-500 font-bold">Total Demand:</span>
+                      <span className="text-sm font-black text-indigo-700 font-mono">
+                        {poForm.Items.reduce((sum, i) => sum + (Number(i.Qty) || 0), 0).toLocaleString()} Units
+                      </span>
+                      <span className="text-slate-400 font-medium">({poForm.Items.length} Medicines)</span>
+                    </div>
+
+                    <div className="h-4 w-px bg-slate-300 hidden sm:block" />
+
+                    <div className="flex items-center space-x-1.5">
+                      <span className="text-slate-500 font-bold">Est. Total Valuation:</span>
+                      <span className="text-sm font-black text-emerald-700 font-mono bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                        Rs. {poForm.Items.reduce((sum, i) => sum + ((Number(i.Qty) || 0) * (Number(i.UnitPrice) || 0)), 0).toLocaleString()}
+                      </span>
+                    </div>
                   </div>
                   <p className="text-[11px] text-slate-500 italic">
-                    💡 Vendor invoice price, discounts, and challan numbers will be recorded during Goods Received Note (GRN) entry.
+                    💡 Last unit prices are fetched automatically from previous GRNs and Item TP masters. Final invoice price & discounts are finalized during GRN receipt.
                   </p>
                 </div>
 
