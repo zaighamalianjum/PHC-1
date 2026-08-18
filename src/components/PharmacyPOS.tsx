@@ -2002,44 +2002,82 @@ export default function PharmacyPOS({
     printWin.document.close();
   };
 
-  // 3. Daily Store Medicine Sales Summary Sheet Print Handler (A4 Day-End Closing Report)
-  const handlePrintDailySalesReport = (targetDate?: string) => {
-    const reportDate = targetDate || selectedDailyReportDate || new Date().toISOString().split('T')[0];
+  // 3. Medicine Store Sales & Periodic Audit Report Print Handler (A4 Closing / Audit Report)
+  const handlePrintDailySalesReport = (targetDateOrStart?: string, customEnd?: string) => {
+    let reportTitle = "DAILY MEDICINE STORE SALES & DISPENSE CLOSING AUDIT REPORT";
+    let periodSubtitle = "";
+    let reportBadgeText = "DAILY SALES SUMMARY";
+    let reportInvoices: InvoiceHeader[] = [];
 
-    // Filter invoices matching this date
-    const dayInvoices = invoices.filter(inv => inv.InvoiceDate === reportDate);
-    
-    if (dayInvoices.length === 0) {
-      alert(`No store medicine invoices found for date: ${reportDate}`);
+    if (customEnd || salesReportPeriodMode === 'range') {
+      const start = targetDateOrStart || salesReportStartDate || todayStr;
+      const end = customEnd || salesReportEndDate || todayStr;
+      const isSingleDay = start === end;
+      reportTitle = isSingleDay 
+        ? "DAILY MEDICINE STORE SALES & DISPENSE CLOSING AUDIT REPORT" 
+        : "PERIODIC MEDICINE STORE SALES & REVENUE AUDIT REPORT";
+      reportBadgeText = isSingleDay ? "DAILY SALES SUMMARY" : "CUSTOM PERIOD AUDIT";
+      periodSubtitle = isSingleDay ? `📅 Date: ${start}` : `📅 Period: ${start} to ${end}`;
+
+      reportInvoices = invoices.filter(inv => {
+        const d = String(inv.InvoiceDate || '').trim().slice(0, 10);
+        const inDate = d >= start && d <= end;
+        const inShift = selectedShiftFilter === 'all' ? true : String(inv.shift) === selectedShiftFilter;
+        return inDate && inShift;
+      });
+    } else if (salesReportPeriodMode === 'all') {
+      reportTitle = "ALL-TIME MEDICINE STORE SALES & REVENUE AUDIT REPORT";
+      reportBadgeText = "ALL-TIME AUDIT";
+      periodSubtitle = "📅 Scope: Complete History (All Recorded Dates)";
+
+      reportInvoices = invoices.filter(inv => {
+        return selectedShiftFilter === 'all' ? true : String(inv.shift) === selectedShiftFilter;
+      });
+    } else {
+      const reportDate = targetDateOrStart || selectedDailyReportDate || todayStr;
+      reportTitle = "DAILY MEDICINE STORE SALES & DISPENSE CLOSING AUDIT REPORT";
+      reportBadgeText = "DAILY SALES SUMMARY";
+      periodSubtitle = `📅 Closing Date: ${reportDate}`;
+
+      reportInvoices = invoices.filter(inv => {
+        const d = String(inv.InvoiceDate || '').trim().slice(0, 10);
+        const inDate = d === reportDate;
+        const inShift = selectedShiftFilter === 'all' ? true : String(inv.shift) === selectedShiftFilter;
+        return inDate && inShift;
+      });
+    }
+
+    if (reportInvoices.length === 0) {
+      alert("No store medicine invoices found for the selected period or filters.");
       return;
     }
 
     // Collect all details
-    const dayDetails = invoiceDetails.filter(d => dayInvoices.some(inv => inv.InvoiceNo === d.InvoiceNo));
+    const reportDetails = invoiceDetails.filter(d => reportInvoices.some(inv => inv.InvoiceNo === d.InvoiceNo));
 
     // Totals
-    const totalInvoicesCount = dayInvoices.length;
-    const totalUnitsSold = dayDetails.reduce((sum, d) => sum + (d.Qty || 0), 0);
-    const grossSalesSum = dayInvoices.reduce((sum, inv) => sum + (inv.GAmount || 0), 0);
-    const totalDiscountSum = dayInvoices.reduce((sum, inv) => sum + (inv.Discount || 0), 0);
-    const netSalesSum = dayInvoices.reduce((sum, inv) => sum + (inv.NetAmount || 0), 0);
+    const totalInvoicesCount = reportInvoices.length;
+    const totalUnitsSold = reportDetails.reduce((sum, d) => sum + (Number(d.Qty) || 0), 0);
+    const grossSalesSum = reportInvoices.reduce((sum, inv) => sum + (Number(inv.GAmount) || 0), 0);
+    const totalDiscountSum = reportInvoices.reduce((sum, inv) => sum + (Number(inv.Discount) || 0), 0);
+    const netSalesSum = reportInvoices.reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
 
     // Shifts
-    const shift1Invoices = dayInvoices.filter(i => i.shift === 1);
-    const shift2Invoices = dayInvoices.filter(i => i.shift === 2);
-    const shift1NetSum = shift1Invoices.reduce((sum, inv) => sum + (inv.NetAmount || 0), 0);
-    const shift2NetSum = shift2Invoices.reduce((sum, inv) => sum + (inv.NetAmount || 0), 0);
+    const shift1Invoices = reportInvoices.filter(i => i.shift === 1);
+    const shift2Invoices = reportInvoices.filter(i => i.shift === 2);
+    const shift1NetSum = shift1Invoices.reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
+    const shift2NetSum = shift2Invoices.reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
 
     // Grouping by category
     const categoryMap = new Map<string, { category: string; count: number; qty: number; revenue: number }>();
-    dayDetails.forEach(d => {
+    reportDetails.forEach(d => {
       const itm = items.find(i => i.ItemID === d.ItemID);
       const cat = itm?.Category || (d.MedicineType === 'C' || itm?.MedicineType === 'C' ? 'Clinical Compounding' : (itm?.Unit || 'Patent / Other'));
-      const lineTotal = (d.Qty || 0) * (d.Price || 0);
+      const lineTotal = (Number(d.Qty) || 0) * (Number(d.Price) || 0);
 
       const existing = categoryMap.get(cat) || { category: cat, count: 0, qty: 0, revenue: 0 };
       existing.count += 1;
-      existing.qty += (d.Qty || 0);
+      existing.qty += (Number(d.Qty) || 0);
       existing.revenue += lineTotal;
       categoryMap.set(cat, existing);
     });
@@ -2048,21 +2086,21 @@ export default function PharmacyPOS({
 
     // Grouping by item (Top Selling Medicines)
     const itemMap = new Map<string, { itemId: string; itemName: string; category: string; qty: number; unitPrice: number; revenue: number }>();
-    dayDetails.forEach(d => {
+    reportDetails.forEach(d => {
       const itm = items.find(i => i.ItemID === d.ItemID);
       const name = itm?.ItemName || d.ItemID;
       const cat = itm?.Category || (d.MedicineType === 'C' ? 'Clinical' : (itm?.Unit || 'Patent'));
-      const lineTotal = (d.Qty || 0) * (d.Price || 0);
+      const lineTotal = (Number(d.Qty) || 0) * (Number(d.Price) || 0);
 
       const existing = itemMap.get(d.ItemID) || {
         itemId: d.ItemID,
         itemName: name,
         category: cat,
         qty: 0,
-        unitPrice: d.Price || 0,
+        unitPrice: Number(d.Price) || 0,
         revenue: 0
       };
-      existing.qty += (d.Qty || 0);
+      existing.qty += (Number(d.Qty) || 0);
       existing.revenue += lineTotal;
       itemMap.set(d.ItemID, existing);
     });
@@ -2086,7 +2124,7 @@ export default function PharmacyPOS({
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Daily Medicine Store Sales Closing Report - ${reportDate}</title>
+          <title>${reportTitle} - ${periodSubtitle.replace(/[^a-zA-Z0-9 -]/g, '')}</title>
           <style>
             @page {
               size: A4 portrait;
@@ -2102,7 +2140,7 @@ export default function PharmacyPOS({
               margin: 0;
               padding: 0;
               color: #0f172a;
-              font-size: 10.5px;
+              font-size: 10px;
               line-height: 1.35;
               background: #fff;
             }
@@ -2120,12 +2158,12 @@ export default function PharmacyPOS({
               gap: 12px;
             }
             .brand-logo {
-              width: 50px;
-              height: 50px;
+              width: 48px;
+              height: 48px;
               object-fit: contain;
             }
             .clinic-title {
-              font-size: 19px;
+              font-size: 18px;
               font-weight: 900;
               color: #1e1b4b;
               text-transform: uppercase;
@@ -2144,15 +2182,15 @@ export default function PharmacyPOS({
               display: inline-block;
               background: #047857;
               color: #fff;
-              font-size: 12px;
+              font-size: 11px;
               font-weight: 900;
-              padding: 5px 12px;
+              padding: 4px 10px;
               border-radius: 6px;
               text-transform: uppercase;
               letter-spacing: 0.5px;
             }
             .report-date {
-              font-size: 11px;
+              font-size: 10.5px;
               font-weight: 800;
               color: #0f172a;
               margin-top: 4px;
@@ -2163,24 +2201,24 @@ export default function PharmacyPOS({
               display: grid;
               grid-template-columns: repeat(5, 1fr);
               gap: 8px;
-              margin-bottom: 14px;
+              margin-bottom: 12px;
             }
             .kpi-card {
               border: 1.5px solid #cbd5e1;
               border-radius: 6px;
-              padding: 8px;
+              padding: 7px;
               text-align: center;
               background: #f8fafc;
             }
             .kpi-title {
-              font-size: 9px;
+              font-size: 8.5px;
               font-weight: 800;
               text-transform: uppercase;
               color: #64748b;
-              margin-bottom: 3px;
+              margin-bottom: 2px;
             }
             .kpi-val {
-              font-size: 15px;
+              font-size: 14px;
               font-weight: 900;
               color: #0f172a;
               font-family: monospace;
@@ -2188,13 +2226,13 @@ export default function PharmacyPOS({
 
             /* Section */
             .section-header {
-              font-size: 11px;
+              font-size: 10.5px;
               font-weight: 900;
               text-transform: uppercase;
               color: #1e1b4b;
               border-bottom: 1.5px solid #cbd5e1;
               padding-bottom: 3px;
-              margin: 12px 0 6px 0;
+              margin: 12px 0 5px 0;
               display: flex;
               justify-content: space-between;
             }
@@ -2203,20 +2241,20 @@ export default function PharmacyPOS({
             table {
               width: 100%;
               border-collapse: collapse;
-              font-size: 10px;
+              font-size: 9.5px;
               margin-bottom: 10px;
             }
             th {
               background: #1e293b;
               color: #fff;
-              padding: 5px 7px;
+              padding: 5px 6px;
               text-align: left;
               font-weight: 800;
-              font-size: 9px;
+              font-size: 8.5px;
               text-transform: uppercase;
             }
             td {
-              padding: 4.5px 7px;
+              padding: 4px 6px;
               border-bottom: 1px solid #e2e8f0;
               color: #1e293b;
             }
@@ -2237,9 +2275,9 @@ export default function PharmacyPOS({
             .reconciliation-box {
               border: 1.5px solid #0f172a;
               border-radius: 6px;
-              padding: 10px;
+              padding: 8px 10px;
               background: #f8fafc;
-              margin-top: 10px;
+              margin-top: 8px;
             }
 
             /* Signatures */
@@ -2247,14 +2285,14 @@ export default function PharmacyPOS({
               display: grid;
               grid-template-columns: 1fr 1fr 1fr;
               gap: 20px;
-              margin-top: 25px;
+              margin-top: 20px;
               padding-top: 10px;
             }
             .sig-block {
               text-align: center;
               border-top: 1.5px solid #0f172a;
               padding-top: 4px;
-              font-size: 9.5px;
+              font-size: 9px;
               font-weight: 800;
               text-transform: uppercase;
             }
@@ -2267,14 +2305,14 @@ export default function PharmacyPOS({
               <img src="${logoSrc}" class="brand-logo" alt="Logo" onerror="this.style.display='none'" />
               <div>
                 <h1 class="clinic-title">${clinicName}</h1>
-                <div class="clinic-subtitle">DAILY MEDICINE STORE SALES & DISPENSE CLOSING AUDIT REPORT</div>
-                <div style="font-size: 9.5px; color: #475569; margin-top: 2px;">📍 ${clinicAddress} • 📞 ${clinicPhone}</div>
+                <div class="clinic-subtitle">${reportTitle}</div>
+                <div style="font-size: 9px; color: #475569; margin-top: 2px;">📍 ${clinicAddress} • 📞 ${clinicPhone}</div>
               </div>
             </div>
             <div class="report-badge-box">
-              <div class="report-badge">DAILY SALES SUMMARY</div>
-              <div class="report-date">📅 Closing Date: <strong>${reportDate}</strong></div>
-              <div style="font-size: 9px; color: #64748b; margin-top: 2px;">Generated: ${printTimeStr} by ${printedBy}</div>
+              <div class="report-badge">${reportBadgeText}</div>
+              <div class="report-date">${periodSubtitle}</div>
+              <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">Shift Filter: <strong>${selectedShiftFilter === 'all' ? 'All Shifts' : selectedShiftFilter === '1' ? 'Morning Shift 1' : 'Evening Shift 2'}</strong> • Generated: ${printTimeStr} by ${printedBy}</div>
             </div>
           </div>
 
@@ -2305,17 +2343,17 @@ export default function PharmacyPOS({
           <!-- Category Breakdown Table -->
           <div class="section-header">
             <span>🏷️ 1. Category-Wise Medicine Sales Breakdown</span>
-            <span style="font-size: 9.5px; color: #64748b;">Total Categories Active: ${categorySummaryList.length}</span>
+            <span style="font-size: 9px; color: #64748b;">Total Categories: ${categorySummaryList.length}</span>
           </div>
           <table>
             <thead>
               <tr>
-                <th style="width: 30px;" class="col-center">#</th>
+                <th style="width: 25px;" class="col-center">#</th>
                 <th>Medicine Category / Dosage Form</th>
-                <th class="col-center" style="width: 90px;">Distinct Items</th>
-                <th class="col-center" style="width: 90px;">Total Qty Sold</th>
-                <th class="col-right" style="width: 120px;">Category Net Sales</th>
-                <th class="col-right" style="width: 80px;">% Share</th>
+                <th class="col-center" style="width: 80px;">Distinct Items</th>
+                <th class="col-center" style="width: 80px;">Total Qty Sold</th>
+                <th class="col-right" style="width: 110px;">Category Net Sales</th>
+                <th class="col-right" style="width: 70px;">% Share</th>
               </tr>
             </thead>
             <tbody>
@@ -2344,54 +2382,103 @@ export default function PharmacyPOS({
 
           <!-- Top Selling Medicines Table -->
           <div class="section-header">
-            <span>💊 2. Itemized Medicine Sales Log (Sorted by Quantity Sold)</span>
-            <span style="font-size: 9.5px; color: #64748b;">${topItemsList.length} Unique Medicines Sold</span>
+            <span>💊 2. Itemized Medicine Sales Ranking (Sorted by Quantity)</span>
+            <span style="font-size: 9px; color: #64748b;">${topItemsList.length} Unique Medicines Sold</span>
           </div>
           <table>
             <thead>
               <tr>
-                <th style="width: 30px;" class="col-center">#</th>
-                <th style="width: 75px;">Item Code</th>
+                <th style="width: 25px;" class="col-center">#</th>
+                <th style="width: 70px;">Item Code</th>
                 <th>Medicine Name</th>
-                <th style="width: 90px;">Category</th>
-                <th class="col-center" style="width: 65px;">Qty Sold</th>
-                <th class="col-right" style="width: 85px;">Unit Price</th>
-                <th class="col-right" style="width: 100px;">Total Revenue</th>
+                <th style="width: 85px;">Category</th>
+                <th class="col-center" style="width: 60px;">Qty Sold</th>
+                <th class="col-right" style="width: 80px;">Unit Price</th>
+                <th class="col-right" style="width: 95px;">Total Revenue</th>
               </tr>
             </thead>
             <tbody>
-              ${topItemsList.map((itm, idx) => `
+              ${topItemsList.slice(0, 50).map((itm, idx) => `
                 <tr>
                   <td class="col-center" style="color: #64748b; font-weight: bold;">${idx + 1}</td>
                   <td style="font-family: monospace; font-weight: 700;">${itm.itemId}</td>
                   <td><strong>${itm.itemName}</strong></td>
-                  <td><span style="font-size: 9px; color: #4338ca; font-weight: 700;">${itm.category}</span></td>
+                  <td><span style="font-size: 8.5px; color: #4338ca; font-weight: 700;">${itm.category}</span></td>
                   <td class="col-center col-bold" style="color: #0f172a;">${itm.qty}</td>
                   <td class="col-right">Rs. ${itm.unitPrice.toLocaleString()}</td>
                   <td class="col-right col-bold" style="color: #047857;">Rs. ${itm.revenue.toLocaleString()}</td>
                 </tr>
               `).join('')}
+              ${topItemsList.length > 50 ? `<tr><td colspan="7" class="col-center" style="font-style: italic; color: #64748b;">... and ${topItemsList.length - 50} more items included in the summary calculation.</td></tr>` : ''}
+            </tbody>
+          </table>
+
+          <!-- 3. Invoices Log & Register -->
+          <div class="section-header">
+            <span>📑 3. Invoices Register & Shift Log</span>
+            <span style="font-size: 9px; color: #64748b;">${reportInvoices.length} Recorded Invoices</span>
+          </div>
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 25px;" class="col-center">#</th>
+                <th style="width: 75px;">Invoice Ref</th>
+                <th style="width: 75px;">Date</th>
+                <th style="width: 75px;">Shift</th>
+                <th>Patient / Customer</th>
+                <th class="col-center" style="width: 50px;">Items</th>
+                <th class="col-right" style="width: 75px;">Gross</th>
+                <th class="col-right" style="width: 65px;">Disc.</th>
+                <th class="col-right" style="width: 85px;">Net Paid</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${reportInvoices.slice(0, 100).map((inv, idx) => {
+                const patientName = getPatientName(inv.PatientID);
+                const invItemCount = invoiceDetails.filter(d => d.InvoiceNo === inv.InvoiceNo).length;
+                return `
+                  <tr>
+                    <td class="col-center" style="color: #64748b;">${idx + 1}</td>
+                    <td style="font-family: monospace; font-weight: 700;">${inv.InvoiceNo}</td>
+                    <td>${inv.InvoiceDate}</td>
+                    <td><span style="font-weight: bold; color: ${inv.shift === 1 ? '#c2410c' : '#7e22ce'}">${inv.shift === 1 ? 'Morning (1)' : 'Evening (2)'}</span></td>
+                    <td><strong>${patientName}</strong></td>
+                    <td class="col-center font-bold">${invItemCount}</td>
+                    <td class="col-right">Rs. ${(inv.GAmount || 0).toLocaleString()}</td>
+                    <td class="col-right" style="color: ${inv.Discount ? '#dc2626' : '#64748b'}">${inv.Discount ? `Rs. ${inv.Discount.toLocaleString()}` : '-'}</td>
+                    <td class="col-right col-bold" style="color: #047857;">Rs. ${(inv.NetAmount || 0).toLocaleString()}</td>
+                  </tr>
+                `;
+              }).join('')}
+              ${reportInvoices.length > 100 ? `<tr><td colspan="9" class="col-center" style="font-style: italic; color: #64748b;">... showing first 100 of ${reportInvoices.length} invoices.</td></tr>` : ''}
+              <tr class="total-row">
+                <td colspan="5">GRAND INVOICE TOTALS</td>
+                <td class="col-center">${totalUnitsSold.toLocaleString()}</td>
+                <td class="col-right">Rs. ${grossSalesSum.toLocaleString()}</td>
+                <td class="col-right" style="color: #dc2626;">- Rs. ${totalDiscountSum.toLocaleString()}</td>
+                <td class="col-right" style="color: #047857;">Rs. ${netSalesSum.toLocaleString()}</td>
+              </tr>
             </tbody>
           </table>
 
           <!-- Shift & Drawer Reconciliation -->
           <div class="reconciliation-box">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 6px;">
-              <strong style="font-size: 11px; text-transform: uppercase;">💼 Shift & Cash Drawer Reconciliation</strong>
-              <span style="font-size: 10px; font-weight: 800; color: #047857;">ALL INVOICES POSTED & CLOSED</span>
+            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 5px;">
+              <strong style="font-size: 10.5px; text-transform: uppercase;">💼 Shift & Cash Drawer Reconciliation</strong>
+              <span style="font-size: 9.5px; font-weight: 800; color: #047857;">ALL INVOICES AUDITED & VERIFIED</span>
             </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 10.5px;">
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 10px;">
               <div>
-                <span style="color: #64748b;">☀️ Morning Shift (1) Total:</span><br/>
-                <strong style="font-size: 12px; color: #c2410c;">Rs. ${shift1NetSum.toLocaleString()}</strong> (${shift1Invoices.length} invs)
+                <span style="color: #64748b;">☀️ Morning Shift (1) Realized:</span><br/>
+                <strong style="font-size: 11.5px; color: #c2410c;">Rs. ${shift1NetSum.toLocaleString()}</strong> (${shift1Invoices.length} Invoices)
               </div>
               <div>
-                <span style="color: #64748b;">🌙 Evening Shift (2) Total:</span><br/>
-                <strong style="font-size: 12px; color: #7e22ce;">Rs. ${shift2NetSum.toLocaleString()}</strong> (${shift2Invoices.length} invs)
+                <span style="color: #64748b;">🌙 Evening Shift (2) Realized:</span><br/>
+                <strong style="font-size: 11.5px; color: #7e22ce;">Rs. ${shift2NetSum.toLocaleString()}</strong> (${shift2Invoices.length} Invoices)
               </div>
               <div style="text-align: right;">
-                <span style="color: #64748b;">Grand Total Cash Collected:</span><br/>
-                <strong style="font-size: 14px; color: #047857; font-family: monospace;">Rs. ${netSalesSum.toLocaleString()}</strong>
+                <span style="color: #64748b;">Total Net Sales Collected:</span><br/>
+                <strong style="font-size: 13.5px; color: #047857; font-family: monospace;">Rs. ${netSalesSum.toLocaleString()}</strong>
               </div>
             </div>
           </div>
@@ -2400,15 +2487,15 @@ export default function PharmacyPOS({
           <div class="sig-grid">
             <div class="sig-block">
               Pharmacist / Cashier on Duty<br/>
-              <span style="font-size: 8.5px; font-weight: normal; color: #64748b;">(${printedBy})</span>
+              <span style="font-size: 8px; font-weight: normal; color: #64748b;">(${printedBy})</span>
             </div>
             <div class="sig-block">
               Pharmacy Store In-Charge<br/>
-              <span style="font-size: 8.5px; font-weight: normal; color: #64748b;">(Cash Handover Verified)</span>
+              <span style="font-size: 8px; font-weight: normal; color: #64748b;">(Cash Handover Verified)</span>
             </div>
             <div class="sig-block">
               Dr. Zaigham Ali Anjum<br/>
-              <span style="font-size: 8.5px; font-weight: normal; color: #64748b;">(Managing Director & Administrator)</span>
+              <span style="font-size: 8px; font-weight: normal; color: #64748b;">(Managing Director & Administrator)</span>
             </div>
           </div>
 
@@ -3425,7 +3512,17 @@ export default function PharmacyPOS({
   const [compoundingDays, setCompoundingDays] = useState<number>(30);
   const [compoundingInstructions, setCompoundingInstructions] = useState<string>('Daily 1 after meal');
 
-  // History list state for today's medicines
+  // History & Sales Report Period Filter state
+  const [salesReportPeriodMode, setSalesReportPeriodMode] = useState<'daily' | 'range' | 'all'>('daily');
+  const [salesReportStartDate, setSalesReportStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().split('T')[0];
+  });
+  const [salesReportEndDate, setSalesReportEndDate] = useState<string>(
+    new Date().toISOString().split('T')[0]
+  );
+  const [selectedShiftFilter, setSelectedShiftFilter] = useState<'all' | '1' | '2'>('all');
   const [showAllInvoicesInHistory, setShowAllInvoicesInHistory] = useState(false);
   const [searchHistoryQuery, setSearchHistoryQuery] = useState('');
 
@@ -4244,33 +4341,76 @@ export default function PharmacyPOS({
     setTimeout(() => setGrnSuccessMsg(''), 6000);
   };
 
-  // Filter invoices for today or all history
+  // Filter invoices for today, custom period range, or all history
   const todayStr = new Date().toISOString().split('T')[0];
-  const filteredInvoices = invoices.filter((inv) => {
-    // Date filter: if not viewing all history, filter strictly by selected date (selectedDailyReportDate)
-    const targetDate = selectedDailyReportDate || todayStr;
-    const invDate = String(inv.InvoiceDate || '').trim().slice(0, 10);
-    if (!showAllInvoicesInHistory && invDate !== targetDate) {
-      return false;
-    }
-    // Search query filter
-    if (searchHistoryQuery.trim()) {
-      const q = searchHistoryQuery.toLowerCase().trim();
-      const invoiceNoMatch = String(inv.InvoiceNo || '').toLowerCase().includes(q);
-      const patientNameMatch = String(patients.find((p) => p.PatientID === inv.PatientID)?.PatientName || 'Walk-in Customer').toLowerCase().includes(q);
-      const patientIdMatch = String(inv.PatientID || '').toLowerCase().includes(q);
-      
-      const medicinesMatch = invoiceDetails
-        .filter((d) => d.InvoiceNo === inv.InvoiceNo)
-        .some((d) => {
-          const item = items.find((itm) => itm.ItemID === d.ItemID);
-          return String(item?.ItemName || '').toLowerCase().includes(q) || String(d.ItemID || '').toLowerCase().includes(q);
-        });
+  const filteredInvoices = useMemo(() => {
+    return invoices.filter((inv) => {
+      const invDate = String(inv.InvoiceDate || '').trim().slice(0, 10);
 
-      return invoiceNoMatch || patientNameMatch || patientIdMatch || medicinesMatch;
-    }
-    return true;
-  }).sort((a, b) => b.InvoiceNo.localeCompare(a.InvoiceNo)); // Newest first
+      // Period Mode Filter
+      if (salesReportPeriodMode === 'daily') {
+        const targetDate = selectedDailyReportDate || todayStr;
+        if (invDate !== targetDate) return false;
+      } else if (salesReportPeriodMode === 'range') {
+        const start = salesReportStartDate || '2000-01-01';
+        const end = salesReportEndDate || '2099-12-31';
+        if (invDate < start || invDate > end) return false;
+      }
+      // 'all' passes through all dates
+
+      // Shift Filter
+      if (selectedShiftFilter !== 'all') {
+        if (String(inv.shift) !== selectedShiftFilter) return false;
+      }
+
+      // Search query filter
+      if (searchHistoryQuery.trim()) {
+        const q = searchHistoryQuery.toLowerCase().trim();
+        const invoiceNoMatch = String(inv.InvoiceNo || '').toLowerCase().includes(q);
+        const patientNameMatch = String(patients.find((p) => p.PatientID === inv.PatientID)?.PatientName || 'Walk-in Customer').toLowerCase().includes(q);
+        const patientIdMatch = String(inv.PatientID || '').toLowerCase().includes(q);
+        
+        const medicinesMatch = invoiceDetails
+          .filter((d) => d.InvoiceNo === inv.InvoiceNo)
+          .some((d) => {
+            const item = items.find((itm) => itm.ItemID === d.ItemID);
+            return String(item?.ItemName || '').toLowerCase().includes(q) || String(d.ItemID || '').toLowerCase().includes(q);
+          });
+
+        return invoiceNoMatch || patientNameMatch || patientIdMatch || medicinesMatch;
+      }
+      return true;
+    }).sort((a, b) => b.InvoiceNo.localeCompare(a.InvoiceNo)); // Newest first
+  }, [invoices, salesReportPeriodMode, selectedDailyReportDate, salesReportStartDate, salesReportEndDate, selectedShiftFilter, searchHistoryQuery, patients, invoiceDetails, items, todayStr]);
+
+  // Live Summary Metrics for Filtered Invoices
+  const periodSalesSummary = useMemo(() => {
+    const totalInvoices = filteredInvoices.length;
+    const invDetailsForFiltered = invoiceDetails.filter((d) =>
+      filteredInvoices.some((inv) => inv.InvoiceNo === d.InvoiceNo)
+    );
+    const totalUnits = invDetailsForFiltered.reduce((sum, d) => sum + (Number(d.Qty) || 0), 0);
+    const grossAmount = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.GAmount) || 0), 0);
+    const discount = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.Discount) || 0), 0);
+    const netAmount = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
+
+    const shift1Net = filteredInvoices
+      .filter((i) => i.shift === 1)
+      .reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
+    const shift2Net = filteredInvoices
+      .filter((i) => i.shift === 2)
+      .reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
+
+    return {
+      totalInvoices,
+      totalUnits,
+      grossAmount,
+      discount,
+      netAmount,
+      shift1Net,
+      shift2Net
+    };
+  }, [filteredInvoices, invoiceDetails]);
 
   const getPatientName = (id: string) => {
     const p = patients.find((pat) => pat.PatientID === id);
@@ -4904,81 +5044,219 @@ export default function PharmacyPOS({
       {/* Invoice logs Tab */}
       {activeSubTab === 'invoice_logs' && (
         <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 animate-fadeIn" id="today-receipts-history">
-          <div className="flex flex-col lg:flex-row lg:items-center justify-between border-b border-slate-100 pb-4 gap-4">
+          <div className="flex flex-col xl:flex-row xl:items-center justify-between border-b border-slate-100 pb-4 gap-4">
             <div className="flex items-center space-x-2.5">
-              <div className="p-2 bg-blue-50 text-blue-600 rounded-lg">
+              <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
                 <History className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="text-sm font-bold text-slate-950">Invoice logs & Sales Reports</h3>
-                <p className="text-[11px] text-slate-500 font-medium">History of issued medicine bills with A4 invoices, thermal slips & daily sales audit reports</p>
+                <h3 className="text-sm font-black text-slate-950">Invoice logs & Sales Reports</h3>
+                <p className="text-[11px] text-slate-500 font-medium">History of issued medicine bills with A4 invoices, thermal slips, and customizable daily / periodic sales audit reports</p>
               </div>
             </div>
 
-            {/* Daily Report Print Trigger & Filters */}
+            {/* Print & Action Trigger */}
             <div className="flex flex-wrap items-center gap-2">
-              <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg">
-                <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                <span className="text-xxs font-bold text-slate-500 uppercase">Date:</span>
-                <input
-                  type="date"
-                  value={selectedDailyReportDate}
-                  onChange={(e) => {
-                    setSelectedDailyReportDate(e.target.value);
-                    setShowAllInvoicesInHistory(false);
-                  }}
-                  className="text-xs bg-transparent border-0 font-bold text-slate-800 focus:outline-none cursor-pointer"
-                />
-              </div>
-
               <button
                 type="button"
-                onClick={() => handlePrintDailySalesReport(selectedDailyReportDate)}
-                className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
-                title="Print daily medicine sales summary sheet on A4 paper"
+                onClick={() => {
+                  if (salesReportPeriodMode === 'range') {
+                    handlePrintDailySalesReport(salesReportStartDate, salesReportEndDate);
+                  } else if (salesReportPeriodMode === 'all') {
+                    handlePrintDailySalesReport();
+                  } else {
+                    handlePrintDailySalesReport(selectedDailyReportDate);
+                  }
+                }}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center space-x-2 transition cursor-pointer"
+                title="Print comprehensive medicine sales audit report on A4 paper"
               >
-                <FileText className="w-3.5 h-3.5" />
-                <span>📊 Print Daily Sales Summary (A4)</span>
+                <FileText className="w-4 h-4" />
+                <span>
+                  {salesReportPeriodMode === 'range' 
+                    ? '📊 Print Period Sales Audit (A4)' 
+                    : salesReportPeriodMode === 'all' 
+                      ? '📊 Print All-Time Sales Audit (A4)' 
+                      : '📊 Print Daily Sales Summary (A4)'}
+                </span>
               </button>
+            </div>
+          </div>
 
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search invoice or patient..."
-                  value={searchHistoryQuery}
-                  onChange={(e) => setSearchHistoryQuery(e.target.value)}
-                  className="w-full sm:w-44 text-xs border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-blue-500 bg-slate-50 focus:bg-white transition"
-                />
-              </div>
-
-              <div className="flex rounded-lg border border-slate-200 p-0.5 bg-slate-50 text-[10px] font-bold uppercase shrink-0">
+          {/* PERIOD SELECTION & ADVANCED FILTER TOOLBAR */}
+          <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-xl space-y-3">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+              {/* Presets / Period Mode Tabs */}
+              <div className="flex flex-wrap items-center gap-1.5 bg-white border border-slate-200 p-1 rounded-xl shadow-xs text-xs font-bold">
                 <button
                   type="button"
                   onClick={() => {
+                    setSalesReportPeriodMode('daily');
+                    setSelectedDailyReportDate(todayStr);
                     setShowAllInvoicesInHistory(false);
-                    setSelectedDailyReportDate(new Date().toISOString().split('T')[0]);
                   }}
-                  className={`px-2.5 py-1 rounded-md transition ${!showAllInvoicesInHistory && selectedDailyReportDate === todayStr ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    salesReportPeriodMode === 'daily' && selectedDailyReportDate === todayStr
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
                 >
-                  Today Only
+                  Today
                 </button>
-                {selectedDailyReportDate !== todayStr && !showAllInvoicesInHistory && (
-                  <button
-                    type="button"
-                    onClick={() => setShowAllInvoicesInHistory(false)}
-                    className="px-2.5 py-1 rounded-md bg-white text-blue-600 shadow-sm transition"
-                  >
-                    Selected Date ({filteredInvoices.length})
-                  </button>
-                )}
                 <button
                   type="button"
-                  onClick={() => setShowAllInvoicesInHistory(true)}
-                  className={`px-2.5 py-1 rounded-md transition ${showAllInvoicesInHistory ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  onClick={() => {
+                    setSalesReportPeriodMode('daily');
+                    const yesterday = new Date();
+                    yesterday.setDate(yesterday.getDate() - 1);
+                    setSelectedDailyReportDate(yesterday.toISOString().split('T')[0]);
+                    setShowAllInvoicesInHistory(false);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    salesReportPeriodMode === 'daily' && selectedDailyReportDate !== todayStr
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  Specific Date
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSalesReportPeriodMode('range');
+                    const d = new Date();
+                    d.setDate(1);
+                    setSalesReportStartDate(d.toISOString().split('T')[0]);
+                    setSalesReportEndDate(todayStr);
+                    setShowAllInvoicesInHistory(false);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    salesReportPeriodMode === 'range'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
+                >
+                  📅 Custom Period
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSalesReportPeriodMode('all');
+                    setShowAllInvoicesInHistory(true);
+                  }}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    salesReportPeriodMode === 'all'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                  }`}
                 >
                   All History ({invoices.length})
                 </button>
+              </div>
+
+              {/* Shift & Search Filters */}
+              <div className="flex flex-wrap items-center gap-2.5">
+                {/* Shift Selector */}
+                <div className="flex items-center space-x-1.5 bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl shadow-xs">
+                  <span className="text-xxs font-bold text-slate-500 uppercase">Shift:</span>
+                  <select
+                    value={selectedShiftFilter}
+                    onChange={(e) => setSelectedShiftFilter(e.target.value as any)}
+                    className="text-xs bg-transparent border-0 font-bold text-slate-800 focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">All Shifts</option>
+                    <option value="1">☀️ Morning (Shift 1)</option>
+                    <option value="2">🌙 Evening (Shift 2)</option>
+                  </select>
+                </div>
+
+                {/* Search Bar */}
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Search invoice or patient..."
+                    value={searchHistoryQuery}
+                    onChange={(e) => setSearchHistoryQuery(e.target.value)}
+                    className="w-full sm:w-48 text-xs border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white shadow-xs transition"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Custom Date Pickers (Shown when Daily or Custom Period is Active) */}
+            {salesReportPeriodMode === 'daily' && (
+              <div className="flex items-center space-x-2 pt-1 border-t border-slate-200/60">
+                <span className="text-xs font-bold text-slate-600 flex items-center space-x-1">
+                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Selected Date:</span>
+                </span>
+                <input
+                  type="date"
+                  value={selectedDailyReportDate}
+                  onChange={(e) => setSelectedDailyReportDate(e.target.value)}
+                  className="text-xs bg-white border border-slate-200 px-3 py-1 rounded-lg font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-xs cursor-pointer"
+                />
+                <span className="text-xxs font-semibold text-slate-400">
+                  Showing sales records strictly for {selectedDailyReportDate === todayStr ? "Today" : selectedDailyReportDate}
+                </span>
+              </div>
+            )}
+
+            {salesReportPeriodMode === 'range' && (
+              <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-200/60">
+                <span className="text-xs font-black text-indigo-900 flex items-center space-x-1">
+                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Custom Date Range:</span>
+                </span>
+                <div className="flex items-center space-x-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-xs">
+                  <span className="text-xxs font-bold text-slate-500 uppercase">From:</span>
+                  <input
+                    type="date"
+                    value={salesReportStartDate}
+                    onChange={(e) => setSalesReportStartDate(e.target.value)}
+                    className="text-xs bg-transparent border-0 font-bold text-slate-800 focus:outline-none cursor-pointer"
+                  />
+                </div>
+                <div className="flex items-center space-x-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-xs">
+                  <span className="text-xxs font-bold text-slate-500 uppercase">To:</span>
+                  <input
+                    type="date"
+                    value={salesReportEndDate}
+                    onChange={(e) => setSalesReportEndDate(e.target.value)}
+                    className="text-xs bg-transparent border-0 font-bold text-slate-800 focus:outline-none cursor-pointer"
+                  />
+                </div>
+                <span className="text-xxs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
+                  Filtering {filteredInvoices.length} Invoices between {salesReportStartDate} and {salesReportEndDate}
+                </span>
+              </div>
+            )}
+          </div>
+
+          {/* LIVE SUMMARY KPI METRICS STRIP */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Invoices Filtered</span>
+              <div className="text-lg font-black text-slate-900 mt-0.5">{periodSalesSummary.totalInvoices} Bills</div>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Medicine Units Sold</span>
+              <div className="text-lg font-black text-sky-900 mt-0.5">{periodSalesSummary.totalUnits.toLocaleString()} Units</div>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Gross Sales</span>
+              <div className="text-lg font-black text-slate-700 mt-0.5">Rs. {periodSalesSummary.grossAmount.toLocaleString()}</div>
+            </div>
+            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Total Discounts</span>
+              <div className="text-lg font-black text-rose-600 mt-0.5">- Rs. {periodSalesSummary.discount.toLocaleString()}</div>
+            </div>
+            <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl col-span-2 sm:col-span-1">
+              <span className="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider block">Net Realized Cash</span>
+              <div className="text-lg font-black text-emerald-700 mt-0.5 font-mono">Rs. {periodSalesSummary.netAmount.toLocaleString()}</div>
+              <div className="text-[9.5px] font-semibold text-emerald-900/80 mt-0.5">
+                ☀️ Rs. {periodSalesSummary.shift1Net.toLocaleString()} • 🌙 Rs. {periodSalesSummary.shift2Net.toLocaleString()}
               </div>
             </div>
           </div>

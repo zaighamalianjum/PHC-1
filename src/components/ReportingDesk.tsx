@@ -240,6 +240,32 @@ export default function ReportingDesk({
     return 1;
   };
 
+  const getItemCategory = (item: any): string => {
+    if (!item) return 'General';
+    const c = item.Category || item.category;
+    if (c && typeof c === 'string' && c.trim()) return c.trim();
+    if (item.MedicineType === 'C') return 'Clinical Compounding';
+    const u = item.Unit || item.unit;
+    if (u && typeof u === 'string' && u.trim()) return u.trim();
+    return 'Patent Medicine';
+  };
+
+  const matchesCategoryFilter = (item: any, selCat: string): boolean => {
+    if (!selCat || selCat === 'all') return true;
+    const cat = getItemCategory(item).toLowerCase().trim();
+    const target = selCat.toLowerCase().trim();
+    if (cat === target) return true;
+    const unit = String(item.Unit || item.unit || '').toLowerCase().trim();
+    if (unit === target) return true;
+    if (target === 'clinical compounding' || target === 'clinical' || target === 'c') {
+      return item.MedicineType === 'C' || cat.includes('clinical');
+    }
+    if (target === 'patent medicine' || target === 'patent' || target === 'p') {
+      return item.MedicineType !== 'C' && !cat.includes('clinical');
+    }
+    return false;
+  };
+
   // Active Report Type Selection
   const [activeReport, setActiveReport] = useState<ReportType>('pending_payments');
 
@@ -428,11 +454,11 @@ export default function ReportingDesk({
   const currentStockData = useMemo(() => {
     return effectiveItems.filter(item => {
       const name = item.ItemName || item.name || '';
-      const cat = item.Category || item.category || item.Unit || item.unit || '';
+      const cat = getItemCategory(item);
       const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) ||
         cat.toLowerCase().includes(searchQuery.toLowerCase()) ||
         String(item.ItemID || item._id || '').toLowerCase().includes(searchQuery.toLowerCase());
-      const matchesCat = selectedCategory === 'all' || cat === selectedCategory;
+      const matchesCat = matchesCategoryFilter(item, selectedCategory);
       return matchesSearch && matchesCat;
     });
   }, [effectiveItems, searchQuery, selectedCategory]);
@@ -440,6 +466,8 @@ export default function ReportingDesk({
   const currentStockSummary = useMemo(() => {
     let totalItems = currentStockData.length;
     let totalStockUnits = 0;
+    let totalPurchasePriceSum = 0;
+    let totalRetailPriceSum = 0;
     let totalPurchaseValuation = 0;
     let totalRetailValuation = 0;
 
@@ -449,11 +477,13 @@ export default function ReportingDesk({
       const rPrice = Number(i.Price ?? i.price ?? 0);
 
       totalStockUnits += cStock;
+      totalPurchasePriceSum += pPrice;
+      totalRetailPriceSum += rPrice;
       totalPurchaseValuation += cStock * pPrice;
       totalRetailValuation += cStock * rPrice;
     });
 
-    return { totalItems, totalStockUnits, totalPurchaseValuation, totalRetailValuation };
+    return { totalItems, totalStockUnits, totalPurchasePriceSum, totalRetailPriceSum, totalPurchaseValuation, totalRetailValuation };
   }, [currentStockData]);
 
   // Report 6: Minimum Stock / Low Stock Alert
@@ -466,12 +496,14 @@ export default function ReportingDesk({
       })
       .filter(item => {
         const name = item.ItemName || item.name || '';
-        const cat = item.Category || item.category || item.Unit || item.unit || '';
-        return name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        const cat = getItemCategory(item);
+        const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           cat.toLowerCase().includes(searchQuery.toLowerCase()) ||
           String(item.ItemID || item._id || '').toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCat = matchesCategoryFilter(item, selectedCategory);
+        return matchesSearch && matchesCat;
       });
-  }, [effectiveItems, searchQuery]);
+  }, [effectiveItems, searchQuery, selectedCategory]);
 
   const minimumStockSummary = useMemo(() => {
     const totalOut = minimumStockData.filter(i => getItemStock(i) === 0).length;
@@ -503,12 +535,14 @@ export default function ReportingDesk({
       .filter(item => item.requiredQty > 0)
       .filter(item => {
         const name = item.ItemName || item.name || '';
-        const cat = item.Category || item.category || item.Unit || item.unit || '';
-        return name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        const cat = getItemCategory(item);
+        const matchesSearch = name.toLowerCase().includes(searchQuery.toLowerCase()) ||
           cat.toLowerCase().includes(searchQuery.toLowerCase()) ||
           String(item.ItemID || item._id || '').toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesCat = matchesCategoryFilter(item, selectedCategory);
+        return matchesSearch && matchesCat;
       });
-  }, [effectiveItems, searchQuery]);
+  }, [effectiveItems, searchQuery, selectedCategory]);
 
   const requiredStockSummary = useMemo(() => {
     const totalItemsToOrder = requiredStockData.length;
@@ -1109,16 +1143,32 @@ export default function ReportingDesk({
     };
   }, [filteredStoreMedicineRows]);
 
-  // Available Item Categories
+  // Available Item Categories (Fully synchronized with Stock Manager & Pharmacy POS)
   const categoriesList = useMemo(() => {
     const set = new Set<string>();
+
+    // 1. Fetch custom categories configured in Stock Manager (localStorage)
+    try {
+      const saved = localStorage.getItem('pharmacy_custom_categories');
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          parsed.forEach((cat: string) => {
+            if (cat && typeof cat === 'string' && cat.trim()) set.add(cat.trim());
+          });
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    // 2. Fetch categories from all existing inventory medicines
     effectiveItems.forEach(i => {
-      if (i.Category) set.add(i.Category);
-      if (i.category) set.add(i.category);
-      if (i.Unit) set.add(i.Unit);
-      if (i.unit) set.add(i.unit);
+      const cat = getItemCategory(i);
+      if (cat && cat.trim()) set.add(cat.trim());
     });
-    return Array.from(set);
+
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
   }, [effectiveItems]);
 
   // CSV Export Handler
@@ -1152,7 +1202,7 @@ export default function ReportingDesk({
       rows = currentStockData.map(i => [
         i.ItemID || i._id,
         i.ItemName || i.name,
-        i.Category || i.category || 'General',
+        getItemCategory(i),
         getItemStock(i),
         Number(i.PurchasePrice ?? i.purchasePrice ?? i.Price ?? i.price ?? 0),
         Number(i.Price ?? i.price ?? 0),
@@ -1163,8 +1213,8 @@ export default function ReportingDesk({
         `Grand Total (${currentStockSummary.totalItems} Items)`,
         '—',
         currentStockSummary.totalStockUnits,
-        '—',
-        currentStockSummary.totalRetailValuation,
+        currentStockSummary.totalPurchasePriceSum,
+        currentStockSummary.totalRetailPriceSum,
         currentStockSummary.totalPurchaseValuation
       ]);
     } else if (activeReport === 'minimum_stock') {
@@ -1172,7 +1222,7 @@ export default function ReportingDesk({
       rows = minimumStockData.map(i => [
         i.ItemID || i._id,
         i.ItemName || i.name,
-        i.Category || i.category || 'General',
+        getItemCategory(i),
         i.CStock || 0,
         (i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1,
         Math.max(0, ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1) - (i.CStock || 0))
@@ -1182,7 +1232,7 @@ export default function ReportingDesk({
       rows = requiredStockData.map(i => [
         i.ItemID || i._id,
         i.ItemName || i.name,
-        i.Category || i.category || 'General',
+        getItemCategory(i),
         i.cStock,
         i.minStock,
         i.reorderTarget,
@@ -1528,9 +1578,11 @@ export default function ReportingDesk({
               <td style="text-align: center; font-size: 12px; font-weight: 900; color: #4338ca;">
                 ${currentStockSummary.totalStockUnits.toLocaleString()} Units
               </td>
-              <td style="text-align: right; color: #64748b; font-size: 11px;">—</td>
+              <td style="text-align: right; font-size: 12px; font-weight: 900; color: #0f172a;">
+                Rs. ${currentStockSummary.totalPurchasePriceSum.toLocaleString()}
+              </td>
               <td style="text-align: right; font-size: 12px; font-weight: 900; color: #047857;">
-                Rs. ${currentStockSummary.totalRetailValuation.toLocaleString()}
+                Rs. ${currentStockSummary.totalRetailPriceSum.toLocaleString()}
               </td>
               <td style="text-align: right; color: #0369a1; font-size: 13px; font-weight: 900; background: #e0f2fe;">
                 Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}
@@ -2377,17 +2429,24 @@ export default function ReportingDesk({
               <select
                 value={selectedCategory}
                 onChange={e => setSelectedCategory(e.target.value)}
-                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden"
+                className="px-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden cursor-pointer"
               >
-                <option value="all">All Categories</option>
+                <option value="all">
+                  All Categories ({activeReport === 'expense_analysis' ? expenseData.length : effectiveItems.length} items)
+                </option>
                 {activeReport === 'expense_analysis' ? (
                   ['Rent', 'Utilities', 'Salaries', 'Maintenance', 'Marketing', 'Supplies', 'Refreshment', 'Other'].map(c => (
                     <option key={c} value={c}>{c}</option>
                   ))
                 ) : (
-                  categoriesList.map(c => (
-                    <option key={c} value={c}>{c}</option>
-                  ))
+                  categoriesList.map(c => {
+                    const count = effectiveItems.filter(it => matchesCategoryFilter(it, c)).length;
+                    return (
+                      <option key={c} value={c}>
+                        {c} {count > 0 ? `(${count})` : ''}
+                      </option>
+                    );
+                  })
                 )}
               </select>
             </div>
@@ -2839,7 +2898,7 @@ export default function ReportingDesk({
                       <tr key={i._id || i.ItemID || idx} className="hover:bg-slate-50">
                         <td className="p-3 font-mono font-bold text-slate-700">{i.ItemID || i._id}</td>
                         <td className="p-3 font-bold text-slate-900">{i.ItemName || i.name}</td>
-                        <td className="p-3 text-slate-600">{i.Category || i.category || i.Unit || 'General'}</td>
+                        <td className="p-3 text-slate-600 font-semibold">{getItemCategory(i)}</td>
                         <td className="p-3 text-center font-bold text-indigo-700">{cStock} {i.Unit || 'Units'}</td>
                         <td className="p-3 text-right text-slate-600">Rs. {pPrice.toLocaleString()}</td>
                         <td className="p-3 text-right text-emerald-600 font-bold">Rs. {(Number(i.Price ?? i.price) || 0).toLocaleString()}</td>
@@ -2857,9 +2916,11 @@ export default function ReportingDesk({
                   <td className="p-3.5 text-center font-black font-mono text-xs text-indigo-700">
                     {currentStockSummary.totalStockUnits.toLocaleString()} Units
                   </td>
-                  <td className="p-3.5 text-right text-slate-400 font-semibold text-[11px]">—</td>
+                  <td className="p-3.5 text-right font-black font-mono text-xs text-slate-900">
+                    Rs. {currentStockSummary.totalPurchasePriceSum.toLocaleString()}
+                  </td>
                   <td className="p-3.5 text-right font-black font-mono text-xs text-emerald-700">
-                    Rs. {currentStockSummary.totalRetailValuation.toLocaleString()}
+                    Rs. {currentStockSummary.totalRetailPriceSum.toLocaleString()}
                   </td>
                   <td className="p-3.5 text-right font-black font-mono text-xs text-sky-900 bg-sky-50/70">
                     Rs. {currentStockSummary.totalPurchaseValuation.toLocaleString()}
@@ -2903,7 +2964,7 @@ export default function ReportingDesk({
                       <tr key={i._id || i.ItemID || idx} className="hover:bg-slate-50">
                         <td className="p-3 font-mono font-bold text-slate-700">{i.ItemID || i._id}</td>
                         <td className="p-3 font-bold text-slate-900">{i.ItemName || i.name}</td>
-                        <td className="p-3 text-slate-600">{i.Category || i.category || 'General'}</td>
+                        <td className="p-3 text-slate-600 font-semibold">{getItemCategory(i)}</td>
                         <td className={`p-3 text-center font-black ${isOut ? 'text-rose-600' : 'text-amber-600'}`}>{cStock}</td>
                         <td className="p-3 text-center text-slate-600">{minStock}</td>
                         <td className="p-3 text-center font-bold text-rose-600">+ {deficit}</td>
@@ -2952,7 +3013,7 @@ export default function ReportingDesk({
                     <tr key={i._id || i.ItemID || idx} className="hover:bg-slate-50">
                       <td className="p-3 font-mono font-bold text-slate-700">{i.ItemID || i._id}</td>
                       <td className="p-3 font-bold text-slate-900">{i.ItemName || i.name}</td>
-                      <td className="p-3 text-slate-600">{i.Category || i.category || 'General'}</td>
+                      <td className="p-3 text-slate-600 font-semibold">{getItemCategory(i)}</td>
                       <td className="p-3 text-center font-bold text-slate-600">{i.cStock}</td>
                       <td className="p-3 text-center font-bold text-slate-600">{i.reorderTarget}</td>
                       <td className="p-3 text-center font-black text-indigo-700 bg-indigo-50/50">{i.requiredQty} Units</td>
