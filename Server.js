@@ -2986,35 +2986,49 @@ app.post('/api/erp/grn/approve', async (req, res) => {
       }
     }
 
-    // 4. Record automated ERP Financial Ledger Transaction
+    // 4. Record automated ERP Financial Ledger Transaction & Cash/Credit Processing
     const totalAmount = parseFloat(grn.TotalAmount) || 0;
-    const txn = {
+    const isCashPurchase = String(grn.PaymentMethod || grn.PaymentMode || '').toLowerCase() === 'cash';
+
+    // 4a. Goods Received Invoice Transaction (Records inward stock)
+    const grnInvoiceTxn = {
       TransactionID: `TXN-GRN-${Date.now().toString().slice(-4)}`,
       Type: 'VendorInvoice',
-      Category: 'Inventory Inward Stock Replenishment',
-      Description: `Goods Received Note (${grn.GRNID}) for Purchase Order (${grn.POID}) from ${grn.VendorName || 'Supplier'}`,
+      Category: isCashPurchase ? 'Medicine Cash Purchase (Spot Payment)' : 'Inventory Inward Stock Replenishment (Credit)',
+      Description: `Goods Received Note (${grn.GRNID}) for Purchase Order (${grn.POID}) from ${grn.VendorName || 'Supplier'} [${isCashPurchase ? 'Cash Spot Purchase' : 'Credit Purchase'}]`,
       Amount: totalAmount,
-      PaymentMethod: 'Online',
+      PaymentMethod: isCashPurchase ? 'Cash' : 'Credit',
       ReferenceNo: grn.ChallanNo || grn.GRNID,
       Date: grn.ReceivedDate,
       CreatedBy: grn.CreatedBy || 'System GRN Auto-Poster',
       VendorID: grn.VendorID || '',
-      VendorName: grn.VendorName || ''
+      VendorName: grn.VendorName || '',
+      IsCashPurchase: isCashPurchase
     };
 
-    await db.collection('erp_transactions').insertOne(txn);
+    await db.collection('erp_transactions').insertOne(grnInvoiceTxn);
 
-    // 5. Update Vendor balance if VendorID or VendorName is present
-    if ((grn.VendorID || grn.VendorName) && totalAmount > 0) {
-      await db.collection('erp_vendors').updateOne(
-        grn.VendorID ? { VendorID: grn.VendorID } : { VendorName: grn.VendorName },
-        { $inc: { Balance: totalAmount } }
-      );
-    }
+    if (isCashPurchase && totalAmount > 0) {
+      // 4b. Cash Spot Purchase: Generate immediate Cash Payment Voucher (CPV) / Cash Book Outflow
+      const cashPaymentTxn = {
+        TransactionID: `TXN-PAY-${Date.now().toString().slice(-4)}`,
+        Type: 'VendorPayment',
+        Category: 'Medicine Purchase (Cash Spot Payment)',
+        Description: `Spot Cash Payment on Delivery for GRN (${grn.GRNID}) - Invoice #${grn.SupplierInvoiceNo || 'N/A'} - ${grn.VendorName || 'Vendor'}`,
+        Amount: totalAmount,
+        PaymentMethod: 'Cash',
+        ReferenceNo: grn.GRNID,
+        Date: grn.ReceivedDate,
+        CreatedBy: grn.CreatedBy || 'System GRN Auto-Poster',
+        VendorID: grn.VendorID || '',
+        VendorName: grn.VendorName || '',
+        Status: 'Settled'
+      };
 
-    // 6. Double-Entry Posting to General Ledger (ac_ledger) & Chart of Accounts (accounts)
-    if (totalAmount > 0) {
-      const vchNo = `VCH-GRN-${Date.now().toString().slice(-4)}`;
+      await db.collection('erp_transactions').insertOne(cashPaymentTxn);
+
+      // Double-Entry Posting for Cash Purchase: Debit Inventory (103001), Credit Cash-in-Hand (101001)
+      const vchNo = `CPV-GRN-${Date.now().toString().slice(-4)}`;
       const inventoryPosting = {
         ACLedgerID: `LG-${vchNo}-1`,
         VchNo: vchNo,
@@ -3022,31 +3036,73 @@ app.post('/api/erp/grn/approve', async (req, res) => {
         TLID: 103001, // Inventory / Pharmacy Stock Ledger (Asset)
         Debit: totalAmount,
         Credit: 0,
-        Remarks: `GRN Stock Inward ${grn.GRNID} (Vendor Invoice: ${grn.SupplierInvoiceNo || 'N/A'}, DC: ${grn.ChallanNo || 'N/A'}) - Supplier: ${grn.VendorName || 'Vendor'}`
+        Remarks: `Cash Spot Purchase GRN ${grn.GRNID} (Inv: ${grn.SupplierInvoiceNo || 'N/A'}, DC: ${grn.ChallanNo || 'N/A'}) - Supplier: ${grn.VendorName || 'Vendor'}`
       };
-      const apPosting = {
+      const cashPosting = {
         ACLedgerID: `LG-${vchNo}-2`,
         VchNo: vchNo,
         TxDate: grn.ReceivedDate,
-        TLID: 201001, // Accounts Payable (Liability)
+        TLID: 101001, // Cash in Hand (Asset Account)
         Debit: 0,
         Credit: totalAmount,
-        Remarks: `Vendor Bill Payable for GRN ${grn.GRNID} (Inv: ${grn.SupplierInvoiceNo || 'N/A'}) - Supplier: ${grn.VendorName || 'Vendor'}`
+        Remarks: `Spot Cash Paid on Delivery for GRN ${grn.GRNID} - Supplier: ${grn.VendorName || 'Vendor'}`
       };
 
       await Promise.all([
         db.collection('ac_ledger').insertOne(inventoryPosting),
-        db.collection('ac_ledger').insertOne(apPosting),
-        // Update Chart of Accounts balances: Debit Inventory (+), Credit Accounts Payable (-)
+        db.collection('ac_ledger').insertOne(cashPosting),
         db.collection('accounts').updateOne({ TLID: 103001 }, { $inc: { AcBalance: totalAmount } }),
-        db.collection('accounts').updateOne({ TLID: 201001 }, { $inc: { AcBalance: -totalAmount } })
+        db.collection('accounts').updateOne({ TLID: 101001 }, { $inc: { AcBalance: -totalAmount } })
       ]);
+
+      // Note: For Cash purchase, Vendor balance in erp_vendors is NOT incremented (Net 0)
+    } else {
+      // 5. Credit Purchase: Update Vendor balance (Accounts Payable / Udhar)
+      if ((grn.VendorID || grn.VendorName) && totalAmount > 0) {
+        await db.collection('erp_vendors').updateOne(
+          grn.VendorID ? { VendorID: grn.VendorID } : { VendorName: grn.VendorName },
+          { $inc: { Balance: totalAmount } }
+        );
+      }
+
+      // 6. Double-Entry Posting for Credit Purchase: Debit Inventory (103001), Credit Accounts Payable (201001)
+      if (totalAmount > 0) {
+        const vchNo = `VCH-GRN-${Date.now().toString().slice(-4)}`;
+        const inventoryPosting = {
+          ACLedgerID: `LG-${vchNo}-1`,
+          VchNo: vchNo,
+          TxDate: grn.ReceivedDate,
+          TLID: 103001, // Inventory / Pharmacy Stock Ledger (Asset)
+          Debit: totalAmount,
+          Credit: 0,
+          Remarks: `GRN Stock Inward ${grn.GRNID} [Credit Purchase] (Vendor Invoice: ${grn.SupplierInvoiceNo || 'N/A'}, DC: ${grn.ChallanNo || 'N/A'}) - Supplier: ${grn.VendorName || 'Vendor'}`
+        };
+        const apPosting = {
+          ACLedgerID: `LG-${vchNo}-2`,
+          VchNo: vchNo,
+          TxDate: grn.ReceivedDate,
+          TLID: 201001, // Accounts Payable (Liability)
+          Debit: 0,
+          Credit: totalAmount,
+          Remarks: `Vendor Bill Payable for GRN ${grn.GRNID} [Credit] (Inv: ${grn.SupplierInvoiceNo || 'N/A'}) - Supplier: ${grn.VendorName || 'Vendor'}`
+        };
+
+        await Promise.all([
+          db.collection('ac_ledger').insertOne(inventoryPosting),
+          db.collection('ac_ledger').insertOne(apPosting),
+          db.collection('accounts').updateOne({ TLID: 103001 }, { $inc: { AcBalance: totalAmount } }),
+          db.collection('accounts').updateOne({ TLID: 201001 }, { $inc: { AcBalance: -totalAmount } })
+        ]);
+      }
     }
 
     res.json({
       success: true,
-      message: `GRN ${grn.GRNID} approved! Inventory stock replenished and General Ledger updated with Accounts Payable posting.`,
-      GRNID: grn.GRNID
+      message: isCashPurchase
+        ? `GRN ${grn.GRNID} approved as Cash Purchase! Stock updated, Cash Book outflow recorded (Rs. ${totalAmount.toLocaleString()}), and cash voucher generated.`
+        : `GRN ${grn.GRNID} approved as Credit Purchase! Stock updated and Rs. ${totalAmount.toLocaleString()} posted to Vendor Accounts Payable ledger.`,
+      GRNID: grn.GRNID,
+      paymentMethod: isCashPurchase ? 'Cash' : 'Credit'
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

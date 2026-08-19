@@ -1015,9 +1015,9 @@ export default function FiscalCalendarDesk({
     if (!printWin) return alert('Popup blocked. Please allow popups to print Monthly Financial Statement.');
 
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
-    const cAddress = clinicSettings?.Address || 'Opposite State Bank of Pakistan, Mall Road, Lahore';
-    const cPhone = clinicSettings?.PhoneNo || '042-3111222 / 0300-1234567';
+    const cTag = (clinicSettings as any)?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
+    const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || 'Opposite State Bank of Pakistan, Mall Road, Lahore';
+    const cPhone = (clinicSettings as any)?.PhoneNo || (clinicSettings as any)?.Phone || clinicSettings?.PhoneMobile || '042-3111222 / 0300-1234567';
 
     const { metrics, isClosed, savedStatus } = monthObj;
 
@@ -1281,7 +1281,7 @@ export default function FiscalCalendarDesk({
     if (!printWin) return alert('Popup blocked. Please allow popups to print Annual Financial Report.');
 
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cAddress = clinicSettings?.Address || 'Opposite State Bank of Pakistan, Mall Road, Lahore';
+    const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || 'Opposite State Bank of Pakistan, Mall Road, Lahore';
 
     const rowsHtml = monthsData.map((m, idx) => `
       <tr style="${idx % 2 === 1 ? 'background: #f8fafc;' : ''}">

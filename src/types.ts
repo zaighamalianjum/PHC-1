@@ -493,6 +493,8 @@ export interface ErpPurchaseOrder {
   TotalAmount: number;
   PaidAmount: number;
   Status: 'Draft' | 'Sent' | 'Approved' | 'Partially Received' | 'Received' | 'Paid' | 'Cancelled' | string;
+  PaymentMethod?: 'Credit' | 'Cash' | string;
+  PaymentTerms?: 'Credit' | 'Cash' | string;
   Items: ErpPurchaseOrderItem[];
   Notes?: string;
 }
@@ -523,6 +525,9 @@ export interface ErpGrn {
   TotalAmount: number;
   Items: ErpGrnItem[];
   Status: 'Draft' | 'Approved' | 'Cancelled';
+  PaymentMethod?: 'Credit' | 'Cash' | string;
+  PaymentStatus?: 'Unpaid' | 'Paid' | string;
+  PaymentRef?: string;
   Remarks?: string;
   CreatedBy?: string;
 }

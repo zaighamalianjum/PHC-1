@@ -6848,7 +6848,7 @@ export default function PharmacyPOS({
                                               type="button"
                                               onClick={() => handleOpenBatchManager(itm)}
                                               className="px-1.5 py-0.2 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded text-[9px] font-mono font-bold border border-rose-300 transition cursor-pointer"
-                                              title={`Has expired lots (${expSummary.expiredBatchesCount} batch expired). Click to inspect.`}
+                                              title={`Has expired lots (${(expSummary as any).expiredBatchesCount || 1} batch expired). Click to inspect.`}
                                             >
                                               <span>Exp: {displayExp} (Part Expired)</span>
                                             </button>
@@ -6860,9 +6860,9 @@ export default function PharmacyPOS({
                                               type="button"
                                               onClick={() => handleOpenBatchManager(itm)}
                                               className="px-1.5 py-0.2 bg-amber-100 hover:bg-amber-200 text-amber-950 rounded text-[9px] font-mono font-bold border border-amber-300 transition cursor-pointer flex items-center space-x-0.5"
-                                              title={`Near Expiry: ${expSummary.daysUntilExpiry} days left (${displayExp}). Click to inspect.`}
+                                              title={`Near Expiry: ${(expSummary as any).daysUntilExpiry || 0} days left (${displayExp}). Click to inspect.`}
                                             >
-                                              <span>Exp: {displayExp} ({expSummary.daysUntilExpiry}d left)</span>
+                                              <span>Exp: {displayExp} ({(expSummary as any).daysUntilExpiry || 0}d left)</span>
                                             </button>
                                           );
                                         }

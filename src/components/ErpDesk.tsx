@@ -470,13 +470,14 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const rows: LedgerRow[] = [];
 
     vendorGrns.forEach(g => {
+      const isCash = g.PaymentMethod === 'Cash' || (g as any).PaymentMode === 'Cash';
       rows.push({
         id: g.GrnID || g._id || `GRN-${Math.random()}`,
         date: g.ReceivedDate || new Date().toISOString().split('T')[0],
-        type: 'Goods Received (GRN)',
+        type: isCash ? 'GRN (Cash Purchase)' : 'GRN (Credit Purchase)',
         refNo: g.GrnID || 'GRN-N/A',
         poNo: g.POID || (g as any).PoID || 'N/A',
-        description: `GRN Received - Invoice #${g.VendorInvoiceNo || g.SupplierInvoiceNo || 'N/A'} (${g.ItemsReceived?.length || g.Items?.length || 0} items)`,
+        description: `GRN Inward [${isCash ? 'Spot Cash Paid' : 'Credit / Payable'}] - Invoice #${g.VendorInvoiceNo || g.SupplierInvoiceNo || 'N/A'} (${g.ItemsReceived?.length || g.Items?.length || 0} items)`,
         debit: 0,
         credit: Number(g.TotalAmount || 0),
         rawItem: g
@@ -484,13 +485,14 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     });
 
     vendorTxns.forEach(t => {
+      const isSpotPay = t.Category?.includes('Cash Spot') || t.Description?.includes('Spot Cash Payment');
       rows.push({
         id: t.TransactionID || t._id || `TXN-${Math.random()}`,
         date: t.Date || new Date().toISOString().split('T')[0],
-        type: 'Vendor Bill Payment',
+        type: isSpotPay ? 'Spot Cash Voucher (CPV)' : 'Vendor Bill Payment',
         refNo: t.TransactionID || 'PAY-N/A',
-        poNo: t.ReferenceNo && t.ReferenceNo.toUpperCase().startsWith('PO') ? t.ReferenceNo : 'N/A',
-        description: `Payment Settled via ${t.PaymentMethod || 'Cash'} - ${t.Description || 'Vendor Settlement'}`,
+        poNo: t.ReferenceNo && t.ReferenceNo.toUpperCase().startsWith('PO') ? t.ReferenceNo : (t.ReferenceNo || 'N/A'),
+        description: isSpotPay ? `Instant Spot Cash Paid on Delivery (${t.Description})` : `Payment Settled via ${t.PaymentMethod || 'Cash'} - ${t.Description || 'Vendor Settlement'}`,
         debit: Number(t.Amount || 0),
         credit: 0,
         rawItem: t
@@ -1347,6 +1349,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     ReceivedDate: string;
     ChallanNo: string;
     SupplierInvoiceNo: string;
+    PaymentMethod: 'Credit' | 'Cash';
     Remarks: string;
     Items: {
       ItemID: string;
@@ -1369,6 +1372,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     ReceivedDate: new Date().toISOString().split('T')[0],
     ChallanNo: '',
     SupplierInvoiceNo: '',
+    PaymentMethod: 'Credit',
     Remarks: '',
     Items: []
   });
@@ -1390,12 +1394,14 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     VendorID: string;
     VendorName: string;
     ExpectedDeliveryDate: string;
+    PaymentMethod: 'Credit' | 'Cash';
     Notes: string;
     Items: { ItemID: string; ItemName: string; Category?: string; Qty: number; UnitPrice: number; BatchNo?: string; ExpiryDate?: string }[];
   }>({
     VendorID: '',
     VendorName: '',
     ExpectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+    PaymentMethod: 'Credit',
     Notes: '',
     Items: []
   });
@@ -2814,6 +2820,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         TotalAmount: totalPoValuation,
         PaidAmount: 0,
         Status: 'Sent',
+        PaymentMethod: poForm.PaymentMethod || 'Credit',
+        PaymentTerms: poForm.PaymentMethod || 'Credit',
         Notes: poForm.Notes || '',
         Items: poForm.Items.map(i => ({
           ItemID: i.ItemID,
@@ -2835,11 +2843,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         VendorID: '',
         VendorName: '',
         ExpectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+        PaymentMethod: 'Credit',
         Notes: '',
         Items: []
       });
       setShowPoModal(false);
-      setSyncMessage(`New Purchase Order ${nextPoId} created successfully for ${newPo.VendorName}!`);
+      setSyncMessage(`New Purchase Order ${nextPoId} created successfully for ${newPo.VendorName} (${newPo.PaymentMethod === 'Cash' ? 'Cash Spot' : 'Credit'})!`);
       setTimeout(() => setSyncMessage(null), 3500);
     } catch (err: any) {
       alert('Error creating Purchase Order: ' + err.message);
@@ -3065,6 +3074,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         ReceivedDate: new Date().toISOString().split('T')[0],
         ChallanNo: `DC-${Math.floor(10000 + Math.random() * 90000)}`,
         SupplierInvoiceNo: `INV-${Math.floor(10000 + Math.random() * 90000)}`,
+        PaymentMethod: (po.PaymentMethod === 'Cash' || (po as any).PaymentTerms === 'Cash') ? 'Cash' : 'Credit',
         Remarks: `Stock inward receiving against PO ${po.POID}`,
         Items: getPoItemsReceiptInfo(po)
       });
@@ -3082,6 +3092,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           ReceivedDate: new Date().toISOString().split('T')[0],
           ChallanNo: '',
           SupplierInvoiceNo: '',
+          PaymentMethod: 'Credit',
           Remarks: '',
           Items: []
         });
@@ -3098,6 +3109,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         POID: foundPo.POID,
         VendorID: foundPo.VendorID,
         VendorName: foundPo.VendorName,
+        PaymentMethod: (foundPo.PaymentMethod === 'Cash' || (foundPo as any).PaymentTerms === 'Cash') ? 'Cash' : 'Credit',
         Items: getPoItemsReceiptInfo(foundPo)
       }));
     }
@@ -3134,9 +3146,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     setIsSubmitting(true);
     const totalAmount = receivingItems.reduce((sum, i) => sum + (Number(i.ReceivedQty) * Number(i.UnitPrice)), 0);
+    const isCashPurchase = grnForm.PaymentMethod === 'Cash';
 
     const payload = {
       ...grnForm,
+      PaymentMethod: isCashPurchase ? 'Cash' : 'Credit',
+      PaymentStatus: isCashPurchase ? 'Paid' : 'Unpaid',
       Items: receivingItems,
       TotalAmount: totalAmount,
       CreatedBy: currentUser?.FullName || 'Store Manager'
@@ -3171,6 +3186,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           SupplierInvoiceNo: payload.SupplierInvoiceNo,
           TotalAmount: totalAmount,
           Status: 'Approved',
+          PaymentMethod: isCashPurchase ? 'Cash' : 'Credit',
+          PaymentStatus: isCashPurchase ? 'Paid' : 'Unpaid',
           Remarks: payload.Remarks,
           CreatedBy: payload.CreatedBy,
           Items: payload.Items.map(i => ({
@@ -3181,16 +3198,35 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             PendingQty: i.PendingQty,
             ReceivedQty: i.ReceivedQty,
             UnitPrice: i.UnitPrice,
-            LineTotal: i.ReceivedQty * i.UnitPrice
+            LineTotal: Number(i.ReceivedQty) * Number(i.UnitPrice)
           }))
         };
 
         setGrns(prev => [newGrnRecord, ...prev]);
 
-        // Re-fetch inventory items & vendors to show updated stock & balance immediately
-        const [itemsRes, vendorsRes] = await Promise.all([
+        // If cash purchase, also inject immediate cash voucher into local transactions state
+        if (isCashPurchase && totalAmount > 0) {
+          const autoCashVoucher: ErpTransaction = {
+            TransactionID: `TXN-PAY-${Date.now().toString().slice(-4)}`,
+            Type: 'VendorPayment',
+            Category: 'Medicine Purchase (Cash Spot Payment)',
+            Description: `Spot Cash Payment on Delivery for GRN (${payload.GRNID}) - Invoice #${payload.SupplierInvoiceNo || 'N/A'} - ${payload.VendorName || 'Vendor'}`,
+            Amount: totalAmount,
+            PaymentMethod: 'Cash',
+            ReferenceNo: payload.GRNID,
+            Date: payload.ReceivedDate,
+            CreatedBy: payload.CreatedBy,
+            VendorID: payload.VendorID,
+            VendorName: payload.VendorName
+          };
+          setTransactions(prev => [autoCashVoucher, ...prev]);
+        }
+
+        // Re-fetch inventory items, vendors & transactions to show updated stock & balances immediately
+        const [itemsRes, vendorsRes, txnsRes] = await Promise.all([
           safeFetchJson('/api/items'),
-          safeFetchJson('/api/query/erp_vendors')
+          safeFetchJson('/api/query/erp_vendors'),
+          safeFetchJson('/api/query/erp_transactions')
         ]);
         if (Array.isArray(itemsRes) && itemsRes.length > 0) {
           setInventoryItems(itemsRes);
@@ -3238,13 +3274,19 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         }
         if (Array.isArray(vendorsRes) && vendorsRes.length > 0) {
           setVendors(vendorsRes);
-        } else if (payload.VendorID || payload.VendorName) {
+        } else if (!isCashPurchase && (payload.VendorID || payload.VendorName)) {
           setVendors(prev => prev.map(v => (v.VendorID === payload.VendorID || v.VendorName === payload.VendorName) ? { ...v, Balance: (v.Balance || 0) + totalAmount } : v));
         }
 
+        if (Array.isArray(txnsRes) && txnsRes.length > 0) {
+          setTransactions(txnsRes);
+        }
+
         setShowGrnModal(false);
-        setSyncMessage(`GRN ${payload.GRNID} approved! Stock updated for PO ${payload.POID} (${calculatedPoStatus === 'Received' ? 'Fully Received' : 'Partially Received'}).`);
-        setTimeout(() => setSyncMessage(null), 3000);
+        setSyncMessage(isCashPurchase
+          ? `GRN ${payload.GRNID} approved as CASH purchase! Rs. ${totalAmount.toLocaleString()} expensed in Clinic Cash Book & stock updated.`
+          : `GRN ${payload.GRNID} approved as CREDIT purchase! Rs. ${totalAmount.toLocaleString()} added to Vendor Payable ledger & stock updated.`);
+        setTimeout(() => setSyncMessage(null), 3500);
         window.dispatchEvent(new CustomEvent('phc_db_updated'));
       } else {
         alert(data.error || 'Failed to approve GRN.');
@@ -3253,8 +3295,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       console.error('GRN approval error:', err);
       alert('Network error while processing GRN approval.');
     } finally {
-      setLoading(false);
       setIsSubmitting(false);
+      setLoading(false);
     }
   };
 
@@ -6553,7 +6595,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                           <td className="p-3 font-mono text-slate-600">{row.date}</td>
                           <td className="p-3">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              row.credit > 0 ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800'
+                              row.type?.includes('Spot Cash') || row.type?.includes('Cash Purchase')
+                                ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                : row.credit > 0
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : 'bg-indigo-100 text-indigo-900 border border-indigo-300'
                             }`}>
                               {row.type}
                             </span>
@@ -6579,7 +6625,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                             Rs. {(row.runningBalance || 0).toLocaleString()}
                           </td>
                           <td className="p-3 text-center">
-                            {row.type === 'Goods Received (GRN)' && row.rawItem?.ItemsReceived ? (
+                            {(row.type.includes('GRN') || row.type === 'Goods Received (GRN)') && (row.rawItem?.ItemsReceived || row.rawItem?.Items) ? (
                               <button
                                 onClick={() => setExpandedGrnId(expandedGrnId === row.id ? null : row.id)}
                                 className="text-indigo-600 hover:text-indigo-800 font-bold text-[11px] underline cursor-pointer"
@@ -6823,7 +6869,16 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   ) : (
                     filteredPurchaseOrders.map((po, idx) => (
                       <tr key={idx} className="hover:bg-slate-50">
-                        <td className="p-3 font-mono font-bold text-indigo-600">{po.POID}</td>
+                        <td className="p-3">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="font-mono font-bold text-indigo-600">{po.POID}</span>
+                            {po.PaymentMethod === 'Cash' || (po as any).PaymentTerms === 'Cash' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">CASH</span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">CREDIT</span>
+                            )}
+                          </div>
+                        </td>
                         <td className="p-3 font-bold text-slate-900">{po.VendorName}</td>
                         <td className="p-3 text-slate-600">{po.OrderDate}</td>
                         <td className="p-3 text-slate-600">{po.ExpectedDeliveryDate}</td>
@@ -7032,23 +7087,38 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                       </td>
                     </tr>
                   ) : (
-                    filteredGrns.map((grn, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50">
-                        <td className="p-3 font-mono font-bold text-emerald-700">{grn.GRNID}</td>
-                        <td className="p-3 font-mono font-bold text-indigo-600">{grn.POID}</td>
-                        <td className="p-3 font-bold text-slate-900">{grn.VendorName}</td>
-                        <td className="p-3 text-slate-600">{grn.ReceivedDate}</td>
-                        <td className="p-3 text-slate-500 font-mono">{grn.ChallanNo || grn.SupplierInvoiceNo || 'N/A'}</td>
-                        <td className="p-3 text-center font-bold text-slate-700">{grn.Items?.length || 0}</td>
-                        <td className="p-3 text-right font-bold text-slate-900">Rs. {(grn.TotalAmount || 0).toLocaleString()}</td>
-                        <td className="p-3 text-center">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            ✓ Stock Approved
-                          </span>
-                          <div className="text-[10px] font-mono text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded mt-1 font-semibold inline-block cursor-help" title="Double Entry GL Posted: Debit Inventory (103001) | Credit Accounts Payable (201001)">
-                            GL: Dr 103001 | Cr 201001
-                          </div>
-                        </td>
+                    filteredGrns.map((grn, idx) => {
+                      const isCashGrn = grn.PaymentMethod === 'Cash' || (grn as any).PaymentMode === 'Cash';
+                      return (
+                        <tr key={idx} className="hover:bg-slate-50">
+                          <td className="p-3">
+                            <div className="flex items-center space-x-1.5">
+                              <span className="font-mono font-bold text-emerald-700">{grn.GRNID}</span>
+                              {isCashGrn ? (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">CASH</span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">CREDIT</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="p-3 font-mono font-bold text-indigo-600">{grn.POID}</td>
+                          <td className="p-3 font-bold text-slate-900">{grn.VendorName}</td>
+                          <td className="p-3 text-slate-600">{grn.ReceivedDate}</td>
+                          <td className="p-3 text-slate-500 font-mono">{grn.ChallanNo || grn.SupplierInvoiceNo || 'N/A'}</td>
+                          <td className="p-3 text-center font-bold text-slate-700">{grn.Items?.length || 0}</td>
+                          <td className="p-3 text-right font-bold text-slate-900">Rs. {(grn.TotalAmount || 0).toLocaleString()}</td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              isCashGrn
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : 'bg-indigo-100 text-indigo-800 border border-indigo-300'
+                            }`}>
+                              {isCashGrn ? '💵 Cash Paid' : '💳 Credit (Payable)'}
+                            </span>
+                            <div className="text-[10px] font-mono text-slate-600 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded mt-1 font-semibold inline-block cursor-help" title={isCashGrn ? "Double Entry GL Posted: Debit Inventory (103001) | Credit Cash in Hand (101001)" : "Double Entry GL Posted: Debit Inventory (103001) | Credit Accounts Payable (201001)"}>
+                              {isCashGrn ? 'GL: Dr Stock | Cr Cash' : 'GL: Dr Stock | Cr AP'}
+                            </div>
+                          </td>
                         <td className="p-3 text-center">
                           <div className="flex items-center justify-center space-x-1.5">
                             <button
@@ -7072,9 +7142,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                           </div>
                         </td>
                       </tr>
-                    ))
-                  )}
-                </tbody>
+                    );
+                  })
+                )}
+              </tbody>
               </table>
             </div>
           </div>
@@ -7620,8 +7691,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
 
             <form onSubmit={handleCreatePo} className="space-y-5">
-              {/* TOP VENDOR & DATE SELECTOR */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
+              {/* TOP VENDOR, DATE & PAYMENT TERMS SELECTOR */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-200">
                 <div>
                   <label className="text-xs font-bold text-slate-700">Select Supplier Vendor</label>
                   <select
@@ -7648,6 +7719,17 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                     onChange={e => setPoForm({ ...poForm, ExpectedDeliveryDate: e.target.value })}
                     className="w-full mt-1 p-2 border rounded-xl text-xs bg-white font-bold text-slate-900"
                   />
+                </div>
+                <div>
+                  <label className="text-xs font-bold text-slate-700">Purchase Payment Terms</label>
+                  <select
+                    value={poForm.PaymentMethod || 'Credit'}
+                    onChange={e => setPoForm({ ...poForm, PaymentMethod: e.target.value as any })}
+                    className="w-full mt-1 p-2 border rounded-xl text-xs bg-white font-bold text-slate-900"
+                  >
+                    <option value="Credit">💳 Credit (Vendor Payable / Udhar)</option>
+                    <option value="Cash">💵 Cash (Spot Payment on Delivery)</option>
+                  </select>
                 </div>
               </div>
 
@@ -9266,6 +9348,56 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                     onChange={e => setGrnForm({ ...grnForm, SupplierInvoiceNo: e.target.value })}
                     className="w-full p-2 border rounded-xl text-xs bg-white"
                   />
+                </div>
+              </div>
+
+              {/* PAYMENT TERMS & REAL-TIME SETTLEMENT ROUTING TOGGLE */}
+              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
+                <div className="flex items-center space-x-3">
+                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-xs shrink-0 ${grnForm.PaymentMethod === 'Cash' ? 'bg-emerald-600' : 'bg-indigo-600'}`}>
+                    {grnForm.PaymentMethod === 'Cash' ? <Coins className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
+                  </div>
+                  <div>
+                    <div className="flex items-center space-x-2">
+                      <span className="text-xs font-black text-slate-900 uppercase tracking-wider">Purchase Payment Mode:</span>
+                      <span className={`px-2 py-0.5 rounded-md text-[11px] font-black uppercase ${grnForm.PaymentMethod === 'Cash' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-indigo-100 text-indigo-800 border border-indigo-300'}`}>
+                        {grnForm.PaymentMethod === 'Cash' ? '💵 Cash Spot Payment (Cash Book Outflow)' : '💳 Credit Purchase (Vendor Payable Account)'}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-600 mt-0.5">
+                      {grnForm.PaymentMethod === 'Cash'
+                        ? '✅ Cash Outflow: Generates Cash Payment Voucher (CPV), deducts cash from Clinic Cash Book & P&L, leaving vendor balance net zero (Rs. 0).'
+                        : '📋 Credit Liability: Posts unpaid stock inward to Vendor Accounts Payable (AP) ledger for deferred settlement without deducting cash.'}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-1.5 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs self-start md:self-auto shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => setGrnForm(prev => ({ ...prev, PaymentMethod: 'Credit' }))}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center space-x-1.5 ${
+                      grnForm.PaymentMethod !== 'Cash'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <CreditCard className="w-3.5 h-3.5" />
+                    <span>Credit (Payable)</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => setGrnForm(prev => ({ ...prev, PaymentMethod: 'Cash' }))}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center space-x-1.5 ${
+                      grnForm.PaymentMethod === 'Cash'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
+                    }`}
+                  >
+                    <Coins className="w-3.5 h-3.5" />
+                    <span>Cash (Spot Paid)</span>
+                  </button>
                 </div>
               </div>
 
