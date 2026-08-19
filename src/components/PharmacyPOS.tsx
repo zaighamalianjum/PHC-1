@@ -48,7 +48,11 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  Receipt
+  Receipt,
+  Boxes,
+  Clock,
+  CheckCheck,
+  Layers3
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
@@ -56,6 +60,7 @@ import { parseScannedItemQR, playBeepSound, ParsedQRResult } from '../utils/qrUt
 import {
   Patient,
   Item,
+  ItemBatch,
   Supplier,
   InvoiceHeader,
   InvoiceDetail,
@@ -70,6 +75,100 @@ import {
   Appointment,
   Token
 } from '../types';
+
+export const isBatchExpired = (expDate?: string) => {
+  if (!expDate || !expDate.trim()) return false;
+  try {
+    const clean = expDate.trim();
+    const parts = clean.split('-');
+    let expTimestamp = 0;
+    if (parts.length === 3) {
+      expTimestamp = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59).getTime();
+    } else if (parts.length === 2) {
+      // YYYY-MM
+      expTimestamp = new Date(Number(parts[0]), Number(parts[1]), 0, 23, 59, 59).getTime();
+    } else {
+      expTimestamp = new Date(clean).getTime();
+    }
+    return !isNaN(expTimestamp) && expTimestamp < Date.now();
+  } catch {
+    return false;
+  }
+};
+
+export const isBatchNearExpiry = (expDate?: string, days = 90) => {
+  if (!expDate || !expDate.trim()) return false;
+  try {
+    const clean = expDate.trim();
+    const parts = clean.split('-');
+    let expTimestamp = 0;
+    if (parts.length === 3) {
+      expTimestamp = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59).getTime();
+    } else if (parts.length === 2) {
+      expTimestamp = new Date(Number(parts[0]), Number(parts[1]), 0, 23, 59, 59).getTime();
+    } else {
+      expTimestamp = new Date(clean).getTime();
+    }
+    if (isNaN(expTimestamp)) return false;
+    const diffDays = (expTimestamp - Date.now()) / (1000 * 60 * 60 * 24);
+    return diffDays >= 0 && diffDays <= days;
+  } catch {
+    return false;
+  }
+};
+
+export const getItemExpirySummary = (item: Item) => {
+  const batches = Array.isArray(item.Batches) && item.Batches.length > 0
+    ? item.Batches
+    : (item.ExpDate ? [{
+        BatchID: `${item.ItemID}-legacy`,
+        ItemID: item.ItemID,
+        ItemName: item.ItemName,
+        BatchNo: item.BatchNo || 'B#1',
+        ExpDate: item.ExpDate,
+        MfgDate: item.MfgDate || '',
+        Qty: item.CStock,
+        InitialQty: item.CStock,
+        PurchasePrice: item.PurchasePrice,
+        SalePrice: item.Price,
+        Status: 'ACTIVE' as const,
+        CreatedAt: ''
+      }] : []);
+
+  if (batches.length === 0) {
+    return { status: 'NO_EXPIRY', label: 'No Expiry', count: 0, expiredQty: 0, nearExpiryQty: 0, activeQty: item.CStock, earliestExpDate: '' };
+  }
+
+  let expiredQty = 0;
+  let nearExpiryQty = 0;
+  let activeQty = 0;
+  let earliestExpDate = '';
+
+  batches.forEach(b => {
+    const q = Number(b.Qty) || 0;
+    if (isBatchExpired(b.ExpDate)) {
+      expiredQty += q;
+    } else if (isBatchNearExpiry(b.ExpDate)) {
+      nearExpiryQty += q;
+    } else {
+      activeQty += q;
+    }
+    if (b.ExpDate && (!earliestExpDate || b.ExpDate < earliestExpDate)) {
+      earliestExpDate = b.ExpDate;
+    }
+  });
+
+  if (expiredQty > 0 && activeQty === 0 && nearExpiryQty === 0) {
+    return { status: 'EXPIRED', label: 'Expired Lot', count: batches.length, expiredQty, nearExpiryQty, activeQty, earliestExpDate };
+  }
+  if (expiredQty > 0) {
+    return { status: 'PARTIAL_EXPIRED', label: `${expiredQty} Expired`, count: batches.length, expiredQty, nearExpiryQty, activeQty, earliestExpDate };
+  }
+  if (nearExpiryQty > 0) {
+    return { status: 'NEAR_EXPIRY', label: 'Expiring Soon', count: batches.length, expiredQty, nearExpiryQty, activeQty, earliestExpDate };
+  }
+  return { status: 'ACTIVE', label: 'Active', count: batches.length, expiredQty, nearExpiryQty, activeQty, earliestExpDate };
+};
 
 
 interface PharmacyPOSProps {

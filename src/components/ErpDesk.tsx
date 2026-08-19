@@ -3203,10 +3203,33 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             if (matched) {
               const qtyRec = Number(matched.ReceivedQty) || Number(matched.Qty) || 0;
               const uPrice = Number(matched.UnitPrice) || Number(matched.UnitCost) || Number(matched.PurchasePrice) || 0;
+              const newBatch = {
+                BatchID: `${inv.ItemID}-${matched.BatchNo || 'B' + Date.now().toString().slice(-4)}`,
+                ItemID: inv.ItemID,
+                ItemName: inv.ItemName,
+                BatchNo: matched.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+                MfgDate: matched.MfgDate || '',
+                ExpDate: matched.ExpiryDate || '',
+                PurchasePrice: uPrice > 0 ? uPrice : inv.PurchasePrice,
+                SalePrice: inv.Price,
+                Qty: qtyRec,
+                InitialQty: qtyRec,
+                GRNID: payload.GRNID,
+                POID: payload.POID,
+                VendorName: payload.VendorName,
+                ReceivedDate: payload.ReceivedDate,
+                Status: 'ACTIVE' as const,
+                CreatedAt: new Date().toISOString()
+              };
+              const existingBatches = Array.isArray(inv.Batches) ? inv.Batches : [];
               return {
                 ...inv,
                 CStock: (Number(inv.CStock) || 0) + qtyRec,
-                PurchasePrice: uPrice > 0 ? uPrice : inv.PurchasePrice
+                PurchasePrice: uPrice > 0 ? uPrice : inv.PurchasePrice,
+                BatchNo: matched.BatchNo || inv.BatchNo,
+                MfgDate: matched.MfgDate || inv.MfgDate,
+                ExpDate: matched.ExpiryDate || inv.ExpDate,
+                Batches: [newBatch, ...existingBatches]
               };
             }
             return inv;

@@ -2845,6 +2845,28 @@ app.post('/api/erp/grn/approve', async (req, res) => {
           if (item.BatchNo) setFields.BatchNo = item.BatchNo;
           if (item.MfgDate) setFields.MfgDate = item.MfgDate;
           if (item.ExpiryDate) setFields.ExpiryDate = item.ExpiryDate;
+          if (item.ExpiryDate) setFields.ExpDate = item.ExpiryDate;
+
+          const batchDoc = {
+            BatchID: `${matchedItem.ItemID}-${item.BatchNo || 'B' + Date.now().toString().slice(-4)}`,
+            ItemID: matchedItem.ItemID,
+            ItemName: matchedItem.ItemName,
+            BatchNo: item.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+            MfgDate: item.MfgDate || '',
+            ExpDate: item.ExpiryDate || item.ExpDate || '',
+            PurchasePrice: unitPrice > 0 ? unitPrice : (matchedItem.PurchasePrice || 0),
+            SalePrice: matchedItem.Price || 0,
+            Qty: qtyReceived,
+            InitialQty: qtyReceived,
+            GRNID: grn.GRNID,
+            POID: grn.POID,
+            VendorName: grn.VendorName || '',
+            ReceivedDate: grn.ReceivedDate || new Date().toISOString().split('T')[0],
+            Status: 'ACTIVE',
+            CreatedAt: new Date().toISOString()
+          };
+          const existingBatches = Array.isArray(matchedItem.Batches) ? matchedItem.Batches : [];
+          setFields.Batches = [batchDoc, ...existingBatches];
 
           const updatePayload = {
             $inc: { CStock: qtyReceived }
@@ -2864,11 +2886,32 @@ app.post('/api/erp/grn/approve', async (req, res) => {
           if (item.BatchNo) matchedItem.BatchNo = item.BatchNo;
           if (item.MfgDate) matchedItem.MfgDate = item.MfgDate;
           if (item.ExpiryDate) matchedItem.ExpiryDate = item.ExpiryDate;
+          if (item.ExpiryDate) matchedItem.ExpDate = item.ExpiryDate;
+          matchedItem.Batches = setFields.Batches;
         } else {
           // 2. New Item: Generate auto-increment ID starting after 1443 (e.g. 1444, 1445)
           maxNumericId++;
           const generatedItemId = String(maxNumericId);
           item.ItemID = generatedItemId;
+
+          const initialBatchDoc = {
+            BatchID: `${generatedItemId}-${item.BatchNo || 'B' + Date.now().toString().slice(-4)}`,
+            ItemID: generatedItemId,
+            ItemName: rawItemName,
+            BatchNo: item.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+            MfgDate: item.MfgDate || '',
+            ExpDate: item.ExpiryDate || item.ExpDate || '',
+            PurchasePrice: unitPrice,
+            SalePrice: unitPrice > 0 ? Math.round(unitPrice * 1.2) : 100,
+            Qty: qtyReceived,
+            InitialQty: qtyReceived,
+            GRNID: grn.GRNID,
+            POID: grn.POID,
+            VendorName: grn.VendorName || '',
+            ReceivedDate: grn.ReceivedDate || new Date().toISOString().split('T')[0],
+            Status: 'ACTIVE',
+            CreatedAt: new Date().toISOString()
+          };
 
           const newItemDoc = {
             ItemID: generatedItemId,
@@ -2882,7 +2925,9 @@ app.post('/api/erp/grn/approve', async (req, res) => {
             ReorderQty: 0,
             BatchNo: item.BatchNo || '',
             MfgDate: item.MfgDate || '',
-            ExpiryDate: item.ExpiryDate || ''
+            ExpiryDate: item.ExpiryDate || '',
+            ExpDate: item.ExpiryDate || '',
+            Batches: [initialBatchDoc]
           };
 
           await db.collection('items').insertOne(newItemDoc);

@@ -59,9 +59,30 @@ export interface Item {
   Category?: string;
   ReorderQty?: number; // Buy or reorder QTY
   VendorBarcode?: string; // Optional vendor/manufacturer barcode or QR code mapping (e.g. BM Private Limited QR code)
-  BatchNo?: string; // e.g. B# 115
+  BatchNo?: string; // e.g. B# 115 (Active/Latest Batch)
   MfgDate?: string; // e.g. Mfg: 05-26
   ExpDate?: string; // e.g. Exp: 05-31
+  Batches?: ItemBatch[]; // Multi-batch / Lot history
+}
+
+export interface ItemBatch {
+  _id?: string;
+  BatchID: string;
+  ItemID: string;
+  ItemName?: string;
+  BatchNo: string;
+  MfgDate?: string;
+  ExpDate: string;
+  PurchasePrice?: number;
+  SalePrice?: number;
+  Qty: number; // Remaining stock in this batch
+  InitialQty?: number;
+  GRNID?: string;
+  POID?: string;
+  VendorName?: string;
+  ReceivedDate?: string;
+  Status?: 'ACTIVE' | 'EXPIRED' | 'DEPLETED';
+  CreatedAt?: string;
 }
 
 export interface BarcodeMapping {
