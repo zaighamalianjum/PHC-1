@@ -1,0 +1,50 @@
+{
+  "name": "Store Medicine - Punjab Homeopathic Clinic",
+  "short_name": "Store Medicine",
+  "description": "Store Medicine Stock Inventory, OTC POS & Direct Dispensing App for Punjab Homeopathic Clinic",
+  "start_url": "/?app=store_medicine&tab=pharmacy&sub=store_sales",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0f172a",
+  "theme_color": "#1d4ed8",
+  "prefer_related_applications": false,
+  "categories": ["medical", "business", "productivity", "shopping"],
+  "icons": [
+    {
+      "src": "/pwa-icon.svg",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/nhc_logo.svg",
+      "sizes": "500x200",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Direct Store Sales",
+      "short_name": "Store POS",
+      "description": "Open Direct Medicine Sales & OTC Checkout",
+      "url": "/?app=store_medicine&tab=pharmacy&sub=store_sales",
+      "icons": [{ "src": "/pwa-icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Medicine Stock Manager",
+      "short_name": "Stock Check",
+      "description": "Search Medicine Stock, Batches & Retail Prices",
+      "url": "/?app=store_medicine&tab=pharmacy&sub=inventory_manager",
+      "icons": [{ "src": "/pwa-icon.svg", "sizes": "192x192" }]
+    },
+    {
+      "name": "Store Inward (GRN)",
+      "short_name": "GRN Inward",
+      "description": "Record Supplier Stock Inward & GRN",
+      "url": "/?app=store_medicine&tab=pharmacy&sub=grn",
+      "icons": [{ "src": "/pwa-icon.svg", "sizes": "192x192" }]
+    }
+  ]
+}

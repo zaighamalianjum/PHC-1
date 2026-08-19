@@ -77,11 +77,13 @@ import {
   Stethoscope,
   Maximize2,
   Minimize2,
-  CloudUpload
+  CloudUpload,
+  Smartphone
 } from 'lucide-react';
 import UnauthorizedModal from './components/UnauthorizedModal';
 import GlobalSearchHeader from './components/GlobalSearchHeader';
 import { CloudBackupModal } from './components/CloudBackupModal';
+import PwaInstallModal from './components/PwaInstallModal';
 
 const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, restricted: true },
@@ -165,10 +167,23 @@ export default function App() {
     }
   }, [usersList, currentUser.UserID]);
 
-  const [activeTab, setActiveTab] = useState<string>('dashboard');
+  const [activeTab, setActiveTab] = useState<string>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        if (params.get('app') === 'store_medicine' || params.get('module') === 'store_medicine' || params.get('tab') === 'pharmacy') {
+          return 'pharmacy';
+        }
+      }
+    } catch (e) {}
+    return 'dashboard';
+  });
   const [activePatientId, setActivePatientId] = useState<string>('');
   const [activePatientSubTab, setActivePatientSubTab] = useState<string>('');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+
+  // Store Medicine Mobile PWA Install Modal State
+  const [showPwaInstallModal, setShowPwaInstallModal] = useState<boolean>(false);
 
   const handleTabChange = (tabId: string, patientId?: string, subTab?: string) => {
     setIsMobileMenuOpen(false);
@@ -2591,6 +2606,17 @@ export default function App() {
                 )}
               </div>
 
+              {/* Mobile App PWA Install Button */}
+              <button
+                onClick={() => setShowPwaInstallModal(true)}
+                className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white px-2.5 py-1 rounded-md border border-emerald-400/40 shadow-xs flex items-center space-x-1.5 transition cursor-pointer shrink-0"
+                title="Install Store Medicine Android App on Phone"
+                id="top-pwa-app-btn"
+              >
+                <Smartphone className="w-3.5 h-3.5 text-white" />
+                <span className="text-[11px] font-black uppercase tracking-tight hidden sm:inline">Store App</span>
+              </button>
+
               {/* App-Wide Full Screen Toggle Button */}
               <button
                 onClick={toggleAppFullScreen}
@@ -2991,6 +3017,13 @@ export default function App() {
           onClose={() => setUnauthorizedModalState({ isOpen: false })}
           title={unauthorizedModalState.title}
           message={unauthorizedModalState.message}
+        />
+
+        {/* PWA Mobile App Install / QR Guide Modal */}
+        <PwaInstallModal
+          isOpen={showPwaInstallModal}
+          onClose={() => setShowPwaInstallModal(false)}
+          onLaunchStoreMode={() => handleTabChange('pharmacy')}
         />
 
         {/* Bento Footer */}

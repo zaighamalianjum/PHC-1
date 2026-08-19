@@ -22,7 +22,15 @@ import {
   ArrowDownRight,
   RefreshCw,
   Info,
-  HeartHandshake
+  HeartHandshake,
+  BookOpen,
+  Receipt,
+  Scale,
+  Layers,
+  CalendarRange,
+  ArrowRightLeft,
+  CheckCheck,
+  FileSpreadsheet
 } from 'lucide-react';
 
 import {
@@ -34,8 +42,11 @@ import {
   ErpPayroll,
   ErpExpense,
   ErpAsset,
-  User
+  User,
+  ACLedger,
+  TLAccount
 } from '../types';
+import { INITIAL_TL_ACCOUNTS } from '../data/initialData';
 
 export type ReportType =
   | 'pending_payments'
@@ -48,7 +59,8 @@ export type ReportType =
   | 'pnl_summary'
   | 'shift_collection_summary'
   | 'foc_cases_summary'
-  | 'store_medicine_report';
+  | 'store_medicine_report'
+  | 'ledger_postings';
 
 interface ReportingDeskProps {
   vendors?: ErpVendor[];
@@ -95,6 +107,8 @@ export default function ReportingDesk({
   invoices = [],
   invoiceDetails = [],
   salesReturns = [],
+  acLedger = [],
+  tlAccounts = [],
   visits = [],
   patients = [],
   currentUser,
@@ -269,14 +283,23 @@ export default function ReportingDesk({
   // Active Report Type Selection
   const [activeReport, setActiveReport] = useState<ReportType>('pending_payments');
 
-  // Date Range Filters
-  const [datePreset, setDatePreset] = useState<'today' | 'this_week' | 'this_month' | 'last_30_days' | 'this_quarter' | 'this_year' | 'custom' | 'all'>('this_month');
+  // Date Range & Fiscal Period Filters
+  const [datePreset, setDatePreset] = useState<'today' | 'this_week' | 'this_month' | 'last_30_days' | 'this_quarter' | 'this_fiscal_year' | 'last_fiscal_year' | 'this_year' | 'custom' | 'all'>('this_month');
   
   const todayStr = new Date().toISOString().split('T')[0];
   const firstDayOfMonthStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
 
   const [startDate, setStartDate] = useState<string>(firstDayOfMonthStr);
   const [endDate, setEndDate] = useState<string>(todayStr);
+
+  // Dedicated Fiscal Period State
+  const [selectedFiscalYear, setSelectedFiscalYear] = useState<string>('custom');
+  const [selectedFiscalMonth, setSelectedFiscalMonth] = useState<string>('all');
+
+  // General Ledger Specific Filters
+  const [ledgerAccountFilter, setLedgerAccountFilter] = useState<string>('all');
+  const [ledgerVchTypeFilter, setLedgerVchTypeFilter] = useState<string>('all');
+  const [ledgerDrCrFilter, setLedgerDrCrFilter] = useState<'all' | 'dr' | 'cr'>('all');
 
   // Search & Category Filter
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -309,36 +332,106 @@ export default function ReportingDesk({
     return cleanDate >= startDate && cleanDate <= endDate;
   };
 
-  // Handle Preset Changes
+  // Handle Preset Changes (Including Fiscal Years)
   const handlePresetChange = (preset: typeof datePreset) => {
     setDatePreset(preset);
+    setSelectedFiscalMonth('all');
     const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonth = now.getMonth(); // 0-indexed (6 = July)
+
     if (preset === 'today') {
       setStartDate(todayStr);
       setEndDate(todayStr);
+      setSelectedFiscalYear('custom');
     } else if (preset === 'this_week') {
       const day = now.getDay();
       const diffToMon = now.getDate() - day + (day === 0 ? -6 : 1);
       const mon = new Date(now.setDate(diffToMon));
       setStartDate(mon.toISOString().split('T')[0]);
       setEndDate(todayStr);
+      setSelectedFiscalYear('custom');
     } else if (preset === 'this_month') {
       setStartDate(new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]);
       setEndDate(todayStr);
+      setSelectedFiscalYear('custom');
     } else if (preset === 'last_30_days') {
       const past30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
       setStartDate(past30.toISOString().split('T')[0]);
       setEndDate(todayStr);
+      setSelectedFiscalYear('custom');
     } else if (preset === 'this_quarter') {
       const qMonth = Math.floor(now.getMonth() / 3) * 3;
       setStartDate(new Date(now.getFullYear(), qMonth, 1).toISOString().split('T')[0]);
       setEndDate(todayStr);
+      setSelectedFiscalYear('custom');
+    } else if (preset === 'this_fiscal_year') {
+      // Standard Fiscal Year: 1st July to 30th June
+      const fyStartYear = currentMonth >= 6 ? currentYear : currentYear - 1;
+      const fyEndYear = fyStartYear + 1;
+      setStartDate(`${fyStartYear}-07-01`);
+      setEndDate(`${fyEndYear}-06-30`);
+      setSelectedFiscalYear(`FY ${fyStartYear}-${fyEndYear}`);
+    } else if (preset === 'last_fiscal_year') {
+      const currentFyStart = currentMonth >= 6 ? currentYear : currentYear - 1;
+      const lastFyStart = currentFyStart - 1;
+      const lastFyEnd = currentFyStart;
+      setStartDate(`${lastFyStart}-07-01`);
+      setEndDate(`${lastFyEnd}-06-30`);
+      setSelectedFiscalYear(`FY ${lastFyStart}-${lastFyEnd}`);
     } else if (preset === 'this_year') {
       setStartDate(new Date(now.getFullYear(), 0, 1).toISOString().split('T')[0]);
-      setEndDate(todayStr);
+      setEndDate(`${currentYear}-12-31`);
+      setSelectedFiscalYear(`CY ${currentYear}`);
     } else if (preset === 'all') {
       setStartDate('2020-01-01');
       setEndDate('2030-12-31');
+      setSelectedFiscalYear('all');
+    }
+  };
+
+  // Fiscal Year Dropdown Quick Handler
+  const handleFiscalYearSelect = (fyKey: string) => {
+    setSelectedFiscalYear(fyKey);
+    setSelectedFiscalMonth('all');
+    if (fyKey === 'all') {
+      setDatePreset('all');
+      setStartDate('2020-01-01');
+      setEndDate('2030-12-31');
+    } else if (fyKey.startsWith('FY ')) {
+      const years = fyKey.replace('FY ', '').split('-');
+      if (years.length === 2) {
+        setDatePreset('custom');
+        setStartDate(`${years[0]}-07-01`);
+        setEndDate(`${years[1]}-06-30`);
+      }
+    } else if (fyKey.startsWith('CY ')) {
+      const year = fyKey.replace('CY ', '');
+      setDatePreset('custom');
+      setStartDate(`${year}-01-01`);
+      setEndDate(`${year}-12-31`);
+    }
+  };
+
+  // Fiscal Month Quick Jump Handler
+  const handleFiscalMonthSelect = (monthYearStr: string) => {
+    setSelectedFiscalMonth(monthYearStr);
+    if (monthYearStr === 'all') {
+      // Re-apply fiscal year or preset
+      if (selectedFiscalYear.startsWith('FY ')) {
+        handleFiscalYearSelect(selectedFiscalYear);
+      } else {
+        handlePresetChange(datePreset);
+      }
+      return;
+    }
+    const [yr, mo] = monthYearStr.split('-').map(Number);
+    if (yr && mo) {
+      const start = new Date(yr, mo - 1, 1);
+      const end = new Date(yr, mo, 0); // last day of month
+      setDatePreset('custom');
+      setStartDate(start.toISOString().split('T')[0]);
+      setEndDate(end.toISOString().split('T')[0]);
     }
   };
 
@@ -1143,6 +1236,424 @@ export default function ReportingDesk({
     };
   }, [filteredStoreMedicineRows]);
 
+  // Report 12: General Ledger & Double-Entry Postings Query Engine
+  const effectiveTlAccounts = useMemo(() => {
+    if (Array.isArray(tlAccounts) && tlAccounts.length > 0) return tlAccounts;
+    return INITIAL_TL_ACCOUNTS;
+  }, [tlAccounts]);
+
+  const accountLookup = useMemo(() => {
+    const map = new Map<number, { name: string; category: string }>();
+    effectiveTlAccounts.forEach(acc => {
+      let cat = 'Asset';
+      const slid = acc.SLID || Math.floor(acc.TLID / 1000);
+      if (acc.FLID === 1 || slid === 101 || slid === 102 || slid === 103) cat = 'Asset';
+      else if (acc.FLID === 2 || slid === 201) cat = 'Liability';
+      else if (acc.FLID === 3 || slid === 301) cat = 'Equity';
+      else if (acc.FLID === 4 || slid === 401 || slid === 402) cat = 'Income';
+      else if (acc.FLID === 5 || slid === 501 || slid === 502) cat = 'Expense';
+      map.set(acc.TLID, { name: acc.TLName, category: cat });
+    });
+    return map;
+  }, [effectiveTlAccounts]);
+
+  const rawLedgerLines = useMemo(() => {
+    const lines: Array<{
+      id: string;
+      txDate: string;
+      vchNo: string;
+      vchType: 'CPV' | 'CRV' | 'BPV' | 'BRV' | 'JV' | 'GRN' | 'INV' | 'SR';
+      tlid: number;
+      accountName: string;
+      accountCategory: string;
+      description: string;
+      payeeOrParty: string;
+      sourceModule: string;
+      debit: number;
+      credit: number;
+    }> = [];
+
+    // 1. Direct acLedger records from storage/props
+    if (Array.isArray(acLedger) && acLedger.length > 0) {
+      acLedger.forEach((entry, idx) => {
+        const tlid = Number(entry.TLID) || 101001;
+        const accInfo = accountLookup.get(tlid) || { name: `Account #${tlid}`, category: 'General' };
+        const vch = entry.VchNo || `VCH-${idx + 1}`;
+        let vType: any = 'JV';
+        if (vch.startsWith('CPV')) vType = 'CPV';
+        else if (vch.startsWith('CRV')) vType = 'CRV';
+        else if (vch.startsWith('BPV')) vType = 'BPV';
+        else if (vch.startsWith('BRV')) vType = 'BRV';
+        else if (vch.startsWith('GRN')) vType = 'GRN';
+        else if (vch.startsWith('INV') || vch.startsWith('POS')) vType = 'INV';
+        else if (vch.startsWith('SR')) vType = 'SR';
+
+        lines.push({
+          id: entry.ACLedgerID || `ACL-${idx + 1}`,
+          txDate: parseCleanDate(entry.TxDate || entry.Date || todayStr),
+          vchNo: vch,
+          vchType: vType,
+          tlid: tlid,
+          accountName: accInfo.name,
+          accountCategory: accInfo.category,
+          description: entry.Remarks || entry.Description || 'General Ledger Entry',
+          payeeOrParty: entry.Payee || entry.VendorName || entry.CustomerName || '',
+          sourceModule: entry.SourceModule || 'Accounts Ledger',
+          debit: Number(entry.Debit) || 0,
+          credit: Number(entry.Credit) || 0
+        });
+      });
+    }
+
+    // 2. Synthesize from transactions (Vouchers, Income, Expense, Vendor Payments)
+    effectiveTransactions.forEach((tx, idx) => {
+      const vch = tx.TransactionID || `TXN-${idx + 1}`;
+      if (lines.some(l => l.vchNo === vch)) return;
+
+      const txDate = parseCleanDate(tx.Date || todayStr);
+      const amt = Number(tx.Amount) || 0;
+      const isBank = tx.PaymentMethod?.toLowerCase().includes('bank') || tx.PaymentMethod?.toLowerCase().includes('online');
+      const cashOrBankTlid = isBank ? 101004 : 101001;
+      const cashOrBankName = isBank ? 'Main Bank Current Account' : 'Cash-in-Hand (Morning Shift)';
+
+      if (tx.Type === 'Income') {
+        const vType = isBank ? 'BRV' : 'CRV';
+        // Dr Cash / Bank
+        lines.push({
+          id: `TXN-DR-${tx.TransactionID || idx}`,
+          txDate,
+          vchNo: vch,
+          vchType: vType,
+          tlid: cashOrBankTlid,
+          accountName: cashOrBankName,
+          accountCategory: 'Asset',
+          description: tx.Description || `Income Receipt: ${tx.Category}`,
+          payeeOrParty: tx.VendorName || tx.CreatedBy || '',
+          sourceModule: 'Financial Desk',
+          debit: amt,
+          credit: 0
+        });
+        // Cr Income
+        lines.push({
+          id: `TXN-CR-${tx.TransactionID || idx}`,
+          txDate,
+          vchNo: vch,
+          vchType: vType,
+          tlid: 401001,
+          accountName: 'Appointment OPD Ticket Revenue',
+          accountCategory: 'Income',
+          description: tx.Description || `Income Received - ${tx.Category}`,
+          payeeOrParty: tx.VendorName || '',
+          sourceModule: 'Financial Desk',
+          debit: 0,
+          credit: amt
+        });
+      } else if (tx.Type === 'VendorPayment') {
+        const vType = isBank ? 'BPV' : 'CPV';
+        // Dr Accounts Payable (Vendor)
+        lines.push({
+          id: `TXN-DR-${tx.TransactionID || idx}`,
+          txDate,
+          vchNo: vch,
+          vchType: vType,
+          tlid: 201001,
+          accountName: `Accounts Payable: ${tx.VendorName || 'Suppliers'}`,
+          accountCategory: 'Liability',
+          description: tx.Description || `Payment to Vendor ${tx.VendorName}`,
+          payeeOrParty: tx.VendorName || '',
+          sourceModule: 'Vendor Ledger',
+          debit: amt,
+          credit: 0
+        });
+        // Cr Cash / Bank
+        lines.push({
+          id: `TXN-CR-${tx.TransactionID || idx}`,
+          txDate,
+          vchNo: vch,
+          vchType: vType,
+          tlid: cashOrBankTlid,
+          accountName: cashOrBankName,
+          accountCategory: 'Asset',
+          description: tx.Description || `Cash/Bank Disbursed to ${tx.VendorName}`,
+          payeeOrParty: tx.VendorName || '',
+          sourceModule: 'Vendor Ledger',
+          debit: 0,
+          credit: amt
+        });
+      } else {
+        // Operating Expense
+        const vType = isBank ? 'BPV' : 'CPV';
+        // Dr Expense
+        lines.push({
+          id: `TXN-DR-${tx.TransactionID || idx}`,
+          txDate,
+          vchNo: vch,
+          vchType: vType,
+          tlid: 502001,
+          accountName: `Operating Expense (${tx.Category || 'General'})`,
+          accountCategory: 'Expense',
+          description: tx.Description || `Expense - ${tx.Category}`,
+          payeeOrParty: tx.VendorName || '',
+          sourceModule: 'Expense Desk',
+          debit: amt,
+          credit: 0
+        });
+        // Cr Cash / Bank
+        lines.push({
+          id: `TXN-CR-${tx.TransactionID || idx}`,
+          txDate,
+          vchNo: vch,
+          vchType: vType,
+          tlid: cashOrBankTlid,
+          accountName: cashOrBankName,
+          accountCategory: 'Asset',
+          description: tx.Description || `Payment for ${tx.Category}`,
+          payeeOrParty: tx.VendorName || '',
+          sourceModule: 'Expense Desk',
+          debit: 0,
+          credit: amt
+        });
+      }
+    });
+
+    // 3. Synthesize from Goods Received Notes (GRN)
+    effectiveGrns.forEach((grn, idx) => {
+      const vch = grn.GRNID || `GRN-${idx + 1}`;
+      if (lines.some(l => l.vchNo === vch)) return;
+
+      const txDate = parseCleanDate(grn.ReceivedDate || todayStr);
+      const amt = Number(grn.TotalAmount) || 0;
+      const isCashGrn = grn.PaymentMethod === 'Cash' || (grn as any).PaymentMode === 'Cash';
+
+      // Dr Inventory (103001)
+      lines.push({
+        id: `GRN-DR-${grn.GRNID || idx}`,
+        txDate,
+        vchNo: vch,
+        vchType: 'GRN',
+        tlid: 103001,
+        accountName: 'Pharmacy Stock Ledger',
+        accountCategory: 'Asset',
+        description: `Stock Received: PO ${grn.POID} (${grn.Items?.length || 0} items)`,
+        payeeOrParty: grn.VendorName || '',
+        sourceModule: 'Procurement & GRN',
+        debit: amt,
+        credit: 0
+      });
+
+      if (isCashGrn) {
+        // Cr Cash-in-Hand (101001)
+        lines.push({
+          id: `GRN-CR-${grn.GRNID || idx}`,
+          txDate,
+          vchNo: vch,
+          vchType: 'CPV',
+          tlid: 101001,
+          accountName: 'Cash-in-Hand (Morning Shift)',
+          accountCategory: 'Asset',
+          description: `Spot Cash Disbursed for GRN ${grn.GRNID} to ${grn.VendorName}`,
+          payeeOrParty: grn.VendorName || '',
+          sourceModule: 'Procurement & GRN',
+          debit: 0,
+          credit: amt
+        });
+      } else {
+        // Cr Accounts Payable (201001)
+        lines.push({
+          id: `GRN-CR-${grn.GRNID || idx}`,
+          txDate,
+          vchNo: vch,
+          vchType: 'GRN',
+          tlid: 201001,
+          accountName: `Accounts Payable: ${grn.VendorName}`,
+          accountCategory: 'Liability',
+          description: `Credit Bill Payable for GRN ${grn.GRNID}`,
+          payeeOrParty: grn.VendorName || '',
+          sourceModule: 'Procurement & GRN',
+          debit: 0,
+          credit: amt
+        });
+      }
+    });
+
+    // 4. Synthesize from Payrolls
+    effectivePayrolls.forEach((pay, idx) => {
+      const vch = pay.PayrollID || `PAY-${idx + 1}`;
+      if (lines.some(l => l.vchNo === vch)) return;
+
+      const txDate = parseCleanDate(pay.PaymentDate || `${pay.MonthYear}-01`);
+      const amt = Number(pay.NetSalary) || 0;
+      const isBank = pay.PaymentMethod?.toLowerCase().includes('bank');
+
+      // Dr Salary Expense
+      lines.push({
+        id: `PAY-DR-${pay.PayrollID || idx}`,
+        txDate,
+        vchNo: vch,
+        vchType: isBank ? 'BPV' : 'CPV',
+        tlid: 501001,
+        accountName: 'Staff & Medical Salaries Expense',
+        accountCategory: 'Expense',
+        description: `Monthly Salary: ${pay.EmployeeName} (${pay.MonthYear})`,
+        payeeOrParty: pay.EmployeeName || '',
+        sourceModule: 'Payroll & HR',
+        debit: amt,
+        credit: 0
+      });
+      // Cr Cash / Bank
+      lines.push({
+        id: `PAY-CR-${pay.PayrollID || idx}`,
+        txDate,
+        vchNo: vch,
+        vchType: isBank ? 'BPV' : 'CPV',
+        tlid: isBank ? 101004 : 101001,
+        accountName: isBank ? 'Main Bank Current Account' : 'Cash-in-Hand (Morning Shift)',
+        accountCategory: 'Asset',
+        description: `Salary Outflow for ${pay.EmployeeName}`,
+        payeeOrParty: pay.EmployeeName || '',
+        sourceModule: 'Payroll & HR',
+        debit: 0,
+        credit: amt
+      });
+    });
+
+    // 5. Synthesize from Expenses
+    effectiveExpenses.forEach((exp, idx) => {
+      const vch = exp.ExpenseID || `EXP-${idx + 1}`;
+      if (lines.some(l => l.vchNo === vch)) return;
+
+      const txDate = parseCleanDate(exp.ExpenseDate || todayStr);
+      const amt = Number(exp.Amount) || 0;
+      const isBank = exp.PaymentMethod?.toLowerCase().includes('bank');
+
+      // Dr Expense
+      lines.push({
+        id: `EXP-DR-${exp.ExpenseID || idx}`,
+        txDate,
+        vchNo: vch,
+        vchType: isBank ? 'BPV' : 'CPV',
+        tlid: 502001,
+        accountName: `Operating Expense (${exp.Category || 'General'})`,
+        accountCategory: 'Expense',
+        description: exp.Description || `Expense - ${exp.Category}`,
+        payeeOrParty: '',
+        sourceModule: 'Expense Desk',
+        debit: amt,
+        credit: 0
+      });
+      // Cr Cash / Bank
+      lines.push({
+        id: `EXP-CR-${exp.ExpenseID || idx}`,
+        txDate,
+        vchNo: vch,
+        vchType: isBank ? 'BPV' : 'CPV',
+        tlid: isBank ? 101004 : 101001,
+        accountName: isBank ? 'Main Bank Current Account' : 'Cash-in-Hand (Morning Shift)',
+        accountCategory: 'Asset',
+        description: `Cash Payment for ${exp.Category}`,
+        payeeOrParty: '',
+        sourceModule: 'Expense Desk',
+        debit: 0,
+        credit: amt
+      });
+    });
+
+    // Sort by Date ascending, then Voucher No
+    lines.sort((a, b) => {
+      if (a.txDate !== b.txDate) return a.txDate.localeCompare(b.txDate);
+      return a.vchNo.localeCompare(b.vchNo);
+    });
+
+    return lines;
+  }, [acLedger, effectiveTransactions, effectiveGrns, effectivePayrolls, effectiveExpenses, accountLookup, todayStr]);
+
+  // Filtered Ledger Rows with Opening and Running Balance
+  const filteredLedgerData = useMemo(() => {
+    let list = rawLedgerLines;
+
+    // Filter by Account
+    if (ledgerAccountFilter !== 'all') {
+      const targetTlid = Number(ledgerAccountFilter);
+      list = list.filter(l => l.tlid === targetTlid);
+    }
+
+    // Filter by Voucher Type
+    if (ledgerVchTypeFilter !== 'all') {
+      list = list.filter(l => l.vchType === ledgerVchTypeFilter);
+    }
+
+    // Filter by Dr / Cr
+    if (ledgerDrCrFilter === 'dr') {
+      list = list.filter(l => l.debit > 0);
+    } else if (ledgerDrCrFilter === 'cr') {
+      list = list.filter(l => l.credit > 0);
+    }
+
+    // Calculate Opening Balance prior to startDate
+    let openingDebit = 0;
+    let openingCredit = 0;
+    list.forEach(l => {
+      if (l.txDate < startDate) {
+        openingDebit += l.debit;
+        openingCredit += l.credit;
+      }
+    });
+    const openingBalance = openingDebit - openingCredit;
+
+    // Filter by Selected Date Range / Fiscal Period
+    const periodList = list.filter(l => isWithinDateRange(l.txDate));
+
+    // Filter by Search Query
+    const searchedList = periodList.filter(l => {
+      if (!searchQuery.trim()) return true;
+      const q = searchQuery.toLowerCase();
+      return (
+        l.vchNo.toLowerCase().includes(q) ||
+        l.accountName.toLowerCase().includes(q) ||
+        String(l.tlid).includes(q) ||
+        l.description.toLowerCase().includes(q) ||
+        l.payeeOrParty.toLowerCase().includes(q) ||
+        String(l.debit).includes(q) ||
+        String(l.credit).includes(q) ||
+        l.vchType.toLowerCase().includes(q)
+      );
+    });
+
+    // Compute running balance progressively
+    let running = openingBalance;
+    const rowsWithBalance = searchedList.map(item => {
+      running += (item.debit - item.credit);
+      return {
+        ...item,
+        runningBalance: running
+      };
+    });
+
+    const totalDebits = rowsWithBalance.reduce((sum, r) => sum + r.debit, 0);
+    const totalCredits = rowsWithBalance.reduce((sum, r) => sum + r.credit, 0);
+    const netPeriodMovement = totalDebits - totalCredits;
+    const uniqueVouchers = new Set(rowsWithBalance.map(r => r.vchNo)).size;
+    const uniqueAccounts = new Set(rowsWithBalance.map(r => r.tlid)).size;
+    const isBalanced = Math.abs(totalDebits - totalCredits) < 0.01;
+    const balanceDifference = Math.abs(totalDebits - totalCredits);
+
+    return {
+      rows: rowsWithBalance,
+      openingBalance,
+      openingDebit,
+      openingCredit,
+      closingBalance: running,
+      totalDebits,
+      totalCredits,
+      netPeriodMovement,
+      postingsCount: rowsWithBalance.length,
+      uniqueVouchersCount: uniqueVouchers,
+      activeAccountsCount: uniqueAccounts,
+      isBalanced,
+      balanceDifference
+    };
+  }, [rawLedgerLines, ledgerAccountFilter, ledgerVchTypeFilter, ledgerDrCrFilter, startDate, endDate, datePreset, searchQuery]);
+
   // Available Item Categories (Fully synchronized with Stock Manager & Pharmacy POS)
   const categoriesList = useMemo(() => {
     const set = new Set<string>();
@@ -1370,6 +1881,52 @@ export default function ReportingDesk({
         filteredStoreMedicineSummary.totalGrossProfit,
         filteredStoreMedicineSummary.overallMarginPct.toFixed(1) + '%'
       ]);
+    } else if (activeReport === 'ledger_postings') {
+      headers = [
+        'Posting ID',
+        'Date',
+        'Voucher No',
+        'Type',
+        'Account Code (TLID)',
+        'Account Title',
+        'Account Category',
+        'Party / Payee / Reference',
+        'Narration / Description',
+        'Debit Dr (Rs.)',
+        'Credit Cr (Rs.)',
+        'Running Balance (Rs.)',
+        'Source Module'
+      ];
+      rows = filteredLedgerData.rows.map(r => [
+        r.id,
+        r.txDate,
+        r.vchNo,
+        r.vchType,
+        r.tlid,
+        r.accountName,
+        r.accountCategory,
+        r.payeeOrParty || 'N/A',
+        r.description,
+        r.debit,
+        r.credit,
+        r.runningBalance ?? 0,
+        r.sourceModule
+      ]);
+      rows.push([
+        'TOTALS',
+        `Period: ${startDate} to ${endDate}`,
+        `${filteredLedgerData.uniqueVouchersCount} Vouchers`,
+        '',
+        '',
+        `${filteredLedgerData.activeAccountsCount} Accounts`,
+        filteredLedgerData.isBalanced ? 'BALANCED' : 'UNBALANCED',
+        '',
+        `Total Movement: Rs. ${filteredLedgerData.netPeriodMovement.toLocaleString()}`,
+        filteredLedgerData.totalDebits,
+        filteredLedgerData.totalCredits,
+        filteredLedgerData.closingBalance,
+        ''
+      ]);
     }
 
     const csvContent = 'data:text/csv;charset=utf-8,' +
@@ -1411,7 +1968,8 @@ export default function ReportingDesk({
       pnl_summary: 'Executive Profit & Loss Financial Summary Statement',
       shift_collection_summary: 'Shift-Wise Collection & Revenue Summary Statement',
       foc_cases_summary: 'Free of Charge (FOC) Cases & Welfare Waiver Report',
-      store_medicine_report: 'Store Medicine Sales, Cost Price & Profit Margin Analysis Report'
+      store_medicine_report: 'Store Medicine Sales, Cost Price & Profit Margin Analysis Report',
+      ledger_postings: 'General Ledger & Double-Entry Postings Audit Report'
     };
 
     const recordCountText =
@@ -1424,7 +1982,8 @@ export default function ReportingDesk({
       activeReport === 'pnl_summary' ? 'Executive Financial Summary' :
       activeReport === 'foc_cases_summary' ? `${focReportData.totalCount} FOC Patients` :
       activeReport === 'shift_collection_summary' ? `${shiftCollectionData.dailyRows.length} Daily Records` :
-      activeReport === 'store_medicine_report' ? `${filteredStoreMedicineRows.length} Store Medicine Lines` : `${poData.length} Purchase Orders`;
+      activeReport === 'store_medicine_report' ? `${filteredStoreMedicineRows.length} Store Medicine Lines` :
+      activeReport === 'ledger_postings' ? `${filteredLedgerData.rows.length} Ledger Postings (${filteredLedgerData.uniqueVouchersCount} Vouchers)` : `${poData.length} Purchase Orders`;
 
     let tableHtml = '';
 
@@ -1847,6 +2406,85 @@ export default function ReportingDesk({
               <td style="text-align: right; color: #38bdf8; font-size: 13px;">Rs. ${filteredStoreMedicineSummary.totalNetSales.toLocaleString()}</td>
               <td style="text-align: right; color: #4ade80; font-size: 13px;">Rs. ${filteredStoreMedicineSummary.totalGrossProfit.toLocaleString()}</td>
               <td style="text-align: right; color: #facc15; font-size: 13px;">${filteredStoreMedicineSummary.overallMarginPct.toFixed(1)}%</td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
+    } else if (activeReport === 'ledger_postings') {
+      const selectedAccLabel = ledgerAccountFilter === 'all'
+        ? 'All General Ledger Accounts'
+        : (effectiveTlAccounts.find(a => String(a.TLID) === String(ledgerAccountFilter))?.TLName || `Account #${ledgerAccountFilter}`);
+
+      tableHtml = `
+        <div style="margin-bottom: 12px; font-size: 11px; background: #f8fafc; padding: 10px 14px; border: 1.5px solid #cbd5e1; border-radius: 8px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;">
+          <div>
+            <div style="font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase;">QUERY ACCOUNT</div>
+            <div style="font-weight: 700; color: #0f172a; margin-top: 2px;">${selectedAccLabel}</div>
+          </div>
+          <div>
+            <div style="font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase;">OPENING BALANCE (PRE-PERIOD)</div>
+            <div style="font-weight: 800; color: ${filteredLedgerData.openingBalance >= 0 ? '#047857' : '#be123c'}; margin-top: 2px; font-family: monospace;">Rs. ${filteredLedgerData.openingBalance.toLocaleString()}</div>
+          </div>
+          <div>
+            <div style="font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase;">DOUBLE-ENTRY STATUS</div>
+            <div style="font-weight: 800; margin-top: 2px;">
+              ${filteredLedgerData.isBalanced 
+                ? '<span style="color: #059669; font-weight: bold;">✓ Balanced (Dr = Cr)</span>' 
+                : `<span style="color: #dc2626; font-weight: bold;">Variance: Rs. ${filteredLedgerData.balanceDifference.toLocaleString()}</span>`}
+            </div>
+          </div>
+        </div>
+
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Voucher #</th>
+              <th>Type</th>
+              <th>Account Code & Title</th>
+              <th>Party / Reference</th>
+              <th>Narration / Details</th>
+              <th style="text-align: right">Debit Dr (Rs.)</th>
+              <th style="text-align: right">Credit Cr (Rs.)</th>
+              <th style="text-align: right">Balance (Rs.)</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background: #f1f5f9; font-weight: bold;">
+              <td>${startDate}</td>
+              <td style="font-family: monospace;">OPENING</td>
+              <td><span class="badge">BF</span></td>
+              <td colspan="3"><b>Opening Balance Brought Forward</b> (Prior to ${startDate})</td>
+              <td style="text-align: right; color: #64748b;">—</td>
+              <td style="text-align: right; color: #64748b;">—</td>
+              <td style="text-align: right; font-family: monospace; font-weight: 800; color: #0f172a;">Rs. ${filteredLedgerData.openingBalance.toLocaleString()}</td>
+            </tr>
+            ${filteredLedgerData.rows.length === 0 ? `
+              <tr>
+                <td colspan="9" style="text-align: center; color: #94a3b8; padding: 20px; font-style: italic;">
+                  No double-entry ledger transactions found for the selected fiscal date period and query filters.
+                </td>
+              </tr>
+            ` : filteredLedgerData.rows.map(r => `
+              <tr>
+                <td>${r.txDate}</td>
+                <td style="font-family: monospace; font-weight: bold;">${r.vchNo}</td>
+                <td><span class="badge" style="background: #e0e7ff; color: #3730a3;">${r.vchType}</span></td>
+                <td><b>${r.tlid}</b> - ${r.accountName}</td>
+                <td>${r.payeeOrParty || '—'}</td>
+                <td style="color: #334155;">${r.description}</td>
+                <td style="text-align: right; font-weight: bold; color: ${r.debit > 0 ? '#059669' : '#94a3b8'};">${r.debit > 0 ? `Rs. ${r.debit.toLocaleString()}` : '-'}</td>
+                <td style="text-align: right; font-weight: bold; color: ${r.credit > 0 ? '#d97706' : '#94a3b8'};">${r.credit > 0 ? `Rs. ${r.credit.toLocaleString()}` : '-'}</td>
+                <td style="text-align: right; font-family: monospace; font-weight: 800; color: #0f172a;">Rs. ${(r.runningBalance ?? 0).toLocaleString()}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background: #0f172a; color: white; font-weight: bold;">
+              <td colspan="6">PERIOD GRAND TOTALS (${filteredLedgerData.rows.length} POSTINGS • ${filteredLedgerData.uniqueVouchersCount} VOUCHERS)</td>
+              <td style="text-align: right; color: #6ee7b7; font-size: 12.5px;">Rs. ${filteredLedgerData.totalDebits.toLocaleString()}</td>
+              <td style="text-align: right; color: #fde68a; font-size: 12.5px;">Rs. ${filteredLedgerData.totalCredits.toLocaleString()}</td>
+              <td style="text-align: right; color: #38bdf8; font-size: 13px;">Rs. ${filteredLedgerData.closingBalance.toLocaleString()}</td>
             </tr>
           </tfoot>
         </table>
@@ -2290,15 +2928,16 @@ export default function ReportingDesk({
         </div>
 
         {/* REPORT TYPE SELECTOR BUTTONS */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-11 gap-2 mt-6 pt-5 border-t border-slate-800">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-12 gap-2 mt-6 pt-5 border-t border-slate-800">
           {[
+            { id: 'ledger_postings', label: 'GL & Ledger Postings', icon: BookOpen, badge: filteredLedgerData.rows.length },
             { id: 'pending_payments', label: 'Pending Vendor Payments', icon: Building2, badge: pendingPaymentsSummary.vendorsWithDues },
             { id: 'payroll_disbursement', label: 'Salary Disbursement', icon: Users, badge: payrollSummary.recordCount },
             { id: 'expense_analysis', label: 'Expense Analysis', icon: DollarSign, badge: expenseSummary.count },
             { id: 'purchase_orders', label: 'Purchase Orders', icon: ShoppingCart, badge: poSummary.totalPos },
             { id: 'shift_collection_summary', label: 'Shift Collection', icon: PieChart },
             { id: 'foc_cases_summary', label: 'FOC Cases', icon: HeartHandshake, badge: focReportData.totalCount },
-            { id: 'store_medicine_report', label: 'Store Sales & Profit Margin', icon: Boxes, badge: storeMedicineReportData.rows.length },
+            { id: 'store_medicine_report', label: 'Store Sales & Margins', icon: Boxes, badge: storeMedicineReportData.rows.length },
             { id: 'current_stock', label: 'Current Stock', icon: Boxes, badge: currentStockSummary.totalItems },
             { id: 'minimum_stock', label: 'Minimum Stock Alert', icon: AlertTriangle, badge: minimumStockSummary.totalLowStock, isAlert: true },
             { id: 'required_stock', label: 'Required Requisition', icon: PackagePlus, badge: requiredStockSummary.totalItemsToOrder },
@@ -2310,14 +2949,14 @@ export default function ReportingDesk({
               <button
                 key={tab.id}
                 onClick={() => setActiveReport(tab.id as ReportType)}
-                className={`p-3 rounded-xl transition flex flex-col items-center text-center space-y-1.5 cursor-pointer border ${
+                className={`p-2.5 rounded-xl transition flex flex-col items-center text-center space-y-1.5 cursor-pointer border ${
                   isActive
                     ? 'bg-indigo-600 border-indigo-400 text-white shadow-md font-bold'
                     : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700/80 text-slate-300 font-medium'
                 }`}
               >
                 <div className="relative">
-                  <Icon className={`w-5 h-5 ${isActive ? 'text-white' : tab.isAlert ? 'text-amber-400' : 'text-indigo-400'}`} />
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : tab.isAlert ? 'text-amber-400' : 'text-indigo-400'}`} />
                   {tab.badge !== undefined && tab.badge > 0 && (
                     <span className={`absolute -top-2 -right-3 px-1.5 py-0.2 text-[9px] font-bold rounded-full ${
                       tab.isAlert ? 'bg-rose-500 text-white' : 'bg-slate-900 text-indigo-300 border border-slate-700'
@@ -2326,7 +2965,7 @@ export default function ReportingDesk({
                     </span>
                   )}
                 </div>
-                <span className="text-[11px] leading-tight line-clamp-2">{tab.label}</span>
+                <span className="text-[10.5px] leading-tight line-clamp-2">{tab.label}</span>
               </button>
             );
           })}
@@ -2335,10 +2974,10 @@ export default function ReportingDesk({
 
       {/* FILTER & DATE CONTROLS BAR */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-sm space-y-3">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          {/* Quick Date Presets */}
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          {/* Quick Date & Fiscal Presets */}
           <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar pb-1">
-            <span className="text-xs font-bold text-slate-500 flex items-center space-x-1 pr-1">
+            <span className="text-xs font-bold text-slate-500 flex items-center space-x-1 pr-1 shrink-0">
               <Calendar className="w-3.5 h-3.5" />
               <span>Period:</span>
             </span>
@@ -2348,14 +2987,15 @@ export default function ReportingDesk({
               { id: 'this_month', label: 'This Month' },
               { id: 'last_30_days', label: 'Last 30 Days' },
               { id: 'this_quarter', label: 'This Quarter' },
-              { id: 'this_year', label: 'This Year' },
-              { id: 'custom', label: 'Custom Date' },
+              { id: 'this_fiscal_year', label: 'This FY (25-26)' },
+              { id: 'last_fiscal_year', label: 'Last FY (24-25)' },
+              { id: 'this_year', label: 'CY 2026' },
               { id: 'all', label: 'All Time' }
             ].map(p => (
               <button
                 key={p.id}
                 onClick={() => handlePresetChange(p.id as any)}
-                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer border ${
+                className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer border whitespace-nowrap shrink-0 ${
                   datePreset === p.id
                     ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
                     : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
@@ -2366,9 +3006,52 @@ export default function ReportingDesk({
             ))}
           </div>
 
-          {/* Date Picker Range Inputs */}
-          <div className="flex items-center space-x-2">
+          {/* Date Picker Range Inputs & Fiscal Pickers */}
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Fiscal Year Selector */}
             <div className="flex items-center space-x-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">FY:</span>
+              <select
+                value={selectedFiscalYear}
+                onChange={e => handleFiscalYearSelect(e.target.value)}
+                className="text-xs font-bold text-slate-800 bg-transparent focus:outline-hidden cursor-pointer"
+              >
+                <option value="custom">Fiscal Year...</option>
+                <option value="FY 2025-2026">FY 2025-2026 (Jul 25 - Jun 26)</option>
+                <option value="FY 2024-2025">FY 2024-2025 (Jul 24 - Jun 25)</option>
+                <option value="FY 2023-2024">FY 2023-2024 (Jul 23 - Jun 24)</option>
+                <option value="CY 2026">CY 2026 (Jan - Dec 2026)</option>
+                <option value="CY 2025">CY 2025 (Jan - Dec 2025)</option>
+                <option value="all">All Fiscal Years</option>
+              </select>
+            </div>
+
+            {/* Fiscal Month Selector */}
+            <div className="flex items-center space-x-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+              <span className="text-[10px] font-bold text-slate-400 uppercase">Month:</span>
+              <select
+                value={selectedFiscalMonth}
+                onChange={e => handleFiscalMonthSelect(e.target.value)}
+                className="text-xs font-bold text-slate-800 bg-transparent focus:outline-hidden cursor-pointer"
+              >
+                <option value="all">All Months</option>
+                <option value="2025-07">Jul 2025 (M1)</option>
+                <option value="2025-08">Aug 2025 (M2)</option>
+                <option value="2025-09">Sep 2025 (M3)</option>
+                <option value="2025-10">Oct 2025 (M4)</option>
+                <option value="2025-11">Nov 2025 (M5)</option>
+                <option value="2025-12">Dec 2025 (M6)</option>
+                <option value="2026-01">Jan 2026 (M7)</option>
+                <option value="2026-02">Feb 2026 (M8)</option>
+                <option value="2026-03">Mar 2026 (M9)</option>
+                <option value="2026-04">Apr 2026 (M10)</option>
+                <option value="2026-05">May 2026 (M11)</option>
+                <option value="2026-06">Jun 2026 (M12)</option>
+              </select>
+            </div>
+
+            {/* Exact Date Pickers */}
+            <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
               <span className="text-[10px] font-bold text-slate-400 uppercase">From:</span>
               <input
                 type="date"
@@ -2376,12 +3059,12 @@ export default function ReportingDesk({
                 onChange={e => {
                   setStartDate(e.target.value);
                   setDatePreset('custom');
+                  setSelectedFiscalYear('custom');
+                  setSelectedFiscalMonth('all');
                 }}
                 className="text-xs font-bold text-slate-800 bg-transparent focus:outline-hidden"
               />
-            </div>
-            <span className="text-slate-400 font-bold text-xs">-</span>
-            <div className="flex items-center space-x-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
+              <span className="text-slate-400 font-bold text-xs">-</span>
               <span className="text-[10px] font-bold text-slate-400 uppercase">To:</span>
               <input
                 type="date"
@@ -2389,6 +3072,8 @@ export default function ReportingDesk({
                 onChange={e => {
                   setEndDate(e.target.value);
                   setDatePreset('custom');
+                  setSelectedFiscalYear('custom');
+                  setSelectedFiscalMonth('all');
                 }}
                 className="text-xs font-bold text-slate-800 bg-transparent focus:outline-hidden"
               />
@@ -2396,18 +3081,68 @@ export default function ReportingDesk({
           </div>
         </div>
 
-        {/* Search & Category Sub-Filter */}
+        {/* Sub-Filters & General Ledger Advanced Filter Controls */}
         <div className="flex flex-col sm:flex-row items-center gap-3 pt-2 border-t border-slate-100">
           <div className="relative flex-1 w-full">
             <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
             <input
               type="text"
-              placeholder=""
+              placeholder={activeReport === 'ledger_postings' ? 'Search Voucher #, Account Code/Name, Payee, Description, or Amount...' : 'Search records, items, vendors, or descriptions...'}
               value={searchQuery}
               onChange={e => setSearchQuery(e.target.value)}
               className="w-full pl-9 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
             />
           </div>
+
+          {/* GL Specific Dropdown Filters */}
+          {activeReport === 'ledger_postings' && (
+            <div className="flex flex-wrap items-center gap-2 w-full sm:w-auto">
+              {/* Account Filter */}
+              <div className="flex items-center space-x-1.5">
+                <Scale className="w-3.5 h-3.5 text-indigo-500" />
+                <select
+                  value={ledgerAccountFilter}
+                  onChange={e => setLedgerAccountFilter(e.target.value)}
+                  className="px-2.5 py-1.5 bg-indigo-50/80 border border-indigo-200 rounded-xl text-xs font-bold text-indigo-950 focus:outline-hidden cursor-pointer"
+                >
+                  <option value="all">All Accounts ({effectiveTlAccounts.length})</option>
+                  {effectiveTlAccounts.map(acc => (
+                    <option key={acc.TLID} value={acc.TLID}>
+                      {acc.TLID} - {acc.TLName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Voucher Type Filter */}
+              <select
+                value={ledgerVchTypeFilter}
+                onChange={e => setLedgerVchTypeFilter(e.target.value)}
+                className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden cursor-pointer"
+              >
+                <option value="all">All Voucher Types</option>
+                <option value="CPV">CPV - Cash Payment</option>
+                <option value="CRV">CRV - Cash Receipt</option>
+                <option value="BPV">BPV - Bank Payment</option>
+                <option value="BRV">BRV - Bank Receipt</option>
+                <option value="JV">JV - Journal Voucher</option>
+                <option value="GRN">GRN - Goods Received</option>
+                <option value="INV">INV - Sales Invoice</option>
+                <option value="SR">SR - Sales Return</option>
+              </select>
+
+              {/* Dr / Cr Filter */}
+              <select
+                value={ledgerDrCrFilter}
+                onChange={e => setLedgerDrCrFilter(e.target.value as any)}
+                className="px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold text-slate-700 focus:outline-hidden cursor-pointer"
+              >
+                <option value="all">All Postings (Dr & Cr)</option>
+                <option value="dr">Debits (Dr) Only</option>
+                <option value="cr">Credits (Cr) Only</option>
+              </select>
+            </div>
+          )}
 
           {activeReport === 'store_medicine_report' && (
             <div className="flex items-center space-x-2 w-full sm:w-auto">
@@ -2453,6 +3188,232 @@ export default function ReportingDesk({
           )}
         </div>
       </div>
+
+      {/* SUMMARY KPI METRIC CARDS FOR ACTIVE REPORT */}
+      {activeReport === 'ledger_postings' && (
+        <div className="space-y-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Total Debits */}
+            <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-extrabold text-emerald-700 uppercase tracking-wider">Total Debits (Dr)</div>
+                <div className="text-xl font-black text-emerald-950 mt-1">Rs. {filteredLedgerData.totalDebits.toLocaleString()}</div>
+                <div className="text-[11px] font-medium text-emerald-700 mt-0.5">
+                  {filteredLedgerData.rows.filter(r => r.debit > 0).length} Debit Postings
+                </div>
+              </div>
+              <ArrowDownRight className="w-7 h-7 text-emerald-600 opacity-80" />
+            </div>
+
+            {/* Total Credits */}
+            <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-extrabold text-amber-700 uppercase tracking-wider">Total Credits (Cr)</div>
+                <div className="text-xl font-black text-amber-950 mt-1">Rs. {filteredLedgerData.totalCredits.toLocaleString()}</div>
+                <div className="text-[11px] font-medium text-amber-700 mt-0.5">
+                  {filteredLedgerData.rows.filter(r => r.credit > 0).length} Credit Postings
+                </div>
+              </div>
+              <ArrowUpRight className="w-7 h-7 text-amber-600 opacity-80" />
+            </div>
+
+            {/* Net Period Movement */}
+            <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-extrabold text-indigo-700 uppercase tracking-wider">Net Movement</div>
+                <div className="text-xl font-black text-indigo-950 mt-1">
+                  Rs. {Math.abs(filteredLedgerData.netPeriodMovement).toLocaleString()}
+                  <span className="text-xs font-bold ml-1 text-indigo-700">
+                    {filteredLedgerData.netPeriodMovement >= 0 ? 'Dr' : 'Cr'}
+                  </span>
+                </div>
+                <div className="text-[11px] font-medium text-indigo-700 mt-0.5">
+                  Period Balance Change
+                </div>
+              </div>
+              <ArrowRightLeft className="w-7 h-7 text-indigo-600 opacity-80" />
+            </div>
+
+            {/* Double Entry Status */}
+            <div className={`border rounded-2xl p-4 flex items-center justify-between ${
+              filteredLedgerData.isBalanced ? 'bg-teal-50 border-teal-200' : 'bg-rose-50 border-rose-200'
+            }`}>
+              <div>
+                <div className={`text-[11px] font-extrabold uppercase tracking-wider ${
+                  filteredLedgerData.isBalanced ? 'text-teal-700' : 'text-rose-700'
+                }`}>
+                  Double-Entry Audit
+                </div>
+                <div className={`text-xl font-black mt-1 ${
+                  filteredLedgerData.isBalanced ? 'text-teal-950' : 'text-rose-950'
+                }`}>
+                  {filteredLedgerData.isBalanced ? '✓ Balanced' : 'Imbalance'}
+                </div>
+                <div className={`text-[11px] font-medium mt-0.5 ${
+                  filteredLedgerData.isBalanced ? 'text-teal-700' : 'text-rose-700 font-bold'
+                }`}>
+                  {filteredLedgerData.isBalanced ? 'Dr = Cr (Zero Variance)' : `Diff: Rs. ${filteredLedgerData.balanceDifference.toLocaleString()}`}
+                </div>
+              </div>
+              <Scale className={`w-7 h-7 opacity-80 ${filteredLedgerData.isBalanced ? 'text-teal-600' : 'text-rose-600'}`} />
+            </div>
+
+            {/* Vouchers & Accounts Count */}
+            <div className="bg-slate-100 border border-slate-300 rounded-2xl p-4 flex items-center justify-between">
+              <div>
+                <div className="text-[11px] font-extrabold text-slate-700 uppercase tracking-wider">Vouchers & Accounts</div>
+                <div className="text-xl font-black text-slate-900 mt-1">{filteredLedgerData.uniqueVouchersCount} Vouchers</div>
+                <div className="text-[11px] font-medium text-slate-600 mt-0.5">
+                  Across {filteredLedgerData.activeAccountsCount} Active GL Accounts
+                </div>
+              </div>
+              <Receipt className="w-7 h-7 text-slate-600 opacity-80" />
+            </div>
+          </div>
+
+          {/* Detailed Double-Entry General Ledger Table */}
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <h3 className="font-extrabold text-slate-900 text-sm">General Ledger & Double-Entry Postings Audit</h3>
+                  <span className="px-2 py-0.5 text-[10px] font-extrabold rounded-md bg-indigo-100 text-indigo-800 border border-indigo-200">
+                    {filteredLedgerData.rows.length} Postings
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Fiscal Period: <strong className="text-slate-800 font-bold">{startDate}</strong> to <strong className="text-slate-800 font-bold">{endDate}</strong>
+                  {ledgerAccountFilter !== 'all' && (
+                    <span className="ml-2 px-1.5 py-0.5 bg-slate-200 text-slate-800 rounded font-bold text-[10px]">
+                      Account: {effectiveTlAccounts.find(a => String(a.TLID) === String(ledgerAccountFilter))?.TLName || ledgerAccountFilter}
+                    </span>
+                  )}
+                </p>
+              </div>
+
+              <div className="flex items-center space-x-2">
+                <div className="text-right">
+                  <div className="text-[10px] font-bold text-slate-400 uppercase">Pre-Period Opening Balance</div>
+                  <div className="text-xs font-black font-mono text-slate-800">
+                    Rs. {filteredLedgerData.openingBalance.toLocaleString()}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-900 text-white font-extrabold text-[11px] uppercase tracking-wider">
+                    <th className="p-3">Date</th>
+                    <th className="p-3">Voucher #</th>
+                    <th className="p-3">Type</th>
+                    <th className="p-3">Account Code & Title</th>
+                    <th className="p-3">Party / Reference</th>
+                    <th className="p-3">Narration / Description</th>
+                    <th className="p-3 text-center">Module</th>
+                    <th className="p-3 text-right">Debit Dr (Rs.)</th>
+                    <th className="p-3 text-right">Credit Cr (Rs.)</th>
+                    <th className="p-3 text-right">Running Balance (Rs.)</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {/* Opening Balance Row */}
+                  <tr className="bg-slate-100/90 font-bold text-slate-800">
+                    <td className="p-3 font-mono">{startDate}</td>
+                    <td className="p-3 font-mono text-slate-500">OPENING</td>
+                    <td className="p-3">
+                      <span className="px-1.5 py-0.5 text-[9.5px] font-extrabold rounded-md bg-slate-200 text-slate-800">
+                        BF
+                      </span>
+                    </td>
+                    <td className="p-3 font-bold" colSpan={4}>
+                      Opening Balance Brought Forward (Prior to {startDate})
+                    </td>
+                    <td className="p-3 text-right text-slate-400 font-mono">—</td>
+                    <td className="p-3 text-right text-slate-400 font-mono">—</td>
+                    <td className="p-3 text-right font-mono font-black text-slate-900 bg-slate-200/60">
+                      Rs. {filteredLedgerData.openingBalance.toLocaleString()}
+                    </td>
+                  </tr>
+
+                  {filteredLedgerData.rows.length === 0 ? (
+                    <tr>
+                      <td colSpan={10} className="p-8 text-center text-slate-400 italic">
+                        No double-entry ledger postings recorded for the selected fiscal period and query criteria.
+                      </td>
+                    </tr>
+                  ) : (
+                    filteredLedgerData.rows.map((r, idx) => (
+                      <tr
+                        key={r.id + '-' + idx}
+                        className={idx % 2 === 0 ? 'bg-white hover:bg-slate-50/80' : 'bg-slate-50/40 hover:bg-slate-100/50'}
+                      >
+                        <td className="p-3 font-mono font-bold text-slate-800 whitespace-nowrap">{r.txDate}</td>
+                        <td className="p-3 font-mono font-extrabold text-indigo-700 whitespace-nowrap">{r.vchNo}</td>
+                        <td className="p-3 whitespace-nowrap">
+                          <span className={`px-2 py-0.5 text-[9.5px] font-extrabold rounded-md border ${
+                            r.vchType === 'CPV' ? 'bg-rose-50 text-rose-700 border-rose-200' :
+                            r.vchType === 'CRV' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                            r.vchType === 'BPV' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                            r.vchType === 'BRV' ? 'bg-teal-50 text-teal-700 border-teal-200' :
+                            r.vchType === 'GRN' ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                            r.vchType === 'INV' ? 'bg-cyan-50 text-cyan-700 border-cyan-200' :
+                            r.vchType === 'SR' ? 'bg-orange-50 text-orange-700 border-orange-200' :
+                            'bg-slate-100 text-slate-700 border-slate-200'
+                          }`}>
+                            {r.vchType}
+                          </span>
+                        </td>
+                        <td className="p-3">
+                          <div className="font-extrabold text-slate-900">{r.accountName}</div>
+                          <div className="text-[10px] text-slate-400 font-mono flex items-center space-x-1 mt-0.5">
+                            <span>Code: {r.tlid}</span>
+                            <span>•</span>
+                            <span className="capitalize">{r.accountCategory}</span>
+                          </div>
+                        </td>
+                        <td className="p-3 font-semibold text-slate-700">{r.payeeOrParty || '—'}</td>
+                        <td className="p-3 text-slate-600 max-w-xs">{r.description}</td>
+                        <td className="p-3 text-center whitespace-nowrap">
+                          <span className="px-1.5 py-0.5 text-[9px] font-bold rounded-md bg-slate-100 text-slate-600 border border-slate-200">
+                            {r.sourceModule}
+                          </span>
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-emerald-700 whitespace-nowrap">
+                          {r.debit > 0 ? `Rs. ${r.debit.toLocaleString()}` : <span className="text-slate-300 font-normal">-</span>}
+                        </td>
+                        <td className="p-3 text-right font-mono font-bold text-amber-700 whitespace-nowrap">
+                          {r.credit > 0 ? `Rs. ${r.credit.toLocaleString()}` : <span className="text-slate-300 font-normal">-</span>}
+                        </td>
+                        <td className="p-3 text-right font-mono font-black text-slate-900 bg-slate-50 whitespace-nowrap">
+                          Rs. {(r.runningBalance ?? 0).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-950 text-white font-extrabold text-xs">
+                    <td className="p-3.5 uppercase tracking-wider" colSpan={7}>
+                      Period Totals ({filteredLedgerData.rows.length} Postings • {filteredLedgerData.uniqueVouchersCount} Vouchers)
+                    </td>
+                    <td className="p-3.5 text-right font-mono font-black text-emerald-400 text-sm">
+                      Rs. {filteredLedgerData.totalDebits.toLocaleString()}
+                    </td>
+                    <td className="p-3.5 text-right font-mono font-black text-amber-300 text-sm">
+                      Rs. {filteredLedgerData.totalCredits.toLocaleString()}
+                    </td>
+                    <td className="p-3.5 text-right font-mono font-black text-sky-300 text-sm bg-slate-900">
+                      Rs. {filteredLedgerData.closingBalance.toLocaleString()}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* SUMMARY KPI METRIC CARDS FOR ACTIVE REPORT */}
       {activeReport === 'pending_payments' && (

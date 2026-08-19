@@ -52,10 +52,12 @@ import {
   Boxes,
   Clock,
   CheckCheck,
-  Layers3
+  Layers3,
+  Smartphone
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
+import PwaInstallModal from './PwaInstallModal';
 import { parseScannedItemQR, playBeepSound, ParsedQRResult } from '../utils/qrUtils';
 import {
   Patient,
@@ -302,8 +304,25 @@ export default function PharmacyPOS({
     };
   }, []);
 
+  // PWA Install / Mobile App Modal
+  const [isPwaModalOpen, setIsPwaModalOpen] = useState(false);
+
   // Navigation tabs
-  const [activeSubTab, setActiveSubTab] = useState<'checkout' | 'store_sales' | 'return' | 'grn' | 'inventory_manager' | 'invoice_logs' | 'clinical_labels' | 'barcode_mapper'>('checkout');
+  const [activeSubTab, setActiveSubTab] = useState<'checkout' | 'store_sales' | 'return' | 'grn' | 'inventory_manager' | 'invoice_logs' | 'clinical_labels' | 'barcode_mapper'>(() => {
+    try {
+      if (typeof window !== 'undefined') {
+        const params = new URLSearchParams(window.location.search);
+        const sub = params.get('sub');
+        if (sub && ['checkout', 'store_sales', 'return', 'grn', 'inventory_manager', 'invoice_logs', 'clinical_labels', 'barcode_mapper'].includes(sub)) {
+          return sub as any;
+        }
+        if (params.get('app') === 'store_medicine') {
+          return 'store_sales';
+        }
+      }
+    } catch (e) {}
+    return 'checkout';
+  });
   const [isSubTabLoading, setIsSubTabLoading] = useState(false);
   const [subTabLoadingMsg, setSubTabLoadingMsg] = useState('Loading Sub-module...');
 
@@ -4785,6 +4804,14 @@ export default function PharmacyPOS({
           >
             <Tag className="w-3.5 h-3.5 text-indigo-500" />
             <span>Clinic Medicine Label Printer</span>
+          </button>
+          <button
+            onClick={() => setIsPwaModalOpen(true)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition cursor-pointer"
+            title="Install Store Medicine Android App on Mobile"
+          >
+            <Smartphone className="w-3.5 h-3.5 text-white" />
+            <span>📱 Install Mobile App</span>
           </button>
         </div>
       </div>
@@ -10372,6 +10399,13 @@ export default function PharmacyPOS({
         onClose={() => setIsQRGeneratorOpen(false)}
         items={items}
         clinicName={clinicSettings?.Name || 'Smart Clinic Pharmacy'}
+      />
+
+      {/* PWA Mobile App Install Modal */}
+      <PwaInstallModal
+        isOpen={isPwaModalOpen}
+        onClose={() => setIsPwaModalOpen(false)}
+        onLaunchStoreMode={() => handleSubTabSwitch('store_sales', 'Store Medicine')}
       />
 
     </div>
