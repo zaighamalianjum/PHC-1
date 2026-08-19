@@ -81,7 +81,7 @@ export interface ItemBatch {
   POID?: string;
   VendorName?: string;
   ReceivedDate?: string;
-  Status?: 'ACTIVE' | 'EXPIRED' | 'DEPLETED';
+  Status?: 'ACTIVE' | 'EXPIRED' | 'DEPLETED' | 'EXHAUSTED';
   CreatedAt?: string;
 }
 
@@ -594,5 +594,35 @@ export interface ErpAsset {
   DepreciationRate: number; // percentage per year
   Status: 'Active' | 'Maintenance' | 'Disposed';
 }
+
+export interface FiscalMonthPeriod {
+  _id?: string;
+  PeriodID: string; // e.g., '2026-01'
+  Year: number;     // e.g., 2026
+  Month: number;    // 1-12
+  MonthName: string; // 'January'
+  StartDate: string; // '2026-01-01'
+  EndDate: string;   // '2026-01-31'
+  Status: 'OPEN' | 'CLOSED';
+  ClosedAt?: string;
+  ClosedBy?: string;
+  Notes?: string;
+  ClosingSnapshot?: {
+    TotalInflow: number;
+    TotalOutflow: number;
+    NetSurplus: number;
+    OpdInflow: number;
+    PharmacyInflow: number;
+    VendorPayments: number;
+    ExpenseOutflow: number;
+    GrnTotal: number;
+  };
+}
+
+export interface FiscalYearConfig {
+  YearType: 'CALENDAR' | 'JULY_JUNE';
+  SelectedYear: number;
+}
+
 
 

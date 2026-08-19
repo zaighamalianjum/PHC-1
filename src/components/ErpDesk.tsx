@@ -51,6 +51,7 @@ import {
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
 import ReportingDesk from './ReportingDesk';
+import FiscalCalendarDesk from './FiscalCalendarDesk';
 import { GrnPrintPreviewModal } from './GrnPrintPreviewModal';
 import {
   openWhatsAppUrl,
@@ -87,7 +88,7 @@ interface ErpDeskProps {
 }
 
 export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDeskProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'cash_book_pnl' | 'vendors' | 'vendor_statement' | 'po' | 'ledger' | 'hr' | 'expenses_assets' | 'reporting'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'fiscal_calendar' | 'cash_book_pnl' | 'vendors' | 'vendor_statement' | 'po' | 'ledger' | 'hr' | 'expenses_assets' | 'reporting'>('overview');
   const [loading, setLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
@@ -5332,8 +5333,42 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const totalMonthlyPayroll = payrolls.reduce((sum, p) => sum + p.NetSalary, 0);
 
   return (
-    <div className="min-h-full bg-slate-50 text-slate-800 p-4 md:p-6 space-y-6 pb-24">
-      {/* FINANCIAL TIMEFRAME SCOPE HEADER BAR (Replaces Mini ERP System banner) */}
+    <div className="min-h-full bg-slate-50 text-slate-800 p-4 md:p-6 space-y-4 pb-24">
+      {/* TOP HORIZONTAL ERP NAVIGATION MENU BAR */}
+      <div className="bg-white rounded-xl border border-slate-200 p-1.5 shadow-xs flex items-center space-x-1 overflow-x-auto scrollbar-none touch-pan-x z-20">
+        {[
+          { id: 'overview', label: 'ERP Dashboard', icon: PieChart },
+          { id: 'fiscal_calendar', label: 'Fiscal Year', icon: Calendar },
+          { id: 'cash_book_pnl', label: 'Clinic Cash', icon: Landmark },
+          { id: 'vendors', label: 'Vendor', icon: Building2 },
+          { id: 'vendor_statement', label: 'Vendor Payment', icon: FileText },
+          { id: 'po', label: 'PO & GRN', icon: ShoppingCart },
+          { id: 'ledger', label: 'Financial Ledger', icon: Receipt },
+          { id: 'hr', label: 'HR & Payroll', icon: Users },
+          { id: 'expenses_assets', label: 'Expenses & Assets', icon: Boxes },
+          { id: 'reporting', label: 'Reporting & Analytics', icon: BarChart3 }
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              title={tab.label}
+              className={`flex items-center space-x-1.5 px-2.5 py-1.5 sm:py-1 rounded-lg text-[10.5px] sm:text-[10px] font-bold uppercase tracking-tight transition-all duration-150 shrink-0 cursor-pointer min-h-[36px] sm:min-h-0 ${
+                isActive
+                  ? 'bg-blue-600 text-white shadow-xs'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 active:bg-slate-200'
+              }`}
+            >
+              <Icon className={`w-3.5 h-3.5 sm:w-3 sm:h-3 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+              <span className="whitespace-nowrap">{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* FINANCIAL TIMEFRAME SCOPE HEADER BAR */}
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-4 md:p-5 space-y-3">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div className="flex items-center space-x-3.5">
@@ -5434,60 +5469,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         </div>
       </div>
 
-      {/* SIDEBAR NAVIGATION & MAIN ERP CONTENT AREA */}
-      <div className="flex flex-col lg:flex-row gap-6 items-start">
-        {/* LEFT SIDEBAR TABS NAVIGATION - STYLISH HOVER-TO-EXPAND */}
-        <div className="group/sidebar w-full lg:w-[68px] lg:hover:w-64 shrink-0 bg-white rounded-2xl border border-slate-200 p-2.5 shadow-sm space-y-1.5 sticky top-4 transition-all duration-300 ease-in-out overflow-hidden z-20 hover:shadow-lg hover:border-indigo-200">
-          <div className="flex items-center justify-between px-2 py-1 text-[10px] font-black uppercase text-slate-400 tracking-wider">
-            <span className="opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 transition-opacity duration-300 whitespace-nowrap overflow-hidden max-w-full lg:max-w-0 lg:group-hover/sidebar:max-w-full">
-              ERP Navigation
-            </span>
-            <span className="hidden lg:block lg:group-hover/sidebar:hidden text-[9px] font-black text-slate-400 text-center w-full">
-              ERP
-            </span>
-          </div>
-          {[
-            { id: 'overview', label: 'ERP Dashboard', icon: PieChart },
-            { id: 'cash_book_pnl', label: 'Cash Book & Clinic P&L', icon: Landmark },
-            { id: 'vendors', label: 'Vendors Directory', icon: Building2 },
-            { id: 'vendor_statement', label: 'Vendor Statement & Ledger', icon: FileText },
-            { id: 'po', label: 'Purchase Orders', icon: ShoppingCart },
-            { id: 'ledger', label: 'Financial Ledger', icon: Receipt },
-            { id: 'hr', label: 'HR & Payroll', icon: Users },
-            { id: 'expenses_assets', label: 'Expenses & Assets', icon: Boxes },
-            { id: 'reporting', label: 'Reporting & Analytics', icon: BarChart3 }
-          ].map((tab) => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                title={tab.label}
-                className={`w-full p-2.5 rounded-xl font-bold text-xs transition-all duration-200 flex items-center justify-between cursor-pointer group/btn ${
-                  isActive
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-100'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-              >
-                <div className="flex items-center space-x-3 min-w-0">
-                  <div className="w-5 h-5 flex items-center justify-center shrink-0">
-                    <Icon className={`w-4 h-4 transition-transform duration-200 ${isActive ? 'scale-110' : 'group-hover/btn:scale-110'}`} />
-                  </div>
-                  <span className="truncate whitespace-nowrap opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 max-w-full lg:max-w-0 lg:group-hover/sidebar:max-w-xs transition-all duration-300 overflow-hidden">
-                    {tab.label}
-                  </span>
-                </div>
-                {isActive && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-white shrink-0 ml-1 opacity-100 lg:opacity-0 lg:group-hover/sidebar:opacity-100 transition-opacity duration-300" />
-                )}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* RIGHT MAIN CONTENT AREA */}
-        <div className="flex-1 min-w-0 w-full space-y-6">
+      {/* MAIN ERP CONTENT AREA - FULL WIDTH */}
+      <div className="w-full space-y-6">
 
       {/* TAB 1: OVERVIEW DASHBOARD */}
       {activeTab === 'overview' && (
@@ -5811,6 +5794,24 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
           </div>
         </div>
+      )}
+
+      {/* ========================================================================= */}
+      {/* TAB: FINANCIAL YEAR & CALENDAR PERIODS AUDIT */}
+      {/* ========================================================================= */}
+      {activeTab === 'fiscal_calendar' && (
+        <FiscalCalendarDesk
+          currentUser={currentUser}
+          clinicSettings={clinicSettings}
+          appointments={appointments}
+          patientVisits={patientVisits}
+          posSales={posSales}
+          expenses={expenses}
+          payrolls={payrolls}
+          transactions={transactions}
+          grns={grns}
+          vendors={vendors}
+        />
       )}
 
       {/* ========================================================================= */}
@@ -7591,8 +7592,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         </div>
       )}
 
-      {/* END OF RIGHT MAIN CONTENT AREA & SIDEBAR WRAPPER */}
-        </div>
+      {/* END OF MAIN ERP CONTENT AREA */}
       </div>
       {showPoModal && (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">

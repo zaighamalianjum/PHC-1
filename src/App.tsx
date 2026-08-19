@@ -26,6 +26,7 @@ import {
   Appointment,
   Token,
   Item,
+  ItemBatch,
   Supplier,
   LabTest,
   Visit,
@@ -1481,14 +1482,70 @@ export default function App() {
     // If checkout is posted (Status = 2)
     if (newHeader.Status === 2) {
       
-      // 1. Deduct CStock in items and write InvLedger transactions
+      // 1. Deduct CStock in items, apply FEFO (First Expired First Out) across batches, and write InvLedger transactions
       let cogsSum = 0;
       setItems((prevItems) => {
         return prevItems.map((itm) => {
           const matchedDetails = details.find((d) => d.ItemID === itm.ItemID);
           if (matchedDetails) {
-            const updatedStock = itm.CStock - matchedDetails.Qty;
+            const updatedStock = Math.max(0, itm.CStock - matchedDetails.Qty);
             cogsSum += itm.PurchasePrice * matchedDetails.Qty;
+
+            // Apply FEFO Batch Deduction if item has batch tracking or active stock
+            let updatedBatches: ItemBatch[] = [];
+            let remainingToDeduct = matchedDetails.Qty;
+
+            const existingBatches: ItemBatch[] = Array.isArray(itm.Batches) && itm.Batches.length > 0
+              ? itm.Batches.map(b => ({ ...b }))
+              : (itm.CStock > 0 || itm.BatchNo || itm.ExpDate
+                  ? [{
+                      BatchID: `${itm.ItemID}-B-initial`,
+                      ItemID: itm.ItemID,
+                      ItemName: itm.ItemName,
+                      BatchNo: itm.BatchNo || 'B# 001',
+                      MfgDate: itm.MfgDate || '',
+                      ExpDate: itm.ExpDate || '',
+                      PurchasePrice: itm.PurchasePrice,
+                      SalePrice: itm.Price,
+                      Qty: itm.CStock,
+                      InitialQty: itm.CStock,
+                      Status: 'ACTIVE' as const,
+                      CreatedAt: new Date().toISOString()
+                    }]
+                  : []);
+
+            if (existingBatches.length > 0) {
+              // Sort batches by Expiry Date ascending (FEFO) - earliest expiry first, items without expiry at end
+              const sortedBatches = [...existingBatches].sort((a, b) => {
+                if (!a.ExpDate && !b.ExpDate) return 0;
+                if (!a.ExpDate) return 1;
+                if (!b.ExpDate) return -1;
+                return a.ExpDate.localeCompare(b.ExpDate);
+              });
+
+              updatedBatches = sortedBatches.map(batch => {
+                const currentBatchQty = Number(batch.Qty) || 0;
+                if (remainingToDeduct <= 0 || currentBatchQty <= 0) {
+                  return batch;
+                }
+                const canDeduct = Math.min(currentBatchQty, remainingToDeduct);
+                const newBatchQty = currentBatchQty - canDeduct;
+                remainingToDeduct -= canDeduct;
+
+                const isExp = batch.ExpDate ? new Date(batch.ExpDate) < new Date() : false;
+                return {
+                  ...batch,
+                  Qty: newBatchQty,
+                  Status: newBatchQty === 0 ? ('EXHAUSTED' as const) : (isExp ? ('EXPIRED' as const) : ('ACTIVE' as const))
+                };
+              });
+            }
+
+            // Find next earliest active batch to show on main item card
+            const activeBatches = updatedBatches.filter(b => (Number(b.Qty) || 0) > 0);
+            const earliestActiveBatch = activeBatches.length > 0
+              ? [...activeBatches].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+              : updatedBatches[0];
 
             // Log ledger movement
             const nextLedgerId = `LEDG-${Math.random().toString(36).substr(2, 9).toUpperCase()}`;
@@ -1504,7 +1561,26 @@ export default function App() {
             };
             setInvLedger((prevLedg) => [...prevLedg, newLedgerRow]);
 
-            return { ...itm, CStock: updatedStock };
+            const updatedItem: Item = {
+              ...itm,
+              CStock: updatedStock,
+              BatchNo: earliestActiveBatch?.BatchNo || itm.BatchNo,
+              MfgDate: earliestActiveBatch?.MfgDate || itm.MfgDate,
+              ExpDate: earliestActiveBatch?.ExpDate || itm.ExpDate,
+              Batches: updatedBatches.length > 0 ? updatedBatches : itm.Batches
+            };
+
+            // Sync updated item specifications to MongoDB backend
+            if (mongoDbSettings.SyncEnabled) {
+              const bridgeUrl = mongoDbSettings.BridgeUrl || 'http://localhost:5000';
+              fetch(`${bridgeUrl}/api/items/${encodeURIComponent(updatedItem.ItemID)}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedItem)
+              }).catch(err => console.warn('Failed to sync item stock & batches to backend:', err.message));
+            }
+
+            return updatedItem;
           }
           return itm;
         });

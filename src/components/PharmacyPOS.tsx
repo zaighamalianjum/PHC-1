@@ -342,6 +342,20 @@ export default function PharmacyPOS({
   const [invSuccessMsg, setInvSuccessMsg] = useState('');
   const [invErrorMsg, setInvErrorMsg] = useState('');
 
+  // Multi-Batch & Expiry Management States
+  const [selectedBatchItem, setSelectedBatchItem] = useState<Item | null>(null);
+  const [isBatchesModalOpen, setIsBatchesModalOpen] = useState(false);
+  const [batchFormNo, setBatchFormNo] = useState('');
+  const [batchFormMfgDate, setBatchFormMfgDate] = useState('');
+  const [batchFormExpDate, setBatchFormExpDate] = useState('');
+  const [batchFormQty, setBatchFormQty] = useState<number | ''>('');
+  const [batchFormCost, setBatchFormCost] = useState<number | ''>('');
+  const [batchFormSalePrice, setBatchFormSalePrice] = useState<number | ''>('');
+  const [batchFormPoGrnRef, setBatchFormPoGrnRef] = useState('');
+  const [editingBatchId, setEditingBatchId] = useState<string | null>(null);
+  const [batchModalMsg, setBatchModalMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [invExpiryFilterScope, setInvExpiryFilterScope] = useState<'ALL' | 'EXPIRED' | 'NEAR_EXPIRY' | 'ACTIVE'>('ALL');
+
   // Vendor / Supplier Management States
   const [isVendorModalOpen, setIsVendorModalOpen] = useState(false);
   const [editingSupplier, setEditingSupplier] = useState<Supplier | null>(null);
@@ -623,7 +637,8 @@ export default function PharmacyPOS({
         VendorBarcode: vendorBarcodeVal,
         BatchNo: batchNoVal,
         MfgDate: mfgDateVal,
-        ExpDate: expDateVal
+        ExpDate: expDateVal,
+        Batches: editingItem.Batches
       };
 
       // Update existing item in local state and database
@@ -637,6 +652,25 @@ export default function PharmacyPOS({
       if (idExists) {
         setInvErrorMsg(`Item ID "${finalItemId}" already exists in inventory!`);
         return;
+      }
+
+      // Prepare initial batch if stock or batch info is supplied
+      let initialBatches: ItemBatch[] = [];
+      if (stock > 0 || batchNoVal || expDateVal) {
+        initialBatches = [{
+          BatchID: `${finalItemId}-B1`,
+          ItemID: finalItemId,
+          ItemName: itemFormName.trim(),
+          BatchNo: batchNoVal || `B-${new Date().getFullYear()}-001`,
+          MfgDate: mfgDateVal || new Date().toISOString().split('T')[0],
+          ExpDate: expDateVal || '',
+          PurchasePrice: pPrice,
+          SalePrice: rPrice,
+          Qty: stock,
+          InitialQty: stock,
+          Status: stock === 0 ? 'EXHAUSTED' : isBatchExpired(expDateVal) ? 'EXPIRED' : 'ACTIVE',
+          CreatedAt: new Date().toISOString()
+        }];
       }
 
       // Add new item
@@ -653,7 +687,8 @@ export default function PharmacyPOS({
         VendorBarcode: vendorBarcodeVal,
         BatchNo: batchNoVal,
         MfgDate: mfgDateVal,
-        ExpDate: expDateVal
+        ExpDate: expDateVal,
+        Batches: initialBatches.length > 0 ? initialBatches : undefined
       };
 
       setItems(prev => [...prev, newItem]);
@@ -663,6 +698,177 @@ export default function PharmacyPOS({
     }
 
     setTimeout(() => setInvSuccessMsg(''), 5000);
+  };
+
+  // Open Multi-Batch Management Modal
+  const handleOpenBatchManager = (itm: Item) => {
+    setSelectedBatchItem(itm);
+    setEditingBatchId(null);
+    setBatchFormNo('');
+    setBatchFormMfgDate(new Date().toISOString().split('T')[0]);
+    setBatchFormExpDate('');
+    setBatchFormQty('');
+    setBatchFormCost(itm.PurchasePrice || '');
+    setBatchFormSalePrice(itm.Price || '');
+    setBatchFormPoGrnRef('');
+    setBatchModalMsg(null);
+    setIsBatchesModalOpen(true);
+  };
+
+  // Populate form for editing existing batch
+  const handleStartEditBatch = (batch: ItemBatch) => {
+    setEditingBatchId(batch.BatchID);
+    setBatchFormNo(batch.BatchNo || '');
+    setBatchFormMfgDate(batch.MfgDate || '');
+    setBatchFormExpDate(batch.ExpDate || '');
+    setBatchFormQty(batch.Qty !== undefined ? batch.Qty : '');
+    setBatchFormCost(batch.PurchasePrice !== undefined ? batch.PurchasePrice : '');
+    setBatchFormSalePrice(batch.SalePrice !== undefined ? batch.SalePrice : '');
+    setBatchFormPoGrnRef(batch.GRNID || batch.POID || '');
+    setBatchModalMsg(null);
+  };
+
+  // Save / Receive New Batch
+  const handleSaveBatch = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedBatchItem || !setItems) return;
+
+    if (!batchFormNo.trim()) {
+      setBatchModalMsg({ type: 'error', text: 'Batch Number is required.' });
+      return;
+    }
+    if (!batchFormExpDate.trim()) {
+      setBatchModalMsg({ type: 'error', text: 'Expiry Date is required.' });
+      return;
+    }
+    const qty = batchFormQty === '' ? 0 : Number(batchFormQty);
+    if (qty < 0) {
+      setBatchModalMsg({ type: 'error', text: 'Quantity cannot be negative.' });
+      return;
+    }
+
+    // Existing batches array or migrate legacy item batch
+    const existingBatches: ItemBatch[] = Array.isArray(selectedBatchItem.Batches) && selectedBatchItem.Batches.length > 0
+      ? [...selectedBatchItem.Batches]
+      : (selectedBatchItem.CStock > 0 || selectedBatchItem.BatchNo || selectedBatchItem.ExpDate
+          ? [{
+              BatchID: `${selectedBatchItem.ItemID}-B-initial`,
+              ItemID: selectedBatchItem.ItemID,
+              ItemName: selectedBatchItem.ItemName,
+              BatchNo: selectedBatchItem.BatchNo || 'B# 001',
+              MfgDate: selectedBatchItem.MfgDate || '',
+              ExpDate: selectedBatchItem.ExpDate || '',
+              PurchasePrice: selectedBatchItem.PurchasePrice,
+              SalePrice: selectedBatchItem.Price,
+              Qty: selectedBatchItem.CStock,
+              InitialQty: selectedBatchItem.CStock,
+              Status: selectedBatchItem.CStock === 0 ? 'EXHAUSTED' : isBatchExpired(selectedBatchItem.ExpDate) ? 'EXPIRED' : 'ACTIVE',
+              CreatedAt: new Date().toISOString()
+            }]
+          : []);
+
+    let updatedBatches: ItemBatch[] = [];
+    if (editingBatchId) {
+      updatedBatches = existingBatches.map(b => {
+        if (b.BatchID === editingBatchId) {
+          return {
+            ...b,
+            BatchNo: batchFormNo.trim(),
+            MfgDate: batchFormMfgDate.trim(),
+            ExpDate: batchFormExpDate.trim(),
+            Qty: qty,
+            PurchasePrice: batchFormCost === '' ? b.PurchasePrice : Number(batchFormCost),
+            SalePrice: batchFormSalePrice === '' ? b.SalePrice : Number(batchFormSalePrice),
+            GRNID: batchFormPoGrnRef.trim() || b.GRNID,
+            Status: qty === 0 ? 'EXHAUSTED' : isBatchExpired(batchFormExpDate.trim()) ? 'EXPIRED' : 'ACTIVE'
+          };
+        }
+        return b;
+      });
+    } else {
+      const newBatchId = `${selectedBatchItem.ItemID}-B-${Date.now().toString().slice(-4)}`;
+      const newBatch: ItemBatch = {
+        BatchID: newBatchId,
+        ItemID: selectedBatchItem.ItemID,
+        ItemName: selectedBatchItem.ItemName,
+        BatchNo: batchFormNo.trim(),
+        MfgDate: batchFormMfgDate.trim(),
+        ExpDate: batchFormExpDate.trim(),
+        PurchasePrice: batchFormCost === '' ? selectedBatchItem.PurchasePrice : Number(batchFormCost),
+        SalePrice: batchFormSalePrice === '' ? selectedBatchItem.Price : Number(batchFormSalePrice),
+        Qty: qty,
+        InitialQty: qty,
+        GRNID: batchFormPoGrnRef.trim() || undefined,
+        Status: qty === 0 ? 'EXHAUSTED' : isBatchExpired(batchFormExpDate.trim()) ? 'EXPIRED' : 'ACTIVE',
+        CreatedAt: new Date().toISOString()
+      };
+      updatedBatches = [newBatch, ...existingBatches];
+    }
+
+    // Recalculate total current stock across all batches
+    const newTotalStock = updatedBatches.reduce((sum, b) => sum + (Number(b.Qty) || 0), 0);
+    
+    // Sort active batches by FEFO (First Expired, First Out)
+    const activeBatches = updatedBatches.filter(b => (Number(b.Qty) || 0) > 0);
+    const earliestBatch = activeBatches.length > 0
+      ? [...activeBatches].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+      : updatedBatches[0];
+
+    const updatedItem: Item = {
+      ...selectedBatchItem,
+      CStock: newTotalStock,
+      BatchNo: earliestBatch?.BatchNo || selectedBatchItem.BatchNo,
+      MfgDate: earliestBatch?.MfgDate || selectedBatchItem.MfgDate,
+      ExpDate: earliestBatch?.ExpDate || selectedBatchItem.ExpDate,
+      Batches: updatedBatches
+    };
+
+    setItems(prev => prev.map(i => i.ItemID === updatedItem.ItemID ? updatedItem : i));
+    syncItemToBackend('UPDATE', updatedItem);
+    setSelectedBatchItem(updatedItem);
+    setEditingBatchId(null);
+    setBatchFormNo('');
+    setBatchFormMfgDate(new Date().toISOString().split('T')[0]);
+    setBatchFormExpDate('');
+    setBatchFormQty('');
+    setBatchFormPoGrnRef('');
+    setBatchModalMsg({
+      type: 'success',
+      text: editingBatchId ? 'Batch updated successfully!' : 'New stock batch added and master stock recalculated!'
+    });
+    setTimeout(() => setBatchModalMsg(null), 3500);
+  };
+
+  // Delete Batch handler
+  const handleDeleteBatch = (batchId: string) => {
+    if (!selectedBatchItem || !setItems) return;
+    if (!window.confirm('Are you sure you want to remove this batch? The master stock level will be recalculated.')) return;
+
+    const existingBatches: ItemBatch[] = Array.isArray(selectedBatchItem.Batches) ? selectedBatchItem.Batches : [];
+    const updatedBatches = existingBatches.filter(b => b.BatchID !== batchId);
+    const newTotalStock = updatedBatches.reduce((sum, b) => sum + (Number(b.Qty) || 0), 0);
+    const activeBatches = updatedBatches.filter(b => (Number(b.Qty) || 0) > 0);
+    const earliestBatch = activeBatches.length > 0
+      ? [...activeBatches].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+      : updatedBatches[0];
+
+    const updatedItem: Item = {
+      ...selectedBatchItem,
+      CStock: newTotalStock,
+      BatchNo: earliestBatch?.BatchNo || '',
+      MfgDate: earliestBatch?.MfgDate || '',
+      ExpDate: earliestBatch?.ExpDate || '',
+      Batches: updatedBatches
+    };
+
+    setItems(prev => prev.map(i => i.ItemID === updatedItem.ItemID ? updatedItem : i));
+    syncItemToBackend('UPDATE', updatedItem);
+    setSelectedBatchItem(updatedItem);
+    if (editingBatchId === batchId) {
+      setEditingBatchId(null);
+    }
+    setBatchModalMsg({ type: 'success', text: 'Batch deleted and total stock recalculated.' });
+    setTimeout(() => setBatchModalMsg(null), 3500);
   };
 
   // Remove Item handler
@@ -5167,17 +5373,11 @@ export default function PharmacyPOS({
                     handlePrintDailySalesReport(selectedDailyReportDate);
                   }
                 }}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center space-x-2 transition cursor-pointer"
-                title="Print comprehensive medicine sales audit report on A4 paper"
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center space-x-1.5 transition cursor-pointer whitespace-nowrap"
+                title="Print sales audit report on A4 paper"
               >
-                <FileText className="w-4 h-4" />
-                <span>
-                  {salesReportPeriodMode === 'range' 
-                    ? '📊 Print Period Sales Audit (A4)' 
-                    : salesReportPeriodMode === 'all' 
-                      ? '📊 Print All-Time Sales Audit (A4)' 
-                      : '📊 Print Daily Sales Summary (A4)'}
-                </span>
+                <Printer className="w-4 h-4 shrink-0" />
+                <span>Print</span>
               </button>
             </div>
           </div>
@@ -6202,6 +6402,58 @@ export default function PharmacyPOS({
                 </div>
 
                 <div className="flex flex-wrap items-center gap-2 shrink-0">
+                  {/* Expiry Status Filter Selector */}
+                  <div className="flex items-center space-x-1 bg-slate-800 p-0.5 rounded-lg border border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInvExpiryFilterScope('ALL');
+                        setInvCurrentPage(1);
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer ${
+                        invExpiryFilterScope === 'ALL'
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      All Expiry
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInvExpiryFilterScope('EXPIRED');
+                        setInvCurrentPage(1);
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
+                        invExpiryFilterScope === 'EXPIRED'
+                          ? 'bg-rose-600 text-white'
+                          : 'text-rose-300 hover:text-white hover:bg-rose-950/40'
+                      }`}
+                    >
+                      <span>🔴 Expired</span>
+                      <span className="px-1 py-0.2 bg-rose-800 text-white rounded text-[9px] font-mono">
+                        {items.filter(i => getItemExpirySummary(i).status === 'EXPIRED' || getItemExpirySummary(i).status === 'PARTIAL_EXPIRED').length}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInvExpiryFilterScope('NEAR_EXPIRY');
+                        setInvCurrentPage(1);
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
+                        invExpiryFilterScope === 'NEAR_EXPIRY'
+                          ? 'bg-amber-600 text-white'
+                          : 'text-amber-300 hover:text-white hover:bg-amber-950/40'
+                      }`}
+                    >
+                      <span>🟡 &lt;90 Days</span>
+                      <span className="px-1 py-0.2 bg-amber-800 text-white rounded text-[9px] font-mono">
+                        {items.filter(i => getItemExpirySummary(i).status === 'NEAR_EXPIRY').length}
+                      </span>
+                    </button>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -6253,6 +6505,12 @@ export default function PharmacyPOS({
                     onClick={() => {
                       const processedForExport = items.filter((itm) => {
                         if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
+                        if (invExpiryFilterScope !== 'ALL') {
+                          const expSum = getItemExpirySummary(itm);
+                          if (invExpiryFilterScope === 'EXPIRED' && expSum.status !== 'EXPIRED' && expSum.status !== 'PARTIAL_EXPIRED') return false;
+                          if (invExpiryFilterScope === 'NEAR_EXPIRY' && expSum.status !== 'NEAR_EXPIRY') return false;
+                          if (invExpiryFilterScope === 'ACTIVE' && expSum.status !== 'ACTIVE') return false;
+                        }
                         if (invCategoryFilter !== 'ALL') {
                           if (invCategoryFilter === 'C') {
                             if (itm.MedicineType !== 'C') return false;
@@ -6277,7 +6535,7 @@ export default function PharmacyPOS({
                         return true;
                       });
 
-                      const headers = ["S.No", "Item ID", "Medicine Name", "Category/Unit", "Type", "Current Stock", "Min Threshold", "Reorder Qty", "Unit Cost (Rs)", "Retail Price (Rs)", "Batch No", "Exp Date"];
+                      const headers = ["S.No", "Item ID", "Medicine Name", "Category/Unit", "Type", "Current Stock", "Min Threshold", "Reorder Qty", "Unit Cost (Rs)", "Retail Price (Rs)", "Batch No", "Exp Date", "Batches Count"];
                       const rows = processedForExport.map((itm, idx) => [
                         idx + 1,
                         `"${itm.ItemID.replace(/"/g, '""')}"`,
@@ -6290,7 +6548,8 @@ export default function PharmacyPOS({
                         itm.PurchasePrice,
                         itm.Price,
                         `"${(itm.BatchNo || '').replace(/"/g, '""')}"`,
-                        `"${(itm.ExpDate || '').replace(/"/g, '""')}"`
+                        `"${(itm.ExpDate || '').replace(/"/g, '""')}"`,
+                        Array.isArray(itm.Batches) ? itm.Batches.length : (itm.ExpDate ? 1 : 0)
                       ]);
                       const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
                       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -6328,6 +6587,12 @@ export default function PharmacyPOS({
               {(() => {
                 const processedItems = items.filter((itm) => {
                   if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
+                  if (invExpiryFilterScope !== 'ALL') {
+                    const expSum = getItemExpirySummary(itm);
+                    if (invExpiryFilterScope === 'EXPIRED' && expSum.status !== 'EXPIRED' && expSum.status !== 'PARTIAL_EXPIRED') return false;
+                    if (invExpiryFilterScope === 'NEAR_EXPIRY' && expSum.status !== 'NEAR_EXPIRY') return false;
+                    if (invExpiryFilterScope === 'ACTIVE' && expSum.status !== 'ACTIVE') return false;
+                  }
                   if (invCategoryFilter !== 'ALL') {
                     if (invCategoryFilter === 'C') {
                       if (itm.MedicineType !== 'C') return false;
@@ -6535,16 +6800,84 @@ export default function PharmacyPOS({
                                   <td className="px-3 py-1.5 font-bold text-slate-900">
                                     <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
                                       <span className="text-xs">{itm.ItemName}</span>
-                                      {itm.BatchNo && (
-                                        <span className="px-1.5 py-0.2 bg-slate-100 text-slate-700 rounded text-[9px] font-mono border border-slate-300" title={`Batch #: ${itm.BatchNo}`}>
+                                      
+                                      {/* Batch Count Pill */}
+                                      {Array.isArray(itm.Batches) && itm.Batches.length > 0 ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenBatchManager(itm)}
+                                          className="px-1.5 py-0.2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-900 rounded text-[9px] font-mono border border-indigo-200 transition cursor-pointer flex items-center space-x-0.5"
+                                          title={`Click to view and manage ${itm.Batches.length} batches for this medicine`}
+                                        >
+                                          <Boxes className="w-2.5 h-2.5 mr-0.5" />
+                                          <span>{itm.Batches.length} {itm.Batches.length === 1 ? 'Batch' : 'Batches'}</span>
+                                        </button>
+                                      ) : itm.BatchNo ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenBatchManager(itm)}
+                                          className="px-1.5 py-0.2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[9px] font-mono border border-slate-300 transition cursor-pointer"
+                                          title={`Batch #: ${itm.BatchNo} (Click to manage batches)`}
+                                        >
                                           B#: {itm.BatchNo}
-                                        </span>
-                                      )}
-                                      {itm.ExpDate && (
-                                        <span className="px-1.5 py-0.2 bg-amber-50 text-amber-900 rounded text-[9px] font-mono border border-amber-300" title={`Exp Date: ${itm.ExpDate}`}>
-                                          Exp: {itm.ExpDate}
-                                        </span>
-                                      )}
+                                        </button>
+                                      ) : null}
+
+                                      {/* Smart Expiry Badge */}
+                                      {(() => {
+                                        const expSummary = getItemExpirySummary(itm);
+                                        if (!expSummary.earliestExpDate && !itm.ExpDate) return null;
+                                        const displayExp = expSummary.earliestExpDate || itm.ExpDate;
+                                        
+                                        if (expSummary.status === 'EXPIRED') {
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenBatchManager(itm)}
+                                              className="px-1.5 py-0.2 bg-rose-100 hover:bg-rose-200 text-rose-900 rounded text-[9px] font-mono font-bold border border-rose-300 transition cursor-pointer flex items-center space-x-0.5"
+                                              title={`EXPIRED on ${displayExp}! Click to manage or write-off expired stock.`}
+                                            >
+                                              <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping mr-0.5"></span>
+                                              <span>Exp: {displayExp} (Expired)</span>
+                                            </button>
+                                          );
+                                        }
+                                        if (expSummary.status === 'PARTIAL_EXPIRED') {
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenBatchManager(itm)}
+                                              className="px-1.5 py-0.2 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded text-[9px] font-mono font-bold border border-rose-300 transition cursor-pointer"
+                                              title={`Has expired lots (${expSummary.expiredBatchesCount} batch expired). Click to inspect.`}
+                                            >
+                                              <span>Exp: {displayExp} (Part Expired)</span>
+                                            </button>
+                                          );
+                                        }
+                                        if (expSummary.status === 'NEAR_EXPIRY') {
+                                          return (
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenBatchManager(itm)}
+                                              className="px-1.5 py-0.2 bg-amber-100 hover:bg-amber-200 text-amber-950 rounded text-[9px] font-mono font-bold border border-amber-300 transition cursor-pointer flex items-center space-x-0.5"
+                                              title={`Near Expiry: ${expSummary.daysUntilExpiry} days left (${displayExp}). Click to inspect.`}
+                                            >
+                                              <span>Exp: {displayExp} ({expSummary.daysUntilExpiry}d left)</span>
+                                            </button>
+                                          );
+                                        }
+                                        return (
+                                          <button
+                                            type="button"
+                                            onClick={() => handleOpenBatchManager(itm)}
+                                            className="px-1.5 py-0.2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 rounded text-[9px] font-mono border border-emerald-300 transition cursor-pointer"
+                                            title={`Valid Expiry: ${displayExp}. Click to manage batches.`}
+                                          >
+                                            Exp: {displayExp}
+                                          </button>
+                                        );
+                                      })()}
+
                                       {isLowStock && (
                                         <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded text-[8px] font-black uppercase tracking-wider animate-pulse">
                                           Low Stock
@@ -6703,6 +7036,14 @@ export default function PharmacyPOS({
                                   {/* Actions */}
                                   <td className="px-2 py-1 text-center">
                                     <div className="flex justify-center items-center space-x-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenBatchManager(itm)}
+                                        className="p-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100 rounded transition cursor-pointer"
+                                        title="Manage Batches, Lots & Expiry Dates"
+                                      >
+                                        <Boxes className="w-3.5 h-3.5" />
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => handleSelectEditItem(itm)}
@@ -8121,13 +8462,48 @@ export default function PharmacyPOS({
                 </div>
               </div>
 
-              {/* Batch No, Mfg Date, and Exp Date Fields (Extracted from Box QR / Scanner) */}
+              {/* Multi-Batch Action Banner for existing medicine */}
+              {editingItem && (
+                <div className="p-3 bg-gradient-to-r from-indigo-50 via-slate-50 to-indigo-50/60 border border-indigo-200 rounded-xl flex items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-center space-x-2.5 min-w-0">
+                    <div className="p-2 bg-indigo-600 text-white rounded-lg shrink-0 shadow-xs">
+                      <Boxes className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center space-x-1.5">
+                        <span className="font-extrabold text-indigo-950 text-xs">Multi-Batch & Expiry Lots</span>
+                        <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-800 rounded font-mono text-[9px] font-bold">
+                          {Array.isArray(editingItem.Batches) && editingItem.Batches.length > 0
+                            ? `${editingItem.Batches.length} Batches`
+                            : '1 Default Lot'}
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-indigo-700/90 font-medium truncate">
+                        View lot-by-lot stock, expiry dates, purchase costs, and receive new stock batches.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsAddMedicineModalOpen(false);
+                      handleOpenBatchManager(editingItem);
+                    }}
+                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] rounded-lg shadow-xs flex items-center space-x-1 cursor-pointer transition shrink-0"
+                  >
+                    <Boxes className="w-3.5 h-3.5 mr-1" />
+                    <span>Manage Batches</span>
+                  </button>
+                </div>
+              )}
+
+              {/* Batch No, Mfg Date, and Exp Date Fields (Extracted from Box QR / Scanner / Master Defaults) */}
               <div className="grid grid-cols-3 gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
                 <div>
                   <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Batch # (B#)</label>
                   <input
                     type="text"
-                    placeholder=""
+                    placeholder="e.g. B-2026-001"
                     value={itemFormBatchNo}
                     onChange={(e) => setItemFormBatchNo(e.target.value)}
                     className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-300 bg-white font-mono font-bold text-xs text-slate-900"
@@ -8137,8 +8513,7 @@ export default function PharmacyPOS({
                 <div>
                   <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Mfg Date</label>
                   <input
-                    type="text"
-                    placeholder=""
+                    type="date"
                     value={itemFormMfgDate}
                     onChange={(e) => setItemFormMfgDate(e.target.value)}
                     className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-300 bg-white font-mono font-bold text-xs text-slate-900"
@@ -8148,8 +8523,7 @@ export default function PharmacyPOS({
                 <div>
                   <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Exp Date</label>
                   <input
-                    type="text"
-                    placeholder=""
+                    type="date"
                     value={itemFormExpDate}
                     onChange={(e) => setItemFormExpDate(e.target.value)}
                     className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-300 bg-white font-mono font-bold text-xs text-slate-900"
@@ -9547,6 +9921,438 @@ export default function PharmacyPOS({
                 className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs"
               >
                 Done
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Multi-Batch & Expiry Lots Management Modal */}
+      {isBatchesModalOpen && selectedBatchItem && (
+        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl overflow-hidden flex flex-col max-h-[92vh] animate-scaleUp">
+            
+            {/* Modal Header */}
+            <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between gap-3 shrink-0">
+              <div className="flex items-center space-x-3 min-w-0">
+                <div className="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-500/30 shrink-0">
+                  <Boxes className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center space-x-2 flex-wrap">
+                    <h3 className="text-base font-extrabold text-white truncate">
+                      {selectedBatchItem.ItemName}
+                    </h3>
+                    <span className="px-2 py-0.5 bg-indigo-500/30 text-indigo-200 rounded-full font-mono text-[11px] font-bold border border-indigo-400/30">
+                      ID: {selectedBatchItem.ItemID}
+                    </span>
+                    <span className="px-2 py-0.5 bg-slate-800 text-slate-300 rounded-full text-[10px] font-bold">
+                      {selectedBatchItem.Unit || 'Tab'} • {selectedBatchItem.MedicineType === 'C' ? 'Clinical' : 'Patent'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-300 font-medium mt-0.5">
+                    Multi-Batch Tracking, Lot-by-Lot Expiry Dates & Automatic FEFO Stock Allocation
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center space-x-3 shrink-0">
+                <div className="text-right hidden sm:block bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
+                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Live Stock</div>
+                  <div className="text-base font-black font-mono text-emerald-400">
+                    {selectedBatchItem.CStock} {selectedBatchItem.Unit || 'Units'}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsBatchesModalOpen(false);
+                    setSelectedBatchItem(null);
+                    setEditingBatchId(null);
+                  }}
+                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
+            </div>
+
+            {/* Notification messages */}
+            {batchModalMsg && (
+              <div className={`px-4 py-2 text-xs font-bold shrink-0 flex items-center ${
+                batchModalMsg.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-b border-emerald-200' : 'bg-rose-50 text-rose-800 border-b border-rose-200'
+              }`}>
+                {batchModalMsg.type === 'success' ? (
+                  <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertCircle className="w-4 h-4 mr-2 text-rose-600 shrink-0" />
+                )}
+                <span>{batchModalMsg.text}</span>
+              </div>
+            )}
+
+            {/* Modal Body: 2-Column Grid */}
+            <div className="flex-1 overflow-y-auto p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 bg-slate-50/50">
+              
+              {/* Left Column: Batches Table (7 cols) */}
+              <div className="lg:col-span-7 flex flex-col space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Boxes className="w-4 h-4 text-indigo-600" />
+                    <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-800">
+                      Active Stock Batches / Lots
+                    </h4>
+                  </div>
+                  <span className="text-[11px] font-bold text-slate-500 font-mono">
+                    {Array.isArray(selectedBatchItem.Batches) ? selectedBatchItem.Batches.length : (selectedBatchItem.ExpDate ? 1 : 0)} Recorded Lots
+                  </span>
+                </div>
+
+                {/* Batches Table */}
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+                  {(() => {
+                    const batchesList: ItemBatch[] = Array.isArray(selectedBatchItem.Batches) && selectedBatchItem.Batches.length > 0
+                      ? selectedBatchItem.Batches
+                      : (selectedBatchItem.CStock > 0 || selectedBatchItem.BatchNo || selectedBatchItem.ExpDate
+                          ? [{
+                              BatchID: `${selectedBatchItem.ItemID}-B-initial`,
+                              ItemID: selectedBatchItem.ItemID,
+                              ItemName: selectedBatchItem.ItemName,
+                              BatchNo: selectedBatchItem.BatchNo || 'B# 001',
+                              MfgDate: selectedBatchItem.MfgDate || '',
+                              ExpDate: selectedBatchItem.ExpDate || '',
+                              PurchasePrice: selectedBatchItem.PurchasePrice,
+                              SalePrice: selectedBatchItem.Price,
+                              Qty: selectedBatchItem.CStock,
+                              InitialQty: selectedBatchItem.CStock,
+                              Status: selectedBatchItem.CStock === 0 ? 'EXHAUSTED' : isBatchExpired(selectedBatchItem.ExpDate) ? 'EXPIRED' : 'ACTIVE',
+                              CreatedAt: new Date().toISOString()
+                            }]
+                          : []);
+
+                    if (batchesList.length === 0) {
+                      return (
+                        <div className="p-8 text-center text-slate-400 space-y-2">
+                          <Boxes className="w-8 h-8 mx-auto text-slate-300" />
+                          <p className="text-xs font-bold text-slate-600">No stock batches recorded yet for this medicine.</p>
+                          <p className="text-[11px] text-slate-400">Use the form on the right to inward a new stock lot with its expiry date.</p>
+                        </div>
+                      );
+                    }
+
+                    // Sort by Expiry Date (FEFO)
+                    const sortedBatches = [...batchesList].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'));
+
+                    return (
+                      <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead className="bg-slate-100 text-slate-700 font-extrabold text-[10px] uppercase tracking-wider border-b border-slate-200 sticky top-0">
+                            <tr>
+                              <th className="px-3 py-2">Batch #</th>
+                              <th className="px-2.5 py-2">Expiry Date</th>
+                              <th className="px-2.5 py-2 text-right">Available Qty</th>
+                              <th className="px-2.5 py-2 text-right">Cost (Rs)</th>
+                              <th className="px-2.5 py-2 text-center">Status</th>
+                              <th className="px-2.5 py-2 text-center">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-800">
+                            {sortedBatches.map((b, idx) => {
+                              const isExp = isBatchExpired(b.ExpDate);
+                              const isNearExp = isBatchNearExpiry(b.ExpDate, 90);
+                              const isSelectedForEdit = editingBatchId === b.BatchID;
+
+                              return (
+                                <tr
+                                  key={b.BatchID || idx}
+                                  className={`transition hover:bg-slate-50 ${
+                                    isSelectedForEdit
+                                      ? 'bg-indigo-50/80 ring-1 ring-indigo-400'
+                                      : isExp
+                                      ? 'bg-rose-50/50'
+                                      : isNearExp
+                                      ? 'bg-amber-50/40'
+                                      : 'bg-white'
+                                  }`}
+                                >
+                                  {/* Batch # & Ref */}
+                                  <td className="px-3 py-2 font-mono font-bold text-slate-900">
+                                    <div>
+                                      <span>{b.BatchNo || 'N/A'}</span>
+                                      {b.GRNID && (
+                                        <div className="text-[9px] font-sans font-medium text-slate-400">
+                                          Ref: {b.GRNID}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Expiry Date */}
+                                  <td className="px-2.5 py-2">
+                                    <div className="flex flex-col">
+                                      <span className="font-mono font-bold text-slate-800">
+                                        {b.ExpDate || 'Not set'}
+                                      </span>
+                                      {b.MfgDate && (
+                                        <span className="text-[9px] text-slate-400 font-mono">
+                                          Mfg: {b.MfgDate}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Qty */}
+                                  <td className="px-2.5 py-2 text-right font-mono font-extrabold text-slate-900">
+                                    <span className={b.Qty === 0 ? 'text-slate-400' : 'text-emerald-700'}>
+                                      {b.Qty}
+                                    </span>
+                                  </td>
+
+                                  {/* Purchase Price */}
+                                  <td className="px-2.5 py-2 text-right font-mono text-slate-700">
+                                    {b.PurchasePrice !== undefined ? Number(b.PurchasePrice).toFixed(2) : '-'}
+                                  </td>
+
+                                  {/* Status Badge */}
+                                  <td className="px-2.5 py-2 text-center">
+                                    {b.Qty === 0 ? (
+                                      <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-bold">
+                                        Exhausted
+                                      </span>
+                                    ) : isExp ? (
+                                      <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 rounded text-[9px] font-black uppercase">
+                                        🔴 Expired
+                                      </span>
+                                    ) : isNearExp ? (
+                                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 rounded text-[9px] font-bold">
+                                        🟡 &lt;90 Days
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[9px] font-bold">
+                                        🟢 Active
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  {/* Actions */}
+                                  <td className="px-2.5 py-2 text-center">
+                                    <div className="flex items-center justify-center space-x-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEditBatch(b)}
+                                        className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition cursor-pointer"
+                                        title="Edit Batch Parameters"
+                                      >
+                                        <Edit className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteBatch(b.BatchID)}
+                                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                                        title="Delete Batch Lot"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* FEFO Dispensing Note */}
+                <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-xl flex items-start space-x-2.5">
+                  <div className="p-1.5 bg-indigo-600 text-white rounded-lg shrink-0 mt-0.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="text-[11px] text-indigo-950 leading-relaxed font-medium">
+                    <strong className="text-indigo-900">FEFO (First-Expired, First-Out) Automated Engine:</strong> When billing prescriptions or selling at POS, stock will automatically be consumed from the earliest expiring valid lot first. Expired stock lots are prevented from being dispensed.
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Inward / Edit Batch Form (5 cols) */}
+              <div className="lg:col-span-5 bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
+                    <div className="flex items-center space-x-2">
+                      <div className={`p-1.5 rounded-lg ${editingBatchId ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                        <PlusCircle className="w-4 h-4" />
+                      </div>
+                      <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-900">
+                        {editingBatchId ? 'Edit Selected Batch Lot' : 'Receive / Add New Stock Batch'}
+                      </h4>
+                    </div>
+                    {editingBatchId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingBatchId(null);
+                          setBatchFormNo('');
+                          setBatchFormExpDate('');
+                          setBatchFormQty('');
+                        }}
+                        className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                      >
+                        + New Batch
+                      </button>
+                    )}
+                  </div>
+
+                  <form id="save-batch-form" onSubmit={handleSaveBatch} className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                        Batch # (Lot Number) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. B-2026-002"
+                        value={batchFormNo}
+                        onChange={(e) => setBatchFormNo(e.target.value)}
+                        className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                          Mfg Date
+                        </label>
+                        <input
+                          type="date"
+                          value={batchFormMfgDate}
+                          onChange={(e) => setBatchFormMfgDate(e.target.value)}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-rose-600 uppercase tracking-wider mb-1">
+                          Expiry Date *
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={batchFormExpDate}
+                          onChange={(e) => setBatchFormExpDate(e.target.value)}
+                          className="w-full p-2 border border-rose-300 rounded-lg text-xs font-mono font-bold text-rose-950 focus:ring-2 focus:ring-rose-500 focus:outline-none bg-rose-50/30"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                          Quantity in Batch *
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          required
+                          placeholder="e.g. 50"
+                          value={batchFormQty}
+                          onChange={(e) => setBatchFormQty(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-black text-emerald-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                          Unit Cost (Rs.)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="Cost Price"
+                          value={batchFormCost}
+                          onChange={(e) => setBatchFormCost(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                          Retail Price (Rs.)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="Sale Price"
+                          value={batchFormSalePrice}
+                          onChange={(e) => setBatchFormSalePrice(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                          PO / GRN Ref (Opt)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. GRN-104"
+                          value={batchFormPoGrnRef}
+                          onChange={(e) => setBatchFormPoGrnRef(e.target.value)}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="pt-4 border-t border-slate-200 mt-4 flex items-center justify-end space-x-2">
+                  {editingBatchId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBatchId(null);
+                        setBatchFormNo('');
+                        setBatchFormExpDate('');
+                        setBatchFormQty('');
+                      }}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    form="save-batch-form"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-extrabold text-xs rounded-xl transition cursor-pointer shadow-md flex items-center space-x-1.5"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    <span>{editingBatchId ? 'Update Batch' : 'Save Batch & Update Master Stock'}</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 bg-slate-100 border-t border-slate-200 flex justify-between items-center px-5">
+              <div className="text-[11px] text-slate-500 font-medium">
+                Medicine ID: <span className="font-mono font-bold text-slate-800">{selectedBatchItem.ItemID}</span> • Total Batches: <span className="font-mono font-bold text-slate-800">{Array.isArray(selectedBatchItem.Batches) ? selectedBatchItem.Batches.length : (selectedBatchItem.ExpDate ? 1 : 0)}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBatchesModalOpen(false);
+                  setSelectedBatchItem(null);
+                  setEditingBatchId(null);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs"
+              >
+                Close Manager
               </button>
             </div>
           </div>

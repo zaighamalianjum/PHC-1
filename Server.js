@@ -1589,13 +1589,63 @@ app.post('/api/billing/checkout', async (req, res) => {
         // Insert details
         databaseOperations.push(db.collection('invoice_details').insertOne(invoiceDetail));
 
-        // Decrement stock in the medicine collection atomically!
-        databaseOperations.push(
-          db.collection('items').updateOne(
-            { ItemID: item.ItemID },
-            { $inc: { CStock: -qty } }
-          )
-        );
+        // Decrement stock and apply FEFO batch deduction in the medicine collection
+        databaseOperations.push((async () => {
+          try {
+            const itmDoc = await db.collection('items').findOne({ ItemID: item.ItemID });
+            if (itmDoc) {
+              let updatedBatches = Array.isArray(itmDoc.Batches) ? itmDoc.Batches : [];
+              let remainingToDeduct = qty;
+
+              if (updatedBatches.length > 0) {
+                const sortedBatches = [...updatedBatches].sort((a, b) => {
+                  if (!a.ExpDate && !b.ExpDate) return 0;
+                  if (!a.ExpDate) return 1;
+                  if (!b.ExpDate) return -1;
+                  return a.ExpDate.localeCompare(b.ExpDate);
+                });
+
+                updatedBatches = sortedBatches.map(batch => {
+                  const currentBatchQty = Number(batch.Qty) || 0;
+                  if (remainingToDeduct <= 0 || currentBatchQty <= 0) return batch;
+                  const canDeduct = Math.min(currentBatchQty, remainingToDeduct);
+                  const newQty = currentBatchQty - canDeduct;
+                  remainingToDeduct -= canDeduct;
+                  const isExp = batch.ExpDate ? new Date(batch.ExpDate) < new Date() : false;
+                  return {
+                    ...batch,
+                    Qty: newQty,
+                    Status: newQty === 0 ? 'EXHAUSTED' : (isExp ? 'EXPIRED' : 'ACTIVE')
+                  };
+                });
+              }
+
+              const activeBatches = updatedBatches.filter(b => (Number(b.Qty) || 0) > 0);
+              const earliest = activeBatches.length > 0
+                ? [...activeBatches].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+                : updatedBatches[0];
+
+              const newCStock = Math.max(0, (itmDoc.CStock || 0) - qty);
+              const updateDoc = {
+                CStock: newCStock,
+                ...(updatedBatches.length > 0 ? { Batches: updatedBatches } : {}),
+                ...(earliest ? { BatchNo: earliest.BatchNo || itmDoc.BatchNo, ExpDate: earliest.ExpDate || itmDoc.ExpDate } : {})
+              };
+
+              await db.collection('items').updateOne(
+                { ItemID: item.ItemID },
+                { $set: updateDoc }
+              );
+            } else {
+              await db.collection('items').updateOne(
+                { ItemID: item.ItemID },
+                { $inc: { CStock: -qty } }
+              );
+            }
+          } catch (itemErr) {
+            console.error(`Error updating FEFO batch stock for item ${item.ItemID}:`, itemErr);
+          }
+        })());
       }
     }
 
