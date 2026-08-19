@@ -208,6 +208,16 @@ export const INITIAL_USERS: User[] = [
       canViewSettingsDesk: false,
       canViewQueryHandlerDesk: false,
       canViewNhcHistoryDesk: false,
+      canViewErpDesk: false,
+
+      // Pharmacy Sub-desks
+      canAccessClinicalMedicine: true,
+      canAccessStoreMedicine: true,
+      canAccessSalesReturns: true,
+      canAccessStockManager: true,
+      canAccessInvoiceLogs: true,
+      canAccessMedicineLabels: true,
+      canViewPwaInstall: true,
 
       // Default Pharmacist CANNOT edit current stock levels
       canEditStockLevel: false,
@@ -223,6 +233,7 @@ export const ROLE_RIGHTS: Record<User['Role'], UserRight[]> = {
   Administrator: [
     { MenuID: 'patients', MenuName: 'Patients', Status: true, AddRec: true, PostRec: true, CancelPosted: true, PrintRec: true, ExportRec: true },
     { MenuID: 'emr', MenuName: 'EMR & Clinical Desk', Status: true, AddRec: true, PostRec: true, CancelPosted: true, PrintRec: true, ExportRec: true },
+    { MenuID: 'erp_system', MenuName: 'Mini ERP System', Status: true, AddRec: true, PostRec: true, CancelPosted: true, PrintRec: true, ExportRec: true },
     { MenuID: 'pharmacy', MenuName: 'Store & Dispensary', Status: true, AddRec: true, PostRec: true, CancelPosted: true, PrintRec: true, ExportRec: true },
     { MenuID: 'inventory', MenuName: 'Stock & Inventory Control', Status: true, AddRec: true, PostRec: true, CancelPosted: true, PrintRec: true, ExportRec: true },
     { MenuID: 'accounts', MenuName: 'Double-Entry Accounting', Status: true, AddRec: true, PostRec: true, CancelPosted: true, PrintRec: true, ExportRec: true },
@@ -235,6 +246,7 @@ export const ROLE_RIGHTS: Record<User['Role'], UserRight[]> = {
   Doctor: [
     { MenuID: 'patients', MenuName: 'Patients', Status: true, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: true, ExportRec: false },
     { MenuID: 'emr', MenuName: 'EMR & Clinical Desk', Status: true, AddRec: true, PostRec: true, CancelPosted: false, PrintRec: true, ExportRec: true },
+    { MenuID: 'erp_system', MenuName: 'Mini ERP System', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
     { MenuID: 'pharmacy', MenuName: 'Store & Dispensary', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
     { MenuID: 'inventory', MenuName: 'Stock & Inventory Control', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
     { MenuID: 'accounts', MenuName: 'Double-Entry Accounting', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
@@ -247,6 +259,7 @@ export const ROLE_RIGHTS: Record<User['Role'], UserRight[]> = {
   Receptionist: [
     { MenuID: 'patients', MenuName: 'Patients', Status: true, AddRec: true, PostRec: true, CancelPosted: false, PrintRec: true, ExportRec: false },
     { MenuID: 'emr', MenuName: 'EMR & Clinical Desk', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
+    { MenuID: 'erp_system', MenuName: 'Mini ERP System', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
     { MenuID: 'pharmacy', MenuName: 'Store & Dispensary', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
     { MenuID: 'inventory', MenuName: 'Stock & Inventory Control', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
     { MenuID: 'accounts', MenuName: 'Double-Entry Accounting', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
@@ -259,6 +272,7 @@ export const ROLE_RIGHTS: Record<User['Role'], UserRight[]> = {
   Pharmacist: [
     { MenuID: 'patients', MenuName: 'Patients', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
     { MenuID: 'emr', MenuName: 'EMR & Clinical Desk', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
+    { MenuID: 'erp_system', MenuName: 'Mini ERP System', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
     { MenuID: 'pharmacy', MenuName: 'Store & Dispensary', Status: true, AddRec: true, PostRec: true, CancelPosted: false, PrintRec: true, ExportRec: true },
     { MenuID: 'inventory', MenuName: 'Stock & Inventory Control', Status: true, AddRec: true, PostRec: false, CancelPosted: false, PrintRec: true, ExportRec: true },
     { MenuID: 'accounts', MenuName: 'Double-Entry Accounting', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
@@ -271,6 +285,7 @@ export const ROLE_RIGHTS: Record<User['Role'], UserRight[]> = {
   Accountant: [
     { MenuID: 'patients', MenuName: 'Patients', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
     { MenuID: 'emr', MenuName: 'EMR & Clinical Desk', Status: false, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: false, ExportRec: false },
+    { MenuID: 'erp_system', MenuName: 'Mini ERP System', Status: true, AddRec: true, PostRec: true, CancelPosted: false, PrintRec: true, ExportRec: true },
     { MenuID: 'pharmacy', MenuName: 'Store & Dispensary', Status: true, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: true, ExportRec: true },
     { MenuID: 'inventory', MenuName: 'Stock & Inventory Control', Status: true, AddRec: false, PostRec: false, CancelPosted: false, PrintRec: true, ExportRec: true },
     { MenuID: 'accounts', MenuName: 'Double-Entry Accounting', Status: true, AddRec: true, PostRec: true, CancelPosted: true, PrintRec: true, ExportRec: true },

@@ -497,17 +497,13 @@ export default function App() {
     if (menuId === 'dashboard') {
       return currentUser.Role === 'Administrator';
     }
-    if (menuId === 'erp_system') {
-      return true;
-    }
-    if (menuId === 'patient_visit') {
-      return currentUser.Permissions ? !!currentUser.Permissions.canViewPatientDesk : true;
-    }
 
     // 1. Check custom permissions object if configured on user
     if (currentUser.Permissions) {
       if (menuId === 'patients') return !!currentUser.Permissions.canViewPatientDesk;
+      if (menuId === 'patient_visit') return !!currentUser.Permissions.canViewPatientDesk;
       if (menuId === 'emr') return !!currentUser.Permissions.canViewEMRDesk;
+      if (menuId === 'erp_system') return currentUser.Permissions.canViewErpDesk !== false && (currentUser.Role === 'Administrator' || currentUser.Role === 'Accountant' || !!currentUser.Permissions.canViewErpDesk);
       if (menuId === 'pharmacy') return !!currentUser.Permissions.canViewPharmacyPOS;
       if (menuId === 'accounts') return !!currentUser.Permissions.canViewAccountingDesk;
       if (menuId === 'reports') return !!currentUser.Permissions.canViewReportingDesk;
@@ -517,6 +513,8 @@ export default function App() {
       if (menuId === 'nhc_history' || menuId === 'nhchistory') return !!currentUser.Permissions.canViewNhcHistoryDesk;
     }
 
+    if (menuId === 'erp_system') return currentUser.Role === 'Administrator' || currentUser.Role === 'Accountant';
+    if (menuId === 'patient_visit') return true;
     if (menuId === 'settings') return currentUser.Role === 'Administrator';
     if (menuId === 'uploads') return currentUser.Role === 'Administrator';
     if (menuId === 'reports') return currentUser.Role === 'Administrator' || currentUser.Role === 'Accountant';
@@ -2606,16 +2604,18 @@ export default function App() {
                 )}
               </div>
 
-              {/* Mobile App PWA Install Button */}
-              <button
-                onClick={() => setShowPwaInstallModal(true)}
-                className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white px-2.5 py-1 rounded-md border border-emerald-400/40 shadow-xs flex items-center space-x-1.5 transition cursor-pointer shrink-0"
-                title="Install Store Medicine Android App on Phone"
-                id="top-pwa-app-btn"
-              >
-                <Smartphone className="w-3.5 h-3.5 text-white" />
-                <span className="text-[11px] font-black uppercase tracking-tight hidden sm:inline">Store App</span>
-              </button>
+              {/* Mobile App PWA Install Button - Admin / Permission Controlled */}
+              {currentUser.Permissions?.canViewPwaInstall !== false && (
+                <button
+                  onClick={() => setShowPwaInstallModal(true)}
+                  className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white px-2.5 py-1 rounded-md border border-emerald-400/40 shadow-xs flex items-center space-x-1.5 transition cursor-pointer shrink-0"
+                  title="Install Store Medicine Android App on Phone"
+                  id="top-pwa-app-btn"
+                >
+                  <Smartphone className="w-3.5 h-3.5 text-white" />
+                  <span className="text-[11px] font-black uppercase tracking-tight hidden sm:inline">Store App</span>
+                </button>
+              )}
 
               {/* App-Wide Full Screen Toggle Button */}
               <button

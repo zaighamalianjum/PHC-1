@@ -53,7 +53,17 @@ import {
   MapPin,
   Search,
   Edit2,
-  Check
+  Check,
+  Building2,
+  PieChart,
+  Landmark,
+  ShoppingCart,
+  Receipt,
+  BarChart3,
+  Undo2,
+  History,
+  Tag,
+  Smartphone
 } from 'lucide-react';
 import { User, ClinicSettings, SmsSettings, MongoDbSettings, UserRight, City, Patient } from '../types';
 import { ROLE_RIGHTS, INITIAL_CITIES } from '../data/initialData';
@@ -118,6 +128,7 @@ export default function SettingsDesk({
     canViewSettingsDesk: true,
     canViewQueryHandlerDesk: true,
     canViewNhcHistoryDesk: true,
+    canViewErpDesk: true,
 
     canAccessWaitingQueue: true,
     canAccessPatientRegistration: true,
@@ -126,6 +137,25 @@ export default function SettingsDesk({
     canAccessGridView: true,
     canAccessAppointmentsDesk: true,
     canAccessLargeScreenDisplay: true,
+
+    canAccessClinicalMedicine: true,
+    canAccessStoreMedicine: true,
+    canAccessSalesReturns: true,
+    canAccessStockManager: true,
+    canAccessInvoiceLogs: true,
+    canAccessMedicineLabels: true,
+    canViewPwaInstall: true,
+
+    canAccessErpOverview: true,
+    canAccessErpFiscalCalendar: true,
+    canAccessErpCashBook: true,
+    canAccessErpVendors: true,
+    canAccessErpVendorStatement: true,
+    canAccessErpPoGrn: true,
+    canAccessErpLedger: true,
+    canAccessErpHrPayroll: true,
+    canAccessErpExpensesAssets: true,
+    canAccessErpReporting: true,
 
     canAddPatient: true,
     canEditPatient: true,
@@ -219,6 +249,7 @@ export default function SettingsDesk({
         canViewSettingsDesk: true,
         canViewQueryHandlerDesk: true,
         canViewNhcHistoryDesk: true,
+        canViewErpDesk: true,
         canAccessWaitingQueue: true,
         canAccessPatientRegistration: true,
         canAccessTokenIssue: true,
@@ -226,12 +257,30 @@ export default function SettingsDesk({
         canAccessGridView: true,
         canAccessAppointmentsDesk: true,
         canAccessLargeScreenDisplay: true,
+        canAccessClinicalMedicine: true,
+        canAccessStoreMedicine: true,
+        canAccessSalesReturns: true,
+        canAccessStockManager: true,
+        canAccessInvoiceLogs: true,
+        canAccessMedicineLabels: true,
+        canViewPwaInstall: true,
+        canAccessErpOverview: true,
+        canAccessErpFiscalCalendar: true,
+        canAccessErpCashBook: true,
+        canAccessErpVendors: true,
+        canAccessErpVendorStatement: true,
+        canAccessErpPoGrn: true,
+        canAccessErpLedger: true,
+        canAccessErpHrPayroll: true,
+        canAccessErpExpensesAssets: true,
+        canAccessErpReporting: true,
         canAddPatient: true,
         canEditPatient: true,
         canIssueToken: true,
         canBookAppointment: true,
         canCancelAppointment: true,
         canCallServeToken: true,
+        canDeleteToken: true,
         canEditStockLevel: true,
         canPrintPrescription: true,
         canPrintLabAdvice: true,
@@ -255,6 +304,7 @@ export default function SettingsDesk({
         canViewSettingsDesk: false,
         canViewQueryHandlerDesk: false,
         canViewNhcHistoryDesk: true,
+        canViewErpDesk: false,
         canAccessWaitingQueue: true,
         canAccessPatientRegistration: false,
         canAccessTokenIssue: false,
@@ -262,12 +312,30 @@ export default function SettingsDesk({
         canAccessGridView: true,
         canAccessAppointmentsDesk: true,
         canAccessLargeScreenDisplay: true,
+        canAccessClinicalMedicine: false,
+        canAccessStoreMedicine: false,
+        canAccessSalesReturns: false,
+        canAccessStockManager: false,
+        canAccessInvoiceLogs: false,
+        canAccessMedicineLabels: false,
+        canViewPwaInstall: false,
+        canAccessErpOverview: false,
+        canAccessErpFiscalCalendar: false,
+        canAccessErpCashBook: false,
+        canAccessErpVendors: false,
+        canAccessErpVendorStatement: false,
+        canAccessErpPoGrn: false,
+        canAccessErpLedger: false,
+        canAccessErpHrPayroll: false,
+        canAccessErpExpensesAssets: false,
+        canAccessErpReporting: false,
         canAddPatient: false,
         canEditPatient: false,
         canIssueToken: false,
         canBookAppointment: true,
         canCancelAppointment: false,
         canCallServeToken: true,
+        canDeleteToken: false,
         canEditStockLevel: false,
         canPrintPrescription: true,
         canPrintLabAdvice: true,
@@ -291,6 +359,7 @@ export default function SettingsDesk({
         canViewSettingsDesk: false,
         canViewQueryHandlerDesk: false,
         canViewNhcHistoryDesk: false,
+        canViewErpDesk: false,
         canAccessWaitingQueue: true,
         canAccessPatientRegistration: false,
         canAccessTokenIssue: true,
@@ -298,12 +367,30 @@ export default function SettingsDesk({
         canAccessGridView: false,
         canAccessAppointmentsDesk: true,
         canAccessLargeScreenDisplay: false,
+        canAccessClinicalMedicine: false,
+        canAccessStoreMedicine: false,
+        canAccessSalesReturns: false,
+        canAccessStockManager: false,
+        canAccessInvoiceLogs: false,
+        canAccessMedicineLabels: false,
+        canViewPwaInstall: false,
+        canAccessErpOverview: false,
+        canAccessErpFiscalCalendar: false,
+        canAccessErpCashBook: false,
+        canAccessErpVendors: false,
+        canAccessErpVendorStatement: false,
+        canAccessErpPoGrn: false,
+        canAccessErpLedger: false,
+        canAccessErpHrPayroll: false,
+        canAccessErpExpensesAssets: false,
+        canAccessErpReporting: false,
         canAddPatient: true,
         canEditPatient: true,
         canIssueToken: true,
         canBookAppointment: true,
         canCancelAppointment: false,
         canCallServeToken: true,
+        canDeleteToken: false,
         canEditStockLevel: false,
         canPrintPrescription: false,
         canPrintLabAdvice: false,
@@ -327,6 +414,7 @@ export default function SettingsDesk({
         canViewSettingsDesk: false,
         canViewQueryHandlerDesk: false,
         canViewNhcHistoryDesk: false,
+        canViewErpDesk: false,
         canAccessWaitingQueue: false,
         canAccessPatientRegistration: false,
         canAccessTokenIssue: false,
@@ -334,12 +422,30 @@ export default function SettingsDesk({
         canAccessGridView: false,
         canAccessAppointmentsDesk: false,
         canAccessLargeScreenDisplay: false,
+        canAccessClinicalMedicine: true,
+        canAccessStoreMedicine: true,
+        canAccessSalesReturns: true,
+        canAccessStockManager: true,
+        canAccessInvoiceLogs: true,
+        canAccessMedicineLabels: true,
+        canViewPwaInstall: true,
+        canAccessErpOverview: false,
+        canAccessErpFiscalCalendar: false,
+        canAccessErpCashBook: false,
+        canAccessErpVendors: false,
+        canAccessErpVendorStatement: false,
+        canAccessErpPoGrn: false,
+        canAccessErpLedger: false,
+        canAccessErpHrPayroll: false,
+        canAccessErpExpensesAssets: false,
+        canAccessErpReporting: false,
         canAddPatient: false,
         canEditPatient: false,
         canIssueToken: false,
         canBookAppointment: false,
         canCancelAppointment: false,
         canCallServeToken: false,
+        canDeleteToken: false,
         canEditStockLevel: false,
         canPrintPrescription: false,
         canPrintLabAdvice: false,
@@ -353,7 +459,7 @@ export default function SettingsDesk({
       setAccessAllowedUserIDs([selectedAccessUserId]);
     } else if (role === 'Accountant') {
       setAccessPermissions({
-        canViewDashboard: true,
+        canViewDashboard: false,
         canViewPatientDesk: false,
         canViewEMRDesk: false,
         canViewPharmacyPOS: true,
@@ -363,7 +469,47 @@ export default function SettingsDesk({
         canViewSettingsDesk: false,
         canViewQueryHandlerDesk: false,
         canViewNhcHistoryDesk: false,
-        canEditStockLevel: false
+        canViewErpDesk: true,
+        canAccessWaitingQueue: false,
+        canAccessPatientRegistration: false,
+        canAccessTokenIssue: false,
+        canAccessPatientVisitDesk: false,
+        canAccessGridView: false,
+        canAccessAppointmentsDesk: false,
+        canAccessLargeScreenDisplay: false,
+        canAccessClinicalMedicine: false,
+        canAccessStoreMedicine: true,
+        canAccessSalesReturns: true,
+        canAccessStockManager: true,
+        canAccessInvoiceLogs: true,
+        canAccessMedicineLabels: false,
+        canViewPwaInstall: false,
+        canAccessErpOverview: true,
+        canAccessErpFiscalCalendar: true,
+        canAccessErpCashBook: true,
+        canAccessErpVendors: true,
+        canAccessErpVendorStatement: true,
+        canAccessErpPoGrn: true,
+        canAccessErpLedger: true,
+        canAccessErpHrPayroll: true,
+        canAccessErpExpensesAssets: true,
+        canAccessErpReporting: true,
+        canAddPatient: false,
+        canEditPatient: false,
+        canIssueToken: false,
+        canBookAppointment: false,
+        canCancelAppointment: false,
+        canCallServeToken: false,
+        canDeleteToken: false,
+        canEditStockLevel: false,
+        canPrintPrescription: false,
+        canPrintLabAdvice: false,
+        canPrintVisitSlip: false,
+        canPrintTokenSlip: false,
+        canPrintPOSInvoice: true,
+        canPrintVouchers: true,
+        canPrintFinancialReports: true,
+        canExportCSVExcel: true
       });
       setAccessAllowedUserIDs([selectedAccessUserId]);
     }
@@ -1663,6 +1809,7 @@ export default function SettingsDesk({
                 { key: 'canViewDashboard', label: 'Dashboard & Executive Stats (Admin Only)', icon: Shield, desc: 'Overall patient & income analytics (Restricted to Admin)' },
                 { key: 'canViewPatientDesk', label: 'Patient Intake & OPD Queue', icon: Users, desc: 'Token booking, patient registration' },
                 { key: 'canViewEMRDesk', label: 'EMR & Clinical Desk', icon: Briefcase, desc: 'Clinical consultations, prescriptions' },
+                { key: 'canViewErpDesk', label: 'Mini ERP System', icon: Building2, desc: 'Complete enterprise accounting, vendors, PO/GRN, HR & Cash Book' },
                 { key: 'canViewPharmacyPOS', label: 'Pharmacy POS & Medicine Inventory', icon: Building, desc: 'Medicine sales counter & GRN stock' },
                 { key: 'canViewReportingDesk', label: 'Financial & Executive Reports', icon: Printer, desc: 'Ledgers, Income statement, Trial balance' },
                 { key: 'canViewUploadingDesk', label: 'CSV Imports & Uploads Desk', icon: Upload, desc: 'Bulk medicine & patient data imports' },
@@ -1691,6 +1838,117 @@ export default function SettingsDesk({
 
                     <div className="mt-0.5 shrink-0">
                       <div className={`w-9 h-5 rounded-full transition-colors relative ${isEnabled ? 'bg-blue-600' : 'bg-slate-300'}`}>
+                        <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${isEnabled ? 'left-4.5' : 'left-0.5'}`} />
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Section 2.2: Mini ERP System Sub-Desk & Feature Granular Controls */}
+          <div className="bg-white p-6 rounded-2xl border border-indigo-200 shadow-sm space-y-5">
+            <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+              <div>
+                <h4 className="text-sm font-black text-slate-800 flex items-center space-x-2">
+                  <Building2 className="w-4 h-4 text-indigo-600" />
+                  <span>Mini ERP System Sub-Desk & Feature Controls</span>
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Administer individual sub-modules inside Mini ERP System for <strong className="text-slate-800">{selectedAccessUser?.FullName}</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+              {[
+                { key: 'canAccessErpOverview', label: 'ERP Dashboard & Overview', icon: PieChart, desc: 'Overall financial KPIs, revenue, cash position' },
+                { key: 'canAccessErpFiscalCalendar', label: 'Fiscal Year & Calendar', icon: Calendar, desc: 'Financial periods, closing & quarterly reviews' },
+                { key: 'canAccessErpCashBook', label: 'Clinic Cash Book & P&L', icon: Landmark, desc: 'Cash inflows, patient fees, expenses & profit/loss' },
+                { key: 'canAccessErpVendors', label: 'Vendors & Suppliers Management', icon: Building2, desc: 'Vendor directory, profiles, contact & tax info' },
+                { key: 'canAccessErpVendorStatement', label: 'Vendor Payments & Statements', icon: FileText, desc: 'Pay vendor invoices, issue payment vouchers & statements' },
+                { key: 'canAccessErpPoGrn', label: 'Purchase Orders & GRN Stock', icon: ShoppingCart, desc: 'Create PO, Goods Received Notes & partial receiving' },
+                { key: 'canAccessErpLedger', label: 'Financial Ledger & Journal', icon: Receipt, desc: 'Double-entry transaction logs & audit postings' },
+                { key: 'canAccessErpHrPayroll', label: 'HR & Staff Payroll', icon: Users, desc: 'Employee records, monthly salaries & payroll disbursement' },
+                { key: 'canAccessErpExpensesAssets', label: 'Clinic Expenses & Assets', icon: Boxes, desc: 'Track clinic operating expenses & fixed asset register' },
+                { key: 'canAccessErpReporting', label: 'ERP Reporting & Analytics', icon: BarChart3, desc: 'Comprehensive financial statements & performance analytics' }
+              ].map((item) => {
+                const isEnabled = accessPermissions[item.key as keyof typeof accessPermissions] !== false;
+                return (
+                  <label
+                    key={item.key}
+                    onClick={() => handleToggleDeskPermission(item.key as any)}
+                    className={`p-3 rounded-xl border transition-all flex items-start justify-between cursor-pointer select-none ${
+                      isEnabled 
+                        ? 'bg-indigo-50/70 border-indigo-300 text-slate-900 shadow-2xs' 
+                        : 'bg-slate-50 border-slate-200 text-slate-500 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <div className="space-y-0.5 pr-2">
+                      <div className="flex items-center space-x-1.5 font-extrabold text-xs">
+                        <item.icon className={`w-3.5 h-3.5 ${isEnabled ? 'text-indigo-600' : 'text-slate-400'}`} />
+                        <span>{item.label}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-medium">{item.desc}</p>
+                    </div>
+
+                    <div className="mt-0.5 shrink-0">
+                      <div className={`w-9 h-5 rounded-full transition-colors relative ${isEnabled ? 'bg-indigo-600' : 'bg-slate-300'}`}>
+                        <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${isEnabled ? 'left-4.5' : 'left-0.5'}`} />
+                      </div>
+                    </div>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Section 2.3: Pharmacy POS & Dispensary Sub-Desk & Feature Controls */}
+          <div className="bg-white p-6 rounded-2xl border border-emerald-200 shadow-sm space-y-5">
+            <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+              <div>
+                <h4 className="text-sm font-black text-slate-800 flex items-center space-x-2">
+                  <ShoppingCart className="w-4 h-4 text-emerald-600" />
+                  <span>Pharmacy POS & Dispensary Sub-Desk Controls</span>
+                </h4>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Configure specific dispensary counters, sales screens, and mobile app installation buttons for <strong className="text-slate-800">{selectedAccessUser?.FullName}</strong>.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+              {[
+                { key: 'canAccessClinicalMedicine', label: 'Clinical Medicine POS Counter', icon: ShoppingCart, desc: 'Doctor prescription dispensing checkout' },
+                { key: 'canAccessStoreMedicine', label: 'Store Medicine Sales Counter', icon: ShoppingCart, desc: 'Direct retail store medicine POS billing' },
+                { key: 'canAccessSalesReturns', label: 'Sales Returns & Refunds', icon: Undo2, desc: 'Customer return processing & bill adjustment' },
+                { key: 'canAccessStockManager', label: 'Stock Grid & Medicine Manager', icon: Database, desc: 'Inventory catalog, batches & pricing overview' },
+                { key: 'canAccessInvoiceLogs', label: 'Invoice Logs & Past Receipts', icon: History, desc: 'View past transaction receipts & reprint bills' },
+                { key: 'canAccessMedicineLabels', label: 'Clinic Medicine Label Printer', icon: Tag, desc: 'Print thermal bottle & strip dosage labels' },
+                { key: 'canViewPwaInstall', label: '📱 Install Mobile / Android App Button', icon: Smartphone, desc: 'Show/Hide the Store Medicine APK / PWA install modal and header button' }
+              ].map((item) => {
+                const isEnabled = accessPermissions[item.key as keyof typeof accessPermissions] !== false;
+                return (
+                  <label
+                    key={item.key}
+                    onClick={() => handleToggleDeskPermission(item.key as any)}
+                    className={`p-3 rounded-xl border transition-all flex items-start justify-between cursor-pointer select-none ${
+                      isEnabled 
+                        ? 'bg-emerald-50/70 border-emerald-300 text-slate-900 shadow-2xs' 
+                        : 'bg-slate-50 border-slate-200 text-slate-500 opacity-60 hover:opacity-100'
+                    }`}
+                  >
+                    <div className="space-y-0.5 pr-2">
+                      <div className="flex items-center space-x-1.5 font-extrabold text-xs">
+                        <item.icon className={`w-3.5 h-3.5 ${isEnabled ? 'text-emerald-600' : 'text-slate-400'}`} />
+                        <span>{item.label}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 font-medium">{item.desc}</p>
+                    </div>
+
+                    <div className="mt-0.5 shrink-0">
+                      <div className={`w-9 h-5 rounded-full transition-colors relative ${isEnabled ? 'bg-emerald-600' : 'bg-slate-300'}`}>
                         <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${isEnabled ? 'left-4.5' : 'left-0.5'}`} />
                       </div>
                     </div>

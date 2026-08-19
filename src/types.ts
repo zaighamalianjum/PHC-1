@@ -325,6 +325,7 @@ export interface User {
     canViewSettingsDesk?: boolean;
     canViewQueryHandlerDesk?: boolean;
     canViewNhcHistoryDesk?: boolean;
+    canViewErpDesk?: boolean;
 
     // Granular Patient Intake & Queue Sub-desk Permissions
     canAccessPatientRegistration?: boolean;
@@ -334,6 +335,27 @@ export interface User {
     canAccessPatientVisitDesk?: boolean;
     canAccessGridView?: boolean;
     canAccessLargeScreenDisplay?: boolean;
+
+    // Granular Pharmacy POS Sub-desk Permissions
+    canAccessClinicalMedicine?: boolean;
+    canAccessStoreMedicine?: boolean;
+    canAccessSalesReturns?: boolean;
+    canAccessStockManager?: boolean;
+    canAccessInvoiceLogs?: boolean;
+    canAccessMedicineLabels?: boolean;
+    canViewPwaInstall?: boolean;
+
+    // Granular Mini ERP System Sub-desk Permissions
+    canAccessErpOverview?: boolean;
+    canAccessErpFiscalCalendar?: boolean;
+    canAccessErpCashBook?: boolean;
+    canAccessErpVendors?: boolean;
+    canAccessErpVendorStatement?: boolean;
+    canAccessErpPoGrn?: boolean;
+    canAccessErpLedger?: boolean;
+    canAccessErpHrPayroll?: boolean;
+    canAccessErpExpensesAssets?: boolean;
+    canAccessErpReporting?: boolean;
 
     // Specific Action Permissions
     canAddPatient?: boolean;

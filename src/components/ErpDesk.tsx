@@ -5379,17 +5379,20 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       {/* TOP HORIZONTAL ERP NAVIGATION MENU BAR */}
       <div className="bg-white rounded-xl border border-slate-200 p-1.5 shadow-xs flex items-center space-x-1 overflow-x-auto scrollbar-none touch-pan-x z-20">
         {[
-          { id: 'overview', label: 'ERP Dashboard', icon: PieChart },
-          { id: 'fiscal_calendar', label: 'Fiscal Year', icon: Calendar },
-          { id: 'cash_book_pnl', label: 'Clinic Cash', icon: Landmark },
-          { id: 'vendors', label: 'Vendor', icon: Building2 },
-          { id: 'vendor_statement', label: 'Vendor Payment', icon: FileText },
-          { id: 'po', label: 'PO & GRN', icon: ShoppingCart },
-          { id: 'ledger', label: 'Financial Ledger', icon: Receipt },
-          { id: 'hr', label: 'HR & Payroll', icon: Users },
-          { id: 'expenses_assets', label: 'Expenses & Assets', icon: Boxes },
-          { id: 'reporting', label: 'Reporting & Analytics', icon: BarChart3 }
-        ].map((tab) => {
+          { id: 'overview', label: 'ERP Dashboard', icon: PieChart, perm: 'canAccessErpOverview' },
+          { id: 'fiscal_calendar', label: 'Fiscal Year', icon: Calendar, perm: 'canAccessErpFiscalCalendar' },
+          { id: 'cash_book_pnl', label: 'Clinic Cash', icon: Landmark, perm: 'canAccessErpCashBook' },
+          { id: 'vendors', label: 'Vendor', icon: Building2, perm: 'canAccessErpVendors' },
+          { id: 'vendor_statement', label: 'Vendor Payment', icon: FileText, perm: 'canAccessErpVendorStatement' },
+          { id: 'po', label: 'PO & GRN', icon: ShoppingCart, perm: 'canAccessErpPoGrn' },
+          { id: 'ledger', label: 'Financial Ledger', icon: Receipt, perm: 'canAccessErpLedger' },
+          { id: 'hr', label: 'HR & Payroll', icon: Users, perm: 'canAccessErpHrPayroll' },
+          { id: 'expenses_assets', label: 'Expenses & Assets', icon: Boxes, perm: 'canAccessErpExpensesAssets' },
+          { id: 'reporting', label: 'Reporting & Analytics', icon: BarChart3, perm: 'canAccessErpReporting' }
+        ].filter((tab) => {
+          if (!currentUser?.Permissions) return true;
+          return (currentUser.Permissions as any)[tab.perm] !== false;
+        }).map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
