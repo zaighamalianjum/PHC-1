@@ -136,11 +136,22 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
   const [conditionFilter, setConditionFilter] = useState<string>('All');
   const [labFilter, setLabFilter] = useState<string>('All');
   const [sortBy, setSortBy] = useState<string>('name-asc');
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
+  const [mobileTab, setMobileTab] = useState<'list' | 'details'>('list');
 
   // Manual record drawer / Editor state
   const [isEditing, setIsEditing] = useState(false);
   const [editorRecord, setEditorRecord] = useState<Partial<NhcPatientHistory>>({});
   const [editorError, setEditorError] = useState('');
+  const detailPanelRef = useRef<HTMLDivElement>(null);
+
+  const scrollToDetails = () => {
+    if (window.innerWidth < 1024) {
+      setTimeout(() => {
+        detailPanelRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 100);
+    }
+  };
 
   // Handle high-speed Excel/CSV stream file upload
   const handleFileUpload = (file: File) => {
@@ -319,12 +330,14 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
       RegistrationDate: new Date().toISOString().split('T')[0]
     });
     setEditorError('');
+    scrollToDetails();
   };
 
   const handleOpenEditForm = (rec: NhcPatientHistory) => {
     setIsEditing(true);
     setEditorRecord({ ...rec });
     setEditorError('');
+    scrollToDetails();
   };
 
   // Save/Submit Form directly to DB
@@ -457,7 +470,7 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
   });
 
   return (
-    <div className="flex-1 overflow-hidden flex flex-col lg:flex-row bg-slate-50 relative" id="nhc-patient-history-root">
+    <div className="flex-1 overflow-y-auto lg:overflow-hidden flex flex-col lg:flex-row bg-slate-50 relative" id="nhc-patient-history-root">
       {isLoading && (
         <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center z-50 p-4">
           <div className="bg-white p-6 rounded-2xl shadow-xl border border-slate-150 flex flex-col items-center max-w-xs w-full text-center space-y-4">
@@ -470,15 +483,15 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
         </div>
       )}
       
-      {/* Main Body Panel: Excel Upload & Patient Table */}
-      <div className="flex-1 flex flex-col overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6 lg:border-r lg:border-slate-200">
+      {/* Main Body Panel: Search Filters & Patient Table */}
+      <div className="flex-1 flex flex-col overflow-y-visible lg:overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6 lg:border-r lg:border-slate-200">
         
         {/* Workspace Action Card */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-end gap-3 bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200/80 shadow-xs shrink-0">
           <div className="flex items-center gap-3 w-full sm:w-auto justify-end">
             <button
               onClick={handleOpenAddForm}
-              className="w-full sm:w-auto px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer"
+              className="w-full sm:w-auto px-4 py-2.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-xs transition-all cursor-pointer min-h-[40px] sm:min-h-0"
             >
               <Plus className="w-4 h-4" />
               <span>Add Patient Record</span>
@@ -533,7 +546,7 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
                       fetchRecords(searchTerm);
                     }
                   }}
-                  placeholder=""
+                  placeholder="Search by Name, ID, Phone, Diagnosis, or Symptoms..."
                   className="w-full bg-slate-50 border border-slate-200 rounded-xl py-2.5 sm:py-2 pl-10 pr-4 text-xs focus:ring-1 focus:ring-indigo-500 focus:outline-none placeholder:text-slate-400 text-slate-800"
                   id="nhc-patient-search"
                 />
@@ -542,7 +555,7 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
                 <button
                   type="button"
                   onClick={() => fetchRecords(searchTerm)}
-                  className="flex-1 sm:flex-initial px-4 py-2.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer"
+                  className="flex-1 sm:flex-initial px-4 py-2.5 sm:py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shrink-0 cursor-pointer min-h-[40px] sm:min-h-0"
                 >
                   <Search className="w-3.5 h-3.5" /> Search Database
                 </button>
@@ -550,11 +563,25 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
                   <Database className="w-3.5 h-3.5 text-indigo-500" />
                   Loaded: {filteredList.length}
                 </div>
+                {/* Mobile Filter Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setShowMobileFilters(!showMobileFilters)}
+                  className={`md:hidden flex items-center gap-1 px-3 py-2.5 rounded-xl border text-xs font-bold transition shrink-0 ${
+                    showMobileFilters || genderFilter !== 'All' || ageFilter !== 'All' || conditionFilter !== 'All' || labFilter !== 'All' || sortBy !== 'name-asc'
+                      ? 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                      : 'bg-slate-50 border-slate-200 text-slate-600'
+                  }`}
+                  title="Toggle filter options"
+                >
+                  <Filter className="w-3.5 h-3.5" />
+                  <span>Filters</span>
+                </button>
               </div>
             </div>
 
             {/* Quick Filter Selects */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div className={`${showMobileFilters ? 'grid' : 'hidden md:grid'} grid-cols-2 md:grid-cols-5 gap-2.5 sm:gap-3 pt-2 md:pt-0`}>
               {/* Gender */}
               <div className="space-y-1 text-left">
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-0.5">
@@ -623,7 +650,7 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
               </div>
 
               {/* Sort By */}
-              <div className="space-y-1 text-left">
+              <div className="space-y-1 text-left col-span-2 md:col-span-1">
                 <label className="text-[9px] font-black text-slate-400 uppercase tracking-wider flex items-center gap-0.5">
                   <Layers className="w-2.5 h-2.5" /> Sort Order
                 </label>
@@ -647,8 +674,8 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
           {/* Grid View of Database Patient Records */}
           <div className="flex-1 overflow-y-auto">
             {!hasSearched && historyList.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
-                <Search className="w-12 h-12 text-indigo-200" />
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 sm:p-8 space-y-3">
+                <Search className="w-10 sm:w-12 h-10 sm:h-12 text-indigo-200" />
                 <div>
                   <span className="text-xs font-bold text-slate-600 block">Query-Only Patient Archive</span>
                   <p className="text-[10px] text-slate-400 max-w-xs mt-1 mx-auto">
@@ -657,8 +684,8 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
                 </div>
               </div>
             ) : historyList.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 space-y-3">
-                <FileSpreadsheet className="w-12 h-12 text-indigo-200" />
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 sm:p-8 space-y-3">
+                <FileSpreadsheet className="w-10 sm:w-12 h-10 sm:h-12 text-indigo-200" />
                 <div>
                   <span className="text-xs font-bold text-slate-600 block">Production Database is Empty</span>
                   <p className="text-[10px] text-slate-400 max-w-xs mt-1 mx-auto">
@@ -667,12 +694,12 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
                 </div>
               </div>
             ) : filteredList.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center text-center p-8 text-slate-400 text-xs space-y-2">
+              <div className="h-full flex flex-col items-center justify-center text-center p-6 sm:p-8 text-slate-400 text-xs space-y-2">
                 <UserMinus className="w-8 h-8 text-slate-300" />
                 <span>No historical profiles matches your active filter matrix.</span>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pb-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 sm:gap-4 pb-4">
                 {(() => {
                   const seenRecords: NhcPatientHistory[] = [];
                   const uniqueFiltered = filteredList.filter(rec => {
@@ -687,8 +714,13 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
                     return (
                       <div
                         key={`nhc-card-${rec.PatientID}-${cardIdx}`}
-                        onClick={() => { setSelectedRecord(rec); setSelectedVisitDate('ALL'); setIsEditing(false); }}
-                      className={`p-4 rounded-2xl border transition-all duration-150 cursor-pointer text-left flex flex-col justify-between ${
+                        onClick={() => {
+                          setSelectedRecord(rec);
+                          setSelectedVisitDate('ALL');
+                          setIsEditing(false);
+                          scrollToDetails();
+                        }}
+                      className={`p-3.5 sm:p-4 rounded-2xl border transition-all duration-150 cursor-pointer text-left flex flex-col justify-between ${
                         isSelected 
                           ? 'border-indigo-500 bg-indigo-50/25 ring-1 ring-indigo-500/80 shadow-xs' 
                           : 'border-slate-150 hover:border-slate-300 bg-white hover:bg-slate-50/50 hover:shadow-xs'
@@ -744,18 +776,44 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
       {/* ========================================================== */}
       {/* RIGHT WORKSPACE: DETAILED VIEWER, RECORD ADDER, & PROFILE EDITOR */}
       {/* ========================================================== */}
-      <div className="w-full lg:w-100 bg-slate-50 p-6 flex flex-col h-full overflow-y-auto shrink-0 border-t lg:border-t-0 lg:border-l border-slate-200">
+      <div 
+        ref={detailPanelRef}
+        id="nhc-patient-detail-panel"
+        className="w-full lg:w-[420px] xl:w-[460px] bg-slate-50 p-3.5 sm:p-6 flex flex-col overflow-y-visible lg:overflow-y-auto shrink-0 border-t lg:border-t-0 lg:border-l border-slate-200 min-h-[320px]"
+      >
         
+        {/* Mobile Navigation / Quick Jump Bar */}
+        {(selectedRecord || isEditing) && (
+          <div className="lg:hidden flex items-center justify-between pb-3 mb-3 border-b border-slate-200">
+            <button
+              type="button"
+              onClick={() => {
+                if (isEditing) setIsEditing(false);
+                document.getElementById('nhc-patient-search')?.scrollIntoView({ behavior: 'smooth' });
+              }}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-800 font-bold text-xs rounded-xl border border-slate-300 shadow-xs cursor-pointer transition active:scale-95"
+            >
+              <ChevronLeft className="w-4 h-4 text-indigo-600 rotate-90" />
+              <span>Back to Top Search</span>
+            </button>
+            <span className="text-[10px] font-mono font-bold text-indigo-700 bg-indigo-50 px-2.5 py-1 rounded-full border border-indigo-150 uppercase tracking-wider">
+              {isEditing ? (editorRecord._id ? 'Edit Mode' : 'New Record') : (selectedRecord?.PatientName || 'Patient Details')}
+            </span>
+          </div>
+        )}
+
         {/* State A: DIRECT EDIT / ADD RECORD FORM WRAPPER */}
         {isEditing ? (
-          <form onSubmit={handleSaveForm} className="bg-white rounded-2xl border border-slate-200 p-5 shadow-sm space-y-5 text-left animate-fadeIn">
+          <form onSubmit={handleSaveForm} className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-sm space-y-4 sm:space-y-5 text-left animate-fadeIn">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3">
               <span className="text-[10px] font-black text-indigo-500 uppercase tracking-wider block">
                 {editorRecord._id ? 'Modify Patient Record' : 'Record New Legacy Patient'}
               </span>
               <button 
                 type="button" 
-                onClick={() => setIsEditing(false)}
+                onClick={() => {
+                  setIsEditing(false);
+                }}
                 className="p-1 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-600"
               >
                 <X className="w-4 h-4" />
@@ -1053,13 +1111,25 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
                       </div>
                     </div>
                   </div>
-                  <button
-                    onClick={() => handleOpenEditForm(selectedRecord)}
-                    className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-500 hover:text-indigo-600 rounded-lg border border-slate-150 transition"
-                    title="Edit Patient Record"
-                  >
-                    <Edit className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => handleOpenEditForm(selectedRecord)}
+                      className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-600 hover:text-indigo-600 rounded-lg border border-slate-150 transition cursor-pointer"
+                      title="Edit Patient Record"
+                    >
+                      <Edit className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedRecord(null);
+                        setMobileTab('list');
+                      }}
+                      className="p-1.5 bg-slate-50 hover:bg-slate-100 text-slate-400 hover:text-slate-700 rounded-lg border border-slate-150 transition cursor-pointer"
+                      title="Close Profile View"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Select Visit Date Dropdown */}
@@ -1309,12 +1379,16 @@ export default function NhcPatientHistoryDesk({ mongoDbSettings, setNhcPatients 
           })()
         ) : (
           /* State C: CLINIC EMPTY DETAILED STATE PLACEHOLDER */
-          <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-3">
-            <UserCheck className="w-12 h-12 text-slate-300" />
-            <span className="text-xs font-bold text-slate-600">Select a Patient Profile</span>
-            <p className="text-[10px] max-w-xs text-slate-400 mx-auto">
-              Click on any patient profile in the archive matrix to inspect their deep clinical diagnostic history, spouse relation, and prescriptions.
-            </p>
+          <div className="min-h-[250px] lg:h-full flex flex-col items-center justify-center text-center p-6 text-slate-500 space-y-3.5 bg-white rounded-2xl border-2 border-dashed border-slate-200/90 shadow-xs">
+            <div className="p-3.5 bg-indigo-50/90 rounded-2xl text-indigo-600 border border-indigo-100/60 shadow-xs">
+              <UserCheck className="w-8 h-8 sm:w-10 sm:h-10 text-indigo-600" />
+            </div>
+            <div className="space-y-1">
+              <span className="text-sm font-extrabold text-slate-800 block">Select a Patient Profile</span>
+              <p className="text-xs max-w-xs text-slate-500 mx-auto leading-relaxed">
+                Click or tap on any patient profile card above to inspect their clinical diagnostic history, previous visits, and prescriptions here below.
+              </p>
+            </div>
           </div>
         )}
       </div>

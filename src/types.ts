@@ -389,6 +389,7 @@ export interface ClinicSettings {
   DoctorSignatureText: string;
   ClinicAddress: string;
   PhoneMobile: string;
+  Website?: string;
   OPDFee: number;
   ClinicLogoImage?: string;
   LetterHeadImage?: string;

@@ -745,6 +745,7 @@ export default function PatientDesk({
   const [isSearchLoadingModal, setIsSearchLoadingModal] = useState<boolean>(false);
   const [historyAlertModalOpen, setHistoryAlertModalOpen] = useState<boolean>(false);
   const [hidePreviousHistory, setHidePreviousHistory] = useState<boolean>(false);
+  const [showDailyBreakdownMobile, setShowDailyBreakdownMobile] = useState<boolean>(false);
 
   // States for Daily Collection Report (Clinic & Store) Grid-View Modal
   const [isDailyCollectionReportModalOpen, setIsDailyCollectionReportModalOpen] = useState<boolean>(false);
@@ -917,7 +918,19 @@ export default function PatientDesk({
   };
 
   const handlePrintAppointmentReceipt = (app: Appointment) => {
-    window.print();
+    const pat = patients.find(p => p.PatientID === app.PatientID);
+    const tok = tokens.find(t => t.PatientID === app.PatientID && t.Date === app.AppointmentDate);
+    handlePrintThermalTokenSlip({
+      tokenNo: tok?.TokenNo || 1,
+      patientId: app.PatientID,
+      patientName: pat?.PatientName || app.PatientID,
+      shift: app.Shift,
+      date: app.AppointmentDate || new Date().toISOString().split('T')[0],
+      fee: app.FeeCharged || 0,
+      age: pat?.AgeYears,
+      sex: pat?.Sex,
+      phone: pat?.PhoneMobile
+    });
   };
 
   const handleSaveAddAppointment = (e: React.FormEvent | React.MouseEvent, shouldPrint?: boolean) => {
@@ -1103,7 +1116,7 @@ export default function PatientDesk({
     setTimeout(() => setPvSaveSuccess(''), 4000);
   };
 
-  const handleOpenPrintModal = (docType: 'A5_VISIT_SLIP' | 'A4_PRESCRIPTION' | 'A4_LAB_TESTS') => {
+  const handleOpenPrintModal = (docType: 'A5_VISIT_SLIP' | 'A4_PRESCRIPTION' | 'A4_LAB_TESTS' | 'A4_PATIENT_INVOICE') => {
     if (!pvSelectedPatientId) {
       setPvSaveError('Please select a patient first to print.');
       return;
@@ -1175,7 +1188,7 @@ ${lab || 'Routine Homeopathic Treatment'}
 
 ----------------------------------------
 *Dr. Ejaz Ahmad* (PUNJAB HOMEOPATHIC CLINIC)
-*Contact:* +92 300-4208323
+*Contact:* +92-311-4000608
 Healing Naturally. Restoring Balance.`;
 
     // Format phone number
@@ -2504,8 +2517,9 @@ Healing Naturally. Restoring Balance.`;
     }
 
     const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cPhone = clinicSettings?.PhoneMobile || '0300-1234567';
-    const cAddress = clinicSettings?.ClinicAddress || 'Main Clinic, Punjab, Pakistan';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const shiftText = data.shift === 1 ? 'MORNING SHIFT (08:30 AM - 12:00 PM)' : 'EVENING SHIFT (04:30 PM - 09:00 PM)';
     const dateStr = data.date || new Date().toISOString().split('T')[0];
     const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -2515,41 +2529,70 @@ Healing Naturally. Restoring Balance.`;
       <html>
         <head>
           <title>Token Slip #${data.tokenNo} - ${data.patientName}</title>
+          <meta charset="utf-8" />
           <style>
-            @media print {
-              @page { margin: 0; size: 80mm auto; }
-              body { margin: 0; padding: 2mm 3mm; }
+            * {
+              box-sizing: border-box !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
-            body {
-              font-family: 'Courier New', Courier, monospace, Arial, sans-serif;
-              width: 72mm;
+            @media print {
+              @page {
+                size: 80mm auto;
+                margin: 0;
+              }
+              html, body {
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 100% !important;
+                margin: 0 !important;
+                padding: 1.5mm 1mm !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+            html, body {
+              width: 100%;
+              max-width: 76mm;
+              min-width: 72mm;
               margin: 0 auto;
-              padding: 8px 4px;
-              color: #000;
-              background: #fff;
-              font-size: 11px;
+              padding: 4px 2mm;
+              color: #000000;
+              background: #ffffff;
+              font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace;
+              font-size: 11.5px;
+              line-height: 1.25;
+              word-wrap: break-word;
+              overflow-wrap: break-word;
             }
             .text-center { text-align: center; }
-            .clinic-header { text-align: center; margin-bottom: 4px; }
-            .clinic-name { font-size: 13px; font-weight: 900; text-transform: uppercase; margin: 0; line-height: 1.2; font-family: sans-serif; }
-            .clinic-sub { font-size: 9px; font-weight: bold; color: #111; margin-top: 2px; text-transform: uppercase; }
-            .divider { border-top: 1px dashed #000; margin: 5px 0; }
+            .full-width { width: 100%; box-sizing: border-box; }
+            .clinic-header { text-align: center; margin-bottom: 3px; width: 100%; }
+            .clinic-name { font-size: 13.5px; font-weight: 900; text-transform: uppercase; margin: 0; line-height: 1.15; font-family: 'Arial Black', Arial, sans-serif; word-break: break-word; }
+            .clinic-sub { font-size: 9.5px; font-weight: bold; color: #111; margin-top: 1.5px; text-transform: uppercase; word-break: break-word; }
+            .divider { border-top: 1.5px dashed #000000; margin: 4px 0; width: 100%; }
+            
             .token-card {
-              border: 2px solid #000;
+              border: 2px solid #000000;
               padding: 6px 4px;
-              margin: 6px 0;
+              margin: 5px 0;
               text-align: center;
               border-radius: 4px;
-              background: #fff;
+              background: #ffffff;
+              width: 100%;
+              box-sizing: border-box;
             }
-            .token-title { font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; font-family: sans-serif; }
-            .token-number { font-size: 36px; font-weight: 900; font-family: Arial, sans-serif; margin: 2px 0; line-height: 1; }
-            .token-shift { font-size: 9px; font-weight: 800; text-transform: uppercase; background: #000; color: #fff; padding: 2px 5px; display: inline-block; border-radius: 2px; margin-top: 2px; }
-            .detail-row { display: flex; justify-content: space-between; margin: 3px 0; font-size: 11px; }
-            .detail-label { font-weight: bold; width: 38%; }
+            .token-title { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; font-family: sans-serif; }
+            .token-number { font-size: 38px; font-weight: 900; font-family: Arial, sans-serif; margin: 2px 0; line-height: 1; }
+            .token-shift { font-size: 9.5px; font-weight: 800; text-transform: uppercase; background: #000000; color: #ffffff; padding: 2.5px 6px; display: inline-block; border-radius: 2px; margin-top: 2px; word-break: break-word; }
+            
+            .detail-row { display: flex; justify-content: space-between; align-items: baseline; margin: 2.5px 0; font-size: 11px; width: 100%; }
+            .detail-label { font-weight: bold; width: 38%; flex-shrink: 0; }
             .detail-val { font-weight: bold; width: 62%; text-align: right; word-break: break-word; }
-            .fee-box { font-size: 12px; font-weight: 900; text-align: center; padding: 4px; border: 1.5px solid #000; margin-top: 5px; }
-            .footer-msg { font-size: 8.5px; text-align: center; margin-top: 8px; font-weight: bold; line-height: 1.3; }
+            
+            .fee-box { font-size: 13px; font-weight: 900; text-align: center; padding: 4px; border: 1.5px solid #000000; margin-top: 5px; width: 100%; box-sizing: border-box; }
+            .footer-msg { font-size: 9px; text-align: center; margin-top: 6px; font-weight: bold; line-height: 1.35; width: 100%; word-break: break-word; }
           </style>
         </head>
         <body>
@@ -2557,7 +2600,7 @@ Healing Naturally. Restoring Balance.`;
             <h2 class="clinic-name">${clinicName}</h2>
             <div class="clinic-sub">OPD CONSULTATION TOKEN SLIP</div>
             <div style="font-size: 8.5px; margin-top: 2px;">${cAddress}</div>
-            <div style="font-size: 8.5px; font-weight: bold;">Ph: ${cPhone}</div>
+            <div style="font-size: 8.5px; font-weight: bold;">📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
           </div>
 
           <div class="divider"></div>
@@ -2606,7 +2649,7 @@ Healing Naturally. Restoring Balance.`;
           <div class="footer-msg">
             <p style="margin: 2px 0; text-transform: uppercase;">Please watch LED screen for Token #${data.tokenNo}</p>
             <p style="margin: 2px 0;">Kindly present this token slip to doctor.</p>
-            <p style="margin: 4px 0 0 0; font-size: 8px; font-weight: normal;">* Thermal Printer Token Receipt *</p>
+            <p style="margin: 4px 0 0 0; font-size: 8px; font-weight: normal;">* 80mm Thermal Printer Token Slip *</p>
           </div>
 
           <script>
@@ -2673,95 +2716,205 @@ Healing Naturally. Restoring Balance.`;
       return;
     }
 
-    const printWin = window.open('', '_blank', 'width=950,height=1100');
+    const titleStr = docType === 'A5_VISIT_SLIP'
+      ? "Visit Slip"
+      : docType === 'A4_LAB_TESTS'
+      ? "Lab Test Advice"
+      : docType === 'A4_PATIENT_INVOICE'
+      ? "Patient Invoice"
+      : "Prescription";
+
+    const printWin = window.open('', '_blank', 'width=1000,height=1200');
     if (!printWin) {
+      // If popup is blocked by browser, fallback to current window printing
       window.print();
       return;
     }
 
-    const isA5 = docType === 'A5_VISIT_SLIP';
-    const pageCss = `@page { size: A4 portrait; margin: 0; }`;
-
-    const titleStr = docType === 'A5_VISIT_SLIP'
-      ? "Patient Visit Slip (148mm x 210mm)"
-      : docType === 'A4_LAB_TESTS'
-      ? "Lab Test Advice (A4 Letterhead)"
-      : docType === 'A4_PATIENT_INVOICE'
-      ? "Patient Official Invoice (Punjab Homeopathic Clinic)"
-      : "Prescription Letterhead (A4)";
-
-    const paperW = '210mm';
-    const paperH = '297mm';
+    // Extract all local stylesheets from current document
+    const parentStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map(el => el.outerHTML)
+      .join('\n');
 
     printWin.document.write(`
       <!DOCTYPE html>
-      <html>
+      <html lang="en">
         <head>
-          <title>${titleStr} - Homeopathic Clinic</title>
-          <script src="https://cdn.tailwindcss.com"></script>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+          <title>${titleStr} - ${selectedPvPatient?.PatientName || 'Patient'} (${selectedPvPatient?.PatientID || ''})</title>
+          ${parentStyles}
           <style>
-            ${pageCss}
+            @page {
+              size: A4 portrait;
+              margin: 0;
+            }
             * {
               box-sizing: border-box !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
             html, body {
               margin: 0 !important;
               padding: 0 !important;
-              width: ${paperW} !important;
-              height: ${paperH} !important;
-              max-height: ${paperH} !important;
-              background: white !important;
+              background-color: #f1f5f9;
               color: #0f172a;
-              font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+              font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
-              overflow: hidden !important;
             }
+            
+            /* Screen Preview Toolbar */
+            .screen-preview-bar {
+              background: #0f172a;
+              color: #ffffff;
+              padding: 10px 16px;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+              position: sticky;
+              top: 0;
+              z-index: 9999;
+            }
+            .screen-preview-btn {
+              background: #059669;
+              color: #ffffff;
+              border: none;
+              padding: 8px 18px;
+              font-size: 13px;
+              font-weight: 800;
+              border-radius: 8px;
+              cursor: pointer;
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+              transition: background 0.15s ease;
+            }
+            .screen-preview-btn:hover {
+              background: #047857;
+            }
+            .screen-close-btn {
+              background: #334155;
+              color: #e2e8f0;
+              border: none;
+              padding: 8px 14px;
+              font-size: 12px;
+              font-weight: 700;
+              border-radius: 8px;
+              cursor: pointer;
+              transition: background 0.15s ease;
+            }
+            .screen-close-btn:hover {
+              background: #475569;
+            }
+
+            .page-preview-wrapper {
+              display: flex;
+              justify-content: center;
+              padding: 20px 10px;
+              background-color: #f1f5f9;
+            }
+
+            #printable-patient-doc, #print-container {
+              background: #ffffff !important;
+              color: #0f172a !important;
+              visibility: visible !important;
+              opacity: 1 !important;
+              display: flex !important;
+              justify-content: center !important;
+              box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+            }
+
+            img, svg {
+              max-width: 100%;
+            }
+            img[alt*="Logo"], img[alt*="logo"], .logo-img, .brand-logo, .clinic-logo {
+              max-height: 70px !important;
+              max-width: 100px !important;
+              object-fit: contain !important;
+            }
+
             @media print {
-              .print\:hidden, .no-print, button, header, nav {
+              .screen-preview-bar, .no-print, .print\\:hidden, button, header, nav {
                 display: none !important;
+                visibility: hidden !important;
               }
               html, body {
+                width: 100% !important;
+                max-width: 100% !important;
                 margin: 0 !important;
                 padding: 0 !important;
-                width: ${paperW} !important;
-                max-width: ${paperW} !important;
-                height: ${paperH} !important;
-                max-height: ${paperH} !important;
-                overflow: hidden !important;
-                page-break-after: avoid !important;
+                background: #ffffff !important;
+                overflow: visible !important;
+                visibility: visible !important;
+                display: block !important;
+              }
+              .page-preview-wrapper {
+                padding: 0 !important;
+                margin: 0 !important;
+                background: transparent !important;
+                display: block !important;
+              }
+              #printable-patient-doc, #print-container {
+                box-shadow: none !important;
+                border: none !important;
+                margin: 0 auto !important;
+                padding: 0 !important;
+                width: 100% !important;
+                background: #ffffff !important;
+                visibility: visible !important;
+                display: block !important;
                 page-break-inside: avoid !important;
+                page-break-after: avoid !important;
                 break-after: avoid !important;
               }
-              #print-container {
-                border: none !important;
-                box-shadow: none !important;
-                padding: 0 !important;
-                margin: 0 !important;
-                width: ${paperW} !important;
-                max-width: ${paperW} !important;
-                height: ${paperH} !important;
-                max-height: ${paperH} !important;
-                overflow: hidden !important;
-                page-break-inside: avoid !important;
-                page-break-after: avoid !important;
-                break-after: avoid !important;
+              /* Explicitly enforce visibility so parentStyles cannot hide children */
+              #printable-patient-doc *, #print-container * {
+                visibility: visible !important;
               }
             }
           </style>
         </head>
         <body>
-          <div id="print-container" style="width: ${paperW}; height: ${paperH}; max-height: ${paperH}; margin: 0 auto; padding: 0; box-sizing: border-box; overflow: hidden;">
-            ${elem.innerHTML}
+          <div class="screen-preview-bar no-print">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <strong style="font-size: 14px; font-weight: 900; letter-spacing: 0.5px;">🖨️ ${titleStr} Print Preview</strong>
+              <span style="font-size: 11px; background: #1e293b; color: #38bdf8; padding: 2px 8px; border-radius: 4px; border: 1px solid #334155;">
+                ${selectedPvPatient?.PatientName || 'Patient'} (${selectedPvPatient?.PatientID || ''})
+              </span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <button class="screen-preview-btn" onclick="window.focus(); window.print();">
+                <span>🖨️ Print Now (HP LaserJet / PDF)</span>
+              </button>
+              <button class="screen-close-btn" onclick="window.close();">
+                <span>✕ Close</span>
+              </button>
+            </div>
           </div>
+
+          <div class="page-preview-wrapper">
+            <div id="printable-patient-doc" class="printable-patient-doc">
+              <div id="print-container">
+                ${elem.innerHTML}
+              </div>
+            </div>
+          </div>
+
           <script>
-            setTimeout(() => {
-              window.focus();
-              window.print();
-              setTimeout(() => {
-                try { window.close(); } catch(e) {}
-              }, 400);
-            }, 300);
+            // Ensure fonts and images are loaded before triggering print dialog
+            window.addEventListener('load', function() {
+              setTimeout(function() {
+                try {
+                  window.focus();
+                  window.print();
+                } catch(e) {
+                  console.warn("Auto print failed, click 'Print Now' button", e);
+                }
+              }, 450);
+            });
           </script>
         </body>
       </html>
@@ -3172,9 +3325,10 @@ Healing Naturally. Restoring Balance.`;
   const handleCleanPrintDailyCollectionReport = (data: any, format: 'pdf' | 'grid' | 'patient_shift_wise' = 'patient_shift_wise') => {
     if (!data) return;
 
-    const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC';
-    const clinicAddress = clinicSettings?.ClinicAddress || '39-Shalimar Road, Garhi Shahu, Lahore-39';
-    const phone = clinicSettings?.PhoneMobile || '0300-1234567';
+    const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
+    const clinicAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const phone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const website = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
     if (format === 'patient_shift_wise') {
       const blocksHtml = (!data.doctorShiftBlocks || data.doctorShiftBlocks.length === 0) ? `
@@ -3274,7 +3428,7 @@ Healing Naturally. Restoring Balance.`;
 
   <div class="header">
     <div class="clinic-title">${clinicName}</div>
-    <div class="clinic-address">${clinicAddress} • Tel: ${phone}</div>
+    <div class="clinic-address">📍 ${clinicAddress} &nbsp;|&nbsp; 📞 ${phone} &nbsp;|&nbsp; 🌐 ${website.replace(/^https?:\/\//, '')}</div>
     <div class="report-title">DOCTOR SHIFT-WISE PATIENT VISIT & PAYMENT REPORT</div>
     <div class="meta-bar">
       <span>From Date: <u>${formatReportDate(data.startDate)}</u></span>
@@ -3843,15 +3997,24 @@ Healing Naturally. Restoring Balance.`;
       </tr>
     `).join('');
 
+    const parentStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map(el => el.outerHTML)
+      .join('\n');
+
     printWin.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
           <title>Daily Shift Collection Report - ${shiftLabel}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
+          ${parentStyles}
           <style>
             @page { size: A4 portrait; margin: 10mm; }
             body { font-family: system-ui, -apple-system, sans-serif; color: #0f172a; background: #ffffff; }
+            img[alt*="Logo"], img[alt*="logo"], .logo-img, .brand-logo, .clinic-logo {
+              max-height: 70px !important;
+              max-width: 100px !important;
+              object-fit: contain !important;
+            }
             @media print {
               .no-print { display: none !important; }
               body { margin: 0; padding: 0; }
@@ -4047,15 +4210,24 @@ Healing Naturally. Restoring Balance.`;
 
     const currentUserTitle = currentUser?.FullName || currentUser?.LoginName || 'Attending Specialist';
 
+    const parentStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map(el => el.outerHTML)
+      .join('\n');
+
     printWin.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
           <title>Medical Reimbursement Claim Bill - ${pat.PatientName}</title>
-          <script src="https://cdn.tailwindcss.com"></script>
+          ${parentStyles}
           <style>
             @page { size: A4 portrait; margin: 12mm 15mm; }
             body { font-family: system-ui, -apple-system, sans-serif; color: #0f172a; background: #ffffff; }
+            img[alt*="Logo"], img[alt*="logo"], .logo-img, .brand-logo, .clinic-logo {
+              max-height: 70px !important;
+              max-width: 100px !important;
+              object-fit: contain !important;
+            }
             @media print {
               .no-print { display: none !important; }
               body { margin: 0; padding: 0; }
@@ -4088,7 +4260,7 @@ Healing Naturally. Restoring Balance.`;
                 <h1 class="text-2xl sm:text-3xl font-black text-red-900 uppercase tracking-tight font-serif">${clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}</h1>
                 <p class="text-[10px] font-extrabold text-emerald-800 tracking-widest uppercase mt-0.5">HEALING NATURALLY • RESTORING BALANCE</p>
                 <p class="text-[11px] font-bold text-slate-800 mt-1">${clinicSettings?.DoctorName || 'Dr. Ejaz Ahmad, D.H.M.S (Pak)'} &nbsp;|&nbsp; PHC Regd. Healthcare Facility</p>
-                <p class="text-[10px] text-slate-600 mt-0.5">${clinicSettings?.ClinicAddress || 'Main Branch, Punjab, Pakistan'} • Cell: ${clinicSettings?.PhoneMobile || '0300-1234567'}</p>
+                <p class="text-[10px] text-slate-600 mt-0.5">${clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore'} • Cell: ${clinicSettings?.PhoneMobile || '+92-311-4000608'} • Web: ${(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}</p>
                 <div class="inline-block mt-2 px-3 py-1 bg-slate-900 text-white font-black text-[11px] uppercase tracking-wider rounded">
                   OFFICIAL MEDICAL REIMBURSEMENT CLAIM BILL & CASH RECEIPT
                 </div>
@@ -6313,7 +6485,7 @@ Healing Naturally. Restoring Balance.`;
             {/* Top Row: Title, Search, Dropdown, Visit Date, Nav Buttons */}
             <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
               {/* Title & Daily Collection */}
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
                 <div className="flex items-center space-x-1.5 shrink-0">
                   <div className="p-1 bg-emerald-50 text-emerald-600 rounded-lg shrink-0 border border-emerald-100">
                     <Stethoscope className="w-3.5 h-3.5" />
@@ -6323,18 +6495,23 @@ Healing Naturally. Restoring Balance.`;
                   </div>
                 </div>
 
-                {/* Shift-wise Daily Collection Display */}
-                <div className="group relative flex items-center space-x-1.5 bg-slate-900 text-white px-2.5 py-1 rounded-lg border border-emerald-500/40 shadow-2xs text-xs font-bold transition hover:bg-slate-800 cursor-help">
-                  <Coins className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                  <span className="text-emerald-300 font-extrabold text-[10px] uppercase tracking-wider">
-                    Daily Collection ({shift === 1 ? 'Morning' : 'Evening'}):
-                  </span>
-                  <span className="text-amber-300 font-black text-xs font-mono">
-                    PKR {shiftDailyCollection.grandTotal.toLocaleString()}
-                  </span>
+                {/* Shift-wise Daily Collection Display - Mobile Responsive */}
+                <div 
+                  onClick={() => setShowDailyBreakdownMobile(prev => !prev)}
+                  className="group relative flex flex-wrap items-center justify-between sm:justify-start gap-1.5 bg-slate-900 text-white px-2.5 py-1 rounded-lg border border-emerald-500/40 shadow-2xs text-xs font-bold transition hover:bg-slate-800 cursor-pointer w-full sm:w-auto"
+                >
+                  <div className="flex items-center space-x-1.5 shrink-0">
+                    <Coins className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                    <span className="text-emerald-300 font-extrabold text-[10px] uppercase tracking-wider whitespace-nowrap">
+                      Daily Collection ({shift === 1 ? 'Morning' : 'Evening'}):
+                    </span>
+                    <span className="text-amber-300 font-black text-xs font-mono whitespace-nowrap">
+                      PKR {shiftDailyCollection.grandTotal.toLocaleString()}
+                    </span>
+                  </div>
 
                   {/* Shift Quick Switch Buttons */}
-                  <div className="ml-1 flex items-center space-x-1">
+                  <div className="flex items-center space-x-1 shrink-0 ml-auto sm:ml-1">
                     <div className="flex items-center bg-slate-800 p-0.5 rounded-md border border-slate-700 text-[9px] font-extrabold">
                       <button
                         type="button"
@@ -6359,8 +6536,8 @@ Healing Naturally. Restoring Balance.`;
                     </div>
                   </div>
 
-                  {/* Hover Breakdown Tooltip */}
-                  <div className="absolute top-full left-0 mt-1.5 hidden group-hover:flex flex-col bg-slate-900 text-white p-3 rounded-xl border border-slate-700 shadow-xl z-50 min-w-[240px] text-xs space-y-1.5 pointer-events-none">
+                  {/* Hover & Tap Breakdown Tooltip */}
+                  <div className={`absolute top-full left-0 sm:left-auto right-0 sm:right-auto mt-1.5 ${showDailyBreakdownMobile ? 'flex' : 'hidden group-hover:flex'} flex-col bg-slate-900 text-white p-3 rounded-xl border border-slate-700 shadow-xl z-50 min-w-[240px] max-w-[calc(100vw-24px)] text-xs space-y-1.5 pointer-events-auto sm:pointer-events-none`}>
                     <div className="font-extrabold text-emerald-400 border-b border-slate-800 pb-1 flex justify-between items-center text-[11px]">
                       <span>Shift Revenue Breakdown</span>
                       <span className="text-[9px] text-slate-400 uppercase font-mono">{shift === 1 ? 'Morning' : 'Evening'} Shift</span>
@@ -7590,49 +7767,61 @@ Healing Naturally. Restoring Balance.`;
 
               </div>
 
-              <div className="flex flex-col sm:flex-row items-center justify-end space-y-1.5 sm:space-y-0 sm:space-x-2 pt-1">
-
+              <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1">
                 <button
                   type="button"
                   onClick={() => handleOpenPrintModal('A5_VISIT_SLIP')}
-                  className="w-full sm:w-auto px-3.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-950 text-xs font-bold rounded-lg border border-amber-300 transition flex items-center justify-center space-x-1 cursor-pointer shadow-2xs"
+                  className="w-full sm:w-auto px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-950 text-xs font-bold rounded-lg border border-amber-300 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
+                  title="Print Patient Visit Slip (148mm x 210mm)"
                 >
-                  <Printer className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Print Visit Slip (A5)</span>
+                  <FileText className="w-3.5 h-3.5 text-amber-600" />
+                  <span>Visit Slip</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleOpenPrintModal('A4_PRESCRIPTION')}
-                  className="w-full sm:w-auto px-3.5 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-950 text-xs font-bold rounded-lg border border-blue-300 transition flex items-center justify-center space-x-1 cursor-pointer shadow-2xs"
+                  className="w-full sm:w-auto px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-950 text-xs font-bold rounded-lg border border-blue-300 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
+                  title="Print Prescription Letterhead (A4)"
                 >
-                  <Printer className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Print Prescription (A4)</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSendWhatsAppRx()}
-                  className="w-full sm:w-auto px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg border border-emerald-700 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
-                  title="Send Patient Prescription & Visit Summary via WhatsApp"
-                >
-                  <WhatsAppIcon className="w-3.5 h-3.5 fill-current text-white" />
-                  <span>Send WhatsApp</span>
+                  <Stethoscope className="w-3.5 h-3.5 text-blue-600" />
+                  <span>Prescription</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => handleOpenPrintModal('A4_LAB_TESTS')}
-                  className="w-full sm:w-auto px-3.5 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-950 text-xs font-bold rounded-lg border border-teal-300 transition flex items-center justify-center space-x-1 cursor-pointer shadow-2xs"
+                  className="w-full sm:w-auto px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-950 text-xs font-bold rounded-lg border border-teal-300 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
+                  title="Print Clinical Lab Test Advice (A4)"
                 >
                   <FlaskConical className="w-3.5 h-3.5 text-teal-700" />
-                  <span>Print Lab Tests (A4)</span>
+                  <span>Lab Test</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleOpenPrintModal('A4_PATIENT_INVOICE')}
+                  className="w-full sm:w-auto px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-950 text-xs font-bold rounded-lg border border-purple-300 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
+                  title="Print Patient Official Invoice / Cash Receipt (A4)"
+                >
+                  <Receipt className="w-3.5 h-3.5 text-purple-700" />
+                  <span>Patient Invoice</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => handleSendWhatsAppRx()}
+                  className="w-full sm:w-auto px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg border border-emerald-700 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
+                  title="Send Patient Prescription & Visit Summary via WhatsApp"
+                >
+                  <WhatsAppIcon className="w-3.5 h-3.5 fill-current text-white" />
+                  <span>WhatsApp</span>
                 </button>
 
                 <button
                   type="submit"
                   disabled={isSavingVisit}
-                  className="w-full sm:w-auto px-5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-sm transition flex items-center justify-center space-x-1 cursor-pointer"
+                  className="w-full sm:w-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg border border-emerald-700 shadow-sm transition flex items-center justify-center space-x-1.5 cursor-pointer"
                 >
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>{isSavingVisit ? 'Saving...' : (editingVisitId ? 'Update & Print' : 'Save & Print')}</span>
@@ -7761,74 +7950,78 @@ Healing Naturally. Restoring Balance.`;
               </div>
 
               {/* DOCUMENT TYPE SELECTOR TABS */}
-              <div className="flex items-center bg-slate-800 p-1 rounded-lg border border-slate-700 space-x-1">
+              <div className="flex flex-wrap items-center bg-slate-800 p-1 rounded-lg border border-slate-700 gap-1">
                 <button
                   type="button"
                   onClick={() => setPrintDocType('A5_VISIT_SLIP')}
-                  className={`px-3 py-1 text-xs font-bold rounded-md transition flex items-center space-x-1 cursor-pointer ${
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center space-x-1.5 cursor-pointer ${
                     printDocType === 'A5_VISIT_SLIP'
                       ? 'bg-amber-500 text-slate-950 shadow-sm'
                       : 'text-slate-300 hover:text-white hover:bg-slate-700'
                   }`}
+                  title="Patient Visit Slip (148mm x 210mm)"
                 >
                   <FileText className="w-3.5 h-3.5" />
-                  <span>Patient Visit Slip (148mm x 210mm)</span>
+                  <span>Visit Slip</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setPrintDocType('A4_PRESCRIPTION')}
-                  className={`px-3 py-1 text-xs font-bold rounded-md transition flex items-center space-x-1 cursor-pointer ${
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center space-x-1.5 cursor-pointer ${
                     printDocType === 'A4_PRESCRIPTION'
                       ? 'bg-blue-500 text-white shadow-sm'
                       : 'text-slate-300 hover:text-white hover:bg-slate-700'
                   }`}
+                  title="Prescription Letterhead (A4)"
                 >
                   <Stethoscope className="w-3.5 h-3.5" />
-                  <span>Prescription Letterhead (A4)</span>
+                  <span>Prescription</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setPrintDocType('A4_LAB_TESTS')}
-                  className={`px-3 py-1 text-xs font-bold rounded-md transition flex items-center space-x-1 cursor-pointer ${
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center space-x-1.5 cursor-pointer ${
                     printDocType === 'A4_LAB_TESTS'
                       ? 'bg-teal-500 text-white shadow-sm'
                       : 'text-slate-300 hover:text-white hover:bg-slate-700'
                   }`}
+                  title="Lab Test Advice (A4)"
                 >
                   <FlaskConical className="w-3.5 h-3.5" />
-                  <span>Lab Test Advice (A4)</span>
+                  <span>Lab Test</span>
                 </button>
 
                 <button
                   type="button"
                   onClick={() => setPrintDocType('A4_PATIENT_INVOICE')}
-                  className={`px-3 py-1 text-xs font-bold rounded-md transition flex items-center space-x-1 cursor-pointer ${
+                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center space-x-1.5 cursor-pointer ${
                     printDocType === 'A4_PATIENT_INVOICE'
                       ? 'bg-purple-600 text-white shadow-sm'
                       : 'text-slate-300 hover:text-white hover:bg-slate-700'
                   }`}
+                  title="Patient Official Invoice (A4)"
                 >
                   <Receipt className="w-3.5 h-3.5" />
-                  <span>Patient Invoice (A4)</span>
+                  <span>Patient Invoice</span>
                 </button>
               </div>
 
-              <div className="flex items-center space-x-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
                   onClick={() => handleSendWhatsAppRx()}
-                  className="px-3.5 py-1.5 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer"
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer"
                   title="Send current document/prescription to patient via WhatsApp"
                 >
                   <WhatsAppIcon className="w-3.5 h-3.5 fill-current text-white" />
-                  <span>Send WhatsApp</span>
+                  <span>WhatsApp</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => handleCleanPrintTab(printDocType)}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center space-x-1 cursor-pointer"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer"
                   title="Open clean printable document in new tab with exact page sizing"
                 >
                   <Printer className="w-3.5 h-3.5" />
@@ -7859,7 +8052,7 @@ Healing Naturally. Restoring Balance.`;
                       {/* Slip Header with PHC Logo on Left */}
                       <div className="relative border-b-2 border-teal-800 pb-1.5">
                         <div className="flex items-center justify-between gap-2">
-                          <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" className="w-9 h-9 object-contain shrink-0" />
+                          <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" style={{ width: '36px', height: '36px', maxHeight: '36px', maxWidth: '36px', objectFit: 'contain' }} className="w-9 h-9 object-contain shrink-0" />
                           <div className="text-center flex-1">
                             <h2 className="text-center text-sm font-black uppercase text-teal-950 tracking-wide">
                               {clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}
@@ -7891,6 +8084,9 @@ Healing Naturally. Restoring Balance.`;
                               <span className="font-bold text-slate-900">Visit Date: <span className="underline">{formatDisplayDate(pvVisitDate)}</span></span>
                               <span className="font-bold text-emerald-800">
                                 City: <span className="bg-emerald-100 text-emerald-950 px-1.5 py-0.2 rounded border border-emerald-300 font-bold">{cities.find(c => c.CityID === selectedPvPatient.CityID)?.CityName || 'Lahore'}</span>
+                              </span>
+                              <span className="font-bold text-slate-800">
+                                Mobile: <span className="text-slate-950 font-bold">{selectedPvPatient.PhoneMobile || (selectedPvPatient as any).Mobile || (selectedPvPatient as any).Phone || (selectedPvPatient as any).MobileNumber || 'N/A'}</span>
                               </span>
                             </div>
                           </div>
@@ -8045,7 +8241,7 @@ Healing Naturally. Restoring Balance.`;
                       <div className="flex items-center justify-between border-b-2 border-teal-800 pb-2 gap-2">
                         {/* PHC Official Logo Left */}
                         <div className="flex items-center space-x-2 shrink-0">
-                          <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" className="w-20 h-20 object-contain" />
+                          <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" style={{ width: '80px', height: '80px', maxHeight: '80px', maxWidth: '80px', objectFit: 'contain' }} className="w-20 h-20 object-contain" />
                         </div>
 
                         {/* Main Clinic Title */}
@@ -8089,24 +8285,30 @@ Healing Naturally. Restoring Balance.`;
                           </div>
                         </div>
 
-                        {/* ROW 2: S/O, D/O, W/O (EXACTLY BELOW PATIENT NAME) & PID Ref # & Token # */}
+                        {/* ROW 2: S/O, D/O, W/O (EXACTLY BELOW PATIENT NAME) & PID Ref # & City & Mobile */}
                         <div className="grid grid-cols-12 gap-2 items-baseline pt-0.5">
-                          <div className="col-span-6 flex items-baseline">
+                          <div className="col-span-4 flex items-baseline">
                             <span className="font-bold text-slate-900 shrink-0 mr-1.5">S/O, D/O, W/O:</span>
-                            <span className="font-bold text-slate-950 uppercase border-b border-slate-400 flex-1 pl-1">
-                              {(selectedPvPatient as any).Father_husband || selectedPvPatient.Father_husband || '_________________________________'}
+                            <span className="font-bold text-slate-950 uppercase border-b border-slate-400 flex-1 pl-1 truncate">
+                              {(selectedPvPatient as any).Father_husband || selectedPvPatient.Father_husband || '________________________'}
                             </span>
                           </div>
                           <div className="col-span-3 flex items-baseline">
                             <span className="font-bold text-slate-900 shrink-0 mr-1.5">PID Ref #:</span>
-                            <span className="font-mono font-bold text-slate-950 border-b border-slate-400 flex-1 pl-1">
+                            <span className="font-mono font-bold text-slate-950 border-b border-slate-400 flex-1 pl-1 text-center">
                               {selectedPvPatient.PatientID}
                             </span>
                           </div>
-                          <div className="col-span-3 flex items-baseline">
+                          <div className="col-span-2 flex items-baseline">
                             <span className="font-bold text-slate-900 shrink-0 mr-1.5">City:</span>
                             <span className="font-mono font-bold text-emerald-800 border-b border-slate-400 flex-1 text-center">
                               {cities.find(c => c.CityID === selectedPvPatient.CityID)?.CityName || 'Lahore'}
+                            </span>
+                          </div>
+                          <div className="col-span-3 flex items-baseline">
+                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">Mobile:</span>
+                            <span className="font-mono font-bold text-slate-950 border-b border-slate-400 flex-1 text-center">
+                              {selectedPvPatient.PhoneMobile || (selectedPvPatient as any).Mobile || (selectedPvPatient as any).Phone || (selectedPvPatient as any).MobileNumber || 'N/A'}
                             </span>
                           </div>
                         </div>
@@ -8279,7 +8481,7 @@ Healing Naturally. Restoring Balance.`;
                             <div className="space-y-0.5">
                               <p className="text-[10px] text-slate-700 font-bold">کلینک اپائنٹمنٹ اور دیگر معلومات کیلئے</p>
                               <div className="inline-block border-2 border-slate-900 text-slate-950 font-mono font-black text-xs px-3 py-0.5 rounded-full mt-0.5">
-                                +92 300-4208323
+                                +92-311-4000608
                               </div>
                             </div>
 
@@ -8340,7 +8542,7 @@ Healing Naturally. Restoring Balance.`;
                       {/* Top Header Section with PHC Official Logo on Left & Clinic Title */}
                       <div className="flex items-center justify-between border-b-2 border-teal-800 pb-2 gap-2">
                         <div className="flex items-center space-x-2 shrink-0">
-                          <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" className="w-20 h-20 object-contain" />
+                          <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" style={{ width: '80px', height: '80px', maxHeight: '80px', maxWidth: '80px', objectFit: 'contain' }} className="w-20 h-20 object-contain" />
                         </div>
                         <div className="text-center flex-1 px-2">
                           <h1 className="font-serif uppercase tracking-tight flex flex-col items-center justify-center">
@@ -8380,22 +8582,28 @@ Healing Naturally. Restoring Balance.`;
                         </div>
 
                         <div className="grid grid-cols-12 gap-2 items-baseline pt-0.5">
-                          <div className="col-span-6 flex items-baseline">
+                          <div className="col-span-4 flex items-baseline">
                             <span className="font-bold text-slate-900 shrink-0 mr-1.5">S/O, D/O, W/O:</span>
-                            <span className="font-bold text-slate-950 uppercase border-b border-slate-400 flex-1 pl-1">
-                              {(selectedPvPatient as any)?.Father_husband || selectedPvPatient?.Father_husband || '_________________________________'}
+                            <span className="font-bold text-slate-950 uppercase border-b border-slate-400 flex-1 pl-1 truncate">
+                              {(selectedPvPatient as any)?.Father_husband || selectedPvPatient?.Father_husband || '________________________'}
                             </span>
                           </div>
                           <div className="col-span-3 flex items-baseline">
                             <span className="font-bold text-slate-900 shrink-0 mr-1.5">PID Ref #:</span>
-                            <span className="font-mono font-bold text-slate-950 border-b border-slate-400 flex-1 pl-1">
+                            <span className="font-mono font-bold text-slate-950 border-b border-slate-400 flex-1 pl-1 text-center">
                               {selectedPvPatient?.PatientID}
                             </span>
                           </div>
-                          <div className="col-span-3 flex items-baseline">
+                          <div className="col-span-2 flex items-baseline">
                             <span className="font-bold text-slate-900 shrink-0 mr-1.5">City:</span>
                             <span className="font-mono font-bold text-emerald-800 border-b border-slate-400 flex-1 text-center">
                               {cities.find(c => c.CityID === selectedPvPatient?.CityID)?.CityName || 'Lahore'}
+                            </span>
+                          </div>
+                          <div className="col-span-3 flex items-baseline">
+                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">Mobile:</span>
+                            <span className="font-mono font-bold text-slate-950 border-b border-slate-400 flex-1 text-center">
+                              {selectedPvPatient?.PhoneMobile || (selectedPvPatient as any)?.Mobile || (selectedPvPatient as any)?.Phone || (selectedPvPatient as any)?.MobileNumber || 'N/A'}
                             </span>
                           </div>
                         </div>
@@ -8508,7 +8716,7 @@ Healing Naturally. Restoring Balance.`;
                         {/* Top Header Section with PHC Official Logo & Letterhead */}
                         <div className="flex items-center justify-between border-b-2 border-purple-900 pb-2 gap-2">
                           <div className="flex items-center space-x-2 shrink-0">
-                            <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" className="w-20 h-20 object-contain" />
+                            <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" style={{ width: '80px', height: '80px', maxHeight: '80px', maxWidth: '80px', objectFit: 'contain' }} className="w-20 h-20 object-contain" />
                           </div>
                           <div className="text-center flex-1 px-2">
                             <h1 className="font-serif uppercase tracking-tight flex flex-col items-center justify-center">
@@ -8566,10 +8774,10 @@ Healing Naturally. Restoring Balance.`;
                           </div>
 
                           <div className="grid grid-cols-12 gap-2 items-baseline pt-0.5">
-                            <div className="col-span-6 flex items-baseline">
+                            <div className="col-span-4 flex items-baseline">
                               <span className="font-bold text-slate-900 shrink-0 mr-1.5">S/O, D/O, W/O:</span>
-                              <span className="font-bold text-slate-950 uppercase border-b border-purple-300 flex-1 pl-1">
-                                {(selectedPvPatient as any)?.Father_husband || selectedPvPatient?.Father_husband || '_________________________________'}
+                              <span className="font-bold text-purple-950 uppercase border-b border-purple-300 flex-1 pl-1 truncate">
+                                {(selectedPvPatient as any)?.Father_husband || selectedPvPatient?.Father_husband || '________________________'}
                               </span>
                             </div>
                             <div className="col-span-3 flex items-baseline">
@@ -8578,10 +8786,16 @@ Healing Naturally. Restoring Balance.`;
                                 {selectedPvPatient?.AgeYears || 0}Y ({selectedPvPatient?.Sex || 'M'})
                               </span>
                             </div>
-                            <div className="col-span-3 flex items-baseline">
+                            <div className="col-span-2 flex items-baseline">
                               <span className="font-bold text-slate-900 shrink-0 mr-1.5">City:</span>
                               <span className="font-mono font-bold text-purple-900 border-b border-purple-300 flex-1 text-center">
                                 {cities.find(c => c.CityID === selectedPvPatient?.CityID)?.CityName || 'Lahore'}
+                              </span>
+                            </div>
+                            <div className="col-span-3 flex items-baseline">
+                              <span className="font-bold text-slate-900 shrink-0 mr-1.5">Mobile:</span>
+                              <span className="font-mono font-bold text-purple-950 border-b border-purple-300 flex-1 text-center">
+                                {selectedPvPatient?.PhoneMobile || (selectedPvPatient as any)?.Mobile || (selectedPvPatient as any)?.Phone || (selectedPvPatient as any)?.MobileNumber || 'N/A'}
                               </span>
                             </div>
                           </div>

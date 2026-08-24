@@ -63,7 +63,10 @@ import {
   Undo2,
   History,
   Tag,
-  Smartphone
+  Smartphone,
+  Menu,
+  X,
+  ChevronRight
 } from 'lucide-react';
 import { User, ClinicSettings, SmsSettings, MongoDbSettings, UserRight, City, Patient } from '../types';
 import { ROLE_RIGHTS, INITIAL_CITIES } from '../data/initialData';
@@ -103,6 +106,7 @@ export default function SettingsDesk({
 }: SettingsDeskProps) {
   // Tabs: settings details vs user management vs access control vs cities
   const [activeSettingsTab, setActiveSettingsTab] = useState<'details' | 'users' | 'access' | 'cities' | 'sms' | 'mongodb' | 'maintenance'>('details');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Cities Management State
   const [citySearchQuery, setCitySearchQuery] = useState('');
@@ -574,7 +578,8 @@ export default function SettingsDesk({
   const [doctorName, setDoctorName] = useState(clinicSettings.DoctorName);
   const [signature, setSignature] = useState(clinicSettings.DoctorSignatureText);
   const [address, setAddress] = useState(clinicSettings.ClinicAddress);
-  const [phone, setPhone] = useState(clinicSettings.PhoneMobile);
+  const [phone, setPhone] = useState(clinicSettings.PhoneMobile || '+92-311-4000608');
+  const [website, setWebsite] = useState(clinicSettings.Website || 'https://punjabhomeopathic.pk');
   const [opdFee, setOpdFee] = useState(clinicSettings.OPDFee);
   const [clinicLogoImage, setClinicLogoImage] = useState<string>(clinicSettings.ClinicLogoImage || '');
   const [letterHeadImage, setLetterHeadImage] = useState<string>(clinicSettings.LetterHeadImage || '');
@@ -609,6 +614,7 @@ export default function SettingsDesk({
       DoctorSignatureText: signature,
       ClinicAddress: address,
       PhoneMobile: phone,
+      Website: website,
       OPDFee: Number(opdFee) || 1500,
       ClinicLogoImage: clinicLogoImage,
       LetterHeadImage: letterHeadImage,
@@ -1010,104 +1016,138 @@ export default function SettingsDesk({
     }
   };
 
+  const settingsNavTabs = [
+    { id: 'details', label: 'Clinic Details', shortLabel: 'Details', icon: Building, desc: 'Clinic Profile, Timings & Receipt Config' },
+    { id: 'users', label: `Staff Accounts (${usersList.length})`, shortLabel: `Staff (${usersList.length})`, icon: UserCheck, desc: 'Doctor, Dispenser & Receptionist Logins' },
+    { id: 'access', label: 'User Access Control', shortLabel: 'Access', icon: ShieldCheck, desc: 'Granular Role Permissions & Feature Rights' },
+    { id: 'sms', label: 'SMS Config', shortLabel: 'SMS', icon: MessageSquare, desc: 'Branded SMS Gateway & Alerts' },
+    { id: 'mongodb', label: 'MongoDB Sync', shortLabel: 'MongoDB', icon: Database, desc: 'Cloud Sync & Database Connectivity' },
+    { id: 'cities', label: `Cities & Locations (${(cities || []).length})`, shortLabel: `Cities (${(cities || []).length})`, icon: MapPin, desc: 'Districts, Cities Directory & Demographics' },
+    { id: 'maintenance', label: 'System Maintenance', shortLabel: 'System', icon: Sliders, desc: 'Database Backups, Purge & Diagnostics' }
+  ];
+
   return (
-    <div className="flex-1 overflow-y-auto p-6 space-y-6" id="settings-desk-root">
+    <div className="flex-1 overflow-y-auto p-3.5 sm:p-6 space-y-4 sm:space-y-6 relative" id="settings-desk-root">
       
-      {/* Banner Title */}
-      <div className="flex justify-end items-center bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+      {/* MOBILE SIDE NAVIGATION DRAWER (Only in Mobile View) */}
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-50 sm:hidden flex">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          {/* Slide-out Drawer */}
+          <div className="relative w-4/5 max-w-xs bg-white h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-left duration-200">
+            {/* Drawer Header */}
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-900 text-white">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-1.5 bg-blue-600 rounded-lg text-white">
+                  <Settings className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-100">Settings Menu</h2>
+                  <p className="text-[10px] text-slate-400">Configuration Modules</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMobileNavOpen(false)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modules List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+              {settingsNavTabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeSettingsTab === tab.id;
+                return (
+                  <button
+                    key={`mobile-settings-side-${tab.id}`}
+                    onClick={() => {
+                      setActiveSettingsTab(tab.id as any);
+                      setErrorMsg('');
+                      setSuccessMsg('');
+                      setMobileNavOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left transition-all ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-150'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className={`p-2 rounded-lg shrink-0 ${isActive ? 'bg-white/20 text-white' : 'bg-white text-blue-600 border border-slate-200'}`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center space-x-1.5">
+                          <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                            isActive ? 'bg-white/25 text-white' : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {tab.shortLabel}
+                          </span>
+                          <span className="text-xs font-bold truncate">{tab.label}</span>
+                        </div>
+                        <p className={`text-[10px] truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>
+                          {tab.desc}
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="p-3 border-t border-slate-200 bg-slate-50 text-center">
+              <span className="text-[10px] text-slate-400 font-semibold">Punjab CMS • System Configuration</span>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Banner Title & Tab Selector */}
+      <div className="flex justify-end items-center bg-white p-2.5 sm:p-4 rounded-xl border border-slate-200 shadow-xs">
         {/* Tab Selector */}
-        <div className="flex space-x-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200">
+        <div className="flex space-x-1 sm:space-x-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200 overflow-x-auto scrollbar-none touch-pan-x w-full sm:w-auto">
+          {/* Mobile Side-Navigation Toggle Button */}
           <button
-            onClick={() => {
-              setActiveSettingsTab('details');
-              setErrorMsg('');
-              setSuccessMsg('');
-            }}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition ${
-              activeSettingsTab === 'details' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
+            type="button"
+            onClick={() => setMobileNavOpen(true)}
+            className="sm:hidden flex items-center space-x-1 px-2.5 py-1.5 rounded-md bg-blue-50 hover:bg-blue-100 text-blue-700 font-bold text-[11px] border border-blue-200 shrink-0 cursor-pointer min-h-[32px] active:scale-95 transition"
+            title="Open Settings Menu"
           >
-            Clinic Details
+            <Menu className="w-3.5 h-3.5" />
+            <span className="font-extrabold uppercase">Menu</span>
           </button>
 
-          <button
-            onClick={() => {
-              setActiveSettingsTab('users');
-              setErrorMsg('');
-              setSuccessMsg('');
-            }}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center space-x-1 ${
-              activeSettingsTab === 'users' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <UserCheck className="w-3.5 h-3.5 mr-1" />
-            <span>Staff Accounts ({usersList.length})</span>
-          </button>
-          <button
-            onClick={() => {
-              setActiveSettingsTab('access');
-              setErrorMsg('');
-              setSuccessMsg('');
-            }}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center space-x-1 ${
-              activeSettingsTab === 'access' ? 'bg-purple-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 mr-1 text-purple-300" />
-            <span>User Access Control</span>
-          </button>
-          <button
-            onClick={() => {
-              setActiveSettingsTab('sms');
-              setErrorMsg('');
-              setSuccessMsg('');
-            }}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center space-x-1 ${
-              activeSettingsTab === 'sms' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <MessageSquare className="w-3.5 h-3.5 mr-1 text-sky-500" />
-            <span>SMS Config</span>
-          </button>
-          <button
-            onClick={() => {
-              setActiveSettingsTab('mongodb');
-              setErrorMsg('');
-              setSuccessMsg('');
-            }}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center space-x-1 ${
-              activeSettingsTab === 'mongodb' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5 mr-1 text-emerald-500" />
-            <span>MongoDB Sync</span>
-          </button>
-          <button
-            onClick={() => {
-              setActiveSettingsTab('cities');
-              setErrorMsg('');
-              setSuccessMsg('');
-            }}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center space-x-1 ${
-              activeSettingsTab === 'cities' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <MapPin className="w-3.5 h-3.5 mr-1 text-emerald-500" />
-            <span>Cities & Locations ({(cities || []).length})</span>
-          </button>
-          <button
-            onClick={() => {
-              setActiveSettingsTab('maintenance');
-              setErrorMsg('');
-              setSuccessMsg('');
-            }}
-            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center space-x-1 ${
-              activeSettingsTab === 'maintenance' ? 'bg-blue-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-            }`}
-          >
-            <ShieldCheck className="w-3.5 h-3.5 mr-1 text-amber-500" />
-            <span>System Maintenance</span>
-          </button>
+          {settingsNavTabs.map((tab) => {
+            const Icon = tab.icon;
+            const isActive = activeSettingsTab === tab.id;
+            return (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveSettingsTab(tab.id as any);
+                  setErrorMsg('');
+                  setSuccessMsg('');
+                }}
+                className={`px-2.5 sm:px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center space-x-1 shrink-0 ${
+                  isActive
+                    ? 'bg-blue-600 text-white shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                }`}
+              >
+                <Icon className={`w-3.5 h-3.5 mr-0.5 sm:mr-1 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                <span className="whitespace-nowrap sm:hidden">{tab.shortLabel}</span>
+                <span className="whitespace-nowrap hidden sm:inline">{tab.label}</span>
+              </button>
+            );
+          })}
         </div>
       </div>
 
@@ -1189,12 +1229,25 @@ export default function SettingsDesk({
             </div>
 
             <div className="space-y-1">
-              <label className="font-bold text-slate-700 block">Clinic Contact Helpline</label>
+              <label className="font-bold text-slate-700 block">Clinic Contact Helpline / Mobile</label>
               <input
                 type="text"
                 required
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
+                placeholder="+92-311-4000608"
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="font-bold text-slate-700 block">Clinic Official Website URL</label>
+              <input
+                type="text"
+                required
+                value={website}
+                onChange={(e) => setWebsite(e.target.value)}
+                placeholder="https://punjabhomeopathic.pk"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
               />
             </div>

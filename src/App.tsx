@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useEffect, lazy, Suspense } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
   INITIAL_CITIES,
   INITIAL_ITEMS,
@@ -77,13 +77,27 @@ import {
   Stethoscope,
   Maximize2,
   Minimize2,
-  CloudUpload,
-  Smartphone
+  CloudUpload
 } from 'lucide-react';
 import UnauthorizedModal from './components/UnauthorizedModal';
 import GlobalSearchHeader from './components/GlobalSearchHeader';
 import { CloudBackupModal } from './components/CloudBackupModal';
 import PwaInstallModal from './components/PwaInstallModal';
+import LoginDesk from './components/LoginDesk';
+import { TopProgressBar, GlobalLoadingOverlay } from './components/LoadingIndicator';
+import {
+  ErpDeskSkeleton,
+  DashboardSkeleton,
+  PatientDeskSkeleton,
+  PharmacyPOSSkeleton,
+  UploadingDeskSkeleton,
+  ReportingDeskSkeleton,
+  SettingsDeskSkeleton,
+  NhcPatientHistoryDeskSkeleton,
+  QueryHandlerDeskSkeleton,
+  GenericModuleSkeleton
+} from './components/ModuleSkeletons';
+import { ClinicSettings, SmsSettings, MongoDbSettings } from './types';
 
 const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, restricted: true },
@@ -109,21 +123,20 @@ const ReportingDesk = lazy(() => import('./components/ReportingDesk'));
 const NhcPatientHistoryDesk = lazy(() => import('./components/NhcPatientHistoryDesk'));
 const QueryHandlerDesk = lazy(() => import('./components/QueryHandlerDesk'));
 
-import LoginDesk from './components/LoginDesk';
-import { TopProgressBar, GlobalLoadingOverlay } from './components/LoadingIndicator';
-import {
-  ErpDeskSkeleton,
-  DashboardSkeleton,
-  PatientDeskSkeleton,
-  PharmacyPOSSkeleton,
-  UploadingDeskSkeleton,
-  ReportingDeskSkeleton,
-  SettingsDeskSkeleton,
-  NhcPatientHistoryDeskSkeleton,
-  QueryHandlerDeskSkeleton,
-  GenericModuleSkeleton
-} from './components/ModuleSkeletons';
-import { ClinicSettings, SmsSettings, MongoDbSettings } from './types';
+// Safe helper to load local state from localStorage fallback
+function getStoredState<T>(key: string, defaultVal: T): T {
+  try {
+    const cached = localStorage.getItem(key);
+    if (cached) {
+      const parsed = JSON.parse(cached);
+      if (Array.isArray(parsed)) {
+        return parsed as T;
+      }
+      if (parsed && typeof parsed === 'object') return parsed;
+    }
+  } catch (e) {}
+  return defaultVal;
+}
 
 export default function App() {
   // Users List State (backed up by local storage)
@@ -252,6 +265,12 @@ export default function App() {
           if (parsed.DoctorSignatureText && parsed.DoctorSignatureText.includes('Dr. Ejaz Ahmad, D.H.M.S (Pak) •')) {
             parsed.DoctorSignatureText = parsed.DoctorSignatureText.replace('Dr. Ejaz Ahmad, D.H.M.S (Pak) • ', '');
           }
+          if (!parsed.Website) {
+            parsed.Website = 'https://punjabhomeopathic.pk';
+          }
+          if (!parsed.PhoneMobile || parsed.PhoneMobile === '+92-300-4208323' || parsed.PhoneMobile === '0300-1234567') {
+            parsed.PhoneMobile = '+92-311-4000608';
+          }
           return parsed;
         }
       } catch (e) {}
@@ -262,7 +281,8 @@ export default function App() {
       DoctorName: 'Dr. Ejaz Ahmad, D.H.M.S (Pak)',
       DoctorSignatureText: 'Registered Homeopathic Medical Practitioner No: 48776',
       ClinicAddress: '10 Shalimar Road, Garhi Shahu, Lahore',
-      PhoneMobile: '+92-300-4208323',
+      PhoneMobile: '+92-311-4000608',
+      Website: 'https://punjabhomeopathic.pk',
       OPDFee: 1500,
       ClinicLogoImage: '/nhc_logo.svg'
     };
@@ -303,21 +323,6 @@ export default function App() {
     };
   });
 
-
-  // Safe helper to load local state from localStorage fallback
-  const getStoredState = <T,>(key: string, defaultVal: T): T => {
-    try {
-      const cached = localStorage.getItem(key);
-      if (cached) {
-        const parsed = JSON.parse(cached);
-        if (Array.isArray(parsed)) {
-          return parsed as T;
-        }
-        if (parsed && typeof parsed === 'object') return parsed;
-      }
-    } catch (e) {}
-    return defaultVal;
-  };
 
   // Master Database States (backed by both MongoDB/API and localStorage persistent fallbacks)
   const [cities, setCities] = useState<City[]>(() => getStoredState('cms_cities', INITIAL_CITIES));
@@ -2604,19 +2609,6 @@ export default function App() {
                 )}
               </div>
 
-              {/* Mobile App PWA Install Button - Admin / Permission Controlled */}
-              {currentUser.Permissions?.canViewPwaInstall !== false && (
-                <button
-                  onClick={() => setShowPwaInstallModal(true)}
-                  className="bg-emerald-600 hover:bg-emerald-500 active:bg-emerald-700 text-white px-2.5 py-1 rounded-md border border-emerald-400/40 shadow-xs flex items-center space-x-1.5 transition cursor-pointer shrink-0"
-                  title="Install Store Medicine Android App on Phone"
-                  id="top-pwa-app-btn"
-                >
-                  <Smartphone className="w-3.5 h-3.5 text-white" />
-                  <span className="text-[11px] font-black uppercase tracking-tight hidden sm:inline">Store App</span>
-                </button>
-              )}
-
               {/* App-Wide Full Screen Toggle Button */}
               <button
                 onClick={toggleAppFullScreen}
@@ -2773,7 +2765,7 @@ export default function App() {
           </div>
 
         {/* Viewport for Active Tabs */}
-        <div className="flex-1 overflow-hidden relative flex flex-col bg-slate-100">
+        <div className="flex-1 overflow-hidden relative flex flex-col bg-slate-100 pb-14 lg:pb-0">
           <TopProgressBar active={isRefreshing} />
           {isRefreshing && (
             <div className="absolute top-3 right-5 z-40 bg-slate-900/90 text-white px-3 py-1.5 rounded-xl text-xs font-semibold shadow-lg backdrop-blur-xs flex items-center space-x-2 animate-fadeIn">
@@ -3026,8 +3018,8 @@ export default function App() {
           onLaunchStoreMode={() => handleTabChange('pharmacy')}
         />
 
-        {/* Bento Footer */}
-        <footer className="h-8 bg-slate-200/60 border-t border-slate-300 px-6 flex items-center justify-between shrink-0 text-slate-600">
+        {/* Bento Footer (Desktop Only) */}
+        <footer className="hidden lg:flex h-8 bg-slate-200/60 border-t border-slate-300 px-6 items-center justify-between shrink-0 text-slate-600">
           <div className="flex space-x-4 text-[10px] font-medium uppercase tracking-tight italic">
             <span>Config Mapping: CIH: 0101-01</span>
             <span>Rev: 0401-02</span>
@@ -3039,6 +3031,105 @@ export default function App() {
             <span className="text-[10px] font-bold text-blue-900">Licensed to: {clinicSettings.ClinicName}</span>
           </div>
         </footer>
+
+        {/* Mobile Fixed Bottom Navigation Bar */}
+        <nav 
+          aria-label="Mobile Bottom Navigation"
+          className="fixed bottom-0 left-0 right-0 z-40 bg-slate-900/95 backdrop-blur-md border-t border-slate-800 lg:hidden shadow-2xl safe-area-pb"
+        >
+          <div className="grid grid-cols-5 h-14 items-center justify-around px-1 max-w-lg mx-auto">
+            {/* 1. Patient Visit */}
+            <button
+              type="button"
+              onClick={() => {
+                handleTabChange('patient_visit');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition cursor-pointer min-h-[44px] ${
+                activeTab === 'patient_visit' || activeTab === 'patients'
+                  ? 'text-emerald-400 font-black'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Stethoscope className={`w-5 h-5 ${activeTab === 'patient_visit' || activeTab === 'patients' ? 'text-emerald-400 stroke-[2.5]' : 'text-slate-400'}`} />
+              <span className="text-[10px] tracking-tight mt-0.5 whitespace-nowrap">Visit Desk</span>
+            </button>
+
+            {/* 2. Pharmacy / Stock */}
+            <button
+              type="button"
+              onClick={() => {
+                handleTabChange('pharmacy');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition cursor-pointer min-h-[44px] ${
+                activeTab === 'pharmacy'
+                  ? 'text-emerald-400 font-black'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <ShoppingCart className={`w-5 h-5 ${activeTab === 'pharmacy' ? 'text-emerald-400 stroke-[2.5]' : 'text-slate-400'}`} />
+              <span className="text-[10px] tracking-tight mt-0.5 whitespace-nowrap">Stock & POS</span>
+            </button>
+
+            {/* 3. Mini ERP */}
+            <button
+              type="button"
+              onClick={() => {
+                handleTabChange('erp_system');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition cursor-pointer min-h-[44px] ${
+                activeTab === 'erp_system'
+                  ? 'text-emerald-400 font-black'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <Building2 className={`w-5 h-5 ${activeTab === 'erp_system' ? 'text-emerald-400 stroke-[2.5]' : 'text-slate-400'}`} />
+              <span className="text-[10px] tracking-tight mt-0.5 whitespace-nowrap">Mini ERP</span>
+            </button>
+
+            {/* 4. Patient Record */}
+            <button
+              type="button"
+              onClick={() => {
+                handleTabChange('nhc_history');
+                setIsMobileMenuOpen(false);
+              }}
+              className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition cursor-pointer min-h-[44px] ${
+                activeTab === 'nhc_history'
+                  ? 'text-emerald-400 font-black'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              <DatabaseBackup className={`w-5 h-5 ${activeTab === 'nhc_history' ? 'text-emerald-400 stroke-[2.5]' : 'text-slate-400'}`} />
+              <span className="text-[10px] tracking-tight mt-0.5 whitespace-nowrap">Records</span>
+            </button>
+
+            {/* 5. More Menus / Full Drawer */}
+            <button
+              type="button"
+              onClick={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+              className={`flex flex-col items-center justify-center py-1 px-0.5 rounded-lg transition cursor-pointer min-h-[44px] relative ${
+                isMobileMenuOpen || !['patient_visit', 'patients', 'pharmacy', 'erp_system', 'nhc_history'].includes(activeTab)
+                  ? 'text-amber-400 font-black'
+                  : 'text-slate-400 hover:text-slate-200'
+              }`}
+            >
+              {isMobileMenuOpen ? (
+                <X className="w-5 h-5 text-amber-400 stroke-[2.5]" />
+              ) : (
+                <Menu className={`w-5 h-5 ${!['patient_visit', 'patients', 'pharmacy', 'erp_system', 'nhc_history'].includes(activeTab) ? 'text-amber-400 stroke-[2.5]' : 'text-slate-400'}`} />
+              )}
+              <span className="text-[10px] tracking-tight mt-0.5 whitespace-nowrap">
+                {isMobileMenuOpen ? 'Close' : 'All Menus'}
+              </span>
+              {!['patient_visit', 'patients', 'pharmacy', 'erp_system', 'nhc_history'].includes(activeTab) && !isMobileMenuOpen && (
+                <span className="absolute top-1 right-3 w-2 h-2 rounded-full bg-amber-400 animate-ping"></span>
+              )}
+            </button>
+          </div>
+        </nav>
       </main>
     </div>
   );

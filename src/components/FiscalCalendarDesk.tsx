@@ -1016,8 +1016,9 @@ export default function FiscalCalendarDesk({
 
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cTag = (clinicSettings as any)?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
-    const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || 'Opposite State Bank of Pakistan, Mall Road, Lahore';
-    const cPhone = (clinicSettings as any)?.PhoneNo || (clinicSettings as any)?.Phone || clinicSettings?.PhoneMobile || '042-3111222 / 0300-1234567';
+    const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cPhone = (clinicSettings as any)?.PhoneNo || (clinicSettings as any)?.Phone || clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
     const { metrics, isClosed, savedStatus } = monthObj;
 
@@ -1033,6 +1034,7 @@ export default function FiscalCalendarDesk({
             .header-wrap { display: flex; justify-content: space-between; align-items: center; border-bottom: 2.5px solid #064e3b; padding-bottom: 8px; margin-bottom: 12px; }
             .clinic-title { font-size: 16px; font-weight: 900; color: #064e3b; text-transform: uppercase; margin: 0; }
             .clinic-sub { font-size: 9.5px; color: #475569; margin-top: 2px; }
+            .clinic-contact { font-size: 9px; color: #1e293b; font-weight: 700; margin-top: 2px; }
             .badge-box { text-align: right; }
             .status-tag { display: inline-block; padding: 3px 8px; font-size: 10px; font-weight: 800; border-radius: 4px; text-transform: uppercase; font-family: monospace; }
             .status-closed { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
@@ -1070,7 +1072,7 @@ export default function FiscalCalendarDesk({
             <div>
               <h1 class="clinic-title">${cName}</h1>
               <div class="clinic-sub">${cTag}</div>
-              <div class="clinic-sub">${cAddress} • Ph: ${cPhone}</div>
+              <div class="clinic-contact">📍 ${cAddress} &nbsp;|&nbsp; 📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
             </div>
             <div class="badge-box">
               <span class="status-tag ${isClosed ? 'status-closed' : 'status-open'}">
@@ -1261,7 +1263,7 @@ export default function FiscalCalendarDesk({
           </div>
 
           <div class="footer-txt">
-            Official Confidential Statement • Punjab Homeopathic Clinic & Pharmacy Management System • Generated on ${new Date().toLocaleString('en-GB')}
+            Official Confidential Statement • Punjab Homeopathic Clinic & Pharmacy • 🌐 ${cWebsite.replace(/^https?:\/\//, '')} • 📞 Helpline: ${cPhone} • Generated on ${new Date().toLocaleString('en-GB')}
           </div>
 
           <script>
@@ -1281,7 +1283,9 @@ export default function FiscalCalendarDesk({
     if (!printWin) return alert('Popup blocked. Please allow popups to print Annual Financial Report.');
 
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || 'Opposite State Bank of Pakistan, Mall Road, Lahore';
+    const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cPhone = (clinicSettings as any)?.PhoneNo || (clinicSettings as any)?.Phone || clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
     const rowsHtml = monthsData.map((m, idx) => `
       <tr style="${idx % 2 === 1 ? 'background: #f8fafc;' : ''}">
@@ -1331,7 +1335,7 @@ export default function FiscalCalendarDesk({
           <div class="header-wrap">
             <div>
               <h1 class="clinic-title">${cName}</h1>
-              <div class="clinic-sub">${cAddress}</div>
+              <div class="clinic-sub">📍 ${cAddress} &nbsp;|&nbsp; 📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
             </div>
             <div style="text-align: right;">
               <span style="font-weight: 800; font-size: 11px; color: #064e3b;">ANNUAL FINANCIAL CALENDAR AUDIT</span>

@@ -24,6 +24,8 @@ export const GrnPrintPreviewModal: React.FC<GrnPrintPreviewModalProps> = ({
   const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
   const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
   const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+  const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+  const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
   const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
   const items = grn.Items || [];
@@ -332,7 +334,10 @@ export const GrnPrintPreviewModal: React.FC<GrnPrintPreviewModalProps> = ({
             <div class="clinic-info">
               <h1 class="clinic-name">${cName}</h1>
               <div class="clinic-tagline">${cTag}</div>
-              <div class="clinic-address">${cAddr}</div>
+              <div class="clinic-address">${cAddr} &nbsp;|&nbsp; 📞 ${cPhone}</div>
+              <div style="font-size: 10px; font-weight: 700; color: #1d4ed8; margin-top: 2px;">
+                🌐 <a href="${cWebsite}" target="_blank" rel="noopener noreferrer" style="color: #1d4ed8; text-decoration: underline;">${cWebsite.replace(/^https?:\/\//, '')}</a>
+              </div>
               <div class="clinic-timings">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
               </div>
@@ -468,7 +473,7 @@ export const GrnPrintPreviewModal: React.FC<GrnPrintPreviewModalProps> = ({
           </div>
 
           <div class="official-footer">
-            <span>Punjab Homeopathic Clinic & Pharmacy • Goods Received Note (GRN) Stock Audit • Confidential Document</span>
+            <span>Punjab Homeopathic Clinic & Pharmacy • 🌐 <a href="${cWebsite}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline;">${cWebsite.replace(/^https?:\/\//, '')}</a> • 📞 Helpline: ${cPhone}</span>
             <span>Generated Date: ${new Date().toLocaleString('en-GB')}</span>
           </div>
 
@@ -545,8 +550,16 @@ export const GrnPrintPreviewModal: React.FC<GrnPrintPreviewModalProps> = ({
                 <div className="text-[10px] font-extrabold text-rose-700 uppercase tracking-widest mt-0.5">
                   {cTag}
                 </div>
-                <div className="text-xs font-bold text-slate-800 mt-0.5">
-                  {cAddr}
+                <div className="text-xs font-bold text-slate-800 mt-0.5 flex flex-wrap items-center justify-center gap-x-2">
+                  <span>{cAddr}</span>
+                  <span>•</span>
+                  <a href={`tel:${cPhone.replace(/[^0-9+]/g, '')}`} className="text-emerald-800 font-bold hover:underline">
+                    📞 {cPhone}
+                  </a>
+                  <span>•</span>
+                  <a href={cWebsite} target="_blank" rel="noopener noreferrer" className="text-blue-700 font-bold hover:underline">
+                    🌐 {cWebsite.replace(/^https?:\/\//, '')}
+                  </a>
                 </div>
                 <div className="text-[10px] font-extrabold text-emerald-900 uppercase mt-0.5">
                   Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM

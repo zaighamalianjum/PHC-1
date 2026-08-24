@@ -584,7 +584,7 @@ async function runAutoSeeder() {
       DoctorName: 'Dr. Ejaz Ahmad, D.H.M.S (Pak)',
       DoctorSignatureText: 'Dr. Ejaz Ahmad, D.H.M.S (Pak) • Registered Homeopathic Medical Practitioner No: 48776',
       ClinicAddress: '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan',
-      PhoneMobile: '+92-300-4208323',
+      PhoneMobile: '+92-311-4000608',
       RegistrationNo: 'Registered Homeopathic Medical Practitioner No: 48776',
       OPDFee: 1500
     };
@@ -4348,10 +4348,27 @@ async function startServer() {
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
+      configFile: path.resolve(__dirname, 'vite.config.ts'),
       server: { middlewareMode: true },
       appType: "spa",
     });
     app.use(vite.middlewares);
+
+    app.use('*', async (req, res, next) => {
+      const url = req.originalUrl;
+      if (url.startsWith('/api') || url.startsWith('/socket.io')) {
+        return next();
+      }
+      try {
+        let template = fs.readFileSync(path.resolve(__dirname, 'index.html'), 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e) {
+        vite.ssrFixStacktrace(e);
+        next(e);
+      }
+    });
+
     console.log('⚡ Integrated Vite development server middleware.');
   } else {
     const distPath = path.join(process.cwd(), 'dist');

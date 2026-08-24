@@ -1716,8 +1716,9 @@ export default function PharmacyPOS({
     }
 
     const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
-    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore";
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "042-3111222 / 0300-1234567";
+    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "10 Shalimar Road, Garhi Shahu, Lahore";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-311-4000608";
+    const clinicWebsite = clinicSettings?.Website || "https://punjabhomeopathic.pk";
     const clinicTagline = clinicSettings?.ClinicLogoText || "Consultation, Clinical Compounding & Retail Pharmacy";
     const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
     const printTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -1983,7 +1984,7 @@ export default function PharmacyPOS({
                   <div>
                     <h1 class="clinic-title">${clinicName}</h1>
                     <div class="clinic-subtitle">${clinicTagline}</div>
-                    <div class="clinic-contact">📍 ${clinicAddress} • 📞 ${clinicPhone}</div>
+                    <div class="clinic-contact">📍 ${clinicAddress} • 📞 ${clinicPhone} • 🌐 ${clinicWebsite.replace(/^https?:\/\//, '')}</div>
                   </div>
                 </div>
                 <div class="badge-box">
@@ -2168,8 +2169,9 @@ export default function PharmacyPOS({
     }
 
     const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || '042-3111222 / 0300-1234567';
-    const cAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || 'Opp. State Bank, Mall Road, Lahore';
+    const cPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || '+92-311-4000608';
+    const cAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const shiftText = billData.shift === 1 ? 'MORNING SHIFT (1)' : 'EVENING SHIFT (2)';
     const dateStr = billData.invoiceDate || new Date().toISOString().split('T')[0];
     const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -2183,48 +2185,75 @@ export default function PharmacyPOS({
       <html>
         <head>
           <title>Thermal Receipt - ${billData.invoiceNo}</title>
+          <meta charset="utf-8" />
           <style>
-            @media print {
-              @page { margin: 0; size: 80mm auto; }
-              body { margin: 0; padding: 2mm 3mm; }
+            * {
+              box-sizing: border-box !important;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
-            body {
-              font-family: 'Courier New', Courier, monospace, Arial, sans-serif;
-              width: 72mm;
+            @media print {
+              @page {
+                size: 80mm auto;
+                margin: 0;
+              }
+              html, body {
+                width: 100% !important;
+                max-width: 100% !important;
+                min-width: 100% !important;
+                margin: 0 !important;
+                padding: 1.5mm 1mm !important;
+              }
+              .no-print {
+                display: none !important;
+              }
+            }
+            html, body {
+              width: 100%;
+              max-width: 76mm;
+              min-width: 72mm;
               margin: 0 auto;
-              padding: 6px 3px;
-              color: #000;
-              background: #fff;
-              font-size: 11px;
+              padding: 4px 2mm;
+              color: #000000;
+              background: #ffffff;
+              font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace;
+              font-size: 11.5px;
               line-height: 1.25;
+              word-wrap: break-word;
+              overflow-wrap: break-word;
             }
             .text-center { text-align: center; }
             .text-right { text-align: right; }
             .text-bold { font-weight: 900; }
-            .clinic-header { text-align: center; margin-bottom: 4px; }
-            .clinic-name { font-size: 13px; font-weight: 900; text-transform: uppercase; margin: 0; line-height: 1.2; font-family: sans-serif; }
-            .clinic-sub { font-size: 9px; font-weight: bold; color: #111; margin-top: 2px; }
-            .divider-solid { border-top: 1.5px solid #000; margin: 4px 0; }
-            .divider-dashed { border-top: 1px dashed #000; margin: 4px 0; }
-            .receipt-title { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; text-align: center; margin: 3px 0; font-family: sans-serif; }
-            .meta-row { display: flex; justify-content: space-between; font-size: 10px; margin: 2px 0; }
-            .meta-label { font-weight: bold; width: 35%; }
-            .meta-val { font-weight: bold; width: 65%; text-align: right; word-break: break-word; }
+            .full-width { width: 100%; box-sizing: border-box; }
             
-            /* Table */
-            .items-table { width: 100%; border-collapse: collapse; font-size: 10.5px; margin: 4px 0; }
-            .items-table th { text-align: left; border-bottom: 1px dashed #000; padding: 3px 0; font-size: 9.5px; font-weight: 900; }
-            .items-table td { padding: 2px 0; vertical-align: top; }
-            .total-box { font-size: 13px; font-weight: 900; text-align: right; padding: 3px 0; }
-            .footer-msg { font-size: 8.5px; text-align: center; margin-top: 6px; font-weight: bold; line-height: 1.3; }
-            .barcode-box { text-align: center; font-family: monospace; font-size: 13px; letter-spacing: 2px; font-weight: 900; margin: 4px 0; }
+            .clinic-header { text-align: center; margin-bottom: 3px; width: 100%; }
+            .clinic-name { font-size: 13.5px; font-weight: 900; text-transform: uppercase; margin: 0; line-height: 1.15; font-family: 'Arial Black', Arial, sans-serif; word-break: break-word; }
+            .clinic-sub { font-size: 9.5px; font-weight: bold; color: #111; margin-top: 1.5px; word-break: break-word; }
+            
+            .divider-solid { border-top: 1.5px solid #000000; margin: 4px 0; width: 100%; }
+            .divider-dashed { border-top: 1.5px dashed #000000; margin: 4px 0; width: 100%; }
+            .receipt-title { font-size: 11.5px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; text-align: center; margin: 3px 0; font-family: sans-serif; }
+            
+            .meta-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; margin: 2px 0; width: 100%; }
+            .meta-label { font-weight: bold; width: 34%; flex-shrink: 0; }
+            .meta-val { font-weight: bold; width: 66%; text-align: right; word-break: break-word; }
+            
+            /* Table (Utilizes full 100% 80mm printable width, 48-column CPL equivalent) */
+            .items-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; margin: 4px 0; box-sizing: border-box; }
+            .items-table th { text-align: left; border-bottom: 1.5px dashed #000000; padding: 3px 1px; font-size: 10px; font-weight: 900; }
+            .items-table td { padding: 2px 1px; vertical-align: top; word-break: break-word; }
+            
+            .total-box { font-size: 13.5px; font-weight: 900; text-align: right; padding: 4px 0; width: 100%; }
+            .footer-msg { font-size: 9px; text-align: center; margin-top: 6px; font-weight: bold; line-height: 1.35; width: 100%; word-break: break-word; }
+            .barcode-box { text-align: center; font-family: monospace; font-size: 13px; letter-spacing: 2px; font-weight: 900; margin: 4px 0; width: 100%; }
           </style>
         </head>
         <body>
           <div class="clinic-header">
             <h2 class="clinic-name">${clinicName}</h2>
             <div class="clinic-sub">${cAddress}</div>
-            <div class="clinic-sub">Ph: ${cPhone}</div>
+            <div class="clinic-sub">📞 ${cPhone} | 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
           </div>
           
           <div class="divider-solid"></div>
@@ -2233,7 +2262,7 @@ export default function PharmacyPOS({
 
           <div class="meta-row">
             <span class="meta-label">Invoice No:</span>
-            <span class="meta-val text-bold" style="font-size: 11px;">${billData.invoiceNo}</span>
+            <span class="meta-val text-bold" style="font-size: 11.5px;">${billData.invoiceNo}</span>
           </div>
           <div class="meta-row">
             <span class="meta-label">Date/Time :</span>
@@ -2257,9 +2286,9 @@ export default function PharmacyPOS({
           <table class="items-table">
             <thead>
               <tr>
-                <th style="width: 52%;">ITEM</th>
-                <th style="width: 15%; text-align: center;">QTY</th>
-                <th style="width: 33%; text-align: right;">TOTAL</th>
+                <th style="width: 54%;">ITEM</th>
+                <th style="width: 16%; text-align: center;">QTY</th>
+                <th style="width: 30%; text-align: right;">TOTAL</th>
               </tr>
             </thead>
             <tbody>
@@ -2268,12 +2297,12 @@ export default function PharmacyPOS({
                 const lineTotal = b.Qty * b.Price;
                 return `
                   <tr>
-                    <td colspan="3" style="font-weight: bold; padding-top: 3px;">${itm ? itm.ItemName : b.ItemID}</td>
+                    <td colspan="3" style="font-weight: 900; padding-top: 3px; font-size: 11px;">${itm ? itm.ItemName : b.ItemID}</td>
                   </tr>
                   <tr>
-                    <td style="font-size: 9.5px; color: #333; padding-left: 6px;">@ Rs. ${b.Price.toFixed(0)}</td>
+                    <td style="font-size: 10px; color: #222; padding-left: 4px;">@ Rs. ${b.Price.toFixed(0)}</td>
                     <td style="text-align: center; font-weight: bold;">${b.Qty}</td>
-                    <td style="text-align: right; font-weight: bold;">Rs. ${lineTotal.toLocaleString()}</td>
+                    <td style="text-align: right; font-weight: 900;">Rs. ${lineTotal.toLocaleString()}</td>
                   </tr>
                 `;
               }).join('')}
@@ -2299,7 +2328,7 @@ export default function PharmacyPOS({
           </div>
           <div class="divider-solid"></div>
 
-          <div class="meta-row" style="font-size: 9.5px;">
+          <div class="meta-row" style="font-size: 10px;">
             <span class="meta-label">Payment   :</span>
             <span class="meta-val text-bold">CASH RECEIVED (POSTED)</span>
           </div>
@@ -2317,7 +2346,7 @@ export default function PharmacyPOS({
             window.onload = function() {
               setTimeout(function() {
                 window.print();
-              }, 300);
+              }, 250);
             };
           </script>
         </body>
@@ -2438,8 +2467,9 @@ export default function PharmacyPOS({
     }
 
     const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
-    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore";
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "042-3111222 / 0300-1234567";
+    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "10 Shalimar Road, Garhi Shahu, Lahore";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-311-4000608";
+    const clinicWebsite = clinicSettings?.Website || "https://punjabhomeopathic.pk";
     const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
     const printedBy = currentUser?.FullName || currentUser?.LoginName || 'Duty Pharmacist';
     const printTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
@@ -2630,7 +2660,7 @@ export default function PharmacyPOS({
               <div>
                 <h1 class="clinic-title">${clinicName}</h1>
                 <div class="clinic-subtitle">${reportTitle}</div>
-                <div style="font-size: 9px; color: #475569; margin-top: 2px;">📍 ${clinicAddress} • 📞 ${clinicPhone}</div>
+                <div style="font-size: 9px; color: #475569; margin-top: 2px;">📍 ${clinicAddress} &nbsp;|&nbsp; 📞 ${clinicPhone} &nbsp;|&nbsp; 🌐 ${clinicWebsite.replace(/^https?:\/\//, '')}</div>
               </div>
             </div>
             <div class="report-badge-box">
@@ -4004,12 +4034,16 @@ export default function PharmacyPOS({
       return;
     }
 
+    const parentStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
+      .map(el => el.outerHTML)
+      .join('\n');
+
     printWin.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
           <title>Clinical Medicine Label Print (2" x 0.2" - 2x2 Grid on A4)</title>
-          <script src="https://cdn.tailwindcss.com"></script>
+          ${parentStyles}
           <style>
             @page {
               size: A4;
@@ -6760,8 +6794,187 @@ export default function PharmacyPOS({
                       </div>
                     </div>
 
-                    {/* Excel Table Grid */}
-                    <div className="overflow-x-auto border-2 border-slate-300 rounded-lg max-h-[560px] overflow-y-auto shadow-inner bg-slate-50">
+                    {/* Mobile View: High-Density Card Rows (Shown on < md screens) */}
+                    <div className="block md:hidden space-y-2.5">
+                      {paginatedItems.length === 0 ? (
+                        <div className="p-8 text-center text-slate-400 font-bold bg-white rounded-xl border border-slate-200 text-xs">
+                          {invLowStockFilter 
+                            ? 'All inventory medicines are currently above reorder levels! No low stock items found.'
+                            : 'No medicines match the search or category filter.'}
+                        </div>
+                      ) : (
+                        paginatedItems.map((itm, idx) => {
+                          const isLowStock = itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1);
+                          const isClinical = itm.MedicineType === 'C';
+                          const absoluteRowNumber = startIndex + idx + 1;
+
+                          return (
+                            <div 
+                              key={`mobile-${itm.ItemID}-${absoluteRowNumber}`}
+                              className={`p-3 rounded-xl border shadow-xs transition-all space-y-2 ${
+                                isLowStock 
+                                  ? 'bg-rose-50/70 border-rose-300' 
+                                  : 'bg-white border-slate-200 hover:border-indigo-300'
+                              }`}
+                            >
+                              {/* Row 1: Number, Medicine Name, Category & Badges */}
+                              <div className="flex items-start justify-between gap-2">
+                                <div className="flex items-start space-x-2 min-w-0 flex-1">
+                                  <span className="w-5 h-5 rounded-md bg-slate-100 border border-slate-300 text-slate-600 font-mono text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
+                                    {absoluteRowNumber}
+                                  </span>
+                                  <div className="min-w-0 flex-1">
+                                    <h4 className="text-xs font-black text-slate-900 leading-tight">
+                                      {itm.ItemName}
+                                    </h4>
+                                    <div className="flex flex-wrap items-center gap-1 mt-1 text-[10px]">
+                                      <span className="font-mono text-slate-500 font-bold">
+                                        ID: {itm.ItemID}
+                                      </span>
+                                      <span className="px-1.5 py-0.2 bg-slate-100 text-slate-700 rounded font-semibold border border-slate-200">
+                                        {itm.Unit || 'Tab'}
+                                      </span>
+                                      <span className={`px-1.5 py-0.2 rounded font-black uppercase text-[9px] ${
+                                        isClinical ? 'bg-indigo-100 text-indigo-800' : 'bg-emerald-100 text-emerald-800'
+                                      }`}>
+                                        {isClinical ? 'Clinical' : 'Patent'}
+                                      </span>
+                                      {isLowStock && (
+                                        <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded font-black uppercase text-[8px] animate-pulse">
+                                          Low Stock
+                                        </span>
+                                      )}
+                                      {Array.isArray(itm.Batches) && itm.Batches.length > 0 && (
+                                        <span className="px-1 py-0.2 bg-indigo-50 text-indigo-700 rounded font-mono text-[9px] border border-indigo-200">
+                                          {itm.Batches.length} {itm.Batches.length === 1 ? 'Batch' : 'Batches'}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Quick Action Icons on Top Right */}
+                                <div className="flex items-center space-x-1 shrink-0 bg-slate-50 p-1 rounded-lg border border-slate-200">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenBatchManager(itm)}
+                                    className="p-1.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100 rounded transition cursor-pointer"
+                                    title="Manage Batches & Lots"
+                                  >
+                                    <Boxes className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSelectEditItem(itm)}
+                                    className="p-1.5 text-slate-600 hover:text-indigo-600 hover:bg-indigo-100 rounded transition cursor-pointer"
+                                    title="Edit Full Parameters"
+                                  >
+                                    <Edit className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemoveItem(itm.ItemID, itm.ItemName)}
+                                    disabled={!canAdd}
+                                    className={`p-1.5 rounded transition cursor-pointer ${
+                                      canAdd ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-100' : 'text-slate-300 cursor-not-allowed'
+                                    }`}
+                                    title="Delete Medicine"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              </div>
+
+                              {/* Row 2: Current Stock Control & Retail Price */}
+                              <div className="grid grid-cols-2 gap-2 pt-1.5 border-t border-slate-100">
+                                {/* Current Stock with +/- Buttons */}
+                                <div className="bg-emerald-50/60 p-2 rounded-lg border border-emerald-200 flex flex-col justify-between">
+                                  <span className="text-[9.5px] font-black uppercase tracking-wider text-emerald-900 mb-1">
+                                    Current Stock
+                                  </span>
+                                  <div className="flex items-center justify-between space-x-1">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (setItems) {
+                                          const newStock = Math.max(0, itm.CStock - 1);
+                                          const updated = { ...itm, CStock: newStock };
+                                          setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                          syncItemToBackend('UPDATE', updated);
+                                        }
+                                      }}
+                                      className="w-7 h-7 bg-white hover:bg-rose-100 text-slate-800 border border-slate-300 rounded-md font-bold text-sm flex items-center justify-center transition cursor-pointer shadow-2xs"
+                                    >
+                                      -
+                                    </button>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      value={itm.CStock}
+                                      onChange={(e) => {
+                                        const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
+                                        if (setItems) {
+                                          const updated = { ...itm, CStock: val };
+                                          setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                          syncItemToBackend('UPDATE', updated);
+                                        }
+                                      }}
+                                      className={`w-14 py-1 text-center text-xs font-mono font-black rounded-md border ${
+                                        isLowStock
+                                          ? 'bg-rose-100 border-rose-400 text-rose-950'
+                                          : 'bg-white border-emerald-300 text-slate-900'
+                                      }`}
+                                    />
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        if (setItems) {
+                                          const newStock = itm.CStock + 1;
+                                          const updated = { ...itm, CStock: newStock };
+                                          setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                          syncItemToBackend('UPDATE', updated);
+                                        }
+                                      }}
+                                      className="w-7 h-7 bg-white hover:bg-emerald-100 text-slate-800 border border-slate-300 rounded-md font-bold text-sm flex items-center justify-center transition cursor-pointer shadow-2xs"
+                                    >
+                                      +
+                                    </button>
+                                  </div>
+                                </div>
+
+                                {/* Retail Price (MRP) with Direct Edit */}
+                                <div className="bg-slate-50 p-2 rounded-lg border border-slate-200 flex flex-col justify-between">
+                                  <span className="text-[9.5px] font-black uppercase tracking-wider text-slate-700 mb-1">
+                                    Retail Price (Rs)
+                                  </span>
+                                  <div className="flex items-center space-x-1">
+                                    <span className="text-[11px] font-bold text-slate-500 font-mono">PKR</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min="0"
+                                      value={itm.Price}
+                                      onChange={(e) => {
+                                        const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
+                                        if (setItems) {
+                                          const updated = { ...itm, Price: val };
+                                          setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
+                                          syncItemToBackend('UPDATE', updated);
+                                        }
+                                      }}
+                                      className="w-full py-1 px-1.5 text-right text-xs font-mono font-black bg-white border border-slate-300 rounded-md text-slate-900 focus:ring-1 focus:ring-emerald-500"
+                                    />
+                                  </div>
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+
+                    {/* Desktop & Tablet Excel Table Grid (Shown on md+ screens) */}
+                    <div className="hidden md:block overflow-x-auto border-2 border-slate-300 rounded-lg max-h-[560px] overflow-y-auto shadow-inner bg-slate-50">
                       <table className="w-full text-left border-collapse text-xs font-sans select-none">
                         <thead className="sticky top-0 bg-slate-200 text-slate-800 border-b-2 border-slate-300 font-extrabold uppercase tracking-wider text-[10px] z-10 shadow-xs">
                           <tr className="divide-x divide-slate-300">

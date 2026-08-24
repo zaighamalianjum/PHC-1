@@ -30,7 +30,8 @@ import {
   CalendarRange,
   ArrowRightLeft,
   CheckCheck,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Phone
 } from 'lucide-react';
 
 import {
@@ -283,18 +284,97 @@ export default function ReportingDesk({
   // Active Report Type Selection
   const [activeReport, setActiveReport] = useState<ReportType>('pending_payments');
 
-  // Date Range & Fiscal Period Filters
+  // Dynamic Date, Fiscal Year & Month Calculation
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonthIdx = now.getMonth(); // 0 = Jan, 7 = Aug
+  const currentMonthNum = (currentMonthIdx + 1).toString().padStart(2, '0');
+  const currentYearMonth = `${currentYear}-${currentMonthNum}`; // e.g. "2026-08"
+
+  const defaultFyKey = `CY ${currentYear}`;
+  const firstDayOfCurrentMonth = `${currentYear}-${currentMonthNum}-01`;
+  const lastDayOfCurrentMonth = new Date(currentYear, currentMonthIdx + 1, 0).toISOString().split('T')[0];
+  const todayStr = now.toISOString().split('T')[0];
+
+  // Date Range & Fiscal Period Filters - Default to Current Year & Current Month
   const [datePreset, setDatePreset] = useState<'today' | 'this_week' | 'this_month' | 'last_30_days' | 'this_quarter' | 'this_fiscal_year' | 'last_fiscal_year' | 'this_year' | 'custom' | 'all'>('this_month');
   
-  const todayStr = new Date().toISOString().split('T')[0];
-  const firstDayOfMonthStr = new Date(new Date().getFullYear(), new Date().getMonth(), 1).toISOString().split('T')[0];
+  const [startDate, setStartDate] = useState<string>(firstDayOfCurrentMonth);
+  const [endDate, setEndDate] = useState<string>(lastDayOfCurrentMonth);
 
-  const [startDate, setStartDate] = useState<string>(firstDayOfMonthStr);
-  const [endDate, setEndDate] = useState<string>(todayStr);
+  // Dedicated Fiscal Period State - Default to Current Year & Current Month
+  const [selectedFiscalYear, setSelectedFiscalYear] = useState<string>(defaultFyKey);
+  const [selectedFiscalMonth, setSelectedFiscalMonth] = useState<string>(currentYearMonth);
 
-  // Dedicated Fiscal Period State
-  const [selectedFiscalYear, setSelectedFiscalYear] = useState<string>('custom');
-  const [selectedFiscalMonth, setSelectedFiscalMonth] = useState<string>('all');
+  // Available Fiscal Years
+  const fiscalYearOptions = useMemo(() => {
+    return [
+      { key: `CY ${currentYear}`, label: `CY ${currentYear} (Jan - Dec ${currentYear}) [Current Year]` },
+      { key: `FY ${currentYear}-${currentYear + 1}`, label: `FY ${currentYear}-${currentYear + 1} (Jul ${currentYear} - Jun ${currentYear + 1})` },
+      { key: `FY ${currentYear - 1}-${currentYear}`, label: `FY ${currentYear - 1}-${currentYear} (Jul ${currentYear - 1} - Jun ${currentYear})` },
+      { key: `CY ${currentYear - 1}`, label: `CY ${currentYear - 1} (Jan - Dec ${currentYear - 1})` },
+      { key: `FY ${currentYear - 2}-${currentYear - 1}`, label: `FY ${currentYear - 2}-${currentYear - 1} (Jul ${currentYear - 2} - Jun ${currentYear - 1})` },
+      { key: 'all', label: 'All Fiscal Years / All Time' },
+      { key: 'custom', label: 'Custom Range...' }
+    ];
+  }, [currentYear]);
+
+  // Available Months for the selected Fiscal Year / Calendar Year
+  const monthOptions = useMemo(() => {
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    if (selectedFiscalYear.startsWith('FY ')) {
+      // Fiscal Year (July Y1 to June Y2)
+      const parts = selectedFiscalYear.replace('FY ', '').split('-');
+      const y1 = Number(parts[0]) || currentYear;
+      const y2 = Number(parts[1]) || (y1 + 1);
+
+      const fyMonths: { value: string; label: string; isCurrent: boolean }[] = [];
+      // Jul - Dec of Y1
+      for (let m = 7; m <= 12; m++) {
+        const mStr = m.toString().padStart(2, '0');
+        const ym = `${y1}-${mStr}`;
+        const isCurrent = ym === currentYearMonth;
+        fyMonths.push({
+          value: ym,
+          label: `${monthNames[m - 1]}-${y1} (M${m - 6})${isCurrent ? ' (Current)' : ''}`,
+          isCurrent
+        });
+      }
+      // Jan - Jun of Y2
+      for (let m = 1; m <= 6; m++) {
+        const mStr = m.toString().padStart(2, '0');
+        const ym = `${y2}-${mStr}`;
+        const isCurrent = ym === currentYearMonth;
+        fyMonths.push({
+          value: ym,
+          label: `${monthNames[m - 1]}-${y2} (M${m + 6})${isCurrent ? ' (Current)' : ''}`,
+          isCurrent
+        });
+      }
+      return fyMonths;
+    }
+
+    // Default Calendar Year (e.g. CY 2026 or fallback)
+    let yr = currentYear;
+    if (selectedFiscalYear.startsWith('CY ')) {
+      yr = Number(selectedFiscalYear.replace('CY ', '')) || currentYear;
+    }
+
+    return monthNames.map((name, idx) => {
+      const mNum = (idx + 1).toString().padStart(2, '0');
+      const ym = `${yr}-${mNum}`;
+      const isCurrent = ym === currentYearMonth;
+      return {
+        value: ym,
+        label: `${name}-${yr}${isCurrent ? ' (Current)' : ''}`,
+        isCurrent
+      };
+    });
+  }, [selectedFiscalYear, currentYear, currentYearMonth]);
 
   // General Ledger Specific Filters
   const [ledgerAccountFilter, setLedgerAccountFilter] = useState<string>('all');
@@ -1929,7 +2009,21 @@ export default function ReportingDesk({
       ]);
     }
 
+    const cName = clinicSettings?.ClinicName || 'Punjab Homeopathic Clinic & Pharmacy';
+    const cWeb = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+
+    const clinicHeaderMeta = [
+      `"${cName}"`,
+      `"Website: ${cWeb} | Helpline / Mobile: ${cPhone}"`,
+      `"Address: ${cAddr}"`,
+      `"Report: ${activeReport.toUpperCase()} | Audit Period: ${startDate} to ${endDate} | Generated: ${new Date().toLocaleString('en-GB')}"`,
+      ''
+    ].join('\n');
+
     const csvContent = 'data:text/csv;charset=utf-8,' +
+      clinicHeaderMeta + '\n' +
       [headers.join(','), ...rows.map(r => r.map(c => `"${c}"`).join(','))].join('\n');
 
     const encodedUri = encodeURI(csvContent);
@@ -1956,6 +2050,9 @@ export default function ReportingDesk({
 
     const clinicName = savedSettings?.ClinicName || (clinicSettings as any)?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC';
     const logoSrc = savedSettings?.ClinicLogoImage || (clinicSettings as any)?.ClinicLogoImage || '/nhc_logo.svg';
+    const clinicAddress = savedSettings?.ClinicAddress || (clinicSettings as any)?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const clinicPhone = savedSettings?.PhoneMobile || (clinicSettings as any)?.PhoneMobile || '+92-311-4000608';
+    const clinicWebsite = savedSettings?.Website || (clinicSettings as any)?.Website || 'https://punjabhomeopathic.pk';
 
     const reportTitles: Record<ReportType, string> = {
       pending_payments: 'Pending Vendor Payments & Payable Balance Report',
@@ -2798,7 +2895,12 @@ export default function ReportingDesk({
             <div class="clinic-info">
               <h1 class="clinic-name">${clinicName}</h1>
               <div class="clinic-tagline">HEALING NATURALLY. RESTORING BALANCE.</div>
-              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">
+                ${clinicAddress} &nbsp;|&nbsp; 📞 <a href="tel:${clinicPhone.replace(/[^0-9+]/g, '')}" style="color: #1e293b; text-decoration: none;">${clinicPhone}</a>
+              </div>
+              <div style="font-size: 10.5px; font-weight: 700; color: #1d4ed8; margin-top: 2px;">
+                🌐 <a href="${clinicWebsite}" target="_blank" rel="noopener noreferrer" style="color: #1d4ed8; text-decoration: underline; font-weight: bold;">${clinicWebsite.replace(/^https?:\/\//, '')}</a>
+              </div>
               <div class="clinic-timings">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
               </div>
@@ -2878,8 +2980,8 @@ export default function ReportingDesk({
 
           <!-- Official Footer Note -->
           <div class="official-footer">
-            <div>Punjab Homeopathic Clinic & Pharmacy • Official Financial & Operational Audit Document</div>
-            <div>Authorized Administrator: Mr. Zaigham Ali Anjum</div>
+            <div>Punjab Homeopathic Clinic & Pharmacy • 🌐 <a href="${clinicWebsite}" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline; font-weight: bold;">${clinicWebsite.replace(/^https?:\/\//, '')}</a> • 📞 Helpline: <a href="tel:${clinicPhone.replace(/[^0-9+]/g, '')}" style="color: inherit; text-decoration: none; font-weight: bold;">${clinicPhone}</a></div>
+            <div>Authorized Administrator: <strong>Mr. Zaigham Ali Anjum</strong></div>
           </div>
 
           <script>
@@ -2978,7 +3080,7 @@ export default function ReportingDesk({
           {/* Quick Date & Fiscal Presets */}
           <div className="flex items-center space-x-1.5 overflow-x-auto no-scrollbar pb-1">
             <span className="text-xs font-bold text-slate-500 flex items-center space-x-1 pr-1 shrink-0">
-              <Calendar className="w-3.5 h-3.5" />
+              <Calendar className="w-3.5 h-3.5 text-indigo-600" />
               <span>Period:</span>
             </span>
             {[
@@ -2987,9 +3089,8 @@ export default function ReportingDesk({
               { id: 'this_month', label: 'This Month' },
               { id: 'last_30_days', label: 'Last 30 Days' },
               { id: 'this_quarter', label: 'This Quarter' },
-              { id: 'this_fiscal_year', label: 'This FY (25-26)' },
-              { id: 'last_fiscal_year', label: 'Last FY (24-25)' },
-              { id: 'this_year', label: 'CY 2026' },
+              { id: 'this_fiscal_year', label: `This FY (${(currentMonthIdx >= 6 ? currentYear : currentYear - 1).toString().slice(-2)}-${(currentMonthIdx >= 6 ? currentYear + 1 : currentYear).toString().slice(-2)})` },
+              { id: 'this_year', label: `CY ${currentYear}` },
               { id: 'all', label: 'All Time' }
             ].map(p => (
               <button
@@ -2997,7 +3098,7 @@ export default function ReportingDesk({
                 onClick={() => handlePresetChange(p.id as any)}
                 className={`px-2.5 py-1 text-xs font-bold rounded-lg transition cursor-pointer border whitespace-nowrap shrink-0 ${
                   datePreset === p.id
-                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                    ? 'bg-indigo-50 border-indigo-300 text-indigo-700 shadow-2xs'
                     : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-600'
                 }`}
               >
@@ -3009,44 +3110,35 @@ export default function ReportingDesk({
           {/* Date Picker Range Inputs & Fiscal Pickers */}
           <div className="flex flex-wrap items-center gap-2">
             {/* Fiscal Year Selector */}
-            <div className="flex items-center space-x-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">FY:</span>
+            <div className="flex items-center space-x-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1 shadow-2xs">
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Year:</span>
               <select
                 value={selectedFiscalYear}
                 onChange={e => handleFiscalYearSelect(e.target.value)}
-                className="text-xs font-bold text-slate-800 bg-transparent focus:outline-hidden cursor-pointer"
+                className="text-xs font-bold text-slate-800 bg-transparent focus:outline-hidden cursor-pointer font-mono"
               >
-                <option value="custom">Fiscal Year...</option>
-                <option value="FY 2025-2026">FY 2025-2026 (Jul 25 - Jun 26)</option>
-                <option value="FY 2024-2025">FY 2024-2025 (Jul 24 - Jun 25)</option>
-                <option value="FY 2023-2024">FY 2023-2024 (Jul 23 - Jun 24)</option>
-                <option value="CY 2026">CY 2026 (Jan - Dec 2026)</option>
-                <option value="CY 2025">CY 2025 (Jan - Dec 2025)</option>
-                <option value="all">All Fiscal Years</option>
+                {fiscalYearOptions.map(fy => (
+                  <option key={fy.key} value={fy.key}>
+                    {fy.label}
+                  </option>
+                ))}
               </select>
             </div>
 
-            {/* Fiscal Month Selector */}
-            <div className="flex items-center space-x-1 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1">
-              <span className="text-[10px] font-bold text-slate-400 uppercase">Month:</span>
+            {/* Fiscal Month Selector Dropdown */}
+            <div className="flex items-center space-x-1 bg-indigo-50/80 border-2 border-indigo-300 rounded-lg px-2 py-1 shadow-2xs">
+              <span className="text-[10px] font-black text-indigo-950 uppercase tracking-wider">Month:</span>
               <select
                 value={selectedFiscalMonth}
                 onChange={e => handleFiscalMonthSelect(e.target.value)}
-                className="text-xs font-bold text-slate-800 bg-transparent focus:outline-hidden cursor-pointer"
+                className="text-xs font-black text-indigo-900 bg-transparent focus:outline-hidden cursor-pointer font-mono"
               >
-                <option value="all">All Months</option>
-                <option value="2025-07">Jul 2025 (M1)</option>
-                <option value="2025-08">Aug 2025 (M2)</option>
-                <option value="2025-09">Sep 2025 (M3)</option>
-                <option value="2025-10">Oct 2025 (M4)</option>
-                <option value="2025-11">Nov 2025 (M5)</option>
-                <option value="2025-12">Dec 2025 (M6)</option>
-                <option value="2026-01">Jan 2026 (M7)</option>
-                <option value="2026-02">Feb 2026 (M8)</option>
-                <option value="2026-03">Mar 2026 (M9)</option>
-                <option value="2026-04">Apr 2026 (M10)</option>
-                <option value="2026-05">May 2026 (M11)</option>
-                <option value="2026-06">Jun 2026 (M12)</option>
+                <option value="all">📅 All Months (Full Period)</option>
+                {monthOptions.map(m => (
+                  <option key={m.value} value={m.value}>
+                    📅 {m.label}
+                  </option>
+                ))}
               </select>
             </div>
 
@@ -3588,10 +3680,26 @@ export default function ReportingDesk({
               <p className="text-[10px] font-extrabold text-rose-700 tracking-wider uppercase mt-0.5">
                 HEALING NATURALLY. RESTORING BALANCE.
               </p>
-              <p className="text-[11px] font-bold text-slate-800 mt-0.5">
-                10 Shalimar Road, Garhi Shahu, Lahore
-              </p>
-              <p className="text-[9px] text-emerald-800 font-bold uppercase mt-0.5">
+              <div className="text-[11px] font-bold text-slate-800 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
+                <span>{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore'}</span>
+                <span className="text-slate-400">•</span>
+                <a
+                  href={`tel:${(clinicSettings?.PhoneMobile || '+92-311-4000608').replace(/[^0-9+]/g, '')}`}
+                  className="text-emerald-800 hover:text-emerald-950 font-bold hover:underline inline-flex items-center gap-1"
+                >
+                  📞 {clinicSettings?.PhoneMobile || '+92-311-4000608'}
+                </a>
+                <span className="text-slate-400">•</span>
+                <a
+                  href={clinicSettings?.Website || 'https://punjabhomeopathic.pk'}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-blue-700 hover:text-blue-900 font-bold hover:underline inline-flex items-center gap-1"
+                >
+                  🌐 {(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}
+                </a>
+              </div>
+              <p className="text-[9px] text-emerald-800 font-bold uppercase mt-1">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
               </p>
             </div>
@@ -3798,7 +3906,16 @@ export default function ReportingDesk({
                 ) : (
                   poData.map((p, idx) => (
                     <tr key={p._id || p.POID || idx} className="hover:bg-slate-50">
-                      <td className="p-3 font-mono font-bold text-indigo-600">{p.POID}</td>
+                      <td className="p-3">
+                        <div className="flex items-center space-x-1.5">
+                          <span className="font-mono font-bold text-indigo-600">{p.POID}</span>
+                          {(p.PaymentMethod === 'Cash' || (p as any).PaymentTerms === 'Cash') ? (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">CASH</span>
+                          ) : (
+                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">CREDIT</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="p-3 font-bold text-slate-900">{p.VendorName}</td>
                       <td className="p-3 text-center text-slate-600">{p.OrderDate}</td>
                       <td className="p-3 text-center text-slate-600">{p.ExpectedDeliveryDate || 'N/A'}</td>
@@ -4662,7 +4779,25 @@ export default function ReportingDesk({
         </div>
 
         <div className="pt-4 mt-2 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between text-[10px] text-slate-500 font-medium gap-2">
-          <div>Punjab Homeopathic Clinic & Pharmacy • Official Financial & Operational Audit Document</div>
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+            <span>Punjab Homeopathic Clinic & Pharmacy • Official Audit Document</span>
+            <span className="text-slate-300">•</span>
+            <a
+              href={clinicSettings?.Website || 'https://punjabhomeopathic.pk'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-blue-600 hover:text-blue-800 font-bold hover:underline"
+            >
+              🌐 {(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}
+            </a>
+            <span className="text-slate-300">•</span>
+            <a
+              href={`tel:${(clinicSettings?.PhoneMobile || '+92-311-4000608').replace(/[^0-9+]/g, '')}`}
+              className="text-emerald-700 hover:text-emerald-900 font-bold hover:underline font-mono"
+            >
+              📞 {clinicSettings?.PhoneMobile || '+92-311-4000608'}
+            </a>
+          </div>
           <div>Authorized Administrator: <strong className="text-slate-800 font-bold">Mr. Zaigham Ali Anjum</strong></div>
         </div>
       </div>

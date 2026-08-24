@@ -46,7 +46,9 @@ import {
   ChevronLeft,
   ChevronRight,
   ChevronsLeft,
-  ChevronsRight
+  ChevronsRight,
+  Menu,
+  PanelLeft
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
@@ -59,13 +61,6 @@ import {
   generateWhatsAppPurchaseOrderText,
   formatWhatsAppPhone
 } from '../utils/whatsappUtils';
-
-const WhatsAppIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
-  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
-    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.573-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c-.001 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
-  </svg>
-);
-
 import {
   ErpVendor,
   ErpPurchaseOrder,
@@ -81,6 +76,12 @@ import {
   ClinicSettings
 } from '../types';
 
+const WhatsAppIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
+  <svg className={className} fill="currentColor" viewBox="0 0 24 24">
+    <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.573-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c-.001 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
+  </svg>
+);
+
 interface ErpDeskProps {
   currentUser: User | null;
   rights: UserRight[];
@@ -89,6 +90,7 @@ interface ErpDeskProps {
 
 export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDeskProps) {
   const [activeTab, setActiveTab] = useState<'overview' | 'fiscal_calendar' | 'cash_book_pnl' | 'vendors' | 'vendor_statement' | 'po' | 'ledger' | 'hr' | 'expenses_assets' | 'reporting'>('overview');
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
 
@@ -115,12 +117,205 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [posSales, setPosSales] = useState<any[]>([]);
   const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
 
-  // Cash Book & Financial Period Filter States
-  const [cashBookDateFilter, setCashBookDateFilter] = useState<'today' | 'this_week' | 'this_month' | 'this_year' | 'custom' | 'all_time'>('today');
-  const [cashBookStartDate, setCashBookStartDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
-  const [cashBookEndDate, setCashBookEndDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  // Dynamic Date, Fiscal Year & Month Calculation
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonthIdx = now.getMonth(); // 0 = Jan, 7 = Aug
+  const currentMonthNum = (currentMonthIdx + 1).toString().padStart(2, '0');
+  const currentYearMonth = `${currentYear}-${currentMonthNum}`; // e.g. "2026-08"
+
+  const defaultFyKey = `CY ${currentYear}`;
+  const firstDayOfCurrentMonth = `${currentYear}-${currentMonthNum}-01`;
+  const lastDayOfCurrentMonth = new Date(currentYear, currentMonthIdx + 1, 0).toISOString().split('T')[0];
+  const todayStr = now.toISOString().split('T')[0];
+
+  // Cash Book & Financial Period Filter States - Default to Current Year & Current Month
+  const [cashBookDateFilter, setCashBookDateFilter] = useState<'today' | 'this_week' | 'this_month' | 'this_year' | 'custom' | 'all_time'>('custom');
+  const [cashBookStartDate, setCashBookStartDate] = useState<string>(firstDayOfCurrentMonth);
+  const [cashBookEndDate, setCashBookEndDate] = useState<string>(lastDayOfCurrentMonth);
   const [cashBookCategoryFilter, setCashBookCategoryFilter] = useState<'ALL' | 'INFLOW' | 'OUTFLOW'>('ALL');
   const [cashBookSearch, setCashBookSearch] = useState<string>('');
+
+  // Dedicated Fiscal Year and Month Selection
+  const [selectedFiscalYear, setSelectedFiscalYear] = useState<string>(defaultFyKey);
+  const [selectedFiscalMonth, setSelectedFiscalMonth] = useState<string>(currentYearMonth);
+
+  // Available Fiscal Years
+  const fiscalYearOptions = useMemo(() => {
+    return [
+      { key: `CY ${currentYear}`, label: `CY ${currentYear} (Jan - Dec ${currentYear}) [Current Year]` },
+      { key: `FY ${currentYear}-${currentYear + 1}`, label: `FY ${currentYear}-${currentYear + 1} (Jul ${currentYear} - Jun ${currentYear + 1})` },
+      { key: `FY ${currentYear - 1}-${currentYear}`, label: `FY ${currentYear - 1}-${currentYear} (Jul ${currentYear - 1} - Jun ${currentYear})` },
+      { key: `CY ${currentYear - 1}`, label: `CY ${currentYear - 1} (Jan - Dec ${currentYear - 1})` },
+      { key: `FY ${currentYear - 2}-${currentYear - 1}`, label: `FY ${currentYear - 2}-${currentYear - 1} (Jul ${currentYear - 2} - Jun ${currentYear - 1})` },
+      { key: 'all', label: 'All Fiscal Years / All Time' },
+      { key: 'custom', label: 'Custom Range...' }
+    ];
+  }, [currentYear]);
+
+  // Available Months for the selected Fiscal Year / Calendar Year
+  const monthOptions = useMemo(() => {
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
+    ];
+
+    if (selectedFiscalYear.startsWith('FY ')) {
+      // Fiscal Year (July Y1 to June Y2)
+      const parts = selectedFiscalYear.replace('FY ', '').split('-');
+      const y1 = Number(parts[0]) || currentYear;
+      const y2 = Number(parts[1]) || (y1 + 1);
+
+      const fyMonths: { value: string; label: string; isCurrent: boolean }[] = [];
+      // Jul - Dec of Y1
+      for (let m = 7; m <= 12; m++) {
+        const mStr = m.toString().padStart(2, '0');
+        const ym = `${y1}-${mStr}`;
+        const isCurrent = ym === currentYearMonth;
+        fyMonths.push({
+          value: ym,
+          label: `${monthNames[m - 1]}-${y1} (M${m - 6})${isCurrent ? ' (Current)' : ''}`,
+          isCurrent
+        });
+      }
+      // Jan - Jun of Y2
+      for (let m = 1; m <= 6; m++) {
+        const mStr = m.toString().padStart(2, '0');
+        const ym = `${y2}-${mStr}`;
+        const isCurrent = ym === currentYearMonth;
+        fyMonths.push({
+          value: ym,
+          label: `${monthNames[m - 1]}-${y2} (M${m + 6})${isCurrent ? ' (Current)' : ''}`,
+          isCurrent
+        });
+      }
+      return fyMonths;
+    }
+
+    // Default Calendar Year (e.g. CY 2026 or fallback)
+    let yr = currentYear;
+    if (selectedFiscalYear.startsWith('CY ')) {
+      yr = Number(selectedFiscalYear.replace('CY ', '')) || currentYear;
+    }
+
+    return monthNames.map((name, idx) => {
+      const mNum = (idx + 1).toString().padStart(2, '0');
+      const ym = `${yr}-${mNum}`;
+      const isCurrent = ym === currentYearMonth;
+      return {
+        value: ym,
+        label: `${name}-${yr}${isCurrent ? ' (Current)' : ''}`,
+        isCurrent
+      };
+    });
+  }, [selectedFiscalYear, currentYear, currentYearMonth]);
+
+  const handleFiscalYearSelect = (fyKey: string) => {
+    setSelectedFiscalYear(fyKey);
+    if (fyKey === 'all') {
+      setSelectedFiscalMonth('all');
+      setCashBookDateFilter('all_time');
+      setCashBookStartDate('2020-01-01');
+      setCashBookEndDate(new Date().toISOString().split('T')[0]);
+    } else if (fyKey === 'custom') {
+      setCashBookDateFilter('custom');
+    } else if (fyKey.startsWith('FY ')) {
+      const parts = fyKey.replace('FY ', '').split('-');
+      const y1 = Number(parts[0]);
+      const y2 = Number(parts[1]);
+      if (selectedFiscalMonth !== 'all' && (selectedFiscalMonth.startsWith(`${y1}-`) || selectedFiscalMonth.startsWith(`${y2}-`))) {
+        const [yrStr, mStr] = selectedFiscalMonth.split('-');
+        const y = parseInt(yrStr);
+        const m = parseInt(mStr);
+        const firstD = `${yrStr}-${mStr}-01`;
+        const lastD = new Date(y, m, 0).toISOString().split('T')[0];
+        setCashBookStartDate(firstD);
+        setCashBookEndDate(lastD);
+        setCashBookDateFilter('custom');
+      } else {
+        setSelectedFiscalMonth('all');
+        setCashBookStartDate(`${y1}-07-01`);
+        setCashBookEndDate(`${y2}-06-30`);
+        setCashBookDateFilter('custom');
+      }
+    } else if (fyKey.startsWith('CY ')) {
+      const yr = Number(fyKey.replace('CY ', '')) || currentYear;
+      if (selectedFiscalMonth !== 'all' && selectedFiscalMonth.startsWith(`${yr}-`)) {
+        const [yrStr, mStr] = selectedFiscalMonth.split('-');
+        const y = parseInt(yrStr);
+        const m = parseInt(mStr);
+        const firstD = `${yrStr}-${mStr}-01`;
+        const lastD = new Date(y, m, 0).toISOString().split('T')[0];
+        setCashBookStartDate(firstD);
+        setCashBookEndDate(lastD);
+        setCashBookDateFilter('custom');
+      } else {
+        setSelectedFiscalMonth('all');
+        setCashBookStartDate(`${yr}-01-01`);
+        setCashBookEndDate(`${yr}-12-31`);
+        setCashBookDateFilter('custom');
+      }
+    }
+  };
+
+  const handleFiscalMonthSelect = (ym: string) => {
+    setSelectedFiscalMonth(ym);
+    if (ym === 'all') {
+      if (selectedFiscalYear.startsWith('FY ')) {
+        const parts = selectedFiscalYear.replace('FY ', '').split('-');
+        setCashBookStartDate(`${parts[0]}-07-01`);
+        setCashBookEndDate(`${parts[1]}-06-30`);
+      } else if (selectedFiscalYear.startsWith('CY ')) {
+        const yr = selectedFiscalYear.replace('CY ', '');
+        setCashBookStartDate(`${yr}-01-01`);
+        setCashBookEndDate(`${yr}-12-31`);
+      } else {
+        setCashBookDateFilter('all_time');
+        return;
+      }
+      setCashBookDateFilter('custom');
+    } else {
+      const [yrStr, mStr] = ym.split('-');
+      const y = parseInt(yrStr);
+      const m = parseInt(mStr);
+      const firstDay = `${yrStr}-${mStr}-01`;
+      const lastDay = new Date(y, m, 0).toISOString().split('T')[0];
+      setCashBookStartDate(firstDay);
+      setCashBookEndDate(lastDay);
+      setCashBookDateFilter('custom');
+    }
+  };
+
+  const handleQuickPresetChange = (preset: 'today' | 'this_week' | 'this_month' | 'this_year' | 'custom' | 'all_time') => {
+    setCashBookDateFilter(preset);
+    const today = new Date().toISOString().split('T')[0];
+    if (preset === 'today') {
+      setSelectedFiscalMonth('all');
+      setCashBookStartDate(today);
+      setCashBookEndDate(today);
+    } else if (preset === 'this_week') {
+      setSelectedFiscalMonth('all');
+      const d = new Date();
+      d.setDate(d.getDate() - 7);
+      setCashBookStartDate(d.toISOString().split('T')[0]);
+      setCashBookEndDate(today);
+    } else if (preset === 'this_month') {
+      setSelectedFiscalYear(`CY ${currentYear}`);
+      setSelectedFiscalMonth(currentYearMonth);
+      setCashBookStartDate(firstDayOfCurrentMonth);
+      setCashBookEndDate(lastDayOfCurrentMonth);
+    } else if (preset === 'this_year') {
+      setSelectedFiscalYear(`CY ${currentYear}`);
+      setSelectedFiscalMonth('all');
+      setCashBookStartDate(`${currentYear}-01-01`);
+      setCashBookEndDate(`${currentYear}-12-31`);
+    } else if (preset === 'all_time') {
+      setSelectedFiscalYear('all');
+      setSelectedFiscalMonth('all');
+      setCashBookStartDate('2020-01-01');
+      setCashBookEndDate(today);
+    }
+  };
 
   // Quick Outflow Logger State
   const [quickOutflowForm, setQuickOutflowForm] = useState<{
@@ -148,6 +343,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [poGridPage, setPoGridPage] = useState<number>(1);
   const [poGridPageSize, setPoGridPageSize] = useState<number>(24);
   const [customCategoryUpdate, setCustomCategoryUpdate] = useState<number>(0);
+
+  // Financial Ledger Tab Filter States
+  const [ledgerSearchTerm, setLedgerSearchTerm] = useState<string>('');
+  const [ledgerDateMode, setLedgerDateMode] = useState<'filtered' | 'all'>('filtered');
 
   // WhatsApp PO Share State
   const [selectedPoForWhatsApp, setSelectedPoForWhatsApp] = useState<ErpPurchaseOrder | null>(null);
@@ -822,6 +1021,29 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     });
   }, [cashBookEntries, cashBookDateFilter, cashBookStartDate, cashBookEndDate, cashBookCategoryFilter, cashBookSearch]);
 
+  const filteredTransactions = useMemo(() => {
+    return transactions.filter(t => {
+      if (ledgerDateMode === 'filtered' && t.Date) {
+        const cleanDate = t.Date.includes('T') ? t.Date.split('T')[0] : t.Date;
+        if (cashBookDateFilter !== 'all_time') {
+          if (cashBookStartDate && cleanDate < cashBookStartDate) return false;
+          if (cashBookEndDate && cleanDate > cashBookEndDate) return false;
+        }
+      }
+
+      if (ledgerSearchTerm.trim()) {
+        const q = ledgerSearchTerm.toLowerCase();
+        const match = (t.TransactionID || '').toLowerCase().includes(q) ||
+                      (t.Category || '').toLowerCase().includes(q) ||
+                      (t.Description || '').toLowerCase().includes(q) ||
+                      (t.PaymentMethod || '').toLowerCase().includes(q) ||
+                      (t.CreatedBy || '').toLowerCase().includes(q);
+        if (!match) return false;
+      }
+      return true;
+    });
+  }, [transactions, ledgerDateMode, cashBookDateFilter, cashBookStartDate, cashBookEndDate, ledgerSearchTerm]);
+
   const cashBookMetrics = useMemo(() => {
     let totalInflow = 0;
     let totalOutflow = 0;
@@ -964,12 +1186,13 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       return;
     }
 
-    const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC';
+    const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
     const cDoc = clinicSettings?.DoctorName || '';
     const cDocSub = clinicSettings?.DoctorSignatureText || '';
     const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
-    const cPhone = clinicSettings?.PhoneMobile || '+92 300 1234567';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
     const dateLabel = cashBookDateFilter === 'today' ? `Daily (${new Date().toLocaleDateString('en-GB')})` :
@@ -1030,7 +1253,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             <div class="clinic-brand">
               <div class="clinic-title">${cName}</div>
               <div class="clinic-tagline">${cTag}</div>
-              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">
+                📍 ${cAddr} &nbsp;|&nbsp; 📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}
+              </div>
               <div class="clinic-timings" style="font-size: 10px; font-weight: 700; color: #047857; margin-top: 2px;">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
               </div>
@@ -1127,8 +1352,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           </div>
 
           <div style="margin-top: 15px; border-top: 1px solid #e2e8f0; padding-top: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 9px; color: #64748b; font-weight: 600;">
-            <div>Punjab Homeopathic Clinic & Pharmacy • Official Cash Book & Financial Statement</div>
-            <div>Authorized Administrator: Mr. Zaigham Ali Anjum</div>
+            <div>Punjab Homeopathic Clinic & Pharmacy • 🌐 ${cWebsite.replace(/^https?:\/\//, '')} • 📞 Helpline: ${cPhone}</div>
+            <div>Authorized Administrator: <strong>Mr. Zaigham Ali Anjum</strong></div>
           </div>
         </body>
       </html>
@@ -1143,6 +1368,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [showVendorModal, setShowVendorModal] = useState(false);
   const [editingVendor, setEditingVendor] = useState<ErpVendor | null>(null);
   const [showPoModal, setShowPoModal] = useState(false);
+  const [editingPurchaseOrder, setEditingPurchaseOrder] = useState<ErpPurchaseOrder | null>(null);
   const [showGrnModal, setShowGrnModal] = useState(false);
   const [showTxnModal, setShowTxnModal] = useState(false);
   const [showEmpModal, setShowEmpModal] = useState(false);
@@ -1151,6 +1377,32 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [showAssetModal, setShowAssetModal] = useState(false);
   const [showQrScannerModal, setShowQrScannerModal] = useState(false);
   const [showQrGeneratorModal, setShowQrGeneratorModal] = useState(false);
+
+  // Quick Add Medicine in PO Modal State
+  const [showQuickAddMedModal, setShowQuickAddMedModal] = useState(false);
+  const [quickMedForm, setQuickMedForm] = useState<{
+    ItemName: string;
+    Category: string;
+    Unit: string;
+    TradePrice: number | string;
+    SalePrice: number | string;
+    MinStock: number | string;
+    InitialStock: number | string;
+    RequisitionQty: number | string;
+    AutoAddToPo: boolean;
+    CustomCategory: string;
+  }>({
+    ItemName: '',
+    Category: 'BM Drops',
+    Unit: 'Bottle',
+    TradePrice: '',
+    SalePrice: '',
+    MinStock: 10,
+    InitialStock: 0,
+    RequisitionQty: 10,
+    AutoAddToPo: true,
+    CustomCategory: ''
+  });
 
   // Bulk PO Upload Modal State
   const [showUploadBulkPoModal, setShowUploadBulkPoModal] = useState(false);
@@ -2731,19 +2983,178 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     return `PO-${maxNum + 1}`;
   };
 
+  // Helper to check if a Purchase Order has already processed stock / GRNs
+  const isPoStockReceivedOrLocked = (po: ErpPurchaseOrder): boolean => {
+    if (!po) return false;
+    if (po.Status === 'Received' || po.Status === 'Partially Received') return true;
+    const hasLinkedGrn = grns.some(g => String(g.POID || '').trim().toLowerCase() === String(po.POID || '').trim().toLowerCase());
+    return hasLinkedGrn;
+  };
+
   // Dedicated opener for creating a FRESH new Purchase Order
   const handleOpenNewPoModal = (vendor?: { VendorID?: string; VendorName?: string }) => {
+    setEditingPurchaseOrder(null);
     const defaultDelivery = new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0];
     setPoForm({
       VendorID: vendor?.VendorID || '',
       VendorName: vendor?.VendorName || '',
       ExpectedDeliveryDate: defaultDelivery,
+      PaymentMethod: 'Credit',
       Notes: '',
       Items: []
     });
     setMedicineSearchTerm('');
     setPoGridPage(1);
     setShowPoModal(true);
+  };
+
+  // Dedicated opener for EDITING an existing Purchase Order (Locked if GRN/Stock processed)
+  const handleOpenEditPoModal = (po: ErpPurchaseOrder) => {
+    if (isPoStockReceivedOrLocked(po)) {
+      alert(`🔒 Locked: Purchase Order ${po.POID} cannot be edited because Goods Received Note (GRN) / Stock inward has already been processed.`);
+      return;
+    }
+
+    setEditingPurchaseOrder(po);
+    setPoForm({
+      VendorID: po.VendorID || '',
+      VendorName: po.VendorName || '',
+      ExpectedDeliveryDate: po.ExpectedDeliveryDate || new Date().toISOString().split('T')[0],
+      PaymentMethod: (po.PaymentMethod === 'Cash' || (po as any).PaymentTerms === 'Cash') ? 'Cash' : 'Credit',
+      Notes: po.Notes || '',
+      Items: (po.Items || []).map(i => ({
+        ItemID: i.ItemID || `ITM-${Math.floor(1000 + Math.random() * 9000)}`,
+        ItemName: i.ItemName || '',
+        Category: i.Category || 'Tablet / Capsule',
+        Qty: Number(i.Qty) || 1,
+        UnitPrice: Number(i.UnitPrice) || 0,
+        BatchNo: i.BatchNo || '',
+        ExpiryDate: (i as any).ExpiryDate || ''
+      }))
+    });
+    setMedicineSearchTerm('');
+    setPoGridPage(1);
+    setShowPoModal(true);
+  };
+
+  const handleOpenQuickAddMedModal = (initialName?: string) => {
+    const rawName = (initialName || medicineSearchTerm || '').trim();
+    const suggestedCategory = rawName ? resolveSmartMedicineCategory(undefined, undefined, undefined, rawName) : (poCategoryFilter !== 'all' ? poCategoryFilter : 'BM Drops');
+    
+    setQuickMedForm({
+      ItemName: rawName,
+      Category: suggestedCategory,
+      Unit: 'Bottle',
+      TradePrice: '',
+      SalePrice: '',
+      MinStock: 10,
+      InitialStock: 0,
+      RequisitionQty: 10,
+      AutoAddToPo: true,
+      CustomCategory: ''
+    });
+    setShowQuickAddMedModal(true);
+  };
+
+  const handleQuickAddMedicine = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const cleanName = quickMedForm.ItemName.trim();
+    if (!cleanName) return alert('Please enter medicine name.');
+
+    const finalCategory = (quickMedForm.Category === '__custom__' && quickMedForm.CustomCategory.trim())
+      ? quickMedForm.CustomCategory.trim()
+      : quickMedForm.Category;
+
+    const nextItemId = `ITM-${Math.floor(10000 + Math.random() * 90000)}`;
+    const tpPrice = parseFloat(String(quickMedForm.TradePrice || '0')) || 0;
+    const mrpPrice = parseFloat(String(quickMedForm.SalePrice || '0')) || 0;
+    const minStk = parseFloat(String(quickMedForm.MinStock || '10')) || 10;
+    const initStk = parseFloat(String(quickMedForm.InitialStock || '0')) || 0;
+
+    const newItemPayload: any = {
+      ItemID: nextItemId,
+      ItemName: cleanName,
+      Name: cleanName,
+      Category: finalCategory,
+      Unit: quickMedForm.Unit || 'Pack',
+      TP: tpPrice,
+      TradePrice: tpPrice,
+      UnitPrice: tpPrice,
+      SalePrice: mrpPrice,
+      MRP: mrpPrice,
+      Price: mrpPrice,
+      Stock: initStk,
+      CStock: initStk,
+      MinStock: minStk,
+      BatchNo: `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+      createdAt: new Date().toISOString()
+    };
+
+    try {
+      // 1. Save to database items collection
+      await fetch('/api/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newItemPayload)
+      });
+
+      // 2. Update React local inventoryItems state
+      setInventoryItems(prev => [newItemPayload, ...prev]);
+
+      // If custom category was used, save to localStorage
+      if (quickMedForm.Category === '__custom__' && quickMedForm.CustomCategory.trim()) {
+        try {
+          const saved = localStorage.getItem('pharmacy_custom_categories');
+          let currentCustom: string[] = [];
+          if (saved) {
+            const parsed = JSON.parse(saved);
+            if (Array.isArray(parsed)) currentCustom = parsed;
+          }
+          if (!currentCustom.some(c => c.toLowerCase() === finalCategory.toLowerCase())) {
+            currentCustom.push(finalCategory);
+            localStorage.setItem('pharmacy_custom_categories', JSON.stringify(currentCustom));
+            setCustomCategoryUpdate(prev => prev + 1);
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      // 3. Automatically add to current PO items if selected
+      if (quickMedForm.AutoAddToPo) {
+        const reqQty = parseFloat(String(quickMedForm.RequisitionQty || '10')) || 10;
+        setPoForm(prev => {
+          const existingIdx = prev.Items.findIndex(i => i.ItemID === nextItemId || i.ItemName.toLowerCase() === cleanName.toLowerCase());
+          if (existingIdx >= 0) {
+            const updated = [...prev.Items];
+            updated[existingIdx].Qty = reqQty;
+            if (tpPrice > 0) updated[existingIdx].UnitPrice = tpPrice;
+            return { ...prev, Items: updated };
+          } else {
+            return {
+              ...prev,
+              Items: [
+                ...prev.Items,
+                {
+                  ItemID: nextItemId,
+                  ItemName: cleanName,
+                  Category: finalCategory,
+                  Qty: reqQty,
+                  UnitPrice: tpPrice,
+                  BatchNo: newItemPayload.BatchNo
+                }
+              ]
+            };
+          }
+        });
+      }
+
+      setShowQuickAddMedModal(false);
+      setSyncMessage(`Medicine "${cleanName}" (${nextItemId}) created & added to stock list!`);
+      setTimeout(() => setSyncMessage(null), 3500);
+    } catch (err: any) {
+      alert('Failed to save medicine: ' + err.message);
+    }
   };
 
   const handleAddPoItem = () => {
@@ -2805,21 +3216,28 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     if (!poForm.VendorName) return alert('Please select a supplier / vendor.');
     if (!poForm.Items || poForm.Items.length === 0) return alert('Please select at least one medicine item for the Purchase Order.');
 
+    // If updating, double check lock condition
+    if (editingPurchaseOrder && isPoStockReceivedOrLocked(editingPurchaseOrder)) {
+      return alert(`🔒 Cannot update: Stock or GRN has already been added for ${editingPurchaseOrder.POID}.`);
+    }
+
     setIsSubmitting(true);
     try {
       const selectedVendor = vendors.find(v => v.VendorName === poForm.VendorName);
-      const nextPoId = generateNextPoNumber();
+      const isEditing = !!editingPurchaseOrder;
+      const targetPoId = isEditing ? editingPurchaseOrder.POID : generateNextPoNumber();
       const totalPoValuation = poForm.Items.reduce((sum, i) => sum + ((Number(i.Qty) || 0) * (Number(i.UnitPrice) || 0)), 0);
 
-      const newPo: ErpPurchaseOrder = {
-        POID: nextPoId,
-        VendorID: poForm.VendorID || selectedVendor?.VendorID || `VND-${Math.floor(100 + Math.random() * 900)}`,
+      const poPayload: ErpPurchaseOrder = {
+        ...(editingPurchaseOrder || {}),
+        POID: targetPoId,
+        VendorID: poForm.VendorID || selectedVendor?.VendorID || (editingPurchaseOrder?.VendorID) || `VND-${Math.floor(100 + Math.random() * 900)}`,
         VendorName: poForm.VendorName,
-        OrderDate: new Date().toISOString().split('T')[0],
+        OrderDate: isEditing ? (editingPurchaseOrder.OrderDate || new Date().toISOString().split('T')[0]) : new Date().toISOString().split('T')[0],
         ExpectedDeliveryDate: poForm.ExpectedDeliveryDate || new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
         TotalAmount: totalPoValuation,
-        PaidAmount: 0,
-        Status: 'Sent',
+        PaidAmount: isEditing ? (editingPurchaseOrder.PaidAmount || 0) : 0,
+        Status: isEditing ? (editingPurchaseOrder.Status || 'Sent') : 'Sent',
         PaymentMethod: poForm.PaymentMethod || 'Credit',
         PaymentTerms: poForm.PaymentMethod || 'Credit',
         Notes: poForm.Notes || '',
@@ -2834,11 +3252,20 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         }))
       };
 
-      // Always POST to ensure a brand new document is inserted and existing POs are never overwritten
-      await saveToDatabase('erp_purchase_orders', newPo, 'POST');
-      setPurchaseOrders(prev => [newPo, ...prev]);
+      if (isEditing) {
+        // Update existing PO in database
+        await saveToDatabase('erp_purchase_orders', poPayload, 'PUT');
+        setPurchaseOrders(prev => prev.map(p => p.POID === targetPoId ? poPayload : p));
+        setSyncMessage(`Purchase Order ${targetPoId} updated successfully with ${poPayload.Items.length} items!`);
+      } else {
+        // Create brand new PO
+        await saveToDatabase('erp_purchase_orders', poPayload, 'POST');
+        setPurchaseOrders(prev => [poPayload, ...prev]);
+        setSyncMessage(`New Purchase Order ${targetPoId} created successfully for ${poPayload.VendorName} (${poPayload.PaymentMethod === 'Cash' ? 'Cash Spot' : 'Credit'})!`);
+      }
 
       // Reset form completely for subsequent orders
+      setEditingPurchaseOrder(null);
       setPoForm({
         VendorID: '',
         VendorName: '',
@@ -2848,10 +3275,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         Items: []
       });
       setShowPoModal(false);
-      setSyncMessage(`New Purchase Order ${nextPoId} created successfully for ${newPo.VendorName} (${newPo.PaymentMethod === 'Cash' ? 'Cash Spot' : 'Credit'})!`);
       setTimeout(() => setSyncMessage(null), 3500);
     } catch (err: any) {
-      alert('Error creating Purchase Order: ' + err.message);
+      alert('Error saving Purchase Order: ' + err.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -2875,7 +3301,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
-    const cPhone = clinicSettings?.PhoneMobile || '+92 300 1234567';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
 
     const url = generateWhatsAppPurchaseOrderUrl({
       poId: selectedPoForWhatsApp.POID,
@@ -2884,6 +3310,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       orderDate: selectedPoForWhatsApp.OrderDate,
       expectedDeliveryDate: selectedPoForWhatsApp.ExpectedDeliveryDate,
       totalAmount: selectedPoForWhatsApp.TotalAmount,
+      paymentMethod: selectedPoForWhatsApp.PaymentMethod || (selectedPoForWhatsApp as any).PaymentTerms,
       items: selectedPoForWhatsApp.Items || [],
       notes: whatsAppCustomNote,
       clinicName: cName,
@@ -3864,7 +4291,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cDoc = clinicSettings?.DoctorName || '';
     const cDocSub = clinicSettings?.DoctorSignatureText || '';
     const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
-    const cPhone = clinicSettings?.PhoneMobile || '+92 300 1234567';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
     // Calculate vendor statement dynamically for vVendor
@@ -4014,7 +4442,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               <div class="branding">
                 <h1 class="title">${cName}</h1>
                 <div class="tagline">${cTag}</div>
-                <div class="addr">📍 ${cAddr} &nbsp;|&nbsp; 📞 ${cPhone}</div>
+                <div class="addr">📍 ${cAddr} &nbsp;|&nbsp; 📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
               </div>
               <div class="badge-box">
                 <div class="badge">SUPPLIER ACCOUNT STATEMENT</div>
@@ -4105,7 +4533,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
 
             <div class="footer-disc">
-              <span>Punjab Homeopathic Clinic & Pharmacy • Accounts Payable Ledger System • Confidential Document</span>
+              <span>Punjab Homeopathic Clinic & Pharmacy • 🌐 ${cWebsite.replace(/^https?:\/\//, '')} • 📞 Helpline: ${cPhone}</span>
               <span>Printed on: ${new Date().toLocaleString('en-GB')}</span>
             </div>
 
@@ -4132,7 +4560,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cDoc = clinicSettings?.DoctorName || '';
     const cDocSub = clinicSettings?.DoctorSignatureText || '';
     const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
-    const cPhone = clinicSettings?.PhoneMobile || '+92 300 1234567';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
     const voucherNo = pt.TransactionID || pt.ReferenceNo || `VCH-${Date.now().toString().slice(-6)}`;
@@ -4196,7 +4625,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 <h1 class="title">${cName}</h1>
                 <div class="tagline">${cTag}</div>
                 <div class="doc-info">${cDoc ? `${cDoc} ${cDocSub ? `(${cDocSub})` : ''}` : ''}</div>
-                <div class="addr">📍 ${cAddr} &nbsp;|&nbsp; 📞 ${cPhone}</div>
+                <div class="addr">📍 ${cAddr} &nbsp;|&nbsp; 📞 ${cPhone} &nbsp;|&nbsp; 🌐 <a href="${cWebsite}" target="_blank" style="color: #2563eb; text-decoration: underline;">${cWebsite.replace(/^https?:\/\//, '')}</a></div>
               </div>
               <div class="badge-box">
                 <div class="badge">PAYMENT VOUCHER / RECEIPT</div>
@@ -4277,7 +4706,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
 
             <div class="footer">
-              <span>Punjab Homeopathic Clinic & Pharmacy • Official Vendor Payment Voucher • Computer Generated Document</span>
+              <span>Punjab Homeopathic Clinic & Pharmacy • 🌐 <a href="${cWebsite}" target="_blank" style="color: #2563eb; text-decoration: underline;">${cWebsite.replace(/^https?:\/\//, '')}</a> • 📞 Helpline: ${cPhone}</span>
               <span>Printed on: ${new Date().toLocaleString('en-GB')}</span>
             </div>
 
@@ -4717,6 +5146,13 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
+    const isCashOrder = String(po.PaymentMethod || (po as any).PaymentTerms || '').trim().toLowerCase() === 'cash';
+    const poBannerTitle = isCashOrder ? 'Cash Order PO' : 'Credit Order PO';
+    const poOfficialBannerText = isCashOrder ? 'OFFICIAL CASH ORDER PO' : 'OFFICIAL CREDIT ORDER PO';
+    const poHeaderColor = isCashOrder ? '#047857' : '#1e1b4b';
+    const poBadgeBg = isCashOrder ? '#d1fae5' : '#e0e7ff';
+    const poBadgeText = isCashOrder ? '#065f46' : '#3730a3';
+
     // Find all GRNs recorded for this Purchase Order
     const poGrns = (grns || []).filter(
       g => (g.POID === po.POID || (g as any).PoID === po.POID) && g.Status !== 'Cancelled'
@@ -4951,7 +5387,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       <!DOCTYPE html>
       <html>
         <head>
-          <title>Purchase Order ${po.POID} - Punjab Homeopathic Clinic</title>
+          <title>${poBannerTitle} ${po.POID} - ${cName}</title>
           <style>
             @page {
               size: A4 portrait;
@@ -5247,8 +5683,13 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           </div>
 
           <!-- Official Report Banner & Meta Details -->
-          <div class="report-banner">
-            <span class="report-banner-title">OFFICIAL PURCHASE ORDER (PO)</span>
+          <div class="report-banner" style="background: ${poHeaderColor};">
+            <div style="display: flex; align-items: center; gap: 8px;">
+              <span class="report-banner-title">${poBannerTitle}</span>
+              <span style="font-size: 9.5px; font-weight: 800; background: ${poBadgeBg}; color: ${poBadgeText}; padding: 2px 7px; border-radius: 4px; text-transform: uppercase;">
+                ${isCashOrder ? '💵 Spot Cash' : '💳 Credit (Payable)'}
+              </span>
+            </div>
             <span class="report-banner-ref">REF: PHC-PO-${po.POID}</span>
           </div>
 
@@ -5256,6 +5697,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             <div class="meta-item">
               <span class="meta-label">PO Ref Number</span>
               <span class="meta-value" style="color: #4338ca;">${po.POID}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Order Type / Terms</span>
+              <span class="meta-value" style="color: ${isCashOrder ? '#047857' : '#4338ca'}; font-weight: 800;">
+                ${isCashOrder ? '💵 Cash Order PO (Spot Paid)' : '💳 Credit Order PO (Vendor Payable)'}
+              </span>
             </div>
             <div class="meta-item">
               <span class="meta-label">Order Date</span>
@@ -5374,25 +5821,120 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const totalAssetValuation = assets.reduce((sum, a) => sum + a.CurrentValue, 0);
   const totalMonthlyPayroll = payrolls.reduce((sum, p) => sum + p.NetSalary, 0);
 
+  const erpNavTabs = useMemo(() => {
+    const list = [
+      { id: 'overview', label: 'ERP Dashboard', shortLabel: 'ED', icon: PieChart, perm: 'canAccessErpOverview', desc: 'KPIs, revenue overview & cash position' },
+      { id: 'fiscal_calendar', label: 'Fiscal Year', shortLabel: 'FY', icon: Calendar, perm: 'canAccessErpFiscalCalendar', desc: 'Fiscal periods & financial calendar' },
+      { id: 'cash_book_pnl', label: 'Clinic Cash', shortLabel: 'CC', icon: Landmark, perm: 'canAccessErpCashBook', desc: 'Cash in/outflows & net cash book' },
+      { id: 'vendors', label: 'Vendor', shortLabel: 'VNDR', icon: Building2, perm: 'canAccessErpVendors', desc: 'Vendor directory & supplier records' },
+      { id: 'vendor_statement', label: 'Vendor Statement', shortLabel: 'VS', icon: FileText, perm: 'canAccessErpVendorStatement', desc: 'Vendor ledgers, bills & statements' },
+      { id: 'po', label: 'PO & GRN', shortLabel: 'PO', icon: ShoppingCart, perm: 'canAccessErpPoGrn', desc: 'Purchase orders & receiving notes' },
+      { id: 'ledger', label: 'Financial Ledger', shortLabel: 'FL', icon: Receipt, perm: 'canAccessErpLedger', desc: 'Double-entry journal & accounts ledger' },
+      { id: 'hr', label: 'HR & Payroll', shortLabel: 'HR', icon: Users, perm: 'canAccessErpHrPayroll', desc: 'Staff payroll, attendance & salaries' },
+      { id: 'expenses_assets', label: 'Expense Assets', shortLabel: 'EA', icon: Boxes, perm: 'canAccessErpExpensesAssets', desc: 'Clinic expenses & asset management' },
+      { id: 'reporting', label: 'Reporting & Analytics', shortLabel: 'Rep', icon: BarChart3, perm: 'canAccessErpReporting', desc: 'Financial audit reports & analytics' }
+    ];
+    return list.filter((tab) => {
+      if (!currentUser?.Permissions) return true;
+      return (currentUser.Permissions as any)[tab.perm] !== false;
+    });
+  }, [currentUser]);
+
   return (
-    <div className="min-h-full bg-slate-50 text-slate-800 p-4 md:p-6 space-y-4 pb-24">
+    <div className="min-h-full bg-slate-50 text-slate-800 p-4 md:p-6 space-y-4 pb-24 relative">
+      {/* MOBILE SIDE NAVIGATION DRAWER (Only Active in Mobile View) */}
+      {mobileNavOpen && (
+        <div className="fixed inset-0 z-50 sm:hidden flex">
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs transition-opacity"
+            onClick={() => setMobileNavOpen(false)}
+          />
+          {/* Slide-out Drawer */}
+          <div className="relative w-4/5 max-w-xs bg-white h-full shadow-2xl flex flex-col z-10 animate-in slide-in-from-left duration-200">
+            {/* Drawer Header */}
+            <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-900 text-white">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-1.5 bg-blue-600 rounded-lg text-white">
+                  <Building2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h2 className="text-xs font-bold uppercase tracking-wider text-slate-100">Mini ERP Menu</h2>
+                  <p className="text-[10px] text-slate-400">Navigation Modules</p>
+                </div>
+              </div>
+              <button
+                onClick={() => setMobileNavOpen(false)}
+                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modules List */}
+            <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+              {erpNavTabs.map((tab) => {
+                const Icon = tab.icon;
+                const isActive = activeTab === tab.id;
+                return (
+                  <button
+                    key={`mobile-side-${tab.id}`}
+                    onClick={() => {
+                      setActiveTab(tab.id as any);
+                      setMobileNavOpen(false);
+                    }}
+                    className={`w-full flex items-center justify-between p-2.5 rounded-xl text-left transition-all ${
+                      isActive
+                        ? 'bg-blue-600 text-white shadow-xs'
+                        : 'bg-slate-50 hover:bg-slate-100 text-slate-700 hover:text-slate-900 border border-slate-150'
+                    }`}
+                  >
+                    <div className="flex items-center space-x-3 min-w-0">
+                      <div className={`p-2 rounded-lg shrink-0 ${isActive ? 'bg-white/20 text-white' : 'bg-white text-blue-600 border border-slate-200'}`}>
+                        <Icon className="w-4 h-4" />
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center space-x-1.5">
+                          <span className={`text-[9px] font-black uppercase px-1.5 py-0.5 rounded ${
+                            isActive ? 'bg-white/25 text-white' : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {tab.shortLabel}
+                          </span>
+                          <span className="text-xs font-bold truncate">{tab.label}</span>
+                        </div>
+                        <p className={`text-[10px] truncate mt-0.5 ${isActive ? 'text-blue-100' : 'text-slate-400'}`}>
+                          {tab.desc}
+                        </p>
+                      </div>
+                    </div>
+                    <ChevronRight className={`w-4 h-4 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Drawer Footer */}
+            <div className="p-3 border-t border-slate-200 bg-slate-50 text-center">
+              <span className="text-[10px] text-slate-400 font-semibold">Punjab CMS • Enterprise ERP</span>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* TOP HORIZONTAL ERP NAVIGATION MENU BAR */}
       <div className="bg-white rounded-xl border border-slate-200 p-1.5 shadow-xs flex items-center space-x-1 overflow-x-auto scrollbar-none touch-pan-x z-20">
-        {[
-          { id: 'overview', label: 'ERP Dashboard', icon: PieChart, perm: 'canAccessErpOverview' },
-          { id: 'fiscal_calendar', label: 'Fiscal Year', icon: Calendar, perm: 'canAccessErpFiscalCalendar' },
-          { id: 'cash_book_pnl', label: 'Clinic Cash', icon: Landmark, perm: 'canAccessErpCashBook' },
-          { id: 'vendors', label: 'Vendor', icon: Building2, perm: 'canAccessErpVendors' },
-          { id: 'vendor_statement', label: 'Vendor Payment', icon: FileText, perm: 'canAccessErpVendorStatement' },
-          { id: 'po', label: 'PO & GRN', icon: ShoppingCart, perm: 'canAccessErpPoGrn' },
-          { id: 'ledger', label: 'Financial Ledger', icon: Receipt, perm: 'canAccessErpLedger' },
-          { id: 'hr', label: 'HR & Payroll', icon: Users, perm: 'canAccessErpHrPayroll' },
-          { id: 'expenses_assets', label: 'Expenses & Assets', icon: Boxes, perm: 'canAccessErpExpensesAssets' },
-          { id: 'reporting', label: 'Reporting & Analytics', icon: BarChart3, perm: 'canAccessErpReporting' }
-        ].filter((tab) => {
-          if (!currentUser?.Permissions) return true;
-          return (currentUser.Permissions as any)[tab.perm] !== false;
-        }).map((tab) => {
+        {/* Mobile Side-Navigation Toggle Button */}
+        <button
+          type="button"
+          onClick={() => setMobileNavOpen(true)}
+          className="sm:hidden flex items-center space-x-1 px-2.5 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold text-[11px] border border-indigo-200 shrink-0 cursor-pointer min-h-[36px] active:scale-95 transition"
+          title="Open Side Menu"
+        >
+          <Menu className="w-3.5 h-3.5" />
+          <span className="font-extrabold uppercase">Menu</span>
+        </button>
+
+        {erpNavTabs.map((tab) => {
           const Icon = tab.icon;
           const isActive = activeTab === tab.id;
           return (
@@ -5407,7 +5949,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               }`}
             >
               <Icon className={`w-3.5 h-3.5 sm:w-3 sm:h-3 shrink-0 ${isActive ? 'text-white' : 'text-slate-400'}`} />
-              <span className="whitespace-nowrap">{tab.label}</span>
+              <span className="whitespace-nowrap sm:hidden">{tab.shortLabel}</span>
+              <span className="whitespace-nowrap hidden sm:inline">{tab.label}</span>
             </button>
           );
         })}
@@ -5422,26 +5965,26 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
             <div>
               <h1 className="text-lg md:text-xl font-bold text-slate-900 tracking-tight">Financial Timeframe Scope</h1>
-              <p className="text-xs text-slate-500">Filter Dashboard Metrics by Daily, Weekly, Monthly, Yearly or Custom Date Range</p>
+              <p className="text-xs text-slate-500">Filter Dashboard, Vouchers, Sales & Cash Book by Fiscal Year, Month or Date Range</p>
             </div>
           </div>
 
           {/* Timeframe Scope Buttons & Sync Action */}
           <div className="flex flex-wrap items-center gap-2.5">
+            {/* Quick Presets */}
             <div className="inline-flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-2xs">
               {[
                 { id: 'today', label: '☀️ Daily' },
                 { id: 'this_week', label: '📅 Weekly' },
-                { id: 'this_month', label: '📊 Monthly' },
-                { id: 'this_year', label: '📈 Yearly' },
-                { id: 'custom', label: '📆 Custom' },
+                { id: 'this_month', label: '📊 This Month' },
+                { id: 'this_year', label: `📈 CY ${currentYear}` },
                 { id: 'all_time', label: '🌐 All Time' }
               ].map(p => (
                 <button
                   key={p.id}
-                  onClick={() => setCashBookDateFilter(p.id as any)}
+                  onClick={() => handleQuickPresetChange(p.id as any)}
                   className={`h-8 px-3 text-xs font-bold rounded-lg transition whitespace-nowrap shrink-0 inline-flex items-center justify-center cursor-pointer ${
-                    cashBookDateFilter === p.id
+                    cashBookDateFilter === p.id && selectedFiscalMonth === (p.id === 'this_month' ? currentYearMonth : 'all')
                       ? 'bg-indigo-600 text-white shadow-xs'
                       : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/70'
                   }`}
@@ -5449,6 +5992,39 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   {p.label}
                 </button>
               ))}
+            </div>
+
+            {/* Fiscal Year Selector Dropdown */}
+            <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 h-10 shadow-2xs">
+              <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Year:</span>
+              <select
+                value={selectedFiscalYear}
+                onChange={e => handleFiscalYearSelect(e.target.value)}
+                className="text-xs font-bold text-slate-800 bg-transparent focus:outline-hidden cursor-pointer font-mono"
+              >
+                {fiscalYearOptions.map(fy => (
+                  <option key={fy.key} value={fy.key}>
+                    {fy.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* Fiscal Month Selector Dropdown */}
+            <div className="flex items-center space-x-1.5 bg-indigo-50/80 border-2 border-indigo-300 rounded-xl px-2.5 h-10 shadow-2xs">
+              <span className="text-[10px] font-black text-indigo-950 uppercase tracking-wider">Month:</span>
+              <select
+                value={selectedFiscalMonth}
+                onChange={e => handleFiscalMonthSelect(e.target.value)}
+                className="text-xs font-black text-indigo-900 bg-transparent focus:outline-hidden cursor-pointer font-mono"
+              >
+                <option value="all">📅 All Months (Full Period)</option>
+                {monthOptions.map(m => (
+                  <option key={m.value} value={m.value}>
+                    📅 {m.label}
+                  </option>
+                ))}
+              </select>
             </div>
 
             {syncMessage && (
@@ -5472,14 +6048,17 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         </div>
 
         {/* Custom Range Date Pickers */}
-        {cashBookDateFilter === 'custom' && (
+        {(cashBookDateFilter === 'custom' || selectedFiscalYear === 'custom') && (
           <div className="pt-2.5 border-t border-slate-100 flex flex-wrap items-center gap-3 animate-fadeIn">
             <div className="flex items-center space-x-2">
               <span className="text-xs font-bold text-slate-700 whitespace-nowrap">From Date:</span>
               <input
                 type="date"
                 value={cashBookStartDate}
-                onChange={(e) => setCashBookStartDate(e.target.value)}
+                onChange={(e) => {
+                  setCashBookStartDate(e.target.value);
+                  setCashBookDateFilter('custom');
+                }}
                 className="text-xs font-bold h-8 px-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:bg-white"
               />
             </div>
@@ -5488,7 +6067,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               <input
                 type="date"
                 value={cashBookEndDate}
-                onChange={(e) => setCashBookEndDate(e.target.value)}
+                onChange={(e) => {
+                  setCashBookEndDate(e.target.value);
+                  setCashBookDateFilter('custom');
+                }}
                 className="text-xs font-bold h-8 px-2.5 bg-slate-50 border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:bg-white"
               />
             </div>
@@ -5501,11 +6083,13 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             <BarChart3 className="w-3.5 h-3.5 text-indigo-600 mr-1 shrink-0" />
             <span>Active Scope:</span>
             <span className="font-extrabold text-indigo-800">
-              {cashBookDateFilter === 'today' ? `Daily (${new Date().toLocaleDateString('en-GB')})` :
-               cashBookDateFilter === 'this_week' ? 'Weekly (Past 7 Days)' :
-               cashBookDateFilter === 'this_month' ? `Monthly (${new Date().toLocaleString('default', { month: 'long', year: 'numeric' })})` :
-               cashBookDateFilter === 'this_year' ? `Yearly (${new Date().getFullYear()})` :
-               cashBookDateFilter === 'custom' ? `Custom (${cashBookStartDate} to ${cashBookEndDate})` : 'All Time History'}
+              {selectedFiscalMonth !== 'all'
+                ? `Month: ${monthOptions.find(m => m.value === selectedFiscalMonth)?.label || selectedFiscalMonth} (${cashBookStartDate} to ${cashBookEndDate})`
+                : selectedFiscalYear !== 'all' && selectedFiscalYear !== 'custom'
+                  ? `${selectedFiscalYear} (${cashBookStartDate} to ${cashBookEndDate})`
+                  : cashBookDateFilter === 'today' ? `Daily (${new Date().toLocaleDateString('en-GB')})` :
+                    cashBookDateFilter === 'this_week' ? 'Weekly (Past 7 Days)' :
+                    cashBookDateFilter === 'custom' ? `Custom (${cashBookStartDate} to ${cashBookEndDate})` : 'All Time History'}
             </span>
           </div>
           <span className="text-[10.5px] font-extrabold text-indigo-800 bg-white px-2.5 py-1 rounded-full border border-indigo-200 inline-flex items-center shrink-0 shadow-2xs self-start sm:self-auto">
@@ -6029,28 +6613,62 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           {/* Filter Toolbar & Ledger Controls */}
           <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs space-y-3">
             <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-3">
-              {/* Period Quick Filters */}
-              <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 w-full xl:w-auto">
-                {[
-                  { id: 'today', label: '☀️ Daily' },
-                  { id: 'this_week', label: '📅 Weekly' },
-                  { id: 'this_month', label: '📊 Monthly' },
-                  { id: 'this_year', label: '📈 Yearly' },
-                  { id: 'custom', label: '📆 Custom Range' },
-                  { id: 'all_time', label: '🌐 All Time' }
-                ].map(p => (
-                  <button
-                    key={p.id}
-                    onClick={() => setCashBookDateFilter(p.id as any)}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
-                      cashBookDateFilter === p.id
-                        ? 'bg-purple-900 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-                    }`}
+              {/* Period Quick Filters & Fiscal Dropdowns */}
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                  {[
+                    { id: 'today', label: '☀️ Daily' },
+                    { id: 'this_week', label: '📅 Weekly' },
+                    { id: 'this_month', label: '📊 This Month' },
+                    { id: 'this_year', label: `📈 CY ${currentYear}` },
+                    { id: 'all_time', label: '🌐 All Time' }
+                  ].map(p => (
+                    <button
+                      key={p.id}
+                      onClick={() => handleQuickPresetChange(p.id as any)}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                        cashBookDateFilter === p.id && selectedFiscalMonth === (p.id === 'this_month' ? currentYearMonth : 'all')
+                          ? 'bg-purple-900 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
+                      }`}
+                    >
+                      {p.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Year Dropdown */}
+                <div className="flex items-center space-x-1.5 bg-slate-50 border border-slate-200 rounded-xl px-2.5 h-8.5 shadow-2xs">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Year:</span>
+                  <select
+                    value={selectedFiscalYear}
+                    onChange={e => handleFiscalYearSelect(e.target.value)}
+                    className="text-xs font-bold text-slate-800 bg-transparent focus:outline-hidden cursor-pointer font-mono"
                   >
-                    {p.label}
-                  </button>
-                ))}
+                    {fiscalYearOptions.map(fy => (
+                      <option key={fy.key} value={fy.key}>
+                        {fy.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Month Dropdown */}
+                <div className="flex items-center space-x-1.5 bg-purple-50/80 border border-purple-300 rounded-xl px-2.5 h-8.5 shadow-2xs">
+                  <span className="text-[10px] font-black text-purple-950 uppercase tracking-wider">Month:</span>
+                  <select
+                    value={selectedFiscalMonth}
+                    onChange={e => handleFiscalMonthSelect(e.target.value)}
+                    className="text-xs font-black text-purple-900 bg-transparent focus:outline-hidden cursor-pointer font-mono"
+                  >
+                    <option value="all">📅 All Months (Full Period)</option>
+                    {monthOptions.map(m => (
+                      <option key={m.value} value={m.value}>
+                        📅 {m.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
               <div className="flex flex-col sm:flex-row items-center gap-2 w-full xl:w-auto">
@@ -6910,6 +7528,27 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                         </td>
                         <td className="p-3 text-center whitespace-nowrap">
                           <div className="inline-flex items-center justify-center gap-1.5 align-middle">
+                            {/* EDIT PO BUTTON: Enabled when pending/sent, locked when stock/GRN processed */}
+                            {isPoStockReceivedOrLocked(po) ? (
+                              <button
+                                type="button"
+                                disabled
+                                className="w-7 h-7 bg-slate-100 text-slate-400 border border-slate-200 rounded-lg inline-flex items-center justify-center cursor-not-allowed opacity-60 shadow-2xs"
+                                title="🔒 Locked: Stock/GRN has already been added for this PO. Editing is not allowed."
+                              >
+                                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditPoModal(po)}
+                                className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shadow-2xs"
+                                title="Edit Purchase Order (Add/Update items before stock receipt)"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
                             {po.Status !== 'Received' ? (
                               <button
                                 type="button"
@@ -7165,11 +7804,70 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
             <button
               onClick={() => setShowTxnModal(true)}
-              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center space-x-1.5 self-start cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition flex items-center space-x-1.5 self-start cursor-pointer shadow-xs"
             >
               <Plus className="w-4 h-4" />
               <span>Log Financial Voucher</span>
             </button>
+          </div>
+
+          {/* Ledger Toolbar with Search and Period Scope Filter */}
+          <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-col md:flex-row items-center gap-3 justify-between">
+            <div className="flex flex-col sm:flex-row items-center gap-2.5 w-full md:w-auto flex-1">
+              {/* Search Box */}
+              <div className="relative flex-1 w-full sm:min-w-[240px]">
+                <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Search Txn ID, Category, Description, Method or User..."
+                  value={ledgerSearchTerm}
+                  onChange={e => setLedgerSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-8 py-1.5 bg-white border border-slate-200 rounded-xl text-xs font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-hidden"
+                />
+                {ledgerSearchTerm && (
+                  <button
+                    type="button"
+                    onClick={() => setLedgerSearchTerm('')}
+                    className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600"
+                  >
+                    <X className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+
+              {/* Date Filter Mode Toggle */}
+              <div className="inline-flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs shrink-0 w-full sm:w-auto">
+                <button
+                  type="button"
+                  onClick={() => setLedgerDateMode('filtered')}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                    ledgerDateMode === 'filtered'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  📅 Selected Fiscal Scope ({selectedFiscalMonth !== 'all' ? selectedFiscalMonth : selectedFiscalYear})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLedgerDateMode('all')}
+                  className={`px-3 py-1 text-xs font-bold rounded-lg transition cursor-pointer ${
+                    ledgerDateMode === 'all'
+                      ? 'bg-slate-800 text-white shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  🌐 All History
+                </button>
+              </div>
+            </div>
+
+            {/* Counter Pill */}
+            <div className="flex items-center space-x-2 shrink-0 self-end sm:self-auto">
+              <span className="text-[11px] font-bold text-slate-600 bg-white border border-slate-200 px-2.5 py-1 rounded-lg">
+                Showing: <strong className="text-indigo-700 font-extrabold">{filteredTransactions.length}</strong> / {transactions.length} Vouchers
+              </span>
+            </div>
           </div>
 
           <div className="overflow-x-auto">
@@ -7187,30 +7885,38 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {transactions.map((t, idx) => (
-                  <tr key={idx} className="hover:bg-slate-50">
-                    <td className="p-3 font-mono font-bold text-slate-800">{t.TransactionID}</td>
-                    <td className="p-3 text-slate-500 whitespace-nowrap">{t.Date}</td>
-                    <td className="p-3 font-bold text-slate-900">{t.Category}</td>
-                    <td className="p-3 text-slate-600 max-w-xs truncate">{t.Description || 'N/A'}</td>
-                    <td className="p-3 text-slate-600 font-bold">{t.PaymentMethod}</td>
-                    <td className="p-3 text-slate-500">{t.CreatedBy}</td>
-                    <td className={`p-3 text-right font-black ${
-                      t.Type === 'Income' ? 'text-emerald-600' : 'text-slate-900'
-                    }`}>
-                      Rs. {t.Amount.toLocaleString()}
-                    </td>
-                    <td className="p-3 text-center">
-                      <button
-                        onClick={() => handleDeleteTxn(t)}
-                        className="p-1 text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                        title="Delete Txn"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                {filteredTransactions.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="p-8 text-center text-slate-400 font-medium italic">
+                      No transaction vouchers found matching the active filters.
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  filteredTransactions.map((t, idx) => (
+                    <tr key={idx} className="hover:bg-slate-50">
+                      <td className="p-3 font-mono font-bold text-slate-800">{t.TransactionID}</td>
+                      <td className="p-3 text-slate-500 whitespace-nowrap">{t.Date}</td>
+                      <td className="p-3 font-bold text-slate-900">{t.Category}</td>
+                      <td className="p-3 text-slate-600 max-w-xs truncate">{t.Description || 'N/A'}</td>
+                      <td className="p-3 text-slate-600 font-bold">{t.PaymentMethod}</td>
+                      <td className="p-3 text-slate-500">{t.CreatedBy}</td>
+                      <td className={`p-3 text-right font-black ${
+                        t.Type === 'Income' ? 'text-emerald-600' : 'text-slate-900'
+                      }`}>
+                        Rs. {t.Amount.toLocaleString()}
+                      </td>
+                      <td className="p-3 text-center">
+                        <button
+                          onClick={() => handleDeleteTxn(t)}
+                          className="p-1 text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                          title="Delete Txn"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </td>
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>
@@ -7676,17 +8382,29 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 <div className="flex items-center space-x-2">
                   <h3 className="font-bold text-slate-900 text-lg flex items-center space-x-2">
                     <ShoppingCart className="w-5 h-5 text-indigo-600" />
-                    <span>Create Purchase Order & Stock Requisition</span>
+                    <span>{editingPurchaseOrder ? 'Edit & Update Purchase Order' : 'Create Purchase Order & Stock Requisition'}</span>
                   </h3>
                   <span className="px-2.5 py-0.5 rounded-full text-xs font-mono font-black bg-indigo-50 text-indigo-700 border border-indigo-200">
-                    {generateNextPoNumber()}
+                    {editingPurchaseOrder ? editingPurchaseOrder.POID : generateNextPoNumber()}
                   </span>
+                  {editingPurchaseOrder && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-300">
+                      ✏️ Edit Mode
+                    </span>
+                  )}
                 </div>
-                <p className="text-xs text-slate-500 mt-0.5">Pick medicines directly from inventory stock list or auto-fill required stock quantities</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {editingPurchaseOrder
+                    ? 'Modify quantities, update unit rates, add missing medicine items, or adjust order delivery details.'
+                    : 'Pick medicines directly from inventory stock list or auto-fill required stock quantities.'}
+                </p>
               </div>
               <button
                 type="button"
-                onClick={() => setShowPoModal(false)}
+                onClick={() => {
+                  setShowPoModal(false);
+                  setEditingPurchaseOrder(null);
+                }}
                 className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
               >
                 ✕
@@ -7748,6 +8466,15 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   </div>
 
                   <div className="flex items-center space-x-2">
+                    <button
+                      type="button"
+                      onClick={() => handleOpenQuickAddMedModal()}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs flex items-center space-x-1.5 cursor-pointer"
+                      title="Add a brand new medicine to stock master & include in Purchase Order"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>+ Add Medicine</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => {
@@ -7939,8 +8666,24 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                       {/* Card Grid */}
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5 max-h-[380px] overflow-y-auto p-1">
                         {paginatedPoMedicines.length === 0 ? (
-                          <div className="col-span-full py-10 text-center text-slate-400 font-bold bg-white rounded-xl border border-dashed border-slate-300">
-                            No medicines found matching the current search & category filter.
+                          <div className="col-span-full py-8 px-4 text-center bg-white rounded-xl border border-dashed border-slate-300 space-y-3">
+                            <div className="text-slate-500 font-bold text-xs">
+                              {medicineSearchTerm ? (
+                                <span>No medicine found matching &quot;<strong>{medicineSearchTerm}</strong>&quot; in inventory stock master.</span>
+                              ) : (
+                                <span>No medicines found matching the current search &amp; category filter.</span>
+                              )}
+                            </div>
+                            <div>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenQuickAddMedModal(medicineSearchTerm)}
+                                className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs inline-flex items-center space-x-1.5 cursor-pointer shadow-sm shadow-emerald-600/20"
+                              >
+                                <Plus className="w-4 h-4" />
+                                <span>+ Add {medicineSearchTerm ? `"${medicineSearchTerm}"` : 'New Medicine'} to Stock &amp; PO</span>
+                              </button>
+                            </div>
                           </div>
                         ) : (
                           paginatedPoMedicines.map((med, idx) => {
@@ -8229,6 +8972,15 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                         )}
                         <button
                           type="button"
+                          onClick={() => handleOpenQuickAddMedModal()}
+                          className="text-xs font-bold text-emerald-700 hover:text-emerald-800 flex items-center space-x-1 cursor-pointer bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200"
+                          title="Register brand new medicine into stock master"
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                          <span>+ Add Medicine</span>
+                        </button>
+                        <button
+                          type="button"
                           onClick={handleAddPoItem}
                           className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 cursor-pointer bg-indigo-50 px-2 py-1 rounded-lg border border-indigo-150"
                         >
@@ -8437,7 +9189,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 <div className="flex items-center space-x-2">
                   <button
                     type="button"
-                    onClick={() => setShowPoModal(false)}
+                    onClick={() => {
+                      setShowPoModal(false);
+                      setEditingPurchaseOrder(null);
+                    }}
                     className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
                   >
                     Cancel
@@ -8445,12 +9200,265 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                   <button
                     type="submit"
                     disabled={poForm.Items.length === 0}
-                    className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs transition shadow-sm flex items-center space-x-1.5 cursor-pointer"
+                    className={`px-5 py-2.5 rounded-xl disabled:opacity-50 text-white font-bold text-xs transition shadow-sm flex items-center space-x-1.5 cursor-pointer ${
+                      editingPurchaseOrder
+                        ? 'bg-amber-600 hover:bg-amber-700 shadow-amber-600/20'
+                        : 'bg-indigo-600 hover:bg-indigo-700 shadow-indigo-600/20'
+                    }`}
                   >
-                    <ShoppingCart className="w-4 h-4" />
-                    <span>Generate & Post Purchase Order</span>
+                    {editingPurchaseOrder ? (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>Save & Update Purchase Order</span>
+                      </>
+                    ) : (
+                      <>
+                        <ShoppingCart className="w-4 h-4" />
+                        <span>Generate & Post Purchase Order</span>
+                      </>
+                    )}
                   </button>
                 </div>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ADD MEDICINE POPUP MODAL (Add to Master Stock & Current PO) */}
+      {showQuickAddMedModal && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-[60]">
+          <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[92vh] overflow-y-auto">
+            {/* Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center space-x-3">
+                <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl font-bold">
+                  <Boxes className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-base flex items-center space-x-2">
+                    <span>Add New Medicine to Stock</span>
+                    <span className="text-[10px] px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-full font-bold">
+                      Master Inventory
+                    </span>
+                  </h3>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Save to stock inventory database and immediately include in current Purchase Order.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowQuickAddMedModal(false)}
+                className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 cursor-pointer text-base"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleQuickAddMedicine} className="space-y-4">
+              {/* Medicine Name */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  Medicine Name / Formula <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  autoFocus
+                  placeholder="e.g. BM 50, Arnica Montana 30C, Panadol 500mg"
+                  value={quickMedForm.ItemName}
+                  onChange={e => {
+                    const val = e.target.value;
+                    const autoCat = resolveSmartMedicineCategory(undefined, undefined, undefined, val);
+                    setQuickMedForm(prev => ({
+                      ...prev,
+                      ItemName: val,
+                      Category: prev.Category === 'BM Drops' || prev.Category === autoCat ? autoCat : prev.Category
+                    }));
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                />
+              </div>
+
+              {/* Category & Unit */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Medicine Category / Group <span className="text-rose-500">*</span>
+                  </label>
+                  <select
+                    value={quickMedForm.Category}
+                    onChange={e => setQuickMedForm({ ...quickMedForm, Category: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 cursor-pointer"
+                  >
+                    {medicineCategories.map((cat, idx) => (
+                      <option key={idx} value={cat}>{cat}</option>
+                    ))}
+                    <option value="__custom__">➕ Type Custom Category...</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Packaging / Unit
+                  </label>
+                  <input
+                    type="text"
+                    list="quick-med-units"
+                    placeholder="e.g. Bottle, Pack, Strip, Box"
+                    value={quickMedForm.Unit}
+                    onChange={e => setQuickMedForm({ ...quickMedForm, Unit: e.target.value })}
+                    className="w-full p-2.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
+                  />
+                  <datalist id="quick-med-units">
+                    <option value="Bottle" />
+                    <option value="Pack" />
+                    <option value="Strip" />
+                    <option value="Box" />
+                    <option value="Drops 30ml" />
+                    <option value="Syrup 120ml" />
+                    <option value="Vial" />
+                    <option value="Piece" />
+                  </datalist>
+                </div>
+              </div>
+
+              {/* Custom Category Input if selected */}
+              {quickMedForm.Category === '__custom__' && (
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl space-y-1">
+                  <label className="block text-xs font-extrabold text-indigo-900">
+                    New Category Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    placeholder="e.g. Biochemic Salts, Mother Tincture Special"
+                    value={quickMedForm.CustomCategory}
+                    onChange={e => setQuickMedForm({ ...quickMedForm, CustomCategory: e.target.value })}
+                    className="w-full p-2 bg-white border border-indigo-300 rounded-lg text-xs font-bold text-indigo-950 focus:ring-2 focus:ring-indigo-500/30"
+                  />
+                </div>
+              )}
+
+              {/* Pricing (Trade Price & MRP) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Purchase / Trade Price (TP)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-2 text-xs font-bold text-slate-400">Rs.</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0"
+                      value={quickMedForm.TradePrice}
+                      onChange={e => setQuickMedForm({ ...quickMedForm, TradePrice: e.target.value })}
+                      className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold font-mono text-slate-900"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Retail Sale Price (MRP)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-2.5 top-2 text-xs font-bold text-slate-400">Rs.</span>
+                    <input
+                      type="number"
+                      min="0"
+                      step="any"
+                      placeholder="0"
+                      value={quickMedForm.SalePrice}
+                      onChange={e => setQuickMedForm({ ...quickMedForm, SalePrice: e.target.value })}
+                      className="w-full pl-8 pr-2.5 py-1.5 bg-white border border-slate-300 rounded-lg text-xs font-bold font-mono text-slate-900"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Stock Levels */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Low Stock Alert Level
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="10"
+                    value={quickMedForm.MinStock}
+                    onChange={e => setQuickMedForm({ ...quickMedForm, MinStock: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold font-mono text-slate-900"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                    Current Stock in Hand
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    placeholder="0"
+                    value={quickMedForm.InitialStock}
+                    onChange={e => setQuickMedForm({ ...quickMedForm, InitialStock: e.target.value })}
+                    className="w-full p-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-bold font-mono text-slate-900"
+                  />
+                </div>
+              </div>
+
+              {/* Add to current Purchase Order checkbox & Requisition Qty */}
+              <div className="p-3.5 bg-emerald-50/70 border border-emerald-200 rounded-xl space-y-2.5">
+                <label className="flex items-center space-x-2.5 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={quickMedForm.AutoAddToPo}
+                    onChange={e => setQuickMedForm({ ...quickMedForm, AutoAddToPo: e.target.checked })}
+                    className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <span className="text-xs font-extrabold text-emerald-950">
+                    Automatically add this medicine to current Purchase Order list
+                  </span>
+                </label>
+
+                {quickMedForm.AutoAddToPo && (
+                  <div className="flex items-center space-x-2 pl-6 pt-1">
+                    <label className="text-xs font-bold text-emerald-800 whitespace-nowrap">
+                      Required Order Quantity:
+                    </label>
+                    <input
+                      type="number"
+                      min="1"
+                      required
+                      value={quickMedForm.RequisitionQty}
+                      onChange={e => setQuickMedForm({ ...quickMedForm, RequisitionQty: e.target.value })}
+                      className="w-24 p-1.5 bg-white border border-emerald-300 rounded-lg text-xs font-black font-mono text-emerald-950 text-center"
+                    />
+                    <span className="text-xs font-bold text-emerald-700">Units</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Actions */}
+              <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-100">
+                <button
+                  type="button"
+                  onClick={() => setShowQuickAddMedModal(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-sm shadow-emerald-600/20 flex items-center space-x-1.5 cursor-pointer"
+                >
+                  <Save className="w-4 h-4" />
+                  <span>Save Medicine & Add to PO</span>
+                </button>
               </div>
             </form>
           </div>
@@ -10322,7 +11330,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 const cDoc = clinicSettings?.DoctorName || '';
                 const cDocSub = clinicSettings?.DoctorSignatureText || '';
                 const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
-                const cPhone = clinicSettings?.PhoneMobile || '+92 300 1234567';
+                const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+                const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
                 const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
                 return (
@@ -10342,7 +11351,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                           {cTag}
                         </p>
                         <p className="text-[10px] text-slate-600 font-semibold mt-0.5">
-                          📍 {cAddr} &nbsp;|&nbsp; 📞 {cPhone}
+                          📍 {cAddr} &nbsp;|&nbsp; 📞 {cPhone} &nbsp;|&nbsp; 🌐 {cWebsite.replace(/^https?:\/\//, '')}
                         </p>
                       </div>
 
@@ -11098,6 +12107,30 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                             </td>
                             <td className="p-3 text-center">
                               <div className="flex items-center justify-center space-x-1.5">
+                                {isPoStockReceivedOrLocked(po) ? (
+                                  <button
+                                    type="button"
+                                    disabled
+                                    className="px-2 py-1 bg-slate-100 text-slate-400 font-bold rounded border border-slate-200 cursor-not-allowed opacity-60 flex items-center space-x-1"
+                                    title="🔒 Locked: Stock/GRN has already been added for this PO."
+                                  >
+                                    <Lock className="w-3 h-3 text-slate-400" />
+                                    <span>Locked</span>
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setVendorPoModalData(null);
+                                      handleOpenEditPoModal(po);
+                                    }}
+                                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded border border-amber-200 transition cursor-pointer flex items-center space-x-1"
+                                    title="Edit Purchase Order items/quantities"
+                                  >
+                                    <Pencil className="w-3 h-3 text-amber-600" />
+                                    <span>Edit</span>
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => handlePrintPo(po)}
@@ -11693,11 +12726,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                     orderDate: selectedPoForWhatsApp.OrderDate,
                     expectedDeliveryDate: selectedPoForWhatsApp.ExpectedDeliveryDate,
                     totalAmount: selectedPoForWhatsApp.TotalAmount,
+                    paymentMethod: selectedPoForWhatsApp.PaymentMethod || (selectedPoForWhatsApp as any).PaymentTerms,
                     items: selectedPoForWhatsApp.Items || [],
                     notes: whatsAppCustomNote,
                     clinicName: clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY',
                     clinicAddress: clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore',
-                    clinicPhone: clinicSettings?.PhoneMobile || '+92 300 1234567',
+                    clinicPhone: clinicSettings?.PhoneMobile || '+92-311-4000608',
                     preparedBy: currentUser?.FullName || 'Mr. Zaigham Ali Anjum'
                   })}
                 </div>

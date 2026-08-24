@@ -116,6 +116,8 @@ export interface WhatsAppPurchaseOrderPayload {
   orderDate?: string;
   expectedDeliveryDate?: string;
   totalAmount?: number;
+  paymentMethod?: string;
+  paymentTerms?: string;
   items: Array<{
     ItemName: string;
     Qty: number | string;
@@ -133,12 +135,14 @@ export interface WhatsAppPurchaseOrderPayload {
 export function generateWhatsAppPurchaseOrderText(data: WhatsAppPurchaseOrderPayload): string {
   const clinic = data.clinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
   const address = data.clinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
-  const clinicPhone = data.clinicPhone || '+92 300 1234567';
+  const clinicPhone = data.clinicPhone || '+92-311-4000608';
+  const isCash = String(data.paymentMethod || data.paymentTerms || '').trim().toLowerCase() === 'cash';
 
   let msg = `🏥 *${clinic}*\n`;
-  msg += `📋 *PURCHASE ORDER & REQUISITION*\n`;
+  msg += `📋 *${isCash ? 'CASH ORDER PO' : 'CREDIT ORDER PO'} & REQUISITION*\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `🔖 *PO Number:* ${data.poId}\n`;
+  msg += `💳 *Order Type:* ${isCash ? '💵 Cash Order PO (Spot Paid)' : '💳 Credit Order PO (Vendor Payable)'}\n`;
   msg += `🏢 *Vendor / Supplier:* ${data.vendorName}\n`;
   msg += `📅 *Order Date:* ${data.orderDate || new Date().toISOString().split('T')[0]}\n`;
   if (data.expectedDeliveryDate) {

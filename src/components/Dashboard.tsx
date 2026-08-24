@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { useState, useMemo } from 'react';
+import React, { useState, useMemo } from 'react';
 import {
   Users,
   CalendarDays,
@@ -72,15 +72,58 @@ export default function Dashboard({
   visits = []
 }: DashboardProps) {
   // Operational / Filter States
-  const [dateFilter, setDateFilter] = useState<'today' | 'this_week' | 'this_month' | 'this_year' | 'custom' | 'all'>('today');
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonthNum = (now.getMonth() + 1).toString().padStart(2, '0');
+  const currentYearMonth = `${currentYear}-${currentMonthNum}`; // e.g. "2026-08"
+
+  const [dateFilter, setDateFilter] = useState<'today' | 'this_week' | 'this_month' | 'this_year' | 'month_select' | 'custom' | 'all'>('month_select');
+  const [selectedMonthYear, setSelectedMonthYear] = useState<string>(currentYearMonth);
   const [shiftFilter, setShiftFilter] = useState<'all' | 'morning' | 'evening'>('all');
   const todayStr = new Date().toISOString().split('T')[0]; // Current dynamic system date
   const [customStartDate, setCustomStartDate] = useState<string>(todayStr);
   const [customEndDate, setCustomEndDate] = useState<string>(todayStr);
 
+  // Month labels list for the dropdown (Months of Current Year + recent navigation)
+  const monthOptions = useMemo(() => {
+    const months = [
+      { num: '01', name: 'January' },
+      { num: '02', name: 'February' },
+      { num: '03', name: 'March' },
+      { num: '04', name: 'April' },
+      { num: '05', name: 'May' },
+      { num: '06', name: 'June' },
+      { num: '07', name: 'July' },
+      { num: '08', name: 'August' },
+      { num: '09', name: 'September' },
+      { num: '10', name: 'October' },
+      { num: '11', name: 'November' },
+      { num: '12', name: 'December' },
+    ];
+    return months.map(m => {
+      const ym = `${currentYear}-${m.num}`;
+      const isCurrent = ym === currentYearMonth;
+      return {
+        value: ym,
+        label: `${m.name}-${currentYear}${isCurrent ? ' (Current)' : ''}`,
+        isCurrent
+      };
+    });
+  }, [currentYear, currentYearMonth]);
+
+  // Selected month display name
+  const selectedMonthLabel = useMemo(() => {
+    const matched = monthOptions.find(m => m.value === selectedMonthYear);
+    if (matched) return matched.label.replace(' (Current)', '');
+    return selectedMonthYear;
+  }, [monthOptions, selectedMonthYear]);
+
   const isInDateRange = (dateField?: string) => {
     if (!dateField) return false;
     const d = dateField.split('T')[0];
+    if (dateFilter === 'month_select') {
+      return d.startsWith(selectedMonthYear);
+    }
     if (dateFilter === 'today') {
       return d === todayStr || d === '2026-07-03';
     }
@@ -308,25 +351,49 @@ export default function Dashboard({
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
-          {/* Operational Date Indicator */}
+          {/* Operational Date / Scope Indicator */}
           <div className="flex items-center space-x-2 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl text-xs font-semibold text-slate-600">
             <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
             <span>
               Scope:{' '}
               <strong className="text-slate-900 font-bold">
-                {dateFilter === 'today'
+                {dateFilter === 'month_select'
+                  ? `📅 ${selectedMonthLabel}`
+                  : dateFilter === 'today'
                   ? 'Daily (Today)'
                   : dateFilter === 'this_week'
                   ? 'Weekly (Past 7 Days)'
                   : dateFilter === 'this_month'
                   ? 'Monthly (This Month)'
                   : dateFilter === 'this_year'
-                  ? 'Yearly (This Year)'
+                  ? `Yearly (Full Year ${currentYear})`
                   : dateFilter === 'custom'
                   ? `${customStartDate} to ${customEndDate}`
                   : 'All Time History'}
               </strong>
             </span>
+          </div>
+
+          {/* Month-wise Fiscal Dropdown Selector */}
+          <div className="flex items-center space-x-1.5 bg-blue-50/80 border-2 border-blue-300 px-2.5 py-1 rounded-xl shadow-2xs">
+            <Calendar className="w-4 h-4 text-blue-700 shrink-0" />
+            <span className="text-[10px] font-black uppercase tracking-wider text-blue-950 shrink-0">Month:</span>
+            <select
+              value={dateFilter === 'month_select' ? selectedMonthYear : ''}
+              onChange={(e) => {
+                if (e.target.value) {
+                  setSelectedMonthYear(e.target.value);
+                  setDateFilter('month_select');
+                }
+              }}
+              className="bg-white text-slate-900 font-extrabold text-xs rounded-lg px-2.5 py-1 border border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-600 cursor-pointer shadow-2xs font-mono"
+            >
+              {monthOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  📅 {opt.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Date Scope Filter - Compact pills by default, smoothly expand label on hover/active */}
@@ -369,30 +436,11 @@ export default function Dashboard({
               </div>
             </button>
 
-            {/* Monthly */}
-            <button
-              type="button"
-              onClick={() => setDateFilter('this_month')}
-              title="Monthly (This Month)"
-              className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
-                dateFilter === 'this_month' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
-              }`}
-            >
-              <CalendarDays className={`w-3.5 h-3.5 shrink-0 ${dateFilter === 'this_month' ? 'text-indigo-600' : 'text-slate-500 group-hover:text-indigo-600'} transition-colors`} />
-              <div className={`transition-all duration-300 ease-in-out flex items-center ${
-                dateFilter === 'this_month'
-                  ? 'max-w-[100px] opacity-100 pl-0.5'
-                  : 'max-w-0 overflow-hidden group-hover:max-w-[100px] focus-within:max-w-[100px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
-              }`}>
-                <span className="whitespace-nowrap text-xs">Monthly</span>
-              </div>
-            </button>
-
             {/* Yearly */}
             <button
               type="button"
               onClick={() => setDateFilter('this_year')}
-              title="Yearly (This Year)"
+              title={`Yearly (Full Year ${currentYear})`}
               className={`group flex items-center space-x-1 px-2 py-1 rounded-lg font-bold transition-all duration-300 cursor-pointer ${
                 dateFilter === 'this_year' ? 'bg-white text-blue-700 shadow-xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'
               }`}
@@ -403,7 +451,7 @@ export default function Dashboard({
                   ? 'max-w-[100px] opacity-100 pl-0.5'
                   : 'max-w-0 overflow-hidden group-hover:max-w-[100px] focus-within:max-w-[100px] opacity-0 group-hover:opacity-100 focus-within:opacity-100 group-hover:pl-0.5'
               }`}>
-                <span className="whitespace-nowrap text-xs">Yearly</span>
+                <span className="whitespace-nowrap text-xs">Full Year</span>
               </div>
             </button>
 
@@ -545,14 +593,16 @@ export default function Dashboard({
                   Unified Financial Summary
                 </span>
                 <span className="text-[11px] text-slate-400 font-medium truncate max-w-xs sm:max-w-md">
-                  {dateFilter === 'today'
+                  {dateFilter === 'month_select'
+                    ? `Monthly Shift Ledger (${selectedMonthLabel})`
+                    : dateFilter === 'today'
                     ? "Today's Shift Ledger"
                     : dateFilter === 'this_week'
                     ? "Weekly Shift Ledger (Past 7 Days)"
                     : dateFilter === 'this_month'
                     ? "Monthly Shift Ledger (This Month)"
                     : dateFilter === 'this_year'
-                    ? "Yearly Shift Ledger (This Year)"
+                    ? `Yearly Shift Ledger (Full Year ${currentYear})`
                     : dateFilter === 'custom'
                     ? `Custom (${customStartDate} to ${customEndDate})`
                     : 'All Register Entries'}
