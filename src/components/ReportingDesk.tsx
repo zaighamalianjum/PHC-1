@@ -141,10 +141,15 @@ export default function ReportingDesk({
   const [fetchedInvoices, setFetchedInvoices] = useState<any[]>([]);
   const [fetchedInvoiceDetails, setFetchedInvoiceDetails] = useState<any[]>([]);
   const [fetchedSalesReturns, setFetchedSalesReturns] = useState<any[]>([]);
+  const [fetchedAppointments, setFetchedAppointments] = useState<any[]>([]);
+  const [fetchedTokens, setFetchedTokens] = useState<any[]>([]);
+  const [fetchedVisits, setFetchedVisits] = useState<any[]>([]);
+  const [fetchedVouchers, setFetchedVouchers] = useState<any[]>([]);
+  const [fetchedAcLedger, setFetchedAcLedger] = useState<any[]>([]);
 
   const loadReportData = React.useCallback(async () => {
     try {
-      const [itRes, vRes, poRes, grnRes, txRes, payRes, expRes, billingRes, invRes, invDetRes, srRes] = await Promise.all([
+      const [itRes, vRes, poRes, grnRes, txRes, payRes, expRes, billingRes, invRes, invDetRes, srRes, appRes, tokRes, visRes, vchRes, acRes] = await Promise.all([
         fetch('/api/query/items').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_vendors').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/erp_purchase_orders').then(r => r.ok ? r.json() : []).catch(() => []),
@@ -155,7 +160,12 @@ export default function ReportingDesk({
         fetch('/api/billing/invoices').then(r => r.ok ? r.json() : null).catch(() => null),
         fetch('/api/query/invoice_headers').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/invoice_details').then(r => r.ok ? r.json() : []).catch(() => []),
-        fetch('/api/query/sales_returns').then(r => r.ok ? r.json() : []).catch(() => [])
+        fetch('/api/query/sales_returns').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/appointments').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/tokens').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/visits').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/vouchers').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/query/ac_ledger').then(r => r.ok ? r.json() : []).catch(() => [])
       ]);
 
       // Fallbacks from localStorage for resilient data availability
@@ -207,6 +217,36 @@ export default function ReportingDesk({
       }
       if (finalReturns.length > 0) setFetchedSalesReturns(finalReturns);
 
+      let finalApps = Array.isArray(appRes) && appRes.length > 0 ? appRes : [];
+      if (finalApps.length === 0) {
+        try { finalApps = JSON.parse(localStorage.getItem('cms_appointments') || '[]'); } catch (_) {}
+      }
+      if (finalApps.length > 0) setFetchedAppointments(finalApps);
+
+      let finalTokens = Array.isArray(tokRes) && tokRes.length > 0 ? tokRes : [];
+      if (finalTokens.length === 0) {
+        try { finalTokens = JSON.parse(localStorage.getItem('cms_tokens') || '[]'); } catch (_) {}
+      }
+      if (finalTokens.length > 0) setFetchedTokens(finalTokens);
+
+      let finalVisits = Array.isArray(visRes) && visRes.length > 0 ? visRes : [];
+      if (finalVisits.length === 0) {
+        try { finalVisits = JSON.parse(localStorage.getItem('cms_visits') || '[]'); } catch (_) {}
+      }
+      if (finalVisits.length > 0) setFetchedVisits(finalVisits);
+
+      let finalVouchers = Array.isArray(vchRes) && vchRes.length > 0 ? vchRes : [];
+      if (finalVouchers.length === 0) {
+        try { finalVouchers = JSON.parse(localStorage.getItem('cms_vouchers') || '[]'); } catch (_) {}
+      }
+      if (finalVouchers.length > 0) setFetchedVouchers(finalVouchers);
+
+      let finalAc = Array.isArray(acRes) && acRes.length > 0 ? acRes : [];
+      if (finalAc.length === 0) {
+        try { finalAc = JSON.parse(localStorage.getItem('cms_ac_ledger') || '[]'); } catch (_) {}
+      }
+      if (finalAc.length > 0) setFetchedAcLedger(finalAc);
+
       let allInvs: any[] = [];
       let allDet: any[] = [];
       if (billingRes && Array.isArray(billingRes.headers)) allInvs = billingRes.headers;
@@ -235,6 +275,38 @@ export default function ReportingDesk({
     window.addEventListener('phc_db_updated', loadReportData);
     return () => window.removeEventListener('phc_db_updated', loadReportData);
   }, [loadReportData]);
+
+  // Effective datasets combining props and fetched state
+  const effectiveAppointments = useMemo(() => {
+    if (Array.isArray(appointments) && appointments.length > 0) return appointments;
+    if (Array.isArray(fetchedAppointments) && fetchedAppointments.length > 0) return fetchedAppointments;
+    return [];
+  }, [appointments, fetchedAppointments]);
+
+  const effectiveTokens = useMemo(() => {
+    if (Array.isArray(tokens) && tokens.length > 0) return tokens;
+    if (Array.isArray(fetchedTokens) && fetchedTokens.length > 0) return fetchedTokens;
+    return [];
+  }, [tokens, fetchedTokens]);
+
+  const effectiveVisits = useMemo(() => {
+    if (Array.isArray(visits) && visits.length > 0) return visits;
+    if (Array.isArray(patientVisits) && patientVisits.length > 0) return patientVisits;
+    if (Array.isArray(fetchedVisits) && fetchedVisits.length > 0) return fetchedVisits;
+    return [];
+  }, [visits, patientVisits, fetchedVisits]);
+
+  const effectiveVouchers = useMemo(() => {
+    if (Array.isArray(vouchers) && vouchers.length > 0) return vouchers;
+    if (Array.isArray(fetchedVouchers) && fetchedVouchers.length > 0) return fetchedVouchers;
+    return [];
+  }, [vouchers, fetchedVouchers]);
+
+  const effectiveAcLedger = useMemo(() => {
+    if (Array.isArray(acLedger) && acLedger.length > 0) return acLedger;
+    if (Array.isArray(fetchedAcLedger) && fetchedAcLedger.length > 0) return fetchedAcLedger;
+    return [];
+  }, [acLedger, fetchedAcLedger]);
 
   // Effective datasets combining props and fetched state
   const effectiveItems = useMemo(() => {
@@ -299,12 +371,6 @@ export default function ReportingDesk({
     if (Array.isArray(fetchedSalesReturns) && fetchedSalesReturns.length > 0) return fetchedSalesReturns;
     return [];
   }, [salesReturns, fetchedSalesReturns]);
-
-  const effectiveVisits = useMemo(() => {
-    if (Array.isArray(visits) && visits.length > 0) return visits;
-    if (Array.isArray(patientVisits) && patientVisits.length > 0) return patientVisits;
-    return [];
-  }, [visits, patientVisits]);
 
   // Helper stock extractors
   const getItemStock = (item: any) => {
@@ -793,73 +859,127 @@ export default function ReportingDesk({
     return { totalItemsToOrder, totalUnitsRequired, totalEstCapitalNeeded };
   }, [requiredStockData]);
 
-  // Report 8: P&L Summary Statement
+  // Report 8: P&L Summary Statement (Exact Dashboard-aligned financial engine)
   const pnlSummaryData = useMemo(() => {
-    // 1. OPD REVENUE & INFLOWS (Visits, Consultations, Card/File Fees, Dispensing, Appointments)
-    let opdConsultationFees = 0;
-    let opdCardFees = 0;
-    let opdDispensingFees = 0;
-    const countedVisitKeys = new Set<string>();
+    // 1. FILTER TARGET DATASETS BY DATE RANGE
+    const targetApps = effectiveAppointments.filter((a: any) => {
+      const d = parseCleanDate(a.AppointmentDate || a.Date || a.CreatedAt);
+      return isWithinDateRange(d);
+    });
 
-    effectiveVisits.forEach((v: any) => {
-      const vDate = parseCleanDate(v.VisitDate || v.Date || v.CreatedAt);
-      if (isWithinDateRange(vDate)) {
-        const vKey = String(v.VisitID || v.id || `${v.PatientID}_${vDate}`);
-        countedVisitKeys.add(vKey);
+    const targetTokens = effectiveTokens.filter((t: any) => {
+      const d = parseCleanDate(t.Date || t.CreatedAt);
+      return isWithinDateRange(d);
+    });
 
-        const consult = Number(v.ConsultationFee) || (v.FeeReceived !== undefined ? Number(v.FeeReceived) : (Number(v.FeeCharged) || 0));
-        const card = Number(v.CardFee) || Number(v.RegFee) || 0;
-        const med = Number(v.MedicineCost) || 0;
+    const targetVisits = effectiveVisits.filter((v: any) => {
+      const d = parseCleanDate(v.VisitDate || v.Date || v.CreatedAt);
+      return isWithinDateRange(d);
+    });
 
-        opdConsultationFees += consult;
-        opdCardFees += card;
-        opdDispensingFees += med;
+    const targetInvoices = effectiveInvoices.filter((inv: any) => {
+      const d = parseCleanDate(inv.InvoiceDate || inv.date || inv.Date || inv.CreatedAt);
+      return isWithinDateRange(d);
+    });
+
+    const targetSalesReturns = effectiveSalesReturns.filter((r: any) => {
+      const d = parseCleanDate(r.ReturnDate || r.Date || r.CreatedAt);
+      return isWithinDateRange(d);
+    });
+
+    // Helper to determine shift for visit if not directly set (matches Dashboard getVisitShift)
+    const getVisitShift = (v: any): 1 | 2 => {
+      if (v.Shift === 1 || v.Shift === 2) return v.Shift;
+      if (v.shift === 1 || v.shift === 2) return v.shift;
+      const matchingApp = targetApps.find((a) => a.PatientID === v.PatientID);
+      if (matchingApp && (matchingApp.Shift === 1 || matchingApp.Shift === 2)) {
+        return matchingApp.Shift;
       }
-    });
-
-    // Standalone appointments or tokens not already counted in visits
-    let standaloneApptFees = 0;
-    (appointments || []).forEach((a: any) => {
-      const aDate = parseCleanDate(a.AppointmentDate || a.Date);
-      if (isWithinDateRange(aDate) && a.Status !== 3) {
-        const matchKey = `${a.PatientID}_${aDate}`;
-        if (!countedVisitKeys.has(matchKey) && !countedVisitKeys.has(String(a.AppointmentID || ''))) {
-          const fee = Number(a.FeeCharged) || Number(a.FeeReceived) || Number(a.Fee) || 0;
-          standaloneApptFees += fee;
-        }
+      const matchingToken = targetTokens.find((t) => t.PatientID === v.PatientID);
+      if (matchingToken && (matchingToken.Shift === 1 || matchingToken.Shift === 2)) {
+        return matchingToken.Shift;
       }
-    });
+      return 1; // Default to Morning Shift
+    };
 
-    const totalOpdIncome = opdConsultationFees + opdCardFees + opdDispensingFees + standaloneApptFees;
+    const getClinMedPayment = (v: any) =>
+      Number(v.ClinicalMedicinePayment || v.ClinicalMedicineCharges || v.ClinicalMedicinePkr || v.clinicMedicineCharges || v.medicineCharges || v.MedicineCost || v.ClinicalPayment || 0);
 
-    // 2. POS PHARMACY SALES & COGS CALCULATION
-    const filteredInvoices = effectiveInvoices.filter((inv: any) => {
-      const invDate = parseCleanDate(inv.InvoiceDate || inv.date || inv.Date || inv.CreatedAt);
-      return isWithinDateRange(invDate);
-    });
+    const getCardFileFee = (v: any) =>
+      (Number(v.CardFee || v.cardFee || v.CardsPayment || 0) + (Number(v.FileFee || v.fileFee || v.FilePkr || v.RegFee || 0)));
 
-    const grossPosSales = filteredInvoices.reduce((sum: number, inv: any) => {
-      const net = inv.NetAmount !== undefined ? Number(inv.NetAmount)
-        : (inv.NetPayable !== undefined ? Number(inv.NetPayable)
-        : (inv.GrandTotal !== undefined ? Number(inv.GrandTotal)
-        : (inv.totalAmount !== undefined ? Number(inv.totalAmount)
-        : (Number(inv.GAmount || 0) - (Number(inv.DisAmount) || 0)))));
-      return sum + (net || 0);
+    // Clinical Medicine Payments Shift-wise
+    const morningClinMed = targetVisits.filter((v) => getVisitShift(v) === 1).reduce((sum, v) => sum + getClinMedPayment(v), 0);
+    const eveningClinMed = targetVisits.filter((v) => getVisitShift(v) === 2).reduce((sum, v) => sum + getClinMedPayment(v), 0);
+    const totalClinMedCollection = morningClinMed + eveningClinMed;
+
+    // Card & Registration Fees Shift-wise
+    const morningCardFileFee = targetVisits.filter((v) => getVisitShift(v) === 1).reduce((sum, v) => sum + getCardFileFee(v), 0);
+    const eveningCardFileFee = targetVisits.filter((v) => getVisitShift(v) === 2).reduce((sum, v) => sum + getCardFileFee(v), 0);
+    const totalCardFileFeeCollection = morningCardFileFee + eveningCardFileFee;
+
+    // OPD Consultation Fees Shift-wise (Appointments + Uncounted Visits)
+    const morningOpdApps = targetApps.filter((a) => (a.Shift || 1) === 1 && a.Status !== 3);
+    const eveningOpdApps = targetApps.filter((a) => a.Shift === 2 && a.Status !== 3);
+
+    const morningOpdAppFees = morningOpdApps.reduce((acc, curr) => acc + (Number(curr.FeeCharged) || Number(curr.FeeReceived) || Number(curr.Fee) || 0), 0);
+    const eveningOpdAppFees = eveningOpdApps.reduce((acc, curr) => acc + (Number(curr.FeeCharged) || Number(curr.FeeReceived) || Number(curr.Fee) || 0), 0);
+
+    const morningOpdVisitFees = targetVisits.filter((v) => getVisitShift(v) === 1 && (v as any).Status !== 3).reduce((acc, v) => {
+      const fee = Number(v.ConsultationFee) || (v.FeeReceived !== undefined ? Number(v.FeeReceived) : 0);
+      const hasAppFee = morningOpdApps.some(a => a.PatientID === v.PatientID && (Number(a.FeeCharged) || Number(a.FeeReceived) || 0) > 0);
+      return acc + (hasAppFee ? 0 : fee);
     }, 0);
 
-    const filteredReturns = effectiveSalesReturns.filter((r: any) => {
-      const rDate = parseCleanDate(r.ReturnDate || r.Date || r.CreatedAt);
-      return isWithinDateRange(rDate);
-    });
-
-    const totalSalesReturns = filteredReturns.reduce((sum: number, r: any) => {
-      const ret = Number(r.NetPaid ?? r.RefundAmount ?? r.TotalAmount ?? 0);
-      return sum + ret;
+    const eveningOpdVisitFees = targetVisits.filter((v) => getVisitShift(v) === 2 && (v as any).Status !== 3).reduce((acc, v) => {
+      const fee = Number(v.ConsultationFee) || (v.FeeReceived !== undefined ? Number(v.FeeReceived) : 0);
+      const hasAppFee = eveningOpdApps.some(a => a.PatientID === v.PatientID && (Number(a.FeeCharged) || Number(a.FeeReceived) || 0) > 0);
+      return acc + (hasAppFee ? 0 : fee);
     }, 0);
 
-    const netPosIncome = Math.max(0, grossPosSales - totalSalesReturns);
+    const morningOpdConsultation = morningOpdAppFees + morningOpdVisitFees;
+    const eveningOpdConsultation = eveningOpdAppFees + eveningOpdVisitFees;
+    const totalOpdConsultation = morningOpdConsultation + eveningOpdConsultation;
 
-    // Calculate Pharmacy COGS
+    // Standalone token fees if not attached to any appointment/visit
+    const standaloneTokenFees = targetTokens.filter(t => (t as any).Status !== 3).reduce((acc, t) => {
+      const fee = Number(t.FeeCharged || t.FeeReceived || t.Fee || 0);
+      if (!fee) return acc;
+      const hasApp = targetApps.some(a => a.PatientID === t.PatientID || a.AppointmentID === t.AppointmentID);
+      const hasVisit = targetVisits.some(v => v.PatientID === t.PatientID);
+      return acc + (hasApp || hasVisit ? 0 : fee);
+    }, 0);
+
+    const morningOpdCollection = morningOpdConsultation + morningClinMed + morningCardFileFee;
+    const eveningOpdCollection = eveningOpdConsultation + eveningClinMed + eveningCardFileFee;
+    const totalOpdIncome = morningOpdCollection + eveningOpdCollection + standaloneTokenFees;
+
+    // 2. STORE / PHARMACY POS SALES & COGS (Exact Dashboard Calculation)
+    const morningInvoices = targetInvoices.filter((i) => ((i.shift === 1 || i.Shift === 1 || !i.shift)) && (i as any).Status !== 3);
+    const eveningInvoices = targetInvoices.filter((i) => ((i.shift === 2 || i.Shift === 2)) && (i as any).Status !== 3);
+
+    const morningReturns = targetSalesReturns.filter((r) => (r.shift === 1 || r.Shift === 1 || !r.shift));
+    const eveningReturns = targetSalesReturns.filter((r) => (r.shift === 2 || r.Shift === 2));
+
+    const morningStoreGross = morningInvoices.reduce((acc, curr) => {
+      const net = Number(curr.NetAmount ?? curr.NetPayable ?? curr.GrandTotal ?? curr.GAmount ?? curr.totalAmount ?? curr.TotalAmount ?? 0);
+      return acc + (net || 0);
+    }, 0);
+    const morningStoreReturns = morningReturns.reduce((acc, curr) => acc + (Number(curr.NetPaid ?? curr.RefundAmount ?? curr.TotalAmount ?? 0) || 0), 0);
+    const morningStoreCollection = Math.max(0, morningStoreGross - morningStoreReturns);
+
+    const eveningStoreGross = eveningInvoices.reduce((acc, curr) => {
+      const net = Number(curr.NetAmount ?? curr.NetPayable ?? curr.GrandTotal ?? curr.GAmount ?? curr.totalAmount ?? curr.TotalAmount ?? 0);
+      return acc + (net || 0);
+    }, 0);
+    const eveningStoreReturns = eveningReturns.reduce((acc, curr) => acc + (Number(curr.NetPaid ?? curr.RefundAmount ?? curr.TotalAmount ?? 0) || 0), 0);
+    const eveningStoreCollection = Math.max(0, eveningStoreGross - eveningStoreReturns);
+
+    const grossPosSales = morningStoreGross + eveningStoreGross;
+    const totalSalesReturns = morningStoreReturns + eveningStoreReturns;
+    const netPosIncome = morningStoreCollection + eveningStoreCollection;
+
+    // Calculate Pharmacy COGS (Purchase Cost of Goods Sold)
     const itemMap = new Map<string, any>();
     effectiveItems.forEach((it: any) => {
       if (it.ItemID) itemMap.set(String(it.ItemID).toUpperCase(), it);
@@ -877,7 +997,8 @@ export default function ReportingDesk({
     });
 
     let pharmacyCogs = 0;
-    filteredInvoices.forEach((inv: any) => {
+    targetInvoices.forEach((inv: any) => {
+      if ((inv as any).Status === 3) return;
       const invNo = String(inv.InvoiceNo || inv.id || '');
       const details = detailsByInvoice.get(invNo);
 
@@ -910,28 +1031,73 @@ export default function ReportingDesk({
 
     const totalIncome = totalOpdIncome + netPosIncome + otherIncome;
 
-    // 4. OUTFLOWS & EXPENSES
-    // Vendor Payments (Inventory purchases / settlements)
-    const vendorOutflows = effectiveTransactions
-      .filter((t: any) => isWithinDateRange(t.Date || t.TransactionDate) && (t.Type === 'VendorPayment' || t.VendorID || t.Category?.toLowerCase().includes('vendor') || t.Category?.toLowerCase().includes('supplier') || t.Category?.toLowerCase().includes('purchase')))
-      .reduce((sum: number, t: any) => sum + (Number(t.Amount) || 0), 0);
+    // 4. OUTFLOWS & EXPENSES (Comprehensive audit across transactions, payroll, expenses & vouchers)
+    let vendorOutflows = 0;
+    let salaryOutflows = 0;
+    let totalOperatingExpenses = 0;
 
-    // Salary & Payroll
-    const salaryOutflows = effectivePayrolls
-      .filter((p: any) => isWithinDateRange(p.PaymentDate || (p.MonthYear ? `${p.MonthYear}-01` : '')))
-      .reduce((sum: number, p: any) => sum + (Number(p.NetSalary || p.BasicSalary) || 0), 0);
+    // Transactions breakdown
+    effectiveTransactions.forEach((t: any) => {
+      const d = parseCleanDate(t.Date || t.TransactionDate);
+      if (isWithinDateRange(d)) {
+        const amt = Number(t.Amount) || 0;
+        const cat = (t.Category || '').toLowerCase();
+        const type = (t.Type || '').toLowerCase();
+        if (type === 'vendorpayment' || t.VendorID || cat.includes('vendor') || cat.includes('supplier') || cat.includes('purchase')) {
+          vendorOutflows += amt;
+        } else if (type === 'payroll' || type === 'salary' || cat.includes('salary') || cat.includes('payroll')) {
+          salaryOutflows += amt;
+        } else if (type === 'expense' || cat.includes('expense') || cat.includes('utility') || cat.includes('rent') || cat.includes('maintenance')) {
+          totalOperatingExpenses += amt;
+        }
+      }
+    });
 
-    // Operational Expenses
-    const expenseOutflows = effectiveExpenses
-      .filter((e: any) => isWithinDateRange(e.ExpenseDate || e.Date))
-      .reduce((sum: number, e) => sum + (Number(e.Amount) || 0), 0);
+    // Payroll records
+    effectivePayrolls.forEach((p: any) => {
+      const d = parseCleanDate(p.PaymentDate || (p.MonthYear ? `${p.MonthYear}-01` : ''));
+      if (isWithinDateRange(d)) {
+        const amt = Number(p.NetSalary || p.BasicSalary || p.Amount) || 0;
+        const alreadyCounted = effectiveTransactions.some(t => t.LinkedPayrollID === p.PayrollID || t.PayrollID === p.PayrollID || (parseCleanDate(t.Date) === d && Number(t.Amount) === amt && (t.Type === 'Payroll' || t.Type === 'Salary')));
+        if (!alreadyCounted) {
+          salaryOutflows += amt;
+        }
+      }
+    });
 
-    // Additional general expense transactions not covered above
-    const generalTxnExpenses = effectiveTransactions
-      .filter((t: any) => isWithinDateRange(t.Date || t.TransactionDate) && t.Type === 'Expense' && !t.LinkedExpenseID && !t.ExpenseID)
-      .reduce((sum: number, t: any) => sum + (Number(t.Amount) || 0), 0);
+    // Expenses records
+    effectiveExpenses.forEach((e: any) => {
+      const d = parseCleanDate(e.ExpenseDate || e.Date);
+      if (isWithinDateRange(d)) {
+        const amt = Number(e.Amount) || 0;
+        const alreadyCounted = effectiveTransactions.some(t => t.LinkedExpenseID === e.ExpenseID || t.ExpenseID === e.ExpenseID || (parseCleanDate(t.Date) === d && Number(t.Amount) === amt && t.Type === 'Expense'));
+        if (!alreadyCounted) {
+          totalOperatingExpenses += amt;
+        }
+      }
+    });
 
-    const totalOperatingExpenses = expenseOutflows + generalTxnExpenses;
+    // Vouchers (CP, BP) fallback
+    effectiveVouchers.forEach((v: any) => {
+      const d = parseCleanDate(v.VchDate || v.Date);
+      if (isWithinDateRange(d)) {
+        const vType = (v.VchType || v.Type || '').toUpperCase();
+        if (vType === 'CP' || vType === 'BP') {
+          const amt = Number(v.Amount || v.TotalAmount || v.NetDebit) || 0;
+          const remarks = (v.Remarks || v.Description || '').toLowerCase();
+          const alreadyCounted = effectiveTransactions.some(t => parseCleanDate(t.Date) === d && Number(t.Amount) === amt);
+          if (!alreadyCounted && amt > 0) {
+            if (remarks.includes('supplier') || remarks.includes('vendor') || remarks.includes('purchase')) {
+              vendorOutflows += amt;
+            } else if (remarks.includes('salary') || remarks.includes('payroll')) {
+              salaryOutflows += amt;
+            } else {
+              totalOperatingExpenses += amt;
+            }
+          }
+        }
+      }
+    });
 
     const totalExpenses = vendorOutflows + salaryOutflows + totalOperatingExpenses;
     const netProfit = totalIncome - totalExpenses;
@@ -939,10 +1105,10 @@ export default function ReportingDesk({
     const expenseRatio = totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0;
 
     return {
-      opdConsultationFees,
-      opdCardFees,
-      opdDispensingFees,
-      standaloneApptFees,
+      opdConsultationFees: totalOpdConsultation,
+      opdCardFees: totalCardFileFeeCollection,
+      opdDispensingFees: totalClinMedCollection,
+      standaloneApptFees: standaloneTokenFees,
       totalOpdIncome,
       grossPosSales,
       totalSalesReturns,
@@ -964,7 +1130,7 @@ export default function ReportingDesk({
       apptFees: totalOpdIncome,
       posIncome: netPosIncome
     };
-  }, [appointments, effectiveVisits, effectiveInvoices, effectiveInvoiceDetails, effectiveSalesReturns, effectiveItems, effectiveTransactions, effectivePayrolls, effectiveExpenses, startDate, endDate, datePreset]);
+  }, [effectiveAppointments, effectiveTokens, effectiveVisits, effectiveInvoices, effectiveInvoiceDetails, effectiveSalesReturns, effectiveItems, effectiveTransactions, effectivePayrolls, effectiveExpenses, effectiveVouchers, startDate, endDate, datePreset]);
 
   // Report 9: Shift-Wise Collection Summary Report Data
   const shiftCollectionData = useMemo(() => {
@@ -997,15 +1163,15 @@ export default function ReportingDesk({
       }
     }
 
-    (appointments || []).forEach(a => {
-      const d = parseCleanDate(a.AppointmentDate);
+    effectiveAppointments.forEach(a => {
+      const d = parseCleanDate(a.AppointmentDate || a.Date);
       if (d && checkDateInRange(d)) datesSet.add(d);
     });
-    (patientVisits || visits || []).forEach(v => {
+    effectiveVisits.forEach(v => {
       const d = parseCleanDate(v.VisitDate || v.Date);
       if (d && checkDateInRange(d)) datesSet.add(d);
     });
-    (posSales || invoices || []).forEach(inv => {
+    effectiveInvoices.forEach(inv => {
       const d = parseCleanDate(inv.InvoiceDate || inv.date || inv.Date);
       if (d && checkDateInRange(d)) datesSet.add(d);
     });
@@ -1016,17 +1182,17 @@ export default function ReportingDesk({
       if (vis.Shift === 1 || vis.Shift === 2) return vis.Shift;
       if (vis.shift === 1 || vis.shift === 2) return vis.shift;
       const visCleanDate = parseCleanDate(vis.VisitDate || vis.Date);
-      const matchedApp = (appointments || []).find(
-        (a: any) => a.PatientID === vis.PatientID && parseCleanDate(a.AppointmentDate) === visCleanDate
+      const matchedApp = effectiveAppointments.find(
+        (a: any) => a.PatientID === vis.PatientID && parseCleanDate(a.AppointmentDate || a.Date) === visCleanDate
       );
       if (matchedApp && (matchedApp.Shift === 1 || matchedApp.Shift === 2)) return matchedApp.Shift;
       return 1;
     };
 
     const getVisFees = (v: any) => {
-      let clin = Number(v.ClinicalMedicinePayment || v.ClinicalMedicineCharges || v.ClinicalMedicinePkr || v.clinicMedicineCharges || v.medicineCharges) || 0;
-      let file = Number(v.FileFee || v.fileFee || v.FilePkr) || 0;
-      let card = Number(v.CardFee || v.cardFee || v.CardsPayment) || 0;
+      let clin = Number(v.ClinicalMedicinePayment || v.ClinicalMedicineCharges || v.ClinicalMedicinePkr || v.clinicMedicineCharges || v.medicineCharges || v.MedicineCost || 0) || 0;
+      let file = Number(v.FileFee || v.fileFee || v.FilePkr || v.RegFee || 0) || 0;
+      let card = Number(v.CardFee || v.cardFee || v.CardsPayment || 0) || 0;
       if (v.VisitRemarks) {
         if (!clin) { const cPkr = v.VisitRemarks.match(/Clinical Meds PKR\s*(\d+)/); if (cPkr) clin = Number(cPkr[1]); }
         if (!file) { const fPkr = v.VisitRemarks.match(/File PKR\s*(\d+)/); if (fPkr) file = Number(fPkr[1]); }
@@ -1036,7 +1202,7 @@ export default function ReportingDesk({
     };
 
     const getInvoiceAmount = (inv: any) => {
-      return Number(inv.NetAmount || inv.NetPayable || inv.GrandTotal || inv.GAmount || inv.totalAmount || inv.TotalAmount || inv.amount || 0);
+      return Number(inv.NetAmount ?? inv.NetPayable ?? inv.GrandTotal ?? inv.GAmount ?? inv.totalAmount ?? inv.TotalAmount ?? inv.amount ?? 0);
     };
 
     let totalMorningClinic = 0;
@@ -1045,15 +1211,16 @@ export default function ReportingDesk({
     let totalEveningStore = 0;
 
     const dailyRows = sortedDates.map(dateStr => {
-      const appsForDate = (appointments || []).filter(a => parseCleanDate(a.AppointmentDate) === dateStr && a.Status !== 3);
-      const visitsForDate = (patientVisits || visits || []).filter(v => parseCleanDate(v.VisitDate || v.Date) === dateStr && (v.Status as number) !== 3);
-      const invoicesForDate = (posSales || invoices || []).filter(inv => parseCleanDate(inv.InvoiceDate || inv.date || inv.Date) === dateStr && (inv.Status as number) !== 3);
+      const appsForDate = effectiveAppointments.filter(a => parseCleanDate(a.AppointmentDate || a.Date) === dateStr && a.Status !== 3);
+      const visitsForDate = effectiveVisits.filter(v => parseCleanDate(v.VisitDate || v.Date) === dateStr && (v.Status as number) !== 3);
+      const invoicesForDate = effectiveInvoices.filter(inv => parseCleanDate(inv.InvoiceDate || inv.date || inv.Date) === dateStr && (inv.Status as number) !== 3);
+      const returnsForDate = effectiveSalesReturns.filter(r => parseCleanDate(r.ReturnDate || r.Date) === dateStr);
 
       // MORNING (Shift 1)
-      const mAppFromAppointments = appsForDate.filter(a => (a.Shift || a.shift || 1) === 1).reduce((sum, a) => sum + (Number(a.FeeCharged) || 0), 0);
+      const mAppFromAppointments = appsForDate.filter(a => (a.Shift || a.shift || 1) === 1).reduce((sum, a) => sum + (Number(a.FeeCharged || a.FeeReceived || a.Fee) || 0), 0);
       const mAppFromVisits = visitsForDate.filter(v => getVisShift(v) === 1).reduce((sum, v) => {
-        const fee = Number(v.ConsultationFee || v.FeeCharged) || 0;
-        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && (a.Shift || 1) === 1 && (Number(a.FeeCharged) || 0) > 0);
+        const fee = Number(v.ConsultationFee || v.FeeCharged || v.FeeReceived) || 0;
+        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && (a.Shift || 1) === 1 && (Number(a.FeeCharged || a.FeeReceived) || 0) > 0);
         return sum + (hasAppFee ? 0 : fee);
       }, 0);
       const mApp = mAppFromAppointments + mAppFromVisits;
@@ -1065,17 +1232,21 @@ export default function ReportingDesk({
 
       const morningClinic = mApp + mVisFees;
 
-      const morningStore = invoicesForDate
+      const morningStoreGross = invoicesForDate
         .filter(i => (i.Shift === 1 || i.shift === 1 || (!i.Shift && !i.shift)))
         .reduce((sum, i) => sum + getInvoiceAmount(i), 0);
+      const morningStoreRet = returnsForDate
+        .filter(r => (r.Shift === 1 || r.shift === 1 || (!r.Shift && !r.shift)))
+        .reduce((sum, r) => sum + (Number(r.NetPaid ?? r.RefundAmount ?? r.TotalAmount ?? 0) || 0), 0);
+      const morningStore = Math.max(0, morningStoreGross - morningStoreRet);
 
       const morningTotal = morningClinic + morningStore;
 
       // EVENING (Shift 2)
-      const eAppFromAppointments = appsForDate.filter(a => (a.Shift || a.shift) === 2).reduce((sum, a) => sum + (Number(a.FeeCharged) || 0), 0);
+      const eAppFromAppointments = appsForDate.filter(a => (a.Shift || a.shift) === 2).reduce((sum, a) => sum + (Number(a.FeeCharged || a.FeeReceived || a.Fee) || 0), 0);
       const eAppFromVisits = visitsForDate.filter(v => getVisShift(v) === 2).reduce((sum, v) => {
-        const fee = Number(v.ConsultationFee || v.FeeCharged) || 0;
-        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && a.Shift === 2 && (Number(a.FeeCharged) || 0) > 0);
+        const fee = Number(v.ConsultationFee || v.FeeCharged || v.FeeReceived) || 0;
+        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && a.Shift === 2 && (Number(a.FeeCharged || a.FeeReceived) || 0) > 0);
         return sum + (hasAppFee ? 0 : fee);
       }, 0);
       const eApp = eAppFromAppointments + eAppFromVisits;
@@ -1087,9 +1258,13 @@ export default function ReportingDesk({
 
       const eveningClinic = eApp + eVisFees;
 
-      const eveningStore = invoicesForDate
+      const eveningStoreGross = invoicesForDate
         .filter(i => (i.Shift === 2 || i.shift === 2))
         .reduce((sum, i) => sum + getInvoiceAmount(i), 0);
+      const eveningStoreRet = returnsForDate
+        .filter(r => (r.Shift === 2 || r.shift === 2))
+        .reduce((sum, r) => sum + (Number(r.NetPaid ?? r.RefundAmount ?? r.TotalAmount ?? 0) || 0), 0);
+      const eveningStore = Math.max(0, eveningStoreGross - eveningStoreRet);
 
       const eveningTotal = eveningClinic + eveningStore;
 
@@ -1126,7 +1301,7 @@ export default function ReportingDesk({
       totalEvening,
       grandTotal
     };
-  }, [appointments, patientVisits, visits, posSales, invoices, startDate, endDate, datePreset]);
+  }, [effectiveAppointments, effectiveVisits, effectiveInvoices, effectiveSalesReturns, startDate, endDate, datePreset]);
 
   const filteredShiftCollectionRows = useMemo(() => {
     if (!searchQuery.trim()) return shiftCollectionData.dailyRows;
