@@ -207,7 +207,17 @@ export default function ReportingDesk({
 
       let finalExpenses = Array.isArray(expRes) && expRes.length > 0 ? expRes : [];
       if (finalExpenses.length === 0) {
-        try { finalExpenses = JSON.parse(localStorage.getItem('phc_erp_expenses') || localStorage.getItem('cms_erp_expenses') || '[]'); } catch (_) {}
+        try {
+          finalExpenses = JSON.parse(
+            localStorage.getItem('phc_erp_expenses') ||
+            localStorage.getItem('cms_erp_expenses') ||
+            localStorage.getItem('erp_expenses') ||
+            localStorage.getItem('cms_expenses') ||
+            localStorage.getItem('phc_expenses') ||
+            localStorage.getItem('expenses') ||
+            '[]'
+          );
+        } catch (_) {}
       }
       if (finalExpenses.length > 0) setFetchedExpenses(finalExpenses);
 
@@ -338,18 +348,30 @@ export default function ReportingDesk({
   const effectiveTransactions = useMemo(() => {
     if (Array.isArray(transactions) && transactions.length > 0) return transactions;
     if (Array.isArray(fetchedTxns) && fetchedTxns.length > 0) return fetchedTxns;
+    try {
+      const local = localStorage.getItem('phc_erp_transactions') || localStorage.getItem('cms_erp_transactions') || localStorage.getItem('erp_transactions') || localStorage.getItem('cms_transactions');
+      if (local) return JSON.parse(local);
+    } catch (_) {}
     return [];
   }, [transactions, fetchedTxns]);
 
   const effectivePayrolls = useMemo(() => {
     if (Array.isArray(payrolls) && payrolls.length > 0) return payrolls;
     if (Array.isArray(fetchedPayrolls) && fetchedPayrolls.length > 0) return fetchedPayrolls;
+    try {
+      const local = localStorage.getItem('phc_erp_payroll') || localStorage.getItem('cms_erp_payroll') || localStorage.getItem('erp_payroll') || localStorage.getItem('cms_payroll');
+      if (local) return JSON.parse(local);
+    } catch (_) {}
     return [];
   }, [payrolls, fetchedPayrolls]);
 
   const effectiveExpenses = useMemo(() => {
     if (Array.isArray(expenses) && expenses.length > 0) return expenses;
     if (Array.isArray(fetchedExpenses) && fetchedExpenses.length > 0) return fetchedExpenses;
+    try {
+      const local = localStorage.getItem('phc_erp_expenses') || localStorage.getItem('cms_erp_expenses') || localStorage.getItem('erp_expenses') || localStorage.getItem('cms_expenses') || localStorage.getItem('phc_expenses') || localStorage.getItem('expenses');
+      if (local) return JSON.parse(local);
+    } catch (_) {}
     return [];
   }, [expenses, fetchedExpenses]);
 
@@ -1031,68 +1053,124 @@ export default function ReportingDesk({
 
     const totalIncome = totalOpdIncome + netPosIncome + otherIncome;
 
-    // 4. OUTFLOWS & EXPENSES (Comprehensive audit across transactions, payroll, expenses & vouchers)
-    let vendorOutflows = 0;
-    let salaryOutflows = 0;
+    // 4. OUTFLOWS & EXPENSES (Comprehensive, deduplicated audit across expenses, payroll, vendor payments, vouchers & transactions)
     let totalOperatingExpenses = 0;
+    const countedExpenseKeys = new Set<string>();
 
-    // Transactions breakdown
-    effectiveTransactions.forEach((t: any) => {
-      const d = parseCleanDate(t.Date || t.TransactionDate);
+    // 4A. Primary: Direct Operational & Clinic Expense Records (from erp_expenses / Expense Analysis)
+    effectiveExpenses.forEach((exp: any, idx: number) => {
+      const d = parseCleanDate(exp.ExpenseDate || exp.Date || exp.CreatedAt);
       if (isWithinDateRange(d)) {
-        const amt = Number(t.Amount) || 0;
-        const cat = (t.Category || '').toLowerCase();
+        const amt = Number(exp.Amount || exp.ExpenseAmount || exp.TotalAmount || 0);
+        if (amt > 0) {
+          totalOperatingExpenses += amt;
+          const idKey = String(exp.ExpenseID || exp._id || `exp_${idx}`).trim();
+          if (idKey) countedExpenseKeys.add(idKey);
+          if (exp.ReceiptRef) countedExpenseKeys.add(String(exp.ReceiptRef).trim());
+          if (exp.ReferenceNo) countedExpenseKeys.add(String(exp.ReferenceNo).trim());
+          // Also mark date+amount key to prevent double counting from synced transactions
+          countedExpenseKeys.add(`${d}_${amt}`);
+        }
+      }
+    });
+
+    // 4B. Staff Salaries & Payroll Disbursements
+    let salaryOutflows = 0;
+    const countedPayrollKeys = new Set<string>();
+
+    effectivePayrolls.forEach((p: any, idx: number) => {
+      const d = parseCleanDate(p.PaymentDate || p.Date || (p.MonthYear ? `${p.MonthYear}-01` : ''));
+      if (isWithinDateRange(d) || (p.MonthYear && startDate.startsWith(p.MonthYear))) {
+        if (p.PaymentStatus === 'Paid' || p.Status === 'Paid' || !p.PaymentStatus) {
+          const amt = Number(p.NetSalary || p.BasicSalary || p.Amount || 0);
+          if (amt > 0) {
+            salaryOutflows += amt;
+            const pKey = String(p.PayrollID || p._id || `pay_${idx}`).trim();
+            if (pKey) countedPayrollKeys.add(pKey);
+            if (p.ReferenceNo) countedPayrollKeys.add(String(p.ReferenceNo).trim());
+            countedPayrollKeys.add(`${d}_${amt}`);
+          }
+        }
+      }
+    });
+
+    // 4C. Vendor Payments & Supplier Settlements
+    let vendorOutflows = 0;
+    const countedVendorKeys = new Set<string>();
+
+    // 4D. Evaluate Transactions for uncounted expenses, salaries, or vendor disbursements
+    effectiveTransactions.forEach((t: any, idx: number) => {
+      const d = parseCleanDate(t.Date || t.TransactionDate || t.CreatedAt);
+      if (isWithinDateRange(d)) {
+        const amt = Number(t.Amount || 0);
+        if (amt <= 0) return;
+
         const type = (t.Type || '').toLowerCase();
-        if (type === 'vendorpayment' || t.VendorID || cat.includes('vendor') || cat.includes('supplier') || cat.includes('purchase')) {
-          vendorOutflows += amt;
-        } else if (type === 'payroll' || type === 'salary' || cat.includes('salary') || cat.includes('payroll')) {
-          salaryOutflows += amt;
-        } else if (type === 'expense' || cat.includes('expense') || cat.includes('utility') || cat.includes('rent') || cat.includes('maintenance')) {
-          totalOperatingExpenses += amt;
+        const cat = (t.Category || '').toLowerCase();
+        const refNo = String(t.ReferenceNo || t.TransactionID || t.LinkedExpenseID || t.ExpenseID || t.LinkedPayrollID || t.PayrollID || '').trim();
+        const dateAmtKey = `${d}_${amt}`;
+
+        const isVendor = type === 'vendorpayment' || type === 'vendor_payment' || Boolean(t.VendorID) || cat.includes('vendor') || cat.includes('supplier') || cat.includes('purchase');
+        const isSalary = type === 'payroll' || type === 'salary' || cat.includes('salary') || cat.includes('payroll');
+        const isExpense = type === 'expense' || type === 'debit' || type === 'outflow' || cat.includes('expense') || cat.includes('utility') || cat.includes('rent') || cat.includes('maintenance') || cat.includes('tea') || cat.includes('stationery') || cat.includes('fuel') || cat.includes('cleaning') || cat.includes('supplies') || cat.includes('office') || cat.includes('repair') || (!isVendor && !isSalary && type !== 'income' && type !== 'deposit' && type !== 'receipt' && type !== 'credit');
+
+        if (isVendor) {
+          if (!countedVendorKeys.has(refNo) && !countedVendorKeys.has(dateAmtKey)) {
+            vendorOutflows += amt;
+            if (refNo) countedVendorKeys.add(refNo);
+            countedVendorKeys.add(dateAmtKey);
+          }
+        } else if (isSalary) {
+          if (!countedPayrollKeys.has(refNo) && !countedPayrollKeys.has(dateAmtKey)) {
+            salaryOutflows += amt;
+            if (refNo) countedPayrollKeys.add(refNo);
+            countedPayrollKeys.add(dateAmtKey);
+          }
+        } else if (isExpense) {
+          if (!countedExpenseKeys.has(refNo) && !countedExpenseKeys.has(dateAmtKey)) {
+            totalOperatingExpenses += amt;
+            if (refNo) countedExpenseKeys.add(refNo);
+            countedExpenseKeys.add(dateAmtKey);
+          }
         }
       }
     });
 
-    // Payroll records
-    effectivePayrolls.forEach((p: any) => {
-      const d = parseCleanDate(p.PaymentDate || (p.MonthYear ? `${p.MonthYear}-01` : ''));
-      if (isWithinDateRange(d)) {
-        const amt = Number(p.NetSalary || p.BasicSalary || p.Amount) || 0;
-        const alreadyCounted = effectiveTransactions.some(t => t.LinkedPayrollID === p.PayrollID || t.PayrollID === p.PayrollID || (parseCleanDate(t.Date) === d && Number(t.Amount) === amt && (t.Type === 'Payroll' || t.Type === 'Salary')));
-        if (!alreadyCounted) {
-          salaryOutflows += amt;
-        }
-      }
-    });
-
-    // Expenses records
-    effectiveExpenses.forEach((e: any) => {
-      const d = parseCleanDate(e.ExpenseDate || e.Date);
-      if (isWithinDateRange(d)) {
-        const amt = Number(e.Amount) || 0;
-        const alreadyCounted = effectiveTransactions.some(t => t.LinkedExpenseID === e.ExpenseID || t.ExpenseID === e.ExpenseID || (parseCleanDate(t.Date) === d && Number(t.Amount) === amt && t.Type === 'Expense'));
-        if (!alreadyCounted) {
-          totalOperatingExpenses += amt;
-        }
-      }
-    });
-
-    // Vouchers (CP, BP) fallback
-    effectiveVouchers.forEach((v: any) => {
-      const d = parseCleanDate(v.VchDate || v.Date);
+    // 4E. Accounting Vouchers (Cash/Bank Payment Vouchers: CPV, BPV, CP, BP, PV)
+    effectiveVouchers.forEach((v: any, idx: number) => {
+      const d = parseCleanDate(v.VchDate || v.VDate || v.Date || v.CreatedAt);
       if (isWithinDateRange(d)) {
         const vType = (v.VchType || v.Type || '').toUpperCase();
-        if (vType === 'CP' || vType === 'BP') {
-          const amt = Number(v.Amount || v.TotalAmount || v.NetDebit) || 0;
+        if (vType === 'CPV' || vType === 'BPV' || vType === 'CP' || vType === 'BP' || vType === 'PV' || vType === 'PAYMENT') {
+          const amt = Number(v.Amount || v.VAmount || v.TotalAmount || v.NetDebit || 0);
+          if (amt <= 0) return;
+
           const remarks = (v.Remarks || v.Description || '').toLowerCase();
-          const alreadyCounted = effectiveTransactions.some(t => parseCleanDate(t.Date) === d && Number(t.Amount) === amt);
-          if (!alreadyCounted && amt > 0) {
-            if (remarks.includes('supplier') || remarks.includes('vendor') || remarks.includes('purchase')) {
+          const vKey = String(v.VchNo || v._id || v.VoucherID || `vch_${idx}`).trim();
+          const ref = String(v.RefNo || '').trim();
+          const dateAmtKey = `${d}_${amt}`;
+
+          const isVendor = remarks.includes('supplier') || remarks.includes('vendor') || remarks.includes('purchase') || remarks.includes('grn') || Boolean(v.VendorID || v.SupplierID);
+          const isSalary = remarks.includes('salary') || remarks.includes('payroll') || remarks.includes('staff pay') || remarks.includes('wages');
+
+          if (isVendor) {
+            if (!countedVendorKeys.has(vKey) && !countedVendorKeys.has(ref) && !countedVendorKeys.has(dateAmtKey)) {
               vendorOutflows += amt;
-            } else if (remarks.includes('salary') || remarks.includes('payroll')) {
+              countedVendorKeys.add(vKey);
+              countedVendorKeys.add(dateAmtKey);
+            }
+          } else if (isSalary) {
+            if (!countedPayrollKeys.has(vKey) && !countedPayrollKeys.has(ref) && !countedPayrollKeys.has(dateAmtKey)) {
               salaryOutflows += amt;
-            } else {
+              countedPayrollKeys.add(vKey);
+              countedPayrollKeys.add(dateAmtKey);
+            }
+          } else {
+            // General / Clinic Operational Expense Voucher
+            if (!countedExpenseKeys.has(vKey) && !countedExpenseKeys.has(ref) && !countedExpenseKeys.has(dateAmtKey)) {
               totalOperatingExpenses += amt;
+              countedExpenseKeys.add(vKey);
+              countedExpenseKeys.add(dateAmtKey);
             }
           }
         }
