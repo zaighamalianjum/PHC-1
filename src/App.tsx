@@ -2913,6 +2913,7 @@ export default function App() {
                 config={INITIAL_CONFIG}
                 vouchers={vouchers}
                 invoices={filteredInvoices}
+                invoiceDetails={invoiceDetails}
                 salesReturns={salesReturns}
                 visits={visits}
               />

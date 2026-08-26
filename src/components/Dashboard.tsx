@@ -42,6 +42,7 @@ import {
   Config,
   VchHeader,
   InvoiceHeader,
+  InvoiceDetail,
   SRInvHeader,
   Visit
 } from '../types';
@@ -55,6 +56,7 @@ interface DashboardProps {
   config: Config;
   vouchers: VchHeader[];
   invoices?: InvoiceHeader[];
+  invoiceDetails?: InvoiceDetail[];
   salesReturns?: SRInvHeader[];
   visits?: Visit[];
 }
@@ -68,6 +70,7 @@ export default function Dashboard({
   config,
   vouchers,
   invoices = [],
+  invoiceDetails = [],
   salesReturns = [],
   visits = []
 }: DashboardProps) {
@@ -312,6 +315,74 @@ export default function Dashboard({
   const eveningStoreCollection = Math.max(0, eveningStoreGross - eveningStoreReturns);
 
   const totalStoreCollection = morningStoreCollection + eveningStoreCollection;
+
+  // --- STORE COGS (PURCHASE COST) & NET GROSS PROFIT / MARGIN CALCULATIONS ---
+  const calculateShiftCogs = (shiftInvoices: InvoiceHeader[], shiftReturns: SRInvHeader[]) => {
+    let totalCogs = 0;
+    
+    // Fast lookup map for items
+    const itemMap = new Map<string, Item>();
+    items.forEach(it => {
+      if (it.ItemID) itemMap.set(String(it.ItemID).toUpperCase(), it);
+      if (it.ItemName) itemMap.set(String(it.ItemName).toLowerCase(), it);
+    });
+
+    // Group invoice details by InvoiceNo
+    const detailsByInvoice = new Map<string, InvoiceDetail[]>();
+    invoiceDetails.forEach(d => {
+      const invNo = String(d.InvoiceNo || '');
+      if (invNo) {
+        const existing = detailsByInvoice.get(invNo) || [];
+        existing.push(d);
+        detailsByInvoice.set(invNo, existing);
+      }
+    });
+
+    shiftInvoices.forEach(inv => {
+      const invNo = String(inv.InvoiceNo || '');
+      const details = detailsByInvoice.get(invNo);
+
+      if (details && details.length > 0) {
+        details.forEach(d => {
+          const itemKey = String(d.ItemID || '').trim();
+          const item = itemMap.get(itemKey.toUpperCase()) || itemMap.get(itemKey.toLowerCase());
+          const unitPurCost = (item?.PurchasePrice && Number(item.PurchasePrice) > 0)
+            ? Number(item.PurchasePrice)
+            : ((item as any)?.TP && Number((item as any).TP) > 0 ? Number((item as any).TP) : (d.Price ? Math.round(d.Price * 0.75) : 0));
+          const lineQty = Number(d.Qty) || 0;
+          totalCogs += lineQty * unitPurCost;
+        });
+      } else {
+        // Fallback for summarized invoices: standard estimated purchase cost (~75%)
+        const invNet = Number(inv.NetAmount) || 0;
+        totalCogs += Math.round(invNet * 0.75);
+      }
+    });
+
+    // Adjust for returns
+    const returnNet = shiftReturns.reduce((sum, r) => sum + (Number(r.NetPaid) || 0), 0);
+    const returnCogs = Math.round(returnNet * 0.75);
+    const finalCogs = Math.max(0, Math.round(totalCogs - returnCogs));
+
+    return finalCogs;
+  };
+
+  const morningStoreCogs = calculateShiftCogs(morningInvoices, morningReturns);
+  const eveningStoreCogs = calculateShiftCogs(eveningInvoices, eveningReturns);
+  const totalStoreCogs = morningStoreCogs + eveningStoreCogs;
+
+  const morningStoreGrossProfit = Math.max(0, morningStoreCollection - morningStoreCogs);
+  const eveningStoreGrossProfit = Math.max(0, eveningStoreCollection - eveningStoreCogs);
+  const totalStoreGrossProfit = Math.max(0, totalStoreCollection - totalStoreCogs);
+
+  const morningStoreMarginPct = morningStoreCollection > 0 ? (morningStoreGrossProfit / morningStoreCollection) * 100 : 0;
+  const eveningStoreMarginPct = eveningStoreCollection > 0 ? (eveningStoreGrossProfit / eveningStoreCollection) * 100 : 0;
+  const totalStoreMarginPct = totalStoreCollection > 0 ? (totalStoreGrossProfit / totalStoreCollection) * 100 : 0;
+
+  const activeStoreCollection = shiftFilter === 'morning' ? morningStoreCollection : shiftFilter === 'evening' ? eveningStoreCollection : totalStoreCollection;
+  const activeStoreCogs = shiftFilter === 'morning' ? morningStoreCogs : shiftFilter === 'evening' ? eveningStoreCogs : totalStoreCogs;
+  const activeStoreGrossProfit = shiftFilter === 'morning' ? morningStoreGrossProfit : shiftFilter === 'evening' ? eveningStoreGrossProfit : totalStoreGrossProfit;
+  const activeStoreMarginPct = shiftFilter === 'morning' ? morningStoreMarginPct : shiftFilter === 'evening' ? eveningStoreMarginPct : totalStoreMarginPct;
 
   // --- 3. TOTAL PAYMENT COLLECTION BOTH SHIFTS ---
   const morningTotalPayment = morningOpdCollection + morningStoreCollection;
@@ -872,7 +943,7 @@ export default function Dashboard({
           </div>
         )}
 
-        {/* Requirement 2: Total Store Collection Shift-wise */}
+        {/* Requirement 2: Total Store Collection Shift-wise with Net Gross Profit & Margin and COGS */}
         {(shiftFilter === 'all' || shiftFilter === 'morning' || shiftFilter === 'evening') && (
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition duration-200 flex flex-col justify-between space-y-3">
             <div className="flex items-center justify-between">
@@ -884,27 +955,65 @@ export default function Dashboard({
               </span>
             </div>
 
-            <div>
-              <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Store Collection</p>
-              <h3 className="text-lg font-extrabold text-slate-900 mt-0.5 font-mono">
-                Rs. {(shiftFilter === 'morning' ? morningStoreCollection : shiftFilter === 'evening' ? eveningStoreCollection : totalStoreCollection).toLocaleString()}
-              </h3>
+            <div className="space-y-2">
+              <div>
+                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Store Collection</p>
+                <h3 className="text-lg font-extrabold text-slate-900 mt-0.5 font-mono">
+                  Rs. {activeStoreCollection.toLocaleString()}
+                </h3>
+              </div>
+
+              {/* Requirement 1: Purchase Cost (COGS) & Net Gross Profit & Margin */}
+              <div className="bg-gradient-to-br from-slate-50 to-emerald-50/30 rounded-xl p-2.5 border border-slate-200/80 space-y-1.5 shadow-2xs">
+                <div className="flex items-center justify-between text-xxs">
+                  <span className="text-purple-700 font-bold uppercase tracking-wider flex items-center space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-purple-600" />
+                    <span>Purchase Cost (COGS):</span>
+                  </span>
+                  <strong className="font-mono text-purple-900 font-extrabold text-[11px]">Rs. {activeStoreCogs.toLocaleString()}</strong>
+                </div>
+
+                <div className="flex items-center justify-between text-xxs pt-1.5 border-t border-slate-200/80">
+                  <span className="text-emerald-700 font-bold uppercase tracking-wider flex items-center space-x-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
+                    <span>Net Gross Profit & Margin:</span>
+                  </span>
+                  <div className="text-right">
+                    <strong className="font-mono text-emerald-900 font-extrabold text-[11px] block">
+                      Rs. {activeStoreGrossProfit.toLocaleString()}
+                    </strong>
+                    <span className="text-[9.5px] font-bold text-emerald-700 font-mono bg-emerald-100/80 px-1.5 py-0.2 rounded border border-emerald-200/60 inline-block mt-0.5">
+                      {activeStoreMarginPct.toFixed(1)}% Margin
+                    </span>
+                  </div>
+                </div>
+              </div>
             </div>
 
-            <div className="border-t border-slate-100 pt-2 space-y-1 text-xxs">
-              <div className="flex justify-between items-center text-slate-600">
-                <span className="flex items-center space-x-1">
+            <div className="border-t border-slate-100 pt-2 space-y-1.5 text-xxs">
+              <div className="flex justify-between items-start text-slate-600">
+                <span className="flex items-center space-x-1 mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span>Morning:</span>
+                  <span className="font-semibold">Morning:</span>
                 </span>
-                <strong className="font-mono text-slate-900">Rs. {morningStoreCollection.toLocaleString()}</strong>
+                <div className="text-right font-mono">
+                  <strong className="text-slate-900 font-bold">Rs. {morningStoreCollection.toLocaleString()}</strong>
+                  <span className="text-[9px] text-slate-500 block font-medium">
+                    COGS: Rs. {morningStoreCogs.toLocaleString()} • Profit: <span className="text-emerald-700 font-bold">Rs. {morningStoreGrossProfit.toLocaleString()} ({morningStoreMarginPct.toFixed(0)}%)</span>
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between items-center text-slate-600">
-                <span className="flex items-center space-x-1">
+              <div className="flex justify-between items-start text-slate-600 pt-1 border-t border-slate-50">
+                <span className="flex items-center space-x-1 mt-0.5">
                   <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                  <span>Evening:</span>
+                  <span className="font-semibold">Evening:</span>
                 </span>
-                <strong className="font-mono text-slate-900">Rs. {eveningStoreCollection.toLocaleString()}</strong>
+                <div className="text-right font-mono">
+                  <strong className="text-slate-900 font-bold">Rs. {eveningStoreCollection.toLocaleString()}</strong>
+                  <span className="text-[9px] text-slate-500 block font-medium">
+                    COGS: Rs. {eveningStoreCogs.toLocaleString()} • Profit: <span className="text-purple-700 font-bold">Rs. {eveningStoreGrossProfit.toLocaleString()} ({eveningStoreMarginPct.toFixed(0)}%)</span>
+                  </span>
+                </div>
               </div>
             </div>
           </div>
@@ -1038,7 +1147,8 @@ export default function Dashboard({
                   Rs. {morningCardFileFee.toLocaleString()}
                 </td>
                 <td className="py-4 px-4 text-right font-bold font-mono text-emerald-700">
-                  Rs. {morningStoreCollection.toLocaleString()}
+                  <div>Rs. {morningStoreCollection.toLocaleString()}</div>
+                  <span className="block text-[9px] font-normal text-slate-400">COGS: {morningStoreCogs.toLocaleString()} | Profit: {morningStoreGrossProfit.toLocaleString()} ({morningStoreMarginPct.toFixed(0)}%)</span>
                 </td>
                 <td className="py-4 px-4 text-right font-extrabold font-mono text-blue-700 text-sm">
                   Rs. {morningTotalPayment.toLocaleString()}
@@ -1082,7 +1192,8 @@ export default function Dashboard({
                   Rs. {eveningCardFileFee.toLocaleString()}
                 </td>
                 <td className="py-4 px-4 text-right font-bold font-mono text-purple-700">
-                  Rs. {eveningStoreCollection.toLocaleString()}
+                  <div>Rs. {eveningStoreCollection.toLocaleString()}</div>
+                  <span className="block text-[9px] font-normal text-slate-400">COGS: {eveningStoreCogs.toLocaleString()} | Profit: {eveningStoreGrossProfit.toLocaleString()} ({eveningStoreMarginPct.toFixed(0)}%)</span>
                 </td>
                 <td className="py-4 px-4 text-right font-extrabold font-mono text-amber-700 text-sm">
                   Rs. {eveningTotalPayment.toLocaleString()}
@@ -1120,7 +1231,8 @@ export default function Dashboard({
                   Rs. {totalCardFileFeeCollection.toLocaleString()}
                 </td>
                 <td className="py-4 px-4 text-right font-mono text-xs text-emerald-300">
-                  Rs. {totalStoreCollection.toLocaleString()}
+                  <div>Rs. {totalStoreCollection.toLocaleString()}</div>
+                  <span className="block text-[9px] font-normal text-slate-400">COGS: {totalStoreCogs.toLocaleString()} | Profit: {totalStoreGrossProfit.toLocaleString()} ({totalStoreMarginPct.toFixed(0)}%)</span>
                 </td>
                 <td className="py-4 px-4 text-right font-mono text-base text-white">
                   Rs. {grandTotalCollection.toLocaleString()}
