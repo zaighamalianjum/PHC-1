@@ -336,6 +336,25 @@ export default function PharmacyPOS({
     }, 280);
   };
 
+  // Auto-switch subtab if permissions change in another session
+  useEffect(() => {
+    if (activeSubTab === 'checkout' && currentUser.Permissions?.canAccessClinicalMedicine === false) {
+      setActiveSubTab('store_sales');
+    } else if (activeSubTab === 'store_sales' && currentUser.Permissions?.canAccessStoreMedicine === false) {
+      setActiveSubTab('checkout');
+    } else if (activeSubTab === 'return' && currentUser.Permissions?.canAccessSalesReturns === false) {
+      setActiveSubTab('checkout');
+    } else if (activeSubTab === 'inventory_manager' && currentUser.Permissions?.canAccessStockManager === false) {
+      setActiveSubTab('checkout');
+    } else if (activeSubTab === 'invoice_logs' && currentUser.Permissions?.canAccessInvoiceLogs === false) {
+      setActiveSubTab('checkout');
+    } else if (activeSubTab === 'clinical_labels' && currentUser.Permissions?.canAccessMedicineLabels === false) {
+      setActiveSubTab('checkout');
+    } else if (activeSubTab === 'grn' && (currentUser.Permissions?.canAccessErpPoGrn === false || currentUser.Permissions?.canAccessStockManager === false)) {
+      setActiveSubTab('checkout');
+    }
+  }, [currentUser?.Permissions, activeSubTab]);
+
   // Inventory Manager State
   const [editingItem, setEditingItem] = useState<Item | null>(null);
   const [invSearchQuery, setInvSearchQuery] = useState('');

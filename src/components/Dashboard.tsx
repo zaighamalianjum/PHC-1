@@ -84,32 +84,95 @@ export default function Dashboard({
   const [customStartDate, setCustomStartDate] = useState<string>(todayStr);
   const [customEndDate, setCustomEndDate] = useState<string>(todayStr);
 
-  // Month labels list for the dropdown (Months of Current Year + recent navigation)
+  // Helper to extract clean YYYY-MM-DD from any date representation
+  const getNormalizedYMD = (dateField?: any): string => {
+    if (!dateField) return '';
+    if (typeof dateField === 'string') {
+      const trimmed = dateField.trim();
+      if (trimmed.includes('T')) {
+        return trimmed.split('T')[0];
+      }
+      if (trimmed.includes(' ')) {
+        const first = trimmed.split(' ')[0].replace(/\//g, '-');
+        if (first.length === 10 && first.startsWith('20')) return first;
+      }
+      if (trimmed.includes('/')) {
+        const parts = trimmed.split('/');
+        if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+        } else if (parts[2]?.length === 4) {
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+      if (trimmed.includes('-')) {
+        const parts = trimmed.split('-');
+        if (parts[0].length === 4) {
+          return `${parts[0]}-${parts[1].padStart(2, '0')}-${(parts[2] || '01').slice(0, 2).padStart(2, '0')}`;
+        } else if (parts[2]?.length === 4) {
+          return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+      return trimmed.slice(0, 10);
+    }
+    if (dateField instanceof Date && !isNaN(dateField.getTime())) {
+      return dateField.toISOString().split('T')[0];
+    }
+    return '';
+  };
+
+  // Month labels list for the dropdown (Months of Current Year + any months found in database)
   const monthOptions = useMemo(() => {
-    const months = [
-      { num: '01', name: 'January' },
-      { num: '02', name: 'February' },
-      { num: '03', name: 'March' },
-      { num: '04', name: 'April' },
-      { num: '05', name: 'May' },
-      { num: '06', name: 'June' },
-      { num: '07', name: 'July' },
-      { num: '08', name: 'August' },
-      { num: '09', name: 'September' },
-      { num: '10', name: 'October' },
-      { num: '11', name: 'November' },
-      { num: '12', name: 'December' },
+    const monthNames = [
+      'January', 'February', 'March', 'April', 'May', 'June',
+      'July', 'August', 'September', 'October', 'November', 'December'
     ];
-    return months.map(m => {
-      const ym = `${currentYear}-${m.num}`;
+
+    // Collect all distinct months from data to ensure historical months are always selectable
+    const ymSet = new Set<string>();
+    
+    // Add current year months
+    for (let m = 1; m <= 12; m++) {
+      ymSet.add(`${currentYear}-${m.toString().padStart(2, '0')}`);
+    }
+
+    // Add previous year months
+    for (let m = 1; m <= 12; m++) {
+      ymSet.add(`${currentYear - 1}-${m.toString().padStart(2, '0')}`);
+    }
+
+    // Scan existing data for any extra recorded months
+    const scanDates = (arr: any[], field: string) => {
+      arr.forEach(item => {
+        if (item && item[field]) {
+          const ymd = getNormalizedYMD(item[field]);
+          if (ymd && ymd.length >= 7) {
+            ymSet.add(ymd.slice(0, 7));
+          }
+        }
+      });
+    };
+
+    scanDates(appointments, 'AppointmentDate');
+    scanDates(tokens, 'Date');
+    scanDates(invoices, 'InvoiceDate');
+    scanDates(salesReturns, 'ReturnDate');
+    scanDates(visits, 'VisitDate');
+
+    // Sort descending (most recent first)
+    const sorted = Array.from(ymSet).sort().reverse();
+
+    return sorted.map(ym => {
+      const [y, mStr] = ym.split('-');
+      const mIndex = parseInt(mStr, 10) - 1;
+      const mName = monthNames[mIndex] || `Month ${mStr}`;
       const isCurrent = ym === currentYearMonth;
       return {
         value: ym,
-        label: `${m.name}-${currentYear}${isCurrent ? ' (Current)' : ''}`,
+        label: `${mName} ${y}${isCurrent ? ' (Current)' : ''}`,
         isCurrent
       };
     });
-  }, [currentYear, currentYearMonth]);
+  }, [currentYear, currentYearMonth, appointments, tokens, invoices, salesReturns, visits]);
 
   // Selected month display name
   const selectedMonthLabel = useMemo(() => {
@@ -118,27 +181,29 @@ export default function Dashboard({
     return selectedMonthYear;
   }, [monthOptions, selectedMonthYear]);
 
-  const isInDateRange = (dateField?: string) => {
+  const isInDateRange = (dateField?: any) => {
     if (!dateField) return false;
-    const d = dateField.split('T')[0];
+    const d = getNormalizedYMD(dateField);
+    if (!d) return false;
+
     if (dateFilter === 'month_select') {
       return d.startsWith(selectedMonthYear);
     }
     if (dateFilter === 'today') {
-      return d === todayStr || d === '2026-07-03';
+      return d === todayStr;
     }
     if (dateFilter === 'this_week') {
       const targetDate = new Date(d);
       const now = new Date(todayStr);
       const diffTime = Math.abs(now.getTime() - targetDate.getTime());
       const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      return diffDays <= 7 || d === '2026-07-03';
+      return diffDays <= 7;
     }
     if (dateFilter === 'this_month') {
-      return d.startsWith(todayStr.slice(0, 7)) || d.startsWith('2026-07');
+      return d.startsWith(todayStr.slice(0, 7));
     }
     if (dateFilter === 'this_year') {
-      return d.startsWith(todayStr.slice(0, 4)) || d.startsWith('2026');
+      return d.startsWith(todayStr.slice(0, 4));
     }
     if (dateFilter === 'custom') {
       if (customStartDate && customEndDate) {
@@ -151,31 +216,31 @@ export default function Dashboard({
     return true; // 'all'
   };
 
-  // Filtered dataset references
+  // Filtered dataset references - Re-computes whenever selectedMonthYear or dateFilter changes!
   const targetApps = useMemo(() => {
     if (dateFilter === 'all') return appointments;
     return appointments.filter((a) => isInDateRange(a.AppointmentDate));
-  }, [appointments, dateFilter, todayStr, customStartDate, customEndDate]);
+  }, [appointments, dateFilter, selectedMonthYear, todayStr, customStartDate, customEndDate]);
 
   const targetTokens = useMemo(() => {
     if (dateFilter === 'all') return tokens;
     return tokens.filter((t) => isInDateRange(t.Date));
-  }, [tokens, dateFilter, todayStr, customStartDate, customEndDate]);
+  }, [tokens, dateFilter, selectedMonthYear, todayStr, customStartDate, customEndDate]);
 
   const targetInvoices = useMemo(() => {
     if (dateFilter === 'all') return invoices;
     return invoices.filter((i) => isInDateRange(i.InvoiceDate));
-  }, [invoices, dateFilter, todayStr, customStartDate, customEndDate]);
+  }, [invoices, dateFilter, selectedMonthYear, todayStr, customStartDate, customEndDate]);
 
   const targetSalesReturns = useMemo(() => {
     if (dateFilter === 'all') return salesReturns;
     return salesReturns.filter((r) => isInDateRange(r.ReturnDate));
-  }, [salesReturns, dateFilter, todayStr, customStartDate, customEndDate]);
+  }, [salesReturns, dateFilter, selectedMonthYear, todayStr, customStartDate, customEndDate]);
 
   const targetVisits = useMemo(() => {
     if (dateFilter === 'all') return visits;
     return visits.filter((v) => isInDateRange(v.VisitDate));
-  }, [visits, dateFilter, todayStr, customStartDate, customEndDate]);
+  }, [visits, dateFilter, selectedMonthYear, todayStr, customStartDate, customEndDate]);
 
   // Helper to determine shift for visit if not directly set
   const getVisitShift = (v: Visit): 1 | 2 => {
@@ -259,16 +324,16 @@ export default function Dashboard({
 
   const getUniquePatientCountForShift = (shiftNum: 1 | 2) => {
     const datesSet = new Set<string>();
-    targetApps.forEach(a => { if (a.AppointmentDate) datesSet.add(a.AppointmentDate.split('T')[0]); });
-    targetTokens.forEach(t => { if (t.Date) datesSet.add(t.Date.split('T')[0]); });
-    targetVisits.forEach(v => { if (v.VisitDate) datesSet.add(v.VisitDate.split('T')[0]); });
+    targetApps.forEach(a => { const d = getNormalizedYMD(a.AppointmentDate); if (d) datesSet.add(d); });
+    targetTokens.forEach(t => { const d = getNormalizedYMD(t.Date); if (d) datesSet.add(d); });
+    targetVisits.forEach(v => { const d = getNormalizedYMD(v.VisitDate); if (d) datesSet.add(d); });
 
     let totalUniqueVisits = 0;
 
     datesSet.forEach(dateStr => {
-      const shiftApps = targetApps.filter(a => a.AppointmentDate?.startsWith(dateStr) && (a.Shift || 1) === shiftNum && a.Status !== 3);
-      const shiftTokens = targetTokens.filter(t => t.Date?.startsWith(dateStr) && (t.Shift || 1) === shiftNum && t.Status !== 3);
-      const shiftVisits = targetVisits.filter(v => v.VisitDate?.startsWith(dateStr) && getVisitShift(v) === shiftNum && (v as any).Status !== 3);
+      const shiftApps = targetApps.filter(a => getNormalizedYMD(a.AppointmentDate) === dateStr && (a.Shift || 1) === shiftNum && a.Status !== 3);
+      const shiftTokens = targetTokens.filter(t => getNormalizedYMD(t.Date) === dateStr && (t.Shift || 1) === shiftNum && t.Status !== 3);
+      const shiftVisits = targetVisits.filter(v => getNormalizedYMD(v.VisitDate) === dateStr && getVisitShift(v) === shiftNum && (v as any).Status !== 3);
 
       const patientSet = new Set<string>();
       shiftApps.forEach(a => {

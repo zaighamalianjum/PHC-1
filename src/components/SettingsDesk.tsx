@@ -70,6 +70,7 @@ import {
 } from 'lucide-react';
 import { User, ClinicSettings, SmsSettings, MongoDbSettings, UserRight, City, Patient } from '../types';
 import { ROLE_RIGHTS, INITIAL_CITIES } from '../data/initialData';
+import { broadcastUserSync } from '../utils/userSync';
 
 interface SettingsDeskProps {
   clinicSettings: ClinicSettings;
@@ -536,6 +537,7 @@ export default function SettingsDesk({
     };
 
     setUsersList(prev => prev.map(u => u.UserID === selectedAccessUser.UserID ? updatedUser : u));
+    broadcastUserSync('PERMISSIONS_UPDATED', updatedUser, selectedAccessUser.UserID);
 
     const bridgeUrl = mongoDbSettings.BridgeUrl || window.location.origin;
     fetch(`${bridgeUrl}/api/users/${selectedAccessUser.UserID}`, {
@@ -545,6 +547,7 @@ export default function SettingsDesk({
     })
       .then(res => res.json())
       .then(() => {
+        broadcastUserSync('PERMISSIONS_UPDATED', updatedUser, selectedAccessUser.UserID);
         setSuccessMsg(`Custom Access Rights & User-to-User permissions for "${selectedAccessUser.FullName}" saved to database successfully!`);
       })
       .catch(err => {
@@ -757,6 +760,7 @@ export default function SettingsDesk({
     };
 
     setUsersList(prev => [...prev, newUser]);
+    broadcastUserSync('USER_CREATED', newUser, newUser.UserID);
 
     const bridgeUrl = mongoDbSettings.BridgeUrl || window.location.origin;
     fetch(`${bridgeUrl}/api/users`, {
@@ -766,6 +770,7 @@ export default function SettingsDesk({
     })
       .then(res => res.json())
       .then(() => {
+        broadcastUserSync('USER_CREATED', newUser, newUser.UserID);
         setSuccessMsg(`User profile for "${newUser.FullName}" created and saved to MongoDB successfully!`);
       })
       .catch(err => {
@@ -808,6 +813,7 @@ export default function SettingsDesk({
     };
 
     setUsersList(prev => prev.map(u => u.UserID === userId ? updatedUser : u));
+    broadcastUserSync('USER_UPDATED', updatedUser, userId);
 
     const bridgeUrl = mongoDbSettings.BridgeUrl || window.location.origin;
     fetch(`${bridgeUrl}/api/users/${userId}`, {
@@ -817,6 +823,7 @@ export default function SettingsDesk({
     })
       .then(res => res.json())
       .then(() => {
+        broadcastUserSync('USER_UPDATED', updatedUser, userId);
         setSuccessMsg('User profile updated and saved to MongoDB successfully.');
       })
       .catch(err => {
@@ -834,6 +841,7 @@ export default function SettingsDesk({
 
     if (window.confirm('Are you sure you want to delete this user profile? This action cannot be reversed.')) {
       setUsersList(prev => prev.filter(u => u.UserID !== userId));
+      broadcastUserSync('USER_DELETED', undefined, userId);
 
       const bridgeUrl = mongoDbSettings.BridgeUrl || window.location.origin;
       fetch(`${bridgeUrl}/api/users/${userId}`, {
@@ -841,6 +849,7 @@ export default function SettingsDesk({
       })
         .then(res => res.json())
         .then(() => {
+          broadcastUserSync('USER_DELETED', undefined, userId);
           setSuccessMsg('User profile deleted from MongoDB successfully.');
         })
         .catch(err => {

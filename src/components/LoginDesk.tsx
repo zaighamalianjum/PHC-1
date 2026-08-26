@@ -31,9 +31,19 @@ interface LoginDeskProps {
   onUserUpdated?: (user: UserType) => void;
   clinicName: string;
   clinicLogoImage?: string;
+  sessionRevokedAlert?: string | null;
+  onDismissSessionRevokedAlert?: () => void;
 }
 
-export default function LoginDesk({ usersList, onLoginSuccess, onUserUpdated, clinicName, clinicLogoImage }: LoginDeskProps) {
+export default function LoginDesk({ 
+  usersList, 
+  onLoginSuccess, 
+  onUserUpdated, 
+  clinicName, 
+  clinicLogoImage,
+  sessionRevokedAlert,
+  onDismissSessionRevokedAlert
+}: LoginDeskProps) {
   // Main Login State
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -297,6 +307,26 @@ export default function LoginDesk({ usersList, onLoginSuccess, onUserUpdated, cl
                   </p>
                 </div>
               </div>
+
+              {/* Session Alert / User Access Notice */}
+              {sessionRevokedAlert && (
+                <div className="p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 text-xs font-medium tracking-wide flex items-start space-x-2.5 animate-fadeIn">
+                  <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+                  <div className="flex-1">
+                    <p className="font-bold text-amber-950">Security & Session Notice</p>
+                    <p className="text-[11px] text-amber-800 mt-0.5">{sessionRevokedAlert}</p>
+                  </div>
+                  {onDismissSessionRevokedAlert && (
+                    <button 
+                      type="button" 
+                      onClick={onDismissSessionRevokedAlert}
+                      className="text-amber-600 hover:text-amber-900 text-xs font-bold px-1"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              )}
 
               {/* Error Message */}
               {errorMessage && (

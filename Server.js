@@ -3710,8 +3710,13 @@ app.delete('/api/smart-locator/all', async (req, res) => {
 // 💾 MASTER DATABASE RESTORE & BACKUP IMPORT ENDPOINTS
 // Handles 250MB+ JSON restores safely with chunking, upserting, and collection auto-mapping
 // ==========================================================================================
-const isExcludedNhcCollection = (name) => {
-  return false;
+const isExcludedNhcCollection = (name, includeNhc = false) => {
+  if (includeNhc === true || includeNhc === 'true' || includeNhc === '1') {
+    return false; // User explicitly opted to include nhc_patient_history
+  }
+  if (!name) return false;
+  const n = name.toLowerCase().trim();
+  return n === 'nhc_patient_history' || n === 'nhcpatienthistory' || n === 'nhc_patients' || n.includes('nhc_patient');
 };
 
 function sanitizeMongoDoc(rawDoc) {
@@ -3737,16 +3742,16 @@ function sanitizeMongoDoc(rawDoc) {
 
 app.post('/api/restore/collection-chunk', async (req, res) => {
   try {
-    const { collectionName, records, wipe, mode } = req.body;
+    const { collectionName, records, wipe, mode, includeNhcHistory } = req.body;
     if (!collectionName || !Array.isArray(records)) {
       return res.status(400).json({ error: 'Invalid parameters: collectionName and records array are required.' });
     }
 
     const colName = collectionName.toLowerCase().trim();
 
-    // Strictly exclude nhc_patient_history from restoration
-    if (isExcludedNhcCollection(colName)) {
-      return res.json({ success: true, collection: colName, count: 0, message: 'nhc_patient_history collection is excluded from restoration.' });
+    // Respect user configuration for nhc_patient_history
+    if (isExcludedNhcCollection(colName, includeNhcHistory)) {
+      return res.json({ success: true, collection: colName, count: 0, skipped: true, message: 'nhc_patient_history collection is skipped as per configuration.' });
     }
 
     if (records.length === 0) {
@@ -3839,7 +3844,7 @@ app.post('/api/restore/collection-chunk', async (req, res) => {
 
 app.post('/api/restore/full-database', async (req, res) => {
   try {
-    const { wipe, data } = req.body;
+    const { wipe, data, includeNhcHistory } = req.body;
     if (!data) {
       return res.status(400).json({ error: 'No data provided for database restore.' });
     }
@@ -3851,8 +3856,8 @@ app.post('/api/restore/full-database', async (req, res) => {
       if (!Array.isArray(recordsList) || recordsList.length === 0) return 0;
       const cleanName = colName.toLowerCase().trim();
 
-      // Strictly exclude nhc_patient_history from restoration
-      if (isExcludedNhcCollection(cleanName)) {
+      // Respect user configuration for nhc_patient_history
+      if (isExcludedNhcCollection(cleanName, includeNhcHistory)) {
         return 0;
       }
 
@@ -4283,6 +4288,7 @@ app.get('/api/mongodb/backup', async (req, res) => {
   try {
     const targetDbName = db instanceof InMemoryDB ? "PharmacyPOSDB" : (db.databaseName || "PharmacyPOSDB");
     const requestedFormat = (req.query.format || 'zip').toString().toLowerCase();
+    const includeNhcHistory = req.query.includeNhcHistory === 'true' || req.query.includeNhc === 'true' || req.query.includeNhcHistory === '1';
 
     const backupData = {
       backupDate: new Date().toISOString(),
@@ -4294,14 +4300,14 @@ app.get('/api/mongodb/backup', async (req, res) => {
 
     if (db instanceof InMemoryDB) {
       for (const [collName, docs] of Object.entries(db.collections || {})) {
-        if (isExcludedNhcCollection(collName)) continue; // Strictly exclude nhc_patient_history
+        if (isExcludedNhcCollection(collName, includeNhcHistory)) continue;
         backupData.collections[collName] = Array.isArray(docs) ? docs : [];
       }
     } else {
       const collections = await db.listCollections().toArray();
       for (const collInfo of collections) {
         const name = collInfo.name;
-        if (isExcludedNhcCollection(name)) continue; // Strictly exclude nhc_patient_history
+        if (isExcludedNhcCollection(name, includeNhcHistory)) continue;
         const docs = await db.collection(name).find({}).toArray();
         backupData.collections[name] = docs;
       }

@@ -87,6 +87,7 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
 
   // Backup format preference: 'zip' (high compression DEFLATE) or 'json' (uncompressed)
   const [backupFormat, setBackupFormat] = useState<'zip' | 'json'>('zip');
+  const [includeNhcHistory, setIncludeNhcHistory] = useState<boolean>(false);
   const [rawSizeKb, setRawSizeKb] = useState<number>(0);
 
   // Table filtering state
@@ -104,7 +105,7 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
   // Reset and start backup process on modal open
   useEffect(() => {
     if (isOpen) {
-      startBackupProcess(backupFormat);
+      startBackupProcess(backupFormat, includeNhcHistory);
     } else {
       setIsRunning(false);
       setIsCompleted(false);
@@ -120,7 +121,7 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
     setLogs((prev) => [...prev, `[${timeStr}] ${msg}`]);
   };
 
-  const startBackupProcess = async (selectedFormat: 'zip' | 'json' = backupFormat) => {
+  const startBackupProcess = async (selectedFormat: 'zip' | 'json' = backupFormat, includeNhc: boolean = includeNhcHistory) => {
     setIsRunning(true);
     setIsCompleted(false);
     setCurrentIndex(0);
@@ -134,9 +135,13 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
       setAssembledBlobUrl(null);
     }
 
+    const activeCollections = includeNhc
+      ? [...COLLECTIONS_TO_BACKUP, { key: 'cms_nhc_patients', name: 'Legacy NHC Patient History (nhc_patient_history)', category: 'patients' as const }]
+      : COLLECTIONS_TO_BACKUP;
+
     // Initialize stats
     const initialStats: Record<string, { count: number; status: 'pending' | 'processing' | 'done' }> = {};
-    COLLECTIONS_TO_BACKUP.forEach((col) => {
+    activeCollections.forEach((col) => {
       initialStats[col.key] = { count: 0, status: 'pending' };
     });
     setCollectionStats(initialStats);
@@ -151,7 +156,7 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
     setDownloadFileName(finalDownloadName);
 
     addLog(`🚀 Initializing System Data Protection & Database Snapshot Engine...`);
-    addLog(`📦 Target Database: [${targetDbName}] | Format: [${isZipMode ? 'Compressed ZIP Archive (.zip)' : 'Compact Raw JSON (.json)'}]`);
+    addLog(`📦 Target Database: [${targetDbName}] | Format: [${isZipMode ? 'Compressed ZIP Archive (.zip)' : 'Compact Raw JSON (.json)'}] | nhc_patient_history: [${includeNhc ? 'INCLUDED' : 'SKIPPED'}]`);
     
     // Check API availability first
     let apiSuccess = false;
@@ -161,8 +166,8 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
     const fullBridgeUrl = bridgeUrl || (typeof window !== 'undefined' ? window.location.origin : '');
 
     try {
-      addLog(`🌐 Connecting to database server bridge endpoint (${fullBridgeUrl}/api/mongodb/backup?format=${selectedFormat})...`);
-      const response = await fetch(`${fullBridgeUrl}/api/mongodb/backup?format=${selectedFormat}`);
+      addLog(`🌐 Connecting to database server bridge endpoint (${fullBridgeUrl}/api/mongodb/backup?format=${selectedFormat}&includeNhcHistory=${includeNhc})...`);
+      const response = await fetch(`${fullBridgeUrl}/api/mongodb/backup?format=${selectedFormat}&includeNhcHistory=${includeNhc}`);
       if (response.ok) {
         const blob = await response.blob();
         apiBlobUrl = window.URL.createObjectURL(blob);
@@ -181,14 +186,14 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
       backupDate: new Date().toISOString(),
       system: 'Punjab Homeopathic Clinic EMR & Pharmacy POS',
       databaseName: targetDbName,
-      collectionsCount: COLLECTIONS_TO_BACKUP.length,
+      collectionsCount: activeCollections.length,
       collections: {}
     };
 
     let accumRecords = 0;
 
-    for (let i = 0; i < COLLECTIONS_TO_BACKUP.length; i++) {
-      const col = COLLECTIONS_TO_BACKUP[i];
+    for (let i = 0; i < activeCollections.length; i++) {
+      const col = activeCollections[i];
       setCurrentIndex(i);
       setCurrentCollectionName(col.name);
 
@@ -197,7 +202,7 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
         [col.key]: { count: 0, status: 'processing' }
       }));
 
-      addLog(`⏳ [TABLE ${i + 1}/${COLLECTIONS_TO_BACKUP.length}] Backing up: ${col.name} (${col.key})...`);
+      addLog(`⏳ [TABLE ${i + 1}/${activeCollections.length}] Backing up: ${col.name} (${col.key})...`);
 
       // Artificial small delay for visual feedback & smooth real-time progress display
       await new Promise((res) => setTimeout(res, 80));
@@ -237,7 +242,7 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
     }
 
     // Finished looping through collections
-    setCurrentIndex(COLLECTIONS_TO_BACKUP.length);
+    setCurrentIndex(activeCollections.length);
 
     let finalBlobUrl = apiBlobUrl;
     let finalKb = apiSizeKb;
@@ -308,16 +313,20 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
 
   if (!isOpen) return null;
 
-  const totalCols = COLLECTIONS_TO_BACKUP.length;
+  const activeCollectionsList = includeNhcHistory
+    ? [...COLLECTIONS_TO_BACKUP, { key: 'cms_nhc_patients', name: 'Legacy NHC Patient History (nhc_patient_history)', category: 'patients' as const }]
+    : COLLECTIONS_TO_BACKUP;
+
+  const totalCols = activeCollectionsList.length;
   const progressPercent = Math.min(100, Math.round((currentIndex / totalCols) * 100));
 
   // Compute stats counters for status bar
-  const finishedCount = COLLECTIONS_TO_BACKUP.filter((c) => collectionStats[c.key]?.status === 'done').length;
-  const processingCount = COLLECTIONS_TO_BACKUP.filter((c) => collectionStats[c.key]?.status === 'processing').length;
+  const finishedCount = activeCollectionsList.filter((c) => collectionStats[c.key]?.status === 'done').length;
+  const processingCount = activeCollectionsList.filter((c) => collectionStats[c.key]?.status === 'processing').length;
   const pendingCount = totalCols - finishedCount - processingCount;
 
   // Filtered collections for the detailed list view
-  const filteredCollections = COLLECTIONS_TO_BACKUP.filter((col) => {
+  const filteredCollections = activeCollectionsList.filter((col) => {
     const matchesCat = activeCategoryFilter === 'all' || col.category === activeCategoryFilter;
     const matchesSearch =
       searchQuery.trim() === '' ||
@@ -382,7 +391,7 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
                 disabled={isRunning}
                 onClick={() => {
                   setBackupFormat('zip');
-                  if (isCompleted) startBackupProcess('zip');
+                  if (isCompleted) startBackupProcess('zip', includeNhcHistory);
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
                   backupFormat === 'zip'
@@ -399,7 +408,7 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
                 disabled={isRunning}
                 onClick={() => {
                   setBackupFormat('json');
-                  if (isCompleted) startBackupProcess('json');
+                  if (isCompleted) startBackupProcess('json', includeNhcHistory);
                 }}
                 className={`px-3 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer ${
                   backupFormat === 'json'
@@ -410,6 +419,42 @@ export const BackupProgressModal: React.FC<BackupProgressModalProps> = ({
                 <span>📄 Raw JSON (.json)</span>
               </button>
             </div>
+          </div>
+
+          {/* NHC Patient History Setting Checkbox for Backup */}
+          <div className="bg-slate-950/90 border border-slate-800 hover:border-slate-700 rounded-xl p-3.5 flex items-center justify-between gap-3 transition">
+            <label className="flex items-start space-x-3 cursor-pointer select-none flex-1">
+              <input
+                type="checkbox"
+                checked={includeNhcHistory}
+                onChange={(e) => {
+                  const val = e.target.checked;
+                  setIncludeNhcHistory(val);
+                  startBackupProcess(backupFormat, val);
+                }}
+                disabled={isRunning}
+                className="mt-0.5 w-4 h-4 text-emerald-500 rounded border-slate-600 bg-slate-900 focus:ring-emerald-500/30 cursor-pointer disabled:opacity-50"
+              />
+              <div className="flex-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-200">
+                    Include `nhc_patient_history` Table in Backup
+                  </span>
+                  <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                    includeNhcHistory 
+                      ? 'bg-amber-900/60 text-amber-300 border-amber-500/50' 
+                      : 'bg-emerald-900/60 text-emerald-300 border-emerald-500/50'
+                  }`}>
+                    {includeNhcHistory ? 'History Included in Archive' : '✓ Excluded / Skipped (Lightweight)'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5 leading-tight">
+                  {includeNhcHistory
+                    ? 'Full legacy patient archive table will be included in the downloaded snapshot.'
+                    : 'Default (Unchecked): nhc_patient_history is skipped for a much smaller file size and ultra-fast download.'}
+                </p>
+              </div>
+            </label>
           </div>
 
           {/* Progress Bar Header Card */}

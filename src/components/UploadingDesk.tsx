@@ -88,6 +88,7 @@ export default function UploadingDesk({
   const fileInputMasterRef = React.useRef<HTMLInputElement>(null);
   const [masterFile, setMasterFile] = useState<File | null>(null);
   const [masterRestoreMode, setMasterRestoreMode] = useState<'wipe' | 'merge'>('wipe');
+  const [includeNhcHistoryRestore, setIncludeNhcHistoryRestore] = useState<boolean>(false);
   const [isRestoringMaster, setIsRestoringMaster] = useState(false);
   const [masterRestoreProgress, setMasterRestoreProgress] = useState(0);
   const [masterRestoreStatusText, setMasterRestoreStatusText] = useState('');
@@ -135,7 +136,10 @@ export default function UploadingDesk({
 
       // Helper to identify excluded legacy collections
       const isExcludedNhcCollection = (name: string) => {
-        return false;
+        if (includeNhcHistoryRestore) return false;
+        if (!name) return false;
+        const n = name.toLowerCase().trim();
+        return n === 'nhc_patient_history' || n === 'nhcpatienthistory' || n === 'nhc_patients' || n.includes('nhc_patient');
       };
 
       // Helper to strip immutable _id field and format nested date/oid types
@@ -280,7 +284,8 @@ export default function UploadingDesk({
               collectionName: colName,
               records: chunk,
               mode: masterRestoreMode,
-              wipe: isFirstChunkForCol && masterRestoreMode === 'wipe'
+              wipe: isFirstChunkForCol && masterRestoreMode === 'wipe',
+              includeNhcHistory: includeNhcHistoryRestore
             })
           });
 
@@ -2176,10 +2181,48 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                 </div>
               </div>
 
+              {/* NHC Patient History Setting Checkbox */}
+              <div className="space-y-2">
+                <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
+                  2. NHC Patient History Table Option
+                </label>
+                <label className={`flex items-start space-x-3 p-3.5 rounded-xl border transition cursor-pointer ${
+                  includeNhcHistoryRestore 
+                    ? 'border-amber-400 bg-amber-50/60 ring-1 ring-amber-300' 
+                    : 'border-slate-200 bg-slate-50 hover:bg-slate-100/70'
+                }`}>
+                  <input
+                    type="checkbox"
+                    checked={includeNhcHistoryRestore}
+                    onChange={(e) => setIncludeNhcHistoryRestore(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 text-indigo-600 rounded border-slate-300 focus:ring-indigo-500 cursor-pointer"
+                  />
+                  <div className="flex-1">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-slate-800">
+                        Include `nhc_patient_history` in Restore
+                      </span>
+                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full border ${
+                        includeNhcHistoryRestore 
+                          ? 'bg-amber-100 text-amber-900 border-amber-300' 
+                          : 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                      }`}>
+                        {includeNhcHistoryRestore ? 'Will Restore History' : '✓ Skipped (Safe & Fast)'}
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-slate-500 mt-1 leading-tight">
+                      {includeNhcHistoryRestore 
+                        ? '⚠️ nhc_patient_history table will be restored from backup file into MongoDB.' 
+                        : 'Default (Unchecked): nhc_patient_history table is automatically skipped to protect existing archive and save restore time.'}
+                    </p>
+                  </div>
+                </label>
+              </div>
+
               {/* Drag & Drop File Selector */}
               <div className="space-y-2">
                 <label className="text-xs font-bold text-slate-700 uppercase tracking-wider block">
-                  2. Choose Backup File (.JSON or .ZIP)
+                  3. Choose Backup File (.JSON or .ZIP)
                 </label>
                 <input
                   type="file"

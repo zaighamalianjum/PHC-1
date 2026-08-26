@@ -98,6 +98,8 @@ import {
   GenericModuleSkeleton
 } from './components/ModuleSkeletons';
 import { ClinicSettings, SmsSettings, MongoDbSettings } from './types';
+import { subscribeToUserSync, haveUserPermissionsChanged, broadcastUserSync } from './utils/userSync';
+import { ShieldAlert, BellRing } from 'lucide-react';
 
 const MENU_ITEMS = [
   { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, restricted: true },
@@ -166,13 +168,143 @@ export default function App() {
     return sessionStorage.getItem('cms_is_authenticated') === 'true';
   });
 
+  // MongoDB Connection settings
+  const [mongoDbSettings, setMongoDbSettings] = useState<MongoDbSettings>(() => {
+    const cached = localStorage.getItem('cms_mongodb_settings');
+    if (cached) {
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed.BridgeUrl === 'http://localhost:5000' || !parsed.BridgeUrl) {
+          parsed.BridgeUrl = typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000';
+        }
+        return parsed;
+      } catch (e) {}
+    }
+    return {
+      ConnectionString: 'mongodb://localhost:27017/PharmacyPOSDB',
+      DatabaseName: 'PharmacyPOSDB',
+      SyncEnabled: true,
+      BridgeUrl: typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000'
+    };
+  });
+
+  // User Access Notification Banner State (shown when Admin updates permissions from any session)
+  const [userAccessToast, setUserAccessToast] = useState<{ message: string; timestamp: number } | null>(null);
+
+  // Session Revocation Alert (shown on login screen if Admin deactivated or removed the user's account)
+  const [sessionRevokedAlert, setSessionRevokedAlert] = useState<string | null>(null);
+
   useEffect(() => {
     if (isAuthenticated) {
       sessionStorage.setItem('cms_current_user', JSON.stringify(currentUser));
     }
   }, [currentUser, isAuthenticated]);
 
-  // Synchronize currentUser if updated in usersList
+  // Auto-dismiss user access toast after 5 seconds
+  useEffect(() => {
+    if (userAccessToast) {
+      const timer = setTimeout(() => {
+        setUserAccessToast(null);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [userAccessToast]);
+
+  // Real-time synchronization function for users and access permissions across all browsers & tabs
+  const syncUsersAndPermissions = async () => {
+    const bridgeUrl = mongoDbSettings.BridgeUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000');
+    try {
+      const res = await fetch(`${bridgeUrl}/api/users?_t=${Date.now()}`, {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data) && data.length > 0) {
+          // Update usersList in memory if anything changed
+          setUsersList(prev => {
+            if (JSON.stringify(prev) !== JSON.stringify(data)) {
+              return data;
+            }
+            return prev;
+          });
+
+          // If session is active, verify active user's status & permissions
+          if (isAuthenticated && currentUser) {
+            const freshSelf = data.find(
+              (u: User) => u.UserID === currentUser.UserID || (u.LoginName && u.LoginName.toLowerCase() === currentUser.LoginName.toLowerCase())
+            );
+
+            // Case 1: User account was deleted or deactivated by Admin -> immediately revoke active session!
+            if (!freshSelf || freshSelf.Status === 'Inactive') {
+              sessionStorage.removeItem('cms_current_user');
+              sessionStorage.removeItem('cms_is_authenticated');
+              setIsAuthenticated(false);
+              setSessionRevokedAlert(
+                `Your account profile (${currentUser.FullName || currentUser.LoginName}) has been deactivated or removed by the Administrator. Active session terminated.`
+              );
+              return;
+            }
+
+            // Case 2: Permissions, UserRights, Role, FullName, Shift, or Password changed by Admin
+            if (haveUserPermissionsChanged(currentUser, freshSelf)) {
+              setCurrentUser(freshSelf);
+              sessionStorage.setItem('cms_current_user', JSON.stringify(freshSelf));
+              setUserAccessToast({
+                message: `User Access & Permissions updated by Administrator for "${freshSelf.FullName || freshSelf.LoginName}"!`,
+                timestamp: Date.now()
+              });
+              window.dispatchEvent(new CustomEvent('phc_user_permissions_updated', { detail: freshSelf }));
+              window.dispatchEvent(new CustomEvent('phc_db_updated'));
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // Ignore background network transient errors
+    }
+  };
+
+  // Continuous multi-device, multi-browser & multi-tab synchronization listeners
+  useEffect(() => {
+    // 1. Initial fast sync on component mount / auth change
+    syncUsersAndPermissions();
+
+    // 2. High-speed periodic poller (every 3.5 seconds) ensuring cross-browser/cross-device live sync
+    const pollerId = setInterval(syncUsersAndPermissions, 3500);
+
+    // 3. Tab-to-tab & storage event subscription (instant 0ms sync within same browser)
+    const unsubscribe = subscribeToUserSync(() => {
+      syncUsersAndPermissions();
+    });
+
+    // 4. Instant sync on focus / window activation
+    const handleFocus = () => syncUsersAndPermissions();
+
+    // 5. Instant sync on visibility change (when tab is switched back to foreground)
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        syncUsersAndPermissions();
+      }
+    };
+
+    // 6. Instant sync on network reconnect
+    const handleOnline = () => syncUsersAndPermissions();
+
+    window.addEventListener('focus', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibility);
+    window.addEventListener('online', handleOnline);
+
+    return () => {
+      clearInterval(pollerId);
+      unsubscribe();
+      window.removeEventListener('focus', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibility);
+      window.removeEventListener('online', handleOnline);
+    };
+  }, [currentUser.UserID, currentUser.LoginName, isAuthenticated, mongoDbSettings.BridgeUrl]);
+
+  // Synchronize currentUser if updated in usersList locally
   useEffect(() => {
     const updatedSelf = usersList.find(u => u.UserID === currentUser.UserID);
     if (updatedSelf && JSON.stringify(updatedSelf) !== JSON.stringify(currentUser)) {
@@ -302,27 +434,6 @@ export default function App() {
     BookingTemplate: 'Dear {PATIENT}, your OPD Token No. {TOKEN} for {SHIFT} Shift is booked successfully at Punjab Clinic for {DATE}. Ref ID: {APPID}.',
     RepeatTemplate: 'Dear {PATIENT}, your Follow-up OPD Token No. {TOKEN} ({SHIFT} Shift) is booked at Punjab Clinic for {DATE}. Ref ID: {APPID}.'
   });
-
-  // MongoDB Connection settings
-  const [mongoDbSettings, setMongoDbSettings] = useState<MongoDbSettings>(() => {
-    const cached = localStorage.getItem('cms_mongodb_settings');
-    if (cached) {
-      try {
-        const parsed = JSON.parse(cached);
-        if (parsed.BridgeUrl === 'http://localhost:5000' || !parsed.BridgeUrl) {
-          parsed.BridgeUrl = window.location.origin;
-        }
-        return parsed;
-      } catch (e) {}
-    }
-    return {
-      ConnectionString: 'mongodb://localhost:27017/PharmacyPOSDB',
-      DatabaseName: 'PharmacyPOSDB',
-      SyncEnabled: true,
-      BridgeUrl: window.location.origin
-    };
-  });
-
 
   // Master Database States (backed by both MongoDB/API and localStorage persistent fallbacks)
   const [cities, setCities] = useState<City[]>(() => getStoredState('cms_cities', INITIAL_CITIES));
@@ -528,18 +639,14 @@ export default function App() {
     return right ? right.Status : false;
   };
 
-  // Auto-switch active tab if non-admin is currently on an inaccessible tab (such as dashboard)
+  // Auto-switch active tab if non-admin is currently on an inaccessible tab (or permissions changed in another session)
   useEffect(() => {
     if (!isAccessible(activeTab)) {
-      if (currentUser.Role === 'Pharmacist') {
-        setActiveTab('pharmacy');
-      } else if (currentUser.Role === 'Accountant') {
-        setActiveTab('reports');
-      } else {
-        setActiveTab('patients');
-      }
+      const allModules = ['patients', 'pharmacy', 'reports', 'erp_system', 'patient_visit', 'nhc_history', 'accounts', 'emr', 'settings', 'uploads', 'query_handler'];
+      const firstAllowed = allModules.find(tabId => isAccessible(tabId)) || 'patient_visit';
+      setActiveTab(firstAllowed);
     }
-  }, [currentUser.Role, currentUser.Permissions, activeTab]);
+  }, [currentUser, activeTab]);
 
   // User-to-User Access Control Helper
   const canUserAccessTargetUser = (targetUserOrId: User | string): boolean => {
@@ -2391,6 +2498,8 @@ export default function App() {
         }}
         clinicName={clinicSettings.ClinicName}
         clinicLogoImage={clinicSettings.ClinicLogoImage}
+        sessionRevokedAlert={sessionRevokedAlert}
+        onDismissSessionRevokedAlert={() => setSessionRevokedAlert(null)}
       />
     );
   }
@@ -2398,6 +2507,26 @@ export default function App() {
   return (
     <div className="flex h-screen bg-slate-100 overflow-hidden font-sans antialiased relative" id="punjab-cms-app">
       <TopProgressBar active={isRefreshing} />
+
+      {/* Floating Live User Access & Permissions Update Notification */}
+      {userAccessToast && (
+        <div className="fixed top-16 right-4 sm:right-6 z-50 animate-bounce flex items-center space-x-3 bg-slate-900 text-white px-4 py-3 rounded-2xl shadow-2xl border border-emerald-500/50 backdrop-blur-md">
+          <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+            <BellRing className="w-5 h-5 animate-pulse" />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-emerald-300">Live Access Update</p>
+            <p className="text-xs text-slate-200 font-medium">{userAccessToast.message}</p>
+          </div>
+          <button
+            onClick={() => setUserAccessToast(null)}
+            className="text-slate-400 hover:text-white text-xs font-bold px-1 cursor-pointer"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
       {/* Main workspace container with Bento theme layout */}
       <main className="flex-1 flex flex-col min-w-0 bg-slate-100 relative overflow-hidden h-screen" id="main-workspace">
         
