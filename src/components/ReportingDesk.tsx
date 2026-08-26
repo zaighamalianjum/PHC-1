@@ -12,6 +12,7 @@ import {
   ShoppingCart,
   Boxes,
   AlertTriangle,
+  Package,
   PackagePlus,
   TrendingUp,
   TrendingDown,
@@ -67,6 +68,9 @@ interface ReportingDeskProps {
   vendors?: ErpVendor[];
   purchaseOrders?: ErpPurchaseOrder[];
   grns?: ErpGrn[];
+  grnDetails?: any[];
+  suppliers?: any[];
+  tokens?: any[];
   transactions?: ErpTransaction[];
   employees?: ErpEmployee[];
   payrolls?: ErpPayroll[];
@@ -81,6 +85,10 @@ interface ReportingDeskProps {
   salesReturns?: any[];
   acLedger?: any[];
   tlAccounts?: any[];
+  flAccounts?: any[];
+  slAccounts?: any[];
+  vouchers?: any[];
+  voucherDetails?: any[];
   patients?: any[];
   visits?: any[];
   visitMedicines?: any[];
@@ -95,6 +103,9 @@ export default function ReportingDesk({
   vendors = [],
   purchaseOrders = [],
   grns = [],
+  grnDetails = [],
+  suppliers = [],
+  tokens = [],
   transactions = [],
   employees = [],
   payrolls = [],
@@ -110,6 +121,10 @@ export default function ReportingDesk({
   salesReturns = [],
   acLedger = [],
   tlAccounts = [],
+  flAccounts = [],
+  slAccounts = [],
+  vouchers = [],
+  voucherDetails = [],
   visits = [],
   patients = [],
   currentUser,
@@ -142,15 +157,56 @@ export default function ReportingDesk({
         fetch('/api/query/invoice_details').then(r => r.ok ? r.json() : []).catch(() => []),
         fetch('/api/query/sales_returns').then(r => r.ok ? r.json() : []).catch(() => [])
       ]);
-      if (Array.isArray(itRes) && itRes.length > 0) setFetchedItems(itRes);
-      if (Array.isArray(vRes) && vRes.length > 0) setFetchedVendors(vRes);
-      if (Array.isArray(poRes) && poRes.length > 0) setFetchedPOs(poRes);
-      if (Array.isArray(grnRes) && grnRes.length > 0) setFetchedGrns(grnRes);
-      if (Array.isArray(txRes) && txRes.length > 0) setFetchedTxns(txRes);
-      if (Array.isArray(payRes) && payRes.length > 0) setFetchedPayrolls(payRes);
-      if (Array.isArray(expRes) && expRes.length > 0) setFetchedExpenses(expRes);
-      if (Array.isArray(srRes) && srRes.length > 0) setFetchedSalesReturns(srRes);
-      
+
+      // Fallbacks from localStorage for resilient data availability
+      let finalItems = Array.isArray(itRes) && itRes.length > 0 ? itRes : [];
+      if (finalItems.length === 0) {
+        try { finalItems = JSON.parse(localStorage.getItem('cms_items') || '[]'); } catch (_) {}
+      }
+      if (finalItems.length > 0) setFetchedItems(finalItems);
+
+      let finalVendors = Array.isArray(vRes) && vRes.length > 0 ? vRes : [];
+      if (finalVendors.length === 0) {
+        try { finalVendors = JSON.parse(localStorage.getItem('cms_erp_vendors') || localStorage.getItem('cms_suppliers') || '[]'); } catch (_) {}
+      }
+      if (finalVendors.length > 0) setFetchedVendors(finalVendors);
+
+      let finalPOs = Array.isArray(poRes) && poRes.length > 0 ? poRes : [];
+      if (finalPOs.length === 0) {
+        try { finalPOs = JSON.parse(localStorage.getItem('cms_erp_purchase_orders') || '[]'); } catch (_) {}
+      }
+      if (finalPOs.length > 0) setFetchedPOs(finalPOs);
+
+      let finalGrns = Array.isArray(grnRes) && grnRes.length > 0 ? grnRes : [];
+      if (finalGrns.length === 0) {
+        try { finalGrns = JSON.parse(localStorage.getItem('cms_erp_grn') || localStorage.getItem('cms_grns') || '[]'); } catch (_) {}
+      }
+      if (finalGrns.length > 0) setFetchedGrns(finalGrns);
+
+      let finalTxns = Array.isArray(txRes) && txRes.length > 0 ? txRes : [];
+      if (finalTxns.length === 0) {
+        try { finalTxns = JSON.parse(localStorage.getItem('phc_erp_transactions') || localStorage.getItem('cms_erp_transactions') || '[]'); } catch (_) {}
+      }
+      if (finalTxns.length > 0) setFetchedTxns(finalTxns);
+
+      let finalPayrolls = Array.isArray(payRes) && payRes.length > 0 ? payRes : [];
+      if (finalPayrolls.length === 0) {
+        try { finalPayrolls = JSON.parse(localStorage.getItem('phc_erp_payroll') || localStorage.getItem('cms_erp_payroll') || '[]'); } catch (_) {}
+      }
+      if (finalPayrolls.length > 0) setFetchedPayrolls(finalPayrolls);
+
+      let finalExpenses = Array.isArray(expRes) && expRes.length > 0 ? expRes : [];
+      if (finalExpenses.length === 0) {
+        try { finalExpenses = JSON.parse(localStorage.getItem('phc_erp_expenses') || localStorage.getItem('cms_erp_expenses') || '[]'); } catch (_) {}
+      }
+      if (finalExpenses.length > 0) setFetchedExpenses(finalExpenses);
+
+      let finalReturns = Array.isArray(srRes) && srRes.length > 0 ? srRes : [];
+      if (finalReturns.length === 0) {
+        try { finalReturns = JSON.parse(localStorage.getItem('cms_sales_returns') || '[]'); } catch (_) {}
+      }
+      if (finalReturns.length > 0) setFetchedSalesReturns(finalReturns);
+
       let allInvs: any[] = [];
       let allDet: any[] = [];
       if (billingRes && Array.isArray(billingRes.headers)) allInvs = billingRes.headers;
@@ -160,6 +216,12 @@ export default function ReportingDesk({
       }
       if (Array.isArray(invDetRes) && invDetRes.length > 0) {
         allDet = [...allDet, ...invDetRes];
+      }
+      if (allInvs.length === 0) {
+        try { allInvs = JSON.parse(localStorage.getItem('cms_invoices') || '[]'); } catch (_) {}
+      }
+      if (allDet.length === 0) {
+        try { allDet = JSON.parse(localStorage.getItem('cms_invoice_details') || '[]'); } catch (_) {}
       }
       if (allInvs.length > 0) setFetchedInvoices(allInvs);
       if (allDet.length > 0) setFetchedInvoiceDetails(allDet);
@@ -184,9 +246,10 @@ export default function ReportingDesk({
 
   const effectiveVendors = useMemo(() => {
     if (Array.isArray(vendors) && vendors.length > 0) return vendors;
+    if (Array.isArray(suppliers) && suppliers.length > 0) return suppliers;
     if (Array.isArray(fetchedVendors) && fetchedVendors.length > 0) return fetchedVendors;
     return [];
-  }, [vendors, fetchedVendors]);
+  }, [vendors, suppliers, fetchedVendors]);
 
   const effectivePOs = useMemo(() => {
     if (Array.isArray(purchaseOrders) && purchaseOrders.length > 0) return purchaseOrders;
@@ -236,6 +299,12 @@ export default function ReportingDesk({
     if (Array.isArray(fetchedSalesReturns) && fetchedSalesReturns.length > 0) return fetchedSalesReturns;
     return [];
   }, [salesReturns, fetchedSalesReturns]);
+
+  const effectiveVisits = useMemo(() => {
+    if (Array.isArray(visits) && visits.length > 0) return visits;
+    if (Array.isArray(patientVisits) && patientVisits.length > 0) return patientVisits;
+    return [];
+  }, [visits, patientVisits]);
 
   // Helper stock extractors
   const getItemStock = (item: any) => {
@@ -726,49 +795,176 @@ export default function ReportingDesk({
 
   // Report 8: P&L Summary Statement
   const pnlSummaryData = useMemo(() => {
-    // Inflows
-    const apptFees = appointments
-      .filter(a => isWithinDateRange(a.AppointmentDate) && a.Status !== 3)
-      .reduce((sum, a) => sum + (Number(a.FeeCharged) || 0), 0);
+    // 1. OPD REVENUE & INFLOWS (Visits, Consultations, Card/File Fees, Dispensing, Appointments)
+    let opdConsultationFees = 0;
+    let opdCardFees = 0;
+    let opdDispensingFees = 0;
+    const countedVisitKeys = new Set<string>();
 
-    const posIncome = posSales
-      .filter(s => isWithinDateRange(s.InvoiceDate || s.date))
-      .reduce((sum, s) => sum + (Number(s.NetPayable || s.GrandTotal || s.totalAmount) || 0), 0);
+    effectiveVisits.forEach((v: any) => {
+      const vDate = parseCleanDate(v.VisitDate || v.Date || v.CreatedAt);
+      if (isWithinDateRange(vDate)) {
+        const vKey = String(v.VisitID || v.id || `${v.PatientID}_${vDate}`);
+        countedVisitKeys.add(vKey);
 
-    const otherIncome = transactions
-      .filter(t => isWithinDateRange(t.Date) && t.Type === 'Income' && !t.VendorID && !t.VendorName && !t.Category?.toLowerCase().includes('vendor') && !t.Category?.toLowerCase().includes('payable') && !t.Category?.toLowerCase().includes('supplier'))
-      .reduce((sum, t) => sum + (Number(t.Amount) || 0), 0);
+        const consult = Number(v.ConsultationFee) || (v.FeeReceived !== undefined ? Number(v.FeeReceived) : (Number(v.FeeCharged) || 0));
+        const card = Number(v.CardFee) || Number(v.RegFee) || 0;
+        const med = Number(v.MedicineCost) || 0;
 
-    const totalIncome = apptFees + posIncome + otherIncome;
+        opdConsultationFees += consult;
+        opdCardFees += card;
+        opdDispensingFees += med;
+      }
+    });
 
-    // Outflows
-    const vendorOutflows = transactions
-      .filter(t => isWithinDateRange(t.Date) && t.Type === 'VendorPayment')
-      .reduce((sum, t) => sum + (Number(t.Amount) || 0), 0);
+    // Standalone appointments or tokens not already counted in visits
+    let standaloneApptFees = 0;
+    (appointments || []).forEach((a: any) => {
+      const aDate = parseCleanDate(a.AppointmentDate || a.Date);
+      if (isWithinDateRange(aDate) && a.Status !== 3) {
+        const matchKey = `${a.PatientID}_${aDate}`;
+        if (!countedVisitKeys.has(matchKey) && !countedVisitKeys.has(String(a.AppointmentID || ''))) {
+          const fee = Number(a.FeeCharged) || Number(a.FeeReceived) || Number(a.Fee) || 0;
+          standaloneApptFees += fee;
+        }
+      }
+    });
 
-    const salaryOutflows = payrolls
-      .filter(p => isWithinDateRange(p.PaymentDate || `${p.MonthYear}-01`))
-      .reduce((sum, p) => sum + (Number(p.NetSalary) || 0), 0);
+    const totalOpdIncome = opdConsultationFees + opdCardFees + opdDispensingFees + standaloneApptFees;
 
-    const expenseOutflows = expenses
-      .filter(e => isWithinDateRange(e.ExpenseDate))
-      .reduce((sum, e) => sum + (Number(e.Amount) || 0), 0);
+    // 2. POS PHARMACY SALES & COGS CALCULATION
+    const filteredInvoices = effectiveInvoices.filter((inv: any) => {
+      const invDate = parseCleanDate(inv.InvoiceDate || inv.date || inv.Date || inv.CreatedAt);
+      return isWithinDateRange(invDate);
+    });
 
-    const totalExpenses = vendorOutflows + salaryOutflows + expenseOutflows;
+    const grossPosSales = filteredInvoices.reduce((sum: number, inv: any) => {
+      const net = inv.NetAmount !== undefined ? Number(inv.NetAmount)
+        : (inv.NetPayable !== undefined ? Number(inv.NetPayable)
+        : (inv.GrandTotal !== undefined ? Number(inv.GrandTotal)
+        : (inv.totalAmount !== undefined ? Number(inv.totalAmount)
+        : (Number(inv.GAmount || 0) - (Number(inv.DisAmount) || 0)))));
+      return sum + (net || 0);
+    }, 0);
+
+    const filteredReturns = effectiveSalesReturns.filter((r: any) => {
+      const rDate = parseCleanDate(r.ReturnDate || r.Date || r.CreatedAt);
+      return isWithinDateRange(rDate);
+    });
+
+    const totalSalesReturns = filteredReturns.reduce((sum: number, r: any) => {
+      const ret = Number(r.NetPaid ?? r.RefundAmount ?? r.TotalAmount ?? 0);
+      return sum + ret;
+    }, 0);
+
+    const netPosIncome = Math.max(0, grossPosSales - totalSalesReturns);
+
+    // Calculate Pharmacy COGS
+    const itemMap = new Map<string, any>();
+    effectiveItems.forEach((it: any) => {
+      if (it.ItemID) itemMap.set(String(it.ItemID).toUpperCase(), it);
+      if (it.ItemName) itemMap.set(String(it.ItemName).toLowerCase(), it);
+    });
+
+    const detailsByInvoice = new Map<string, any[]>();
+    effectiveInvoiceDetails.forEach((d: any) => {
+      const invNo = String(d.InvoiceNo || d.invoiceNo || '');
+      if (invNo) {
+        const existing = detailsByInvoice.get(invNo) || [];
+        existing.push(d);
+        detailsByInvoice.set(invNo, existing);
+      }
+    });
+
+    let pharmacyCogs = 0;
+    filteredInvoices.forEach((inv: any) => {
+      const invNo = String(inv.InvoiceNo || inv.id || '');
+      const details = detailsByInvoice.get(invNo);
+
+      if (details && details.length > 0) {
+        details.forEach((d: any) => {
+          const itemKey = String(d.ItemID || d.itemId || '').trim();
+          const item = itemMap.get(itemKey.toUpperCase()) || itemMap.get(String(d.ItemName || '').toLowerCase());
+          const unitPurCost = (item?.PurchasePrice && Number(item.PurchasePrice) > 0)
+            ? Number(item.PurchasePrice)
+            : (item?.TP && Number(item.TP) > 0 ? Number(item.TP) : (d.Price ? Math.round(d.Price * 0.75) : 0));
+          const lineQty = Number(d.Qty || d.qty) || 0;
+          pharmacyCogs += lineQty * unitPurCost;
+        });
+      } else {
+        const invNet = Number(inv.NetAmount ?? inv.NetPayable ?? inv.GrandTotal ?? inv.GAmount ?? 0);
+        pharmacyCogs += Math.round(invNet * 0.75);
+      }
+    });
+
+    const returnsCogs = Math.round(totalSalesReturns * 0.75);
+    pharmacyCogs = Math.max(0, Math.round(pharmacyCogs - returnsCogs));
+
+    const pharmacyGrossProfit = Math.max(0, netPosIncome - pharmacyCogs);
+    const pharmacyMarginPct = netPosIncome > 0 ? (pharmacyGrossProfit / netPosIncome) * 100 : 0;
+
+    // 3. OTHER DIRECT INFLOWS
+    const otherIncome = effectiveTransactions
+      .filter((t: any) => isWithinDateRange(t.Date || t.TransactionDate) && (t.Type === 'Income' || t.Type === 'Deposit') && !t.VendorID && !t.VendorName && !t.Category?.toLowerCase().includes('vendor') && !t.Category?.toLowerCase().includes('payable') && !t.Category?.toLowerCase().includes('supplier') && !t.Category?.toLowerCase().includes('invoice') && !t.Category?.toLowerCase().includes('pos'))
+      .reduce((sum: number, t: any) => sum + (Number(t.Amount) || 0), 0);
+
+    const totalIncome = totalOpdIncome + netPosIncome + otherIncome;
+
+    // 4. OUTFLOWS & EXPENSES
+    // Vendor Payments (Inventory purchases / settlements)
+    const vendorOutflows = effectiveTransactions
+      .filter((t: any) => isWithinDateRange(t.Date || t.TransactionDate) && (t.Type === 'VendorPayment' || t.VendorID || t.Category?.toLowerCase().includes('vendor') || t.Category?.toLowerCase().includes('supplier') || t.Category?.toLowerCase().includes('purchase')))
+      .reduce((sum: number, t: any) => sum + (Number(t.Amount) || 0), 0);
+
+    // Salary & Payroll
+    const salaryOutflows = effectivePayrolls
+      .filter((p: any) => isWithinDateRange(p.PaymentDate || (p.MonthYear ? `${p.MonthYear}-01` : '')))
+      .reduce((sum: number, p: any) => sum + (Number(p.NetSalary || p.BasicSalary) || 0), 0);
+
+    // Operational Expenses
+    const expenseOutflows = effectiveExpenses
+      .filter((e: any) => isWithinDateRange(e.ExpenseDate || e.Date))
+      .reduce((sum: number, e) => sum + (Number(e.Amount) || 0), 0);
+
+    // Additional general expense transactions not covered above
+    const generalTxnExpenses = effectiveTransactions
+      .filter((t: any) => isWithinDateRange(t.Date || t.TransactionDate) && t.Type === 'Expense' && !t.LinkedExpenseID && !t.ExpenseID)
+      .reduce((sum: number, t: any) => sum + (Number(t.Amount) || 0), 0);
+
+    const totalOperatingExpenses = expenseOutflows + generalTxnExpenses;
+
+    const totalExpenses = vendorOutflows + salaryOutflows + totalOperatingExpenses;
     const netProfit = totalIncome - totalExpenses;
+    const netMarginPct = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
+    const expenseRatio = totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0;
 
     return {
-      apptFees,
-      posIncome,
+      opdConsultationFees,
+      opdCardFees,
+      opdDispensingFees,
+      standaloneApptFees,
+      totalOpdIncome,
+      grossPosSales,
+      totalSalesReturns,
+      netPosIncome,
+      pharmacyCogs,
+      pharmacyGrossProfit,
+      pharmacyMarginPct,
       otherIncome,
       totalIncome,
       vendorOutflows,
       salaryOutflows,
-      expenseOutflows,
+      expenseOutflows: totalOperatingExpenses,
+      totalOperatingExpenses,
       totalExpenses,
-      netProfit
+      netProfit,
+      netMarginPct,
+      expenseRatio,
+      // Backward compatibility aliases:
+      apptFees: totalOpdIncome,
+      posIncome: netPosIncome
     };
-  }, [appointments, posSales, transactions, payrolls, expenses, startDate, endDate, datePreset]);
+  }, [appointments, effectiveVisits, effectiveInvoices, effectiveInvoiceDetails, effectiveSalesReturns, effectiveItems, effectiveTransactions, effectivePayrolls, effectiveExpenses, startDate, endDate, datePreset]);
 
   // Report 9: Shift-Wise Collection Summary Report Data
   const shiftCollectionData = useMemo(() => {
@@ -1832,17 +2028,27 @@ export default function ReportingDesk({
         i.estCost
       ]);
     } else if (activeReport === 'pnl_summary') {
-      headers = ['Metric Category', 'Amount (Rs.)'];
+      headers = ['Category / Stream', 'Details', 'Amount (Rs.)'];
       rows = [
-        ['OPD Token Income', pnlSummaryData.apptFees],
-        ['POS Pharmacy Sales', pnlSummaryData.posIncome],
-        ['Other Direct Inflows', pnlSummaryData.otherIncome],
-        ['TOTAL GROSS INFLOWS', pnlSummaryData.totalIncome],
-        ['Vendor & Supplier Outflows', pnlSummaryData.vendorOutflows],
-        ['Salary & Payroll Disbursements', pnlSummaryData.salaryOutflows],
-        ['Operational Expenses', pnlSummaryData.expenseOutflows],
-        ['TOTAL OUTFLOWS', pnlSummaryData.totalExpenses],
-        ['NET OPERATING PROFIT / (LOSS)', pnlSummaryData.netProfit]
+        ['REVENUE & INFLOWS', 'OPD Patient Consultation Fees', pnlSummaryData.opdConsultationFees || 0],
+        ['REVENUE & INFLOWS', 'OPD Registration / Card Fees', pnlSummaryData.opdCardFees || 0],
+        ['REVENUE & INFLOWS', 'Clinical Medicine Dispensing', pnlSummaryData.opdDispensingFees || 0],
+        ['REVENUE & INFLOWS', 'Standalone Appointment Fees', pnlSummaryData.standaloneApptFees || 0],
+        ['REVENUE & INFLOWS', 'Subtotal Clinical OPD Inflows', pnlSummaryData.totalOpdIncome || 0],
+        ['REVENUE & INFLOWS', 'Gross POS Pharmacy Sales', pnlSummaryData.grossPosSales || pnlSummaryData.posIncome || 0],
+        ['REVENUE & INFLOWS', 'Less: POS Sales Returns / Refunds', -(pnlSummaryData.totalSalesReturns || 0)],
+        ['REVENUE & INFLOWS', 'Net POS Pharmacy Realized Revenue', pnlSummaryData.netPosIncome || 0],
+        ['REVENUE & INFLOWS', 'Other Direct Income Receipts', pnlSummaryData.otherIncome || 0],
+        ['REVENUE & INFLOWS', 'TOTAL GROSS INFLOWS', pnlSummaryData.totalIncome || 0],
+        ['EXPENSES & OUTFLOWS', 'Vendor Payments (Inventory Purchases)', pnlSummaryData.vendorOutflows || 0],
+        ['EXPENSES & OUTFLOWS', 'Staff Salaries & Payroll Disbursements', pnlSummaryData.salaryOutflows || 0],
+        ['EXPENSES & OUTFLOWS', 'Operational & Clinic Expenses', pnlSummaryData.totalOperatingExpenses || 0],
+        ['EXPENSES & OUTFLOWS', 'TOTAL GROSS OUTFLOWS', pnlSummaryData.totalExpenses || 0],
+        ['ANALYSIS & METRICS', 'Est. Cost of Goods Sold (COGS)', pnlSummaryData.pharmacyCogs || 0],
+        ['ANALYSIS & METRICS', 'Pharmacy Gross Margin (%)', (pnlSummaryData.pharmacyMarginPct || 0).toFixed(1) + '%'],
+        ['ANALYSIS & METRICS', 'Operating Outflow Ratio (%)', (pnlSummaryData.expenseRatio || 0).toFixed(1) + '%'],
+        ['ANALYSIS & METRICS', 'Net Profit Margin (%)', (pnlSummaryData.netMarginPct || 0).toFixed(1) + '%'],
+        ['NET SUMMARY', 'NET OPERATING PROFIT / (LOSS)', pnlSummaryData.netProfit || 0]
       ];
     } else if (activeReport === 'shift_collection_summary') {
       headers = [
@@ -2331,11 +2537,23 @@ export default function ReportingDesk({
           <div>
             <h3 style="color: #15803d; border-bottom: 2px solid #15803d; padding-bottom: 4px; margin-bottom: 8px; font-size: 12px; text-transform: uppercase;">REVENUE & INFLOWS</h3>
             <table class="report-table">
-              <tr><td>OPD Consultation Token Fees</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.apptFees.toLocaleString()}</td></tr>
-              <tr><td>POS Pharmacy Counter Sales</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.posIncome.toLocaleString()}</td></tr>
-              <tr><td>Other Direct Inflows</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.otherIncome.toLocaleString()}</td></tr>
-              <tr style="background: #f0fdf4; font-weight: 900;">
-                <td style="color: #15803d;">TOTAL GROSS INFLOWS</td>
+              <tr><td>OPD Patient Consultation Fees</td><td style="text-align: right; font-weight: bold;">Rs. ${(pnlSummaryData.opdConsultationFees || 0).toLocaleString()}</td></tr>
+              <tr><td>OPD Registration / Card Fees</td><td style="text-align: right; font-weight: bold;">Rs. ${(pnlSummaryData.opdCardFees || 0).toLocaleString()}</td></tr>
+              <tr><td>Clinical Medicine Dispensing</td><td style="text-align: right; font-weight: bold;">Rs. ${(pnlSummaryData.opdDispensingFees || 0).toLocaleString()}</td></tr>
+              ${pnlSummaryData.standaloneApptFees > 0 ? `<tr><td>Standalone Appointment Fees</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.standaloneApptFees.toLocaleString()}</td></tr>` : ''}
+              <tr style="background: #f0fdf4; font-weight: 700;">
+                <td style="color: #166534; font-size: 11px;">Subtotal OPD Inflows</td>
+                <td style="text-align: right; color: #166534; font-size: 11px; font-weight: bold;">Rs. ${pnlSummaryData.totalOpdIncome.toLocaleString()}</td>
+              </tr>
+              <tr><td>Gross POS Pharmacy Counter Sales</td><td style="text-align: right; font-weight: bold;">Rs. ${(pnlSummaryData.grossPosSales || pnlSummaryData.posIncome).toLocaleString()}</td></tr>
+              ${pnlSummaryData.totalSalesReturns > 0 ? `<tr><td style="color: #b91c1c;">Less: Pharmacy Sales Returns</td><td style="text-align: right; font-weight: bold; color: #b91c1c;">- Rs. ${pnlSummaryData.totalSalesReturns.toLocaleString()}</td></tr>` : ''}
+              <tr style="background: #f0fdf4; font-weight: 700;">
+                <td style="color: #166534; font-size: 11px;">Net Pharmacy Realized Sales</td>
+                <td style="text-align: right; color: #166534; font-size: 11px; font-weight: bold;">Rs. ${pnlSummaryData.netPosIncome.toLocaleString()}</td>
+              </tr>
+              <tr><td>Other Direct Inflows & Income</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.otherIncome.toLocaleString()}</td></tr>
+              <tr style="background: #dcfce7; font-weight: 900; border-top: 2px solid #16a34a;">
+                <td style="color: #15803d; font-size: 12px;">TOTAL GROSS INFLOWS</td>
                 <td style="text-align: right; color: #15803d; font-size: 13px;">Rs. ${pnlSummaryData.totalIncome.toLocaleString()}</td>
               </tr>
             </table>
@@ -2343,20 +2561,34 @@ export default function ReportingDesk({
           <div>
             <h3 style="color: #b91c1c; border-bottom: 2px solid #b91c1c; padding-bottom: 4px; margin-bottom: 8px; font-size: 12px; text-transform: uppercase;">EXPENSES & OUTFLOWS</h3>
             <table class="report-table">
-              <tr><td>Vendor Payments & Stock Purchases</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.vendorOutflows.toLocaleString()}</td></tr>
-              <tr><td>Staff Salaries & Payroll</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.salaryOutflows.toLocaleString()}</td></tr>
-              <tr><td>Operational Expenses</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.expenseOutflows.toLocaleString()}</td></tr>
-              <tr style="background: #fef2f2; font-weight: 900;">
-                <td style="color: #b91c1c;">TOTAL GROSS OUTFLOWS</td>
+              <tr><td>Vendor Payments (Stock & Purchases)</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.vendorOutflows.toLocaleString()}</td></tr>
+              <tr><td>Staff Salaries & Payroll Disbursements</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.salaryOutflows.toLocaleString()}</td></tr>
+              <tr><td>Operational, Clinic & Building Expenses</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.totalOperatingExpenses.toLocaleString()}</td></tr>
+              <tr style="background: #fee2e2; font-weight: 900; border-top: 2px solid #dc2626;">
+                <td style="color: #b91c1c; font-size: 12px;">TOTAL GROSS OUTFLOWS</td>
                 <td style="text-align: right; color: #b91c1c; font-size: 13px;">Rs. ${pnlSummaryData.totalExpenses.toLocaleString()}</td>
               </tr>
             </table>
+
+            <div style="margin-top: 12px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; font-size: 11px;">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 4px;">
+                <span style="color: #64748b;">Est. Cost of Goods Sold (COGS):</span>
+                <span style="font-weight: bold; color: #334155;">Rs. ${(pnlSummaryData.pharmacyCogs || 0).toLocaleString()}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between;">
+                <span style="color: #64748b;">Pharmacy Gross Profit Margin:</span>
+                <span style="font-weight: bold; color: #16a34a;">${(pnlSummaryData.pharmacyMarginPct || 0).toFixed(1)}%</span>
+              </div>
+            </div>
           </div>
         </div>
         <div style="margin-top: 15px; background: #f8fafc; border: 2px dashed #64748b; padding: 12px; text-align: center; border-radius: 8px;">
-          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; tracking-wide: 0.5px;">NET OPERATING FINANCIAL RESULT FOR PERIOD</div>
+          <div style="font-size: 11px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px;">NET OPERATING FINANCIAL RESULT FOR PERIOD</div>
           <div style="font-size: 22px; font-weight: 900; color: ${pnlSummaryData.netProfit >= 0 ? '#15803d' : '#b91c1c'}; margin-top: 4px;">
             ${pnlSummaryData.netProfit >= 0 ? 'NET PROFIT: Rs. ' + pnlSummaryData.netProfit.toLocaleString() : 'NET LOSS: - Rs. ' + Math.abs(pnlSummaryData.netProfit).toLocaleString()}
+          </div>
+          <div style="font-size: 11px; color: #64748b; margin-top: 2px;">
+            Net Profit Margin: ${pnlSummaryData.netMarginPct.toFixed(1)}% | Operating Outflow Ratio: ${pnlSummaryData.expenseRatio.toFixed(1)}%
           </div>
         </div>
       `;
@@ -4108,30 +4340,137 @@ export default function ReportingDesk({
         {/* REPORT TABLE 8: P&L SUMMARY STATEMENT */}
         {activeReport === 'pnl_summary' && (
           <div className="space-y-6 pt-2">
+            {/* EXECUTIVE FINANCIAL KPI CARDS */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-gradient-to-br from-emerald-50 to-teal-50/60 border border-emerald-200/80 rounded-2xl p-4 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-emerald-800 uppercase tracking-wider">Total Gross Revenue</span>
+                  <div className="p-1.5 bg-emerald-600 text-white rounded-lg">
+                    <TrendingUp className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-emerald-950 mt-2">
+                  Rs. {pnlSummaryData.totalIncome.toLocaleString()}
+                </div>
+                <div className="text-[11px] font-medium text-emerald-700 mt-1 flex items-center gap-1.5">
+                  <span>OPD: Rs. {pnlSummaryData.totalOpdIncome.toLocaleString()}</span>
+                  <span>•</span>
+                  <span>POS: Rs. {pnlSummaryData.netPosIncome.toLocaleString()}</span>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-rose-50 to-amber-50/60 border border-rose-200/80 rounded-2xl p-4 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-rose-800 uppercase tracking-wider">Total Outflows & Costs</span>
+                  <div className="p-1.5 bg-rose-600 text-white rounded-lg">
+                    <TrendingDown className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-rose-950 mt-2">
+                  Rs. {pnlSummaryData.totalExpenses.toLocaleString()}
+                </div>
+                <div className="text-[11px] font-medium text-rose-700 mt-1">
+                  Operating Ratio: <span className="font-bold">{pnlSummaryData.expenseRatio.toFixed(1)}%</span> of Revenue
+                </div>
+              </div>
+
+              <div className={`border rounded-2xl p-4 shadow-xs ${
+                pnlSummaryData.netProfit >= 0
+                  ? 'bg-gradient-to-br from-emerald-600 to-teal-700 text-white border-emerald-700'
+                  : 'bg-gradient-to-br from-rose-600 to-amber-700 text-white border-rose-700'
+              }`}>
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold uppercase tracking-wider opacity-90">Net Operating Result</span>
+                  <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-white/20 uppercase">
+                    {pnlSummaryData.netProfit >= 0 ? 'Surplus' : 'Deficit'}
+                  </span>
+                </div>
+                <div className="text-2xl font-black mt-2">
+                  {pnlSummaryData.netProfit >= 0 ? 'Rs. ' + pnlSummaryData.netProfit.toLocaleString() : '- Rs. ' + Math.abs(pnlSummaryData.netProfit).toLocaleString()}
+                </div>
+                <div className="text-[11px] font-semibold mt-1 opacity-90">
+                  Net Margin: <span className="font-bold">{pnlSummaryData.netMarginPct.toFixed(1)}%</span>
+                </div>
+              </div>
+
+              <div className="bg-gradient-to-br from-indigo-50 to-blue-50/60 border border-indigo-200/80 rounded-2xl p-4 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] font-bold text-indigo-800 uppercase tracking-wider">Pharmacy COGS & Margin</span>
+                  <div className="p-1.5 bg-indigo-600 text-white rounded-lg">
+                    <Package className="w-4 h-4" />
+                  </div>
+                </div>
+                <div className="text-2xl font-black text-indigo-950 mt-2">
+                  Rs. {(pnlSummaryData.pharmacyCogs || 0).toLocaleString()}
+                </div>
+                <div className="text-[11px] font-medium text-indigo-700 mt-1 flex items-center justify-between">
+                  <span>Gross Margin:</span>
+                  <span className="font-bold text-indigo-900 bg-indigo-100 px-1.5 py-0.5 rounded-md">
+                    {(pnlSummaryData.pharmacyMarginPct || 0).toFixed(1)}%
+                  </span>
+                </div>
+              </div>
+            </div>
+
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* REVENUES / INFLOWS */}
-              <div className="bg-emerald-50/50 border border-emerald-200 rounded-2xl p-5 space-y-3">
-                <div className="flex items-center justify-between border-b border-emerald-200 pb-2">
-                  <h4 className="font-extrabold text-emerald-900 text-sm flex items-center space-x-2">
+              <div className="bg-emerald-50/40 border border-emerald-200/80 rounded-2xl p-5 space-y-4 shadow-xs">
+                <div className="flex items-center justify-between border-b border-emerald-200 pb-2.5">
+                  <h4 className="font-black text-emerald-950 text-sm flex items-center space-x-2">
                     <TrendingUp className="w-4 h-4 text-emerald-600" />
                     <span>Inflows & Revenue Streams</span>
                   </h4>
-                  <span className="text-xs font-bold text-emerald-700">Period Total</span>
+                  <span className="text-[11px] font-bold text-emerald-700 bg-emerald-100/80 px-2 py-0.5 rounded-md">Realized Inflows</span>
                 </div>
                 <div className="space-y-2 text-xs">
-                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-emerald-100">
-                    <span className="font-medium text-slate-700">OPD Patient Token Fees</span>
-                    <span className="font-bold text-slate-900">Rs. {pnlSummaryData.apptFees.toLocaleString()}</span>
+                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-emerald-100 hover:border-emerald-200 transition">
+                    <span className="font-medium text-slate-700">OPD Patient Consultation Fees</span>
+                    <span className="font-bold text-slate-900">Rs. {(pnlSummaryData.opdConsultationFees || 0).toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-emerald-100">
-                    <span className="font-medium text-slate-700">POS Pharmacy Sales</span>
-                    <span className="font-bold text-slate-900">Rs. {pnlSummaryData.posIncome.toLocaleString()}</span>
+                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-emerald-100 hover:border-emerald-200 transition">
+                    <span className="font-medium text-slate-700">OPD Card / Registration Fees</span>
+                    <span className="font-bold text-slate-900">Rs. {(pnlSummaryData.opdCardFees || 0).toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-emerald-100">
-                    <span className="font-medium text-slate-700">Other Direct Income Receipts</span>
+                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-emerald-100 hover:border-emerald-200 transition">
+                    <span className="font-medium text-slate-700">Clinical Dispensing / Procedure Fees</span>
+                    <span className="font-bold text-slate-900">Rs. {(pnlSummaryData.opdDispensingFees || 0).toLocaleString()}</span>
+                  </div>
+                  {pnlSummaryData.standaloneApptFees > 0 && (
+                    <div className="flex justify-between p-2.5 bg-white rounded-xl border border-emerald-100 hover:border-emerald-200 transition">
+                      <span className="font-medium text-slate-700">Standalone Token / Booking Fees</span>
+                      <span className="font-bold text-slate-900">Rs. {pnlSummaryData.standaloneApptFees.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 font-bold text-emerald-900">
+                    <span>Subtotal Clinical OPD Inflows</span>
+                    <span>Rs. {pnlSummaryData.totalOpdIncome.toLocaleString()}</span>
+                  </div>
+
+                  <div className="pt-2 border-t border-emerald-200/60"></div>
+
+                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-emerald-100 hover:border-emerald-200 transition">
+                    <span className="font-medium text-slate-700">Gross POS Pharmacy Counter Sales</span>
+                    <span className="font-bold text-slate-900">Rs. {(pnlSummaryData.grossPosSales || pnlSummaryData.posIncome).toLocaleString()}</span>
+                  </div>
+                  {pnlSummaryData.totalSalesReturns > 0 && (
+                    <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100 text-rose-700 hover:border-rose-200 transition">
+                      <span className="font-medium">Less: Customer Sales Returns / Refunds</span>
+                      <span className="font-bold">- Rs. {pnlSummaryData.totalSalesReturns.toLocaleString()}</span>
+                    </div>
+                  )}
+                  <div className="flex justify-between p-2.5 bg-emerald-50 rounded-xl border border-emerald-200 font-bold text-emerald-900">
+                    <span>Net Pharmacy Realized Revenue</span>
+                    <span>Rs. {pnlSummaryData.netPosIncome.toLocaleString()}</span>
+                  </div>
+
+                  <div className="pt-2 border-t border-emerald-200/60"></div>
+
+                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-emerald-100 hover:border-emerald-200 transition">
+                    <span className="font-medium text-slate-700">Other Direct Income / Cash Receipts</span>
                     <span className="font-bold text-slate-900">Rs. {pnlSummaryData.otherIncome.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between p-3 bg-emerald-100/80 rounded-xl border border-emerald-300 font-extrabold text-emerald-950 text-sm">
+
+                  <div className="flex justify-between p-3.5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-xl font-black text-sm shadow-xs mt-3">
                     <span>TOTAL GROSS INFLOWS</span>
                     <span>Rs. {pnlSummaryData.totalIncome.toLocaleString()}</span>
                   </div>
@@ -4139,28 +4478,42 @@ export default function ReportingDesk({
               </div>
 
               {/* EXPENSES / OUTFLOWS */}
-              <div className="bg-rose-50/50 border border-rose-200 rounded-2xl p-5 space-y-3">
-                <div className="flex items-center justify-between border-b border-rose-200 pb-2">
-                  <h4 className="font-extrabold text-rose-900 text-sm flex items-center space-x-2">
+              <div className="bg-rose-50/40 border border-rose-200/80 rounded-2xl p-5 space-y-4 shadow-xs">
+                <div className="flex items-center justify-between border-b border-rose-200 pb-2.5">
+                  <h4 className="font-black text-rose-950 text-sm flex items-center space-x-2">
                     <TrendingDown className="w-4 h-4 text-rose-600" />
                     <span>Outflows & Operating Expenses</span>
                   </h4>
-                  <span className="text-xs font-bold text-rose-700">Period Total</span>
+                  <span className="text-[11px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md">Total Disbursements</span>
                 </div>
                 <div className="space-y-2 text-xs">
-                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100">
-                    <span className="font-medium text-slate-700">Vendor Payments (Inventory Purchases)</span>
+                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100 hover:border-rose-200 transition">
+                    <span className="font-medium text-slate-700">Vendor Payments & Inventory Procurements</span>
                     <span className="font-bold text-slate-900">Rs. {pnlSummaryData.vendorOutflows.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100">
-                    <span className="font-medium text-slate-700">Staff Salaries & Payroll Disbursement</span>
+                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100 hover:border-rose-200 transition">
+                    <span className="font-medium text-slate-700">Staff Salaries & Payroll Disbursements</span>
                     <span className="font-bold text-slate-900">Rs. {pnlSummaryData.salaryOutflows.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100">
-                    <span className="font-medium text-slate-700">Operational & Building Expenses</span>
-                    <span className="font-bold text-slate-900">Rs. {pnlSummaryData.expenseOutflows.toLocaleString()}</span>
+                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100 hover:border-rose-200 transition">
+                    <span className="font-medium text-slate-700">Operational, Clinic & Building Expenses</span>
+                    <span className="font-bold text-slate-900">Rs. {pnlSummaryData.totalOperatingExpenses.toLocaleString()}</span>
                   </div>
-                  <div className="flex justify-between p-3 bg-rose-100/80 rounded-xl border border-rose-300 font-extrabold text-rose-950 text-sm">
+
+                  <div className="pt-2 border-t border-rose-200/60"></div>
+
+                  <div className="p-3 bg-white rounded-xl border border-slate-200 space-y-1.5 text-[11px]">
+                    <div className="flex justify-between text-slate-600">
+                      <span>Calculated Pharmacy COGS (Cost of Goods):</span>
+                      <span className="font-bold text-slate-900">Rs. {(pnlSummaryData.pharmacyCogs || 0).toLocaleString()}</span>
+                    </div>
+                    <div className="flex justify-between text-slate-600">
+                      <span>Pharmacy Gross Realized Margin:</span>
+                      <span className="font-bold text-emerald-600">{(pnlSummaryData.pharmacyMarginPct || 0).toFixed(1)}%</span>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-between p-3.5 bg-gradient-to-r from-rose-600 to-amber-700 text-white rounded-xl font-black text-sm shadow-xs mt-3">
                     <span>TOTAL GROSS OUTFLOWS</span>
                     <span>Rs. {pnlSummaryData.totalExpenses.toLocaleString()}</span>
                   </div>
@@ -4169,27 +4522,31 @@ export default function ReportingDesk({
             </div>
 
             {/* NET RESULT BANNER */}
-            <div className={`p-6 rounded-2xl border flex flex-col sm:flex-row items-center justify-between text-center sm:text-left gap-4 ${
+            <div className={`p-6 rounded-2xl border flex flex-col sm:flex-row items-center justify-between text-center sm:text-left gap-4 shadow-sm ${
               pnlSummaryData.netProfit >= 0
-                ? 'bg-gradient-to-r from-emerald-900 to-teal-900 text-white border-emerald-700'
-                : 'bg-gradient-to-r from-rose-900 to-amber-900 text-white border-rose-700'
+                ? 'bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white border-emerald-700'
+                : 'bg-gradient-to-r from-rose-900 via-amber-900 to-slate-900 text-white border-rose-700'
             }`}>
               <div>
                 <div className="text-xs font-bold text-emerald-300 uppercase tracking-wider">NET OPERATING FINANCIAL RESULT</div>
                 <div className="text-3xl font-black mt-1">
                   {pnlSummaryData.netProfit >= 0 ? 'NET PROFIT: Rs. ' + pnlSummaryData.netProfit.toLocaleString() : 'NET LOSS: - Rs. ' + Math.abs(pnlSummaryData.netProfit).toLocaleString()}
                 </div>
-                <div className="text-xs text-slate-300 mt-1">
-                  Calculated for period: {startDate} to {endDate}
+                <div className="text-xs text-slate-300 mt-1 flex items-center gap-2">
+                  <span>Calculated for period: {startDate} to {endDate}</span>
+                  <span>•</span>
+                  <span>Net Margin: {pnlSummaryData.netMarginPct.toFixed(1)}%</span>
                 </div>
               </div>
-              <button
-                onClick={handlePrintReport}
-                className="px-5 py-2.5 bg-white text-slate-900 hover:bg-slate-100 font-bold text-xs rounded-xl shadow-md transition flex items-center space-x-2 cursor-pointer"
-              >
-                <Printer className="w-4 h-4 text-indigo-600" />
-                <span>Print Official P&L Statement</span>
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={handlePrintReport}
+                  className="px-5 py-2.5 bg-white text-slate-900 hover:bg-slate-100 font-bold text-xs rounded-xl shadow-md transition flex items-center space-x-2 cursor-pointer"
+                >
+                  <Printer className="w-4 h-4 text-indigo-600" />
+                  <span>Print Official P&L Statement</span>
+                </button>
+              </div>
             </div>
           </div>
         )}

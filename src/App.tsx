@@ -3083,6 +3083,14 @@ export default function App() {
                   salesReturns={salesReturns}
                   acLedger={acLedger}
                   tlAccounts={tlAccounts}
+                  flAccounts={flAccounts}
+                  slAccounts={slAccounts}
+                  vouchers={vouchers}
+                  voucherDetails={voucherDetails}
+                  grns={grns}
+                  grnDetails={grnDetails}
+                  suppliers={suppliers}
+                  tokens={tokens}
                   patients={patients}
                   appointments={appointments}
                   visits={visits}
