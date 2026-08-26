@@ -31,7 +31,10 @@ import {
   CreditCard,
   Stethoscope,
   SlidersHorizontal,
-  History
+  History,
+  Eye,
+  X,
+  Percent
 } from 'lucide-react';
 import {
   Patient,
@@ -83,6 +86,7 @@ export default function Dashboard({
   const [dateFilter, setDateFilter] = useState<'today' | 'this_week' | 'this_month' | 'this_year' | 'month_select' | 'custom' | 'all'>('month_select');
   const [selectedMonthYear, setSelectedMonthYear] = useState<string>(currentYearMonth);
   const [shiftFilter, setShiftFilter] = useState<'all' | 'morning' | 'evening'>('all');
+  const [showProfitCogsModal, setShowProfitCogsModal] = useState<boolean>(false);
   const todayStr = new Date().toISOString().split('T')[0]; // Current dynamic system date
   const [customStartDate, setCustomStartDate] = useState<string>(todayStr);
   const [customEndDate, setCustomEndDate] = useState<string>(todayStr);
@@ -943,77 +947,50 @@ export default function Dashboard({
           </div>
         )}
 
-        {/* Requirement 2: Total Store Collection Shift-wise with Net Gross Profit & Margin and COGS */}
+        {/* Requirement 2: Total Store Collection Shift-wise with sleek Profit / COGS button */}
         {(shiftFilter === 'all' || shiftFilter === 'morning' || shiftFilter === 'evening') && (
           <div className="bg-white p-4 rounded-2xl border border-slate-200/80 shadow-xs hover:shadow-md transition duration-200 flex flex-col justify-between space-y-3">
             <div className="flex items-center justify-between">
               <div className="p-2.5 bg-emerald-50 text-emerald-600 border border-emerald-100 rounded-xl">
                 <ShoppingBag className="w-4 h-4" />
               </div>
-              <span className="text-[9px] font-extrabold uppercase tracking-wider bg-emerald-50 text-emerald-700 px-2 py-0.5 rounded-full border border-emerald-100">
-                2. Store
-              </span>
+              <button
+                type="button"
+                onClick={() => setShowProfitCogsModal(true)}
+                className="text-[9.5px] font-bold tracking-tight bg-emerald-50 hover:bg-emerald-100 text-emerald-700 hover:text-emerald-800 px-2 py-1 rounded-lg border border-emerald-200/80 transition flex items-center space-x-1 cursor-pointer shadow-2xs group"
+                title="Click to view full Purchase Cost (COGS) & Net Gross Profit breakdown"
+              >
+                <Eye className="w-3 h-3 text-emerald-600 group-hover:scale-110 transition-transform" />
+                <span>Profit & COGS</span>
+              </button>
             </div>
 
-            <div className="space-y-2">
-              <div>
+            <div>
+              <div className="flex items-center justify-between">
                 <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Total Store Collection</p>
-                <h3 className="text-lg font-extrabold text-slate-900 mt-0.5 font-mono">
-                  Rs. {activeStoreCollection.toLocaleString()}
-                </h3>
+                <span className="text-[9.5px] font-bold text-emerald-600 font-mono bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-100/80">
+                  {activeStoreMarginPct.toFixed(0)}% Margin
+                </span>
               </div>
-
-              {/* Requirement 1: Purchase Cost (COGS) & Net Gross Profit & Margin */}
-              <div className="bg-gradient-to-br from-slate-50 to-emerald-50/30 rounded-xl p-2.5 border border-slate-200/80 space-y-1.5 shadow-2xs">
-                <div className="flex items-center justify-between text-xxs">
-                  <span className="text-purple-700 font-bold uppercase tracking-wider flex items-center space-x-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-purple-600" />
-                    <span>Purchase Cost (COGS):</span>
-                  </span>
-                  <strong className="font-mono text-purple-900 font-extrabold text-[11px]">Rs. {activeStoreCogs.toLocaleString()}</strong>
-                </div>
-
-                <div className="flex items-center justify-between text-xxs pt-1.5 border-t border-slate-200/80">
-                  <span className="text-emerald-700 font-bold uppercase tracking-wider flex items-center space-x-1">
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-600" />
-                    <span>Net Gross Profit & Margin:</span>
-                  </span>
-                  <div className="text-right">
-                    <strong className="font-mono text-emerald-900 font-extrabold text-[11px] block">
-                      Rs. {activeStoreGrossProfit.toLocaleString()}
-                    </strong>
-                    <span className="text-[9.5px] font-bold text-emerald-700 font-mono bg-emerald-100/80 px-1.5 py-0.2 rounded border border-emerald-200/60 inline-block mt-0.5">
-                      {activeStoreMarginPct.toFixed(1)}% Margin
-                    </span>
-                  </div>
-                </div>
-              </div>
+              <h3 className="text-lg font-extrabold text-slate-900 mt-0.5 font-mono">
+                Rs. {activeStoreCollection.toLocaleString()}
+              </h3>
             </div>
 
-            <div className="border-t border-slate-100 pt-2 space-y-1.5 text-xxs">
-              <div className="flex justify-between items-start text-slate-600">
-                <span className="flex items-center space-x-1 mt-0.5">
+            <div className="border-t border-slate-100 pt-2 space-y-1 text-xxs">
+              <div className="flex justify-between items-center text-slate-600">
+                <span className="flex items-center space-x-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                  <span className="font-semibold">Morning:</span>
+                  <span>Morning:</span>
                 </span>
-                <div className="text-right font-mono">
-                  <strong className="text-slate-900 font-bold">Rs. {morningStoreCollection.toLocaleString()}</strong>
-                  <span className="text-[9px] text-slate-500 block font-medium">
-                    COGS: Rs. {morningStoreCogs.toLocaleString()} • Profit: <span className="text-emerald-700 font-bold">Rs. {morningStoreGrossProfit.toLocaleString()} ({morningStoreMarginPct.toFixed(0)}%)</span>
-                  </span>
-                </div>
+                <strong className="font-mono text-slate-900">Rs. {morningStoreCollection.toLocaleString()}</strong>
               </div>
-              <div className="flex justify-between items-start text-slate-600 pt-1 border-t border-slate-50">
-                <span className="flex items-center space-x-1 mt-0.5">
+              <div className="flex justify-between items-center text-slate-600">
+                <span className="flex items-center space-x-1">
                   <span className="w-1.5 h-1.5 rounded-full bg-purple-500" />
-                  <span className="font-semibold">Evening:</span>
+                  <span>Evening:</span>
                 </span>
-                <div className="text-right font-mono">
-                  <strong className="text-slate-900 font-bold">Rs. {eveningStoreCollection.toLocaleString()}</strong>
-                  <span className="text-[9px] text-slate-500 block font-medium">
-                    COGS: Rs. {eveningStoreCogs.toLocaleString()} • Profit: <span className="text-purple-700 font-bold">Rs. {eveningStoreGrossProfit.toLocaleString()} ({eveningStoreMarginPct.toFixed(0)}%)</span>
-                  </span>
-                </div>
+                <strong className="font-mono text-slate-900">Rs. {eveningStoreCollection.toLocaleString()}</strong>
               </div>
             </div>
           </div>
@@ -1418,6 +1395,190 @@ export default function Dashboard({
         </div>
 
       </div>
+
+      {/* Pop-up Modal: Purchase Cost (COGS) & Net Gross Profit Details */}
+      {showProfitCogsModal && (
+        <div 
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/60 backdrop-blur-xs animate-in fade-in duration-200"
+          onClick={() => setShowProfitCogsModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-xl overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 text-white flex items-center justify-between border-b border-slate-700">
+              <div className="flex items-center space-x-3">
+                <div className="w-9 h-9 rounded-xl bg-emerald-500/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400">
+                  <ShoppingBag className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-base font-extrabold tracking-tight text-white flex items-center space-x-2">
+                    <span>Store Pharmacy Financial Breakdown</span>
+                  </h3>
+                  <p className="text-xxs text-slate-300 font-medium mt-0.5">
+                    {dateFilter === 'today'
+                      ? `Today's Audited Position (${todayStr})`
+                      : dateFilter === 'month_select'
+                      ? `Monthly Position (${monthOptions.find(o => o.value === selectedMonthYear)?.label || selectedMonthYear})`
+                      : `Selected Period (${shiftFilter.toUpperCase()} Shift)`}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowProfitCogsModal(false)}
+                className="w-8 h-8 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white flex items-center justify-center transition cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-6 space-y-5 max-h-[80vh] overflow-y-auto">
+              
+              {/* Primary 3 KPI Metric Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                {/* 1. Total Store Sales */}
+                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-slate-500 tracking-wider">Total Sales Revenue</p>
+                  <p className="text-lg font-extrabold text-slate-900 font-mono">
+                    Rs. {activeStoreCollection.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-slate-500 font-medium">Net Sales After Returns</p>
+                </div>
+
+                {/* 2. Purchase Cost (COGS) */}
+                <div className="bg-purple-50/60 border border-purple-200/80 rounded-xl p-3.5 space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-purple-700 tracking-wider">Purchase Cost (COGS)</p>
+                  <p className="text-lg font-extrabold text-purple-900 font-mono">
+                    Rs. {activeStoreCogs.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-purple-600 font-medium">Cost of Goods Sold</p>
+                </div>
+
+                {/* 3. Net Gross Profit & Margin */}
+                <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3.5 space-y-1">
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider">Net Gross Profit</p>
+                    <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded-full bg-emerald-200/80 text-emerald-900">
+                      {activeStoreMarginPct.toFixed(1)}% Margin
+                    </span>
+                  </div>
+                  <p className="text-lg font-extrabold text-emerald-900 font-mono">
+                    Rs. {activeStoreGrossProfit.toLocaleString()}
+                  </p>
+                  <p className="text-[10px] text-emerald-700 font-medium">Sales Revenue − COGS</p>
+                </div>
+              </div>
+
+              {/* Shift-Wise Comparative Table */}
+              <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-2xs">
+                <div className="px-4 py-2.5 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wider">
+                    Shift-wise Cost & Profit Analysis
+                  </span>
+                  <span className="text-[10px] text-slate-500 font-medium">
+                    Itemized Catalog Cost Mapping
+                  </span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-slate-200 bg-slate-100/50 text-[11px] text-slate-600 font-bold uppercase">
+                        <th className="py-2.5 px-3">Shift</th>
+                        <th className="py-2.5 px-3 text-right">Store Sales</th>
+                        <th className="py-2.5 px-3 text-right text-purple-800">Purchase Cost (COGS)</th>
+                        <th className="py-2.5 px-3 text-right text-emerald-800">Gross Profit</th>
+                        <th className="py-2.5 px-3 text-right">Margin %</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-mono text-xs">
+                      {/* Morning Row */}
+                      <tr className="hover:bg-slate-50/80 transition">
+                        <td className="py-2.5 px-3 font-sans font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                          <span>Morning Shift</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-slate-800 font-semibold">
+                          Rs. {morningStoreCollection.toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-purple-900 font-semibold">
+                          Rs. {morningStoreCogs.toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-emerald-700 font-bold">
+                          Rs. {morningStoreGrossProfit.toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-emerald-700 font-bold">
+                          {morningStoreMarginPct.toFixed(1)}%
+                        </td>
+                      </tr>
+
+                      {/* Evening Row */}
+                      <tr className="hover:bg-slate-50/80 transition">
+                        <td className="py-2.5 px-3 font-sans font-semibold text-slate-800 flex items-center space-x-1.5">
+                          <span className="w-2 h-2 rounded-full bg-purple-500 shrink-0" />
+                          <span>Evening Shift</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-slate-800 font-semibold">
+                          Rs. {eveningStoreCollection.toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-purple-900 font-semibold">
+                          Rs. {eveningStoreCogs.toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-purple-700 font-bold">
+                          Rs. {eveningStoreGrossProfit.toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-purple-700 font-bold">
+                          {eveningStoreMarginPct.toFixed(1)}%
+                        </td>
+                      </tr>
+
+                      {/* Total Consolidated Row */}
+                      <tr className="bg-slate-900 text-white font-bold">
+                        <td className="py-2.5 px-3 font-sans text-white">
+                          Grand Total (Consolidated)
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-emerald-300">
+                          Rs. {totalStoreCollection.toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-purple-300">
+                          Rs. {totalStoreCogs.toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-emerald-400">
+                          Rs. {totalStoreGrossProfit.toLocaleString()}
+                        </td>
+                        <td className="py-2.5 px-3 text-right text-emerald-400">
+                          {totalStoreMarginPct.toFixed(1)}%
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Information / Audit Note */}
+              <div className="bg-slate-50 border border-slate-200/80 rounded-xl p-3 text-xxs text-slate-500 flex items-start space-x-2">
+                <span className="text-base leading-none">💡</span>
+                <p className="leading-relaxed">
+                  <strong>Accounting & Audit Rule:</strong> Cost of Goods Sold (COGS) is computed from line-item invoice quantities multiplied by item acquisition purchase prices recorded in your pharmacy catalog.
+                </p>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="px-6 py-3 bg-slate-50 border-t border-slate-200 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setShowProfitCogsModal(false)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition cursor-pointer shadow-xs"
+              >
+                Close Statement
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
     </div>
   );
