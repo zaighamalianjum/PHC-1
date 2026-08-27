@@ -99,6 +99,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [vendorDateFilter, setVendorDateFilter] = useState<'all' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('all');
   const [vendorPrintModalOpen, setVendorPrintModalOpen] = useState<boolean>(false);
   const [expandedGrnId, setExpandedGrnId] = useState<string | null>(null);
+  const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
 
   // Core ERP State Collections
   const [vendors, setVendors] = useState<ErpVendor[]>([]);
@@ -3443,6 +3444,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
     const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
 
+    const breakdown = getPoItemFulfillmentBreakdown(selectedPoForWhatsApp, grns);
+    const isPartial = selectedPoForWhatsApp.Status === 'Partially Received' || (breakdown.totalRemainingQty > 0 && breakdown.totalReceivedQty > 0);
+
     const url = generateWhatsAppPurchaseOrderUrl({
       poId: selectedPoForWhatsApp.POID,
       vendorName: selectedPoForWhatsApp.VendorName,
@@ -3451,7 +3455,19 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       expectedDeliveryDate: selectedPoForWhatsApp.ExpectedDeliveryDate,
       totalAmount: selectedPoForWhatsApp.TotalAmount,
       paymentMethod: selectedPoForWhatsApp.PaymentMethod || (selectedPoForWhatsApp as any).PaymentTerms,
-      items: selectedPoForWhatsApp.Items || [],
+      status: selectedPoForWhatsApp.Status,
+      isPartialDelivery: isPartial,
+      totalReceivedQty: breakdown.totalReceivedQty,
+      totalRemainingQty: breakdown.totalRemainingQty,
+      items: breakdown.items.map(i => ({
+        ItemName: i.ItemName,
+        Qty: i.OrderedQty,
+        ReceivedQty: i.ReceivedQty,
+        RemainingQty: i.RemainingQty,
+        UnitPrice: i.UnitPrice,
+        Category: i.Category,
+        BatchNo: i.BatchNo
+      })),
       notes: whatsAppCustomNote,
       clinicName: cName,
       clinicAddress: cAddress,
@@ -3509,21 +3525,41 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     window.dispatchEvent(new CustomEvent('phc_db_updated'));
   };
 
-  const calculatePoStatus = (po: ErpPurchaseOrder, grnsList: ErpGrn[], extraReceivingItems?: any[]): 'Received' | 'Partially Received' | 'Approved' | 'Sent' | 'Draft' => {
-    if (!po || !Array.isArray(po.Items) || po.Items.length === 0) return (po?.Status as any) || 'Approved';
-    
-    const approvedGrns = grnsList.filter(g => g.POID === po.POID && (g.Status === 'Approved' || !g.Status));
-    
-    let isFullyReceived = true;
-    let isPartiallyReceived = false;
+  // Robust PO Item Fulfillment and Remaining / Balance Calculation
+  const getPoItemFulfillmentBreakdown = (po: ErpPurchaseOrder, grnsList: ErpGrn[] = grns) => {
+    if (!po) {
+      return {
+        items: [],
+        remainingItemsList: [],
+        totalOrderedQty: 0,
+        totalReceivedQty: 0,
+        totalRemainingQty: 0,
+        totalOrderedAmount: 0,
+        totalReceivedAmount: 0,
+        totalRemainingAmount: 0,
+        totalItemsCount: 0,
+        fulfilledItemsCount: 0,
+        partiallyReceivedItemsCount: 0,
+        pendingItemsCount: 0,
+        hasPendingItems: false,
+        isFullyReceived: false,
+        linkedGrns: []
+      };
+    }
 
-    let totalOrderedSum = 0;
-    let totalReceivedSum = 0;
+    const targetPoId = String(po.POID || '').trim().toLowerCase();
+    const approvedGrns = (grnsList || []).filter(g => {
+      const gPoId = String(g.POID || (g as any).PoID || '').trim().toLowerCase();
+      return gPoId === targetPoId && g.Status !== 'Cancelled';
+    });
 
-    po.Items.forEach((poItem, idx) => {
+    const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    const items = (po.Items || []).map((poItem, idx) => {
       const ordered = Number(poItem.Qty) || 0;
-      totalOrderedSum += ordered;
-      let cumulativeReceived = 0;
+      const unitPrice = Number(poItem.UnitPrice) || 0;
+      let receivedQty = 0;
+      const receivingGrnIds: string[] = [];
 
       approvedGrns.forEach(g => {
         if (Array.isArray(g.Items)) {
@@ -3532,50 +3568,103 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             matched = g.Items.find((gi: any) => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(poItem.ItemID).trim().toLowerCase());
           }
           if (!matched && poItem.ItemName && String(poItem.ItemName).trim() !== '') {
-            matched = g.Items.find((gi: any) => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(poItem.ItemName).trim().toLowerCase());
+            matched = g.Items.find((gi: any) => gi.ItemName && norm(gi.ItemName) === norm(poItem.ItemName));
           }
           if (!matched && g.Items[idx]) {
             matched = g.Items[idx];
           }
           if (matched) {
-            cumulativeReceived += Number(matched.ReceivedQty) || Number(matched.Qty) || 0;
+            const qty = Number(matched.ReceivedQty ?? matched.Qty ?? matched.QtyReceived ?? matched.Quantity ?? 0);
+            if (qty > 0) {
+              receivedQty += qty;
+              if (g.GRNID && !receivingGrnIds.includes(g.GRNID)) {
+                receivingGrnIds.push(g.GRNID);
+              }
+            }
           }
         }
       });
 
-      if (extraReceivingItems && extraReceivingItems.length > 0) {
-        let currentGrnItem = null;
-        if (poItem.ItemID && String(poItem.ItemID).trim() !== '') {
-          currentGrnItem = extraReceivingItems.find((gi: any) => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(poItem.ItemID).trim().toLowerCase());
-        }
-        if (!currentGrnItem && poItem.ItemName && String(poItem.ItemName).trim() !== '') {
-          currentGrnItem = extraReceivingItems.find((gi: any) => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(poItem.ItemName).trim().toLowerCase());
-        }
-        if (!currentGrnItem && extraReceivingItems[idx]) {
-          currentGrnItem = extraReceivingItems[idx];
-        }
-        if (currentGrnItem) {
-          cumulativeReceived += Number(currentGrnItem.ReceivedQty) || Number(currentGrnItem.Qty) || 0;
-        }
+      const remainingQty = Math.max(0, ordered - receivedQty);
+      const orderedTotal = ordered * unitPrice;
+      const receivedTotal = receivedQty * unitPrice;
+      const remainingTotal = remainingQty * unitPrice;
+
+      let fulfillmentStatus: 'Fulfilled' | 'Partially Received' | 'Pending Delivery' = 'Pending Delivery';
+      if (receivedQty >= ordered && ordered > 0) {
+        fulfillmentStatus = 'Fulfilled';
+      } else if (receivedQty > 0) {
+        fulfillmentStatus = 'Partially Received';
       }
 
-      totalReceivedSum += cumulativeReceived;
-
-      if (cumulativeReceived < ordered) {
-        isFullyReceived = false;
-      }
-      if (cumulativeReceived > 0) {
-        isPartiallyReceived = true;
-      }
+      return {
+        ItemID: poItem.ItemID,
+        ItemName: poItem.ItemName,
+        Category: poItem.Category,
+        BatchNo: poItem.BatchNo,
+        OrderedQty: ordered,
+        ReceivedQty: receivedQty,
+        RemainingQty: remainingQty,
+        UnitPrice: unitPrice,
+        OrderedTotal: orderedTotal,
+        ReceivedTotal: receivedTotal,
+        RemainingTotal: remainingTotal,
+        FulfillmentStatus: fulfillmentStatus,
+        GrnNumbers: receivingGrnIds
+      };
     });
 
-    if (totalOrderedSum > 0 && totalReceivedSum >= totalOrderedSum) {
-      isFullyReceived = true;
+    const totalOrderedQty = items.reduce((sum, i) => sum + i.OrderedQty, 0);
+    const totalReceivedQty = items.reduce((sum, i) => sum + i.ReceivedQty, 0);
+    const totalRemainingQty = items.reduce((sum, i) => sum + i.RemainingQty, 0);
+    const totalOrderedAmount = items.reduce((sum, i) => sum + i.OrderedTotal, 0);
+    const totalReceivedAmount = items.reduce((sum, i) => sum + i.ReceivedTotal, 0);
+    const totalRemainingAmount = items.reduce((sum, i) => sum + i.RemainingTotal, 0);
+
+    const totalItemsCount = items.length;
+    const fulfilledItemsCount = items.filter(i => i.FulfillmentStatus === 'Fulfilled').length;
+    const partiallyReceivedItemsCount = items.filter(i => i.FulfillmentStatus === 'Partially Received').length;
+    const pendingItemsCount = items.filter(i => i.FulfillmentStatus === 'Pending Delivery').length;
+
+    const remainingItemsList = items.filter(i => i.RemainingQty > 0);
+
+    return {
+      items,
+      remainingItemsList,
+      totalOrderedQty,
+      totalReceivedQty,
+      totalRemainingQty,
+      totalOrderedAmount,
+      totalReceivedAmount,
+      totalRemainingAmount,
+      totalItemsCount,
+      fulfilledItemsCount,
+      partiallyReceivedItemsCount,
+      pendingItemsCount,
+      hasPendingItems: totalRemainingQty > 0,
+      isFullyReceived: totalOrderedQty > 0 && totalReceivedQty >= totalOrderedQty,
+      linkedGrns: approvedGrns
+    };
+  };
+
+  const calculatePoStatus = (po: ErpPurchaseOrder, grnsList: ErpGrn[], extraReceivingItems?: any[]): 'Received' | 'Partially Received' | 'Approved' | 'Sent' | 'Draft' => {
+    if (!po || !Array.isArray(po.Items) || po.Items.length === 0) return (po?.Status as any) || 'Approved';
+    
+    const breakdown = getPoItemFulfillmentBreakdown(po, grnsList);
+    
+    let extraReceived = 0;
+    if (extraReceivingItems && extraReceivingItems.length > 0) {
+      extraReceivingItems.forEach(gi => {
+        extraReceived += Number(gi.ReceivedQty ?? gi.Qty ?? 0);
+      });
     }
 
-    if (approvedGrns.length > 0 || (extraReceivingItems && extraReceivingItems.length > 0)) {
-      if (isFullyReceived) return 'Received';
-      if (isPartiallyReceived) return 'Partially Received';
+    const effectiveTotalReceived = breakdown.totalReceivedQty + extraReceived;
+    if (breakdown.totalOrderedQty > 0 && effectiveTotalReceived >= breakdown.totalOrderedQty) {
+      return 'Received';
+    }
+    if (effectiveTotalReceived > 0) {
+      return 'Partially Received';
     }
 
     return (po.Status && po.Status !== 'Received' && po.Status !== 'Partially Received') ? (po.Status as any) : 'Approved';
@@ -3583,54 +3672,32 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
   // HANDLERS FOR GOODS RECEIVED NOTE (GRN) & PARTIAL BATCH RECEIVING
   const getPoItemsReceiptInfo = (po: ErpPurchaseOrder) => {
-    const approvedGrns = grns.filter(g => g.POID === po.POID && (g.Status === 'Approved' || !g.Status));
-    const items = po.Items.map((i, idx) => {
-      const ordered = Number(i.Qty) || 0;
-      let alreadyReceived = 0;
-      approvedGrns.forEach(g => {
-        if (Array.isArray(g.Items)) {
-          let matched = null;
-          if (i.ItemID && String(i.ItemID).trim() !== '') {
-            matched = g.Items.find(gi => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(i.ItemID).trim().toLowerCase());
-          }
-          if (!matched && i.ItemName && String(i.ItemName).trim() !== '') {
-            matched = g.Items.find(gi => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(i.ItemName).trim().toLowerCase());
-          }
-          if (!matched && g.Items[idx]) {
-            matched = g.Items[idx];
-          }
-          if (matched) {
-            alreadyReceived += Number(matched.ReceivedQty) || Number(matched.Qty) || 0;
-          }
-        }
-      });
-      const pending = Math.max(0, ordered - alreadyReceived);
+    const breakdown = getPoItemFulfillmentBreakdown(po, grns);
+    const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
-      const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    // Return only items that still have pending remaining quantities to receive
+    return breakdown.remainingItemsList.map(item => {
       const matchedInv = (inventoryItems || []).find((inv: any) =>
-        (i.ItemID && inv.ItemID && String(inv.ItemID).trim().toLowerCase() === String(i.ItemID).trim().toLowerCase()) ||
-        (i.ItemName && inv.ItemName && norm(inv.ItemName) === norm(i.ItemName))
+        (item.ItemID && inv.ItemID && String(inv.ItemID).trim().toLowerCase() === String(item.ItemID).trim().toLowerCase()) ||
+        (item.ItemName && inv.ItemName && norm(inv.ItemName) === norm(item.ItemName))
       );
-
-      const displayItemId = matchedInv?.ItemID || i.ItemID;
+      const displayItemId = matchedInv?.ItemID || item.ItemID;
 
       return {
         ItemID: displayItemId,
-        ItemName: i.ItemName,
-        OrderedQty: ordered,
-        AlreadyReceivedQty: alreadyReceived,
-        PendingQty: pending,
+        ItemName: item.ItemName,
+        OrderedQty: item.OrderedQty,
+        AlreadyReceivedQty: item.ReceivedQty,
+        PendingQty: item.RemainingQty,
         ReceivedQty: '' as any, // Empty textbox for physical verification
-        UnitPrice: '' as any, // Empty textbox for supplier invoice rate
+        UnitPrice: item.UnitPrice > 0 ? item.UnitPrice : ('' as any), // Default to PO rate
         LineTotal: 0,
-        BatchNo: i.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+        BatchNo: item.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
         MfgDate: new Date().toISOString().split('T')[0],
         ExpiryDate: new Date(Date.now() + 365 * 2 * 86400000).toISOString().split('T')[0]
       };
     });
-    return items.filter(i => i.PendingQty > 0);
   };
-
   const handleOpenGrnForPo = (po?: ErpPurchaseOrder) => {
     if (po) {
       setGrnForm({
@@ -7628,111 +7695,337 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                       </td>
                     </tr>
                   ) : (
-                    filteredPurchaseOrders.map((po, idx) => (
-                      <tr key={idx} className="hover:bg-slate-50">
-                        <td className="p-3">
-                          <div className="flex items-center space-x-1.5">
-                            <span className="font-mono font-bold text-indigo-600">{po.POID}</span>
-                            {po.PaymentMethod === 'Cash' || (po as any).PaymentTerms === 'Cash' ? (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">CASH</span>
-                            ) : (
-                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">CREDIT</span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="p-3 font-bold text-slate-900">{po.VendorName}</td>
-                        <td className="p-3 text-slate-600">{po.OrderDate}</td>
-                        <td className="p-3 text-slate-600">{po.ExpectedDeliveryDate}</td>
-                        <td className="p-3 text-center">
-                          <div className="font-bold text-slate-700">{po.Items?.length || 0} items</div>
-                          {po.Items && po.Items.some(i => i.BatchNo) && (
-                            <div
-                              className="text-[10px] font-mono text-amber-800 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 inline-block mt-0.5 cursor-help"
-                              title={po.Items.map(i => `${i.ItemName}: Batch ${i.BatchNo || 'N/A'}`).join(' | ')}
-                            >
-                              Batch: {po.Items.find(i => i.BatchNo)?.BatchNo} {po.Items.length > 1 ? `+${po.Items.length - 1}` : ''}
-                            </div>
-                          )}
-                        </td>
-                        <td className="p-3 text-right font-bold text-slate-900">Rs. {po.TotalAmount.toLocaleString()}</td>
-                        <td className="p-3 text-center">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            po.Status === 'Received'
-                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                              : po.Status === 'Partially Received'
-                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                              : 'bg-blue-100 text-blue-800'
-                          }`}>
-                            {po.Status === 'Received' ? '‚úì Fully Received' : po.Status === 'Partially Received' ? '‚ö° Partially Received' : po.Status}
-                          </span>
-                        </td>
-                        <td className="p-3 text-center whitespace-nowrap">
-                          <div className="inline-flex items-center justify-center gap-1.5 align-middle">
-                            {/* EDIT PO BUTTON: Enabled when pending/sent, locked when stock/GRN processed */}
-                            {isPoStockReceivedOrLocked(po) ? (
-                              <button
-                                type="button"
-                                disabled
-                                className="w-7 h-7 bg-slate-100 text-slate-400 border border-slate-200 rounded-lg inline-flex items-center justify-center cursor-not-allowed opacity-60 shadow-2xs"
-                                title="üîí Locked: Stock/GRN has already been added for this PO. Editing is not allowed."
-                              >
-                                <Lock className="w-3.5 h-3.5 text-slate-400" />
-                              </button>
-                            ) : (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenEditPoModal(po)}
-                                className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shadow-2xs"
-                                title="Edit Purchase Order (Add/Update items before stock receipt)"
-                              >
-                                <Pencil className="w-3.5 h-3.5" />
-                              </button>
-                            )}
+                    filteredPurchaseOrders.map((po, idx) => {
+                      const breakdown = getPoItemFulfillmentBreakdown(po, grns);
+                      const isExpanded = expandedPoId === po.POID;
 
-                            {po.Status !== 'Received' ? (
-                              <button
-                                type="button"
-                                onClick={() => handleOpenGrnForPo(po)}
-                                className="h-7 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition inline-flex items-center justify-center space-x-1 cursor-pointer shrink-0"
-                                title="Process GRN stock inward for this PO"
-                              >
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                <span className="whitespace-nowrap">{po.Status === 'Partially Received' ? 'Receive Next' : 'Receive Stock'}</span>
-                              </button>
-                            ) : (
-                              <span className="h-7 px-2.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[11px] font-extrabold inline-flex items-center justify-center shrink-0">
-                                Stock Added
+                      return (
+                        <React.Fragment key={po.POID || po._id || idx}>
+                          <tr className={`hover:bg-slate-50 transition-colors ${isExpanded ? 'bg-indigo-50/40' : ''}`}>
+                            <td className="p-3">
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedPoId(isExpanded ? null : po.POID)}
+                                  className={`w-6 h-6 rounded-md flex items-center justify-center transition cursor-pointer border ${
+                                    isExpanded
+                                      ? 'bg-indigo-600 text-white border-indigo-600'
+                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
+                                  }`}
+                                  title={isExpanded ? 'Hide item breakdown & remaining balance' : 'View item breakdown & remaining balance'}
+                                >
+                                  <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
+                                </button>
+                                <div className="flex items-center space-x-1.5">
+                                  <span className="font-mono font-bold text-indigo-600">{po.POID}</span>
+                                  {po.PaymentMethod === 'Cash' || (po as any).PaymentTerms === 'Cash' ? (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">CASH</span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">CREDIT</span>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                            <td className="p-3 font-bold text-slate-900">{po.VendorName}</td>
+                            <td className="p-3 text-slate-600">{po.OrderDate}</td>
+                            <td className="p-3 text-slate-600">{po.ExpectedDeliveryDate || 'N/A'}</td>
+                            <td className="p-3 text-center">
+                              <div className="font-bold text-slate-700">{po.Items?.length || 0} items</div>
+                              {breakdown.totalReceivedQty > 0 && breakdown.totalRemainingQty > 0 ? (
+                                <div className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
+                                  ‚ö° {breakdown.totalRemainingQty} pcs remaining
+                                </div>
+                              ) : breakdown.isFullyReceived ? (
+                                <div className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
+                                  ‚úì All {breakdown.totalOrderedQty} received
+                                </div>
+                              ) : (
+                                <div className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
+                                  All {breakdown.totalOrderedQty} pending
+                                </div>
+                              )}
+                            </td>
+                            <td className="p-3 text-right font-bold text-slate-900">Rs. {po.TotalAmount.toLocaleString()}</td>
+                            <td className="p-3 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                po.Status === 'Received' || breakdown.isFullyReceived
+                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                  : po.Status === 'Partially Received' || breakdown.totalReceivedQty > 0
+                                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                  : 'bg-blue-100 text-blue-800'
+                              }`}>
+                                {po.Status === 'Received' || breakdown.isFullyReceived
+                                  ? '‚úì Fully Received'
+                                  : po.Status === 'Partially Received' || breakdown.totalReceivedQty > 0
+                                  ? '‚ö° Partially Received'
+                                  : po.Status || 'Approved'}
                               </span>
-                            )}
-                            <button
-                              type="button"
-                              onClick={() => handleOpenPoWhatsAppModal(po)}
-                              className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition inline-flex items-center justify-center space-x-1 cursor-pointer shadow-xs shrink-0"
-                              title="Send Purchase Order & PDF to Vendor via WhatsApp"
-                            >
-                              <WhatsAppIcon className="w-3.5 h-3.5 text-white" />
-                              <span className="whitespace-nowrap">WhatsApp</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handlePrintPo(po)}
-                              className="w-7 h-7 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shrink-0 shadow-2xs"
-                              title="Print Official PO"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleDeletePo(po)}
-                              className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shrink-0 shadow-2xs"
-                              title="Delete PO"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                            </td>
+                            <td className="p-3 text-center whitespace-nowrap">
+                              <div className="inline-flex items-center justify-center gap-1.5 align-middle">
+                                {/* Toggle Items Details */}
+                                <button
+                                  type="button"
+                                  onClick={() => setExpandedPoId(isExpanded ? null : po.POID)}
+                                  className={`h-7 px-2 border rounded-lg text-[11px] font-bold transition inline-flex items-center space-x-1 cursor-pointer shrink-0 ${
+                                    isExpanded
+                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
+                                      : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
+                                  }`}
+                                  title="View Item-Wise Ordered, Received, and Remaining Balance"
+                                >
+                                  <FileText className="w-3.5 h-3.5" />
+                                  <span>{isExpanded ? 'Hide' : 'Items'}</span>
+                                </button>
+
+                                {/* EDIT PO BUTTON: Enabled when pending/sent, locked when stock/GRN processed */}
+                                {isPoStockReceivedOrLocked(po) ? (
+                                  <button
+                                    type="button"
+                                    disabled
+                                    className="w-7 h-7 bg-slate-100 text-slate-400 border border-slate-200 rounded-lg inline-flex items-center justify-center cursor-not-allowed opacity-60 shadow-2xs"
+                                    title="üîí Locked: Stock/GRN has already been added for this PO. Editing is not allowed."
+                                  >
+                                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                  </button>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditPoModal(po)}
+                                    className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shadow-2xs"
+                                    title="Edit Purchase Order (Add/Update items before stock receipt)"
+                                  >
+                                    <Pencil className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+
+                                {po.Status !== 'Received' && !breakdown.isFullyReceived ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenGrnForPo(po)}
+                                    className="h-7 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition inline-flex items-center justify-center space-x-1 cursor-pointer shrink-0"
+                                    title="Process GRN stock inward for remaining items of this PO"
+                                  >
+                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                    <span className="whitespace-nowrap">
+                                      {po.Status === 'Partially Received' || breakdown.totalReceivedQty > 0
+                                        ? `Receive (${breakdown.totalRemainingQty})`
+                                        : 'Receive Stock'}
+                                    </span>
+                                  </button>
+                                ) : (
+                                  <span className="h-7 px-2.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[11px] font-extrabold inline-flex items-center justify-center shrink-0">
+                                    Stock Added
+                                  </span>
+                                )}
+
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenPoWhatsAppModal(po)}
+                                  className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition inline-flex items-center justify-center space-x-1 cursor-pointer shadow-xs shrink-0"
+                                  title="Send Purchase Order & Remaining Items to Vendor via WhatsApp"
+                                >
+                                  <WhatsAppIcon className="w-3.5 h-3.5 text-white" />
+                                  <span className="whitespace-nowrap">WhatsApp</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintPo(po)}
+                                  className="w-7 h-7 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shrink-0 shadow-2xs"
+                                  title="Print Official PO with Balance Tracking"
+                                >
+                                  <Printer className="w-3.5 h-3.5" />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeletePo(po)}
+                                  className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shrink-0 shadow-2xs"
+                                  title="Delete PO"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+
+                          {/* EXPANDABLE ROW: ITEM-WISE ORDERED, RECEIVED, AND REMAINING BREAKDOWN */}
+                          {isExpanded && (
+                            <tr className="bg-slate-50/90 border-b-2 border-indigo-200">
+                              <td colSpan={8} className="p-4 sm:p-5">
+                                <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-4 sm:p-5 space-y-4">
+                                  {/* Header & Status Alert */}
+                                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                                    <div>
+                                      <div className="flex items-center space-x-2">
+                                        <span className="font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-lg text-xs">
+                                          {po.POID}
+                                        </span>
+                                        <h4 className="text-sm font-black text-slate-900">
+                                          PO Items Fulfillment & Remaining Stock Balance
+                                        </h4>
+                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                                          breakdown.isFullyReceived
+                                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                            : breakdown.totalReceivedQty > 0
+                                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                            : 'bg-blue-100 text-blue-800'
+                                        }`}>
+                                          {breakdown.isFullyReceived
+                                            ? '‚úì All Items Received'
+                                            : breakdown.totalReceivedQty > 0
+                                            ? `‚ö° Partially Received (${breakdown.totalRemainingQty} pcs pending)`
+                                            : '‚è≥ Awaiting Full Delivery'}
+                                        </span>
+                                      </div>
+                                      <p className="text-xs text-slate-500 mt-1">
+                                        Supplier: <strong className="text-slate-800">{po.VendorName}</strong> &nbsp;|&nbsp; Ordered: {po.OrderDate} &nbsp;|&nbsp; Expected Delivery: {po.ExpectedDeliveryDate || 'N/A'}
+                                      </p>
+                                    </div>
+
+                                    {/* Action Buttons in Expanded Row */}
+                                    <div className="flex items-center flex-wrap gap-2 shrink-0">
+                                      {breakdown.hasPendingItems && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenGrnForPo(po)}
+                                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1.5 shadow-xs cursor-pointer"
+                                          title="Open GRN Stock Inward for the remaining pending items"
+                                        >
+                                          <CheckCircle2 className="w-3.5 h-3.5" />
+                                          <span>Receive Remaining Items ({breakdown.totalRemainingQty} pcs)</span>
+                                        </button>
+                                      )}
+                                      {breakdown.hasPendingItems && (
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenPoWhatsAppModal(po)}
+                                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer"
+                                          title="Send WhatsApp Reminder to vendor with only pending items"
+                                        >
+                                          <WhatsAppIcon className="w-3.5 h-3.5 text-emerald-600" />
+                                          <span>WhatsApp Remaining Reminder</span>
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePrintPo(po)}
+                                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer"
+                                        title="Print Official PO with fulfillment and balance summary"
+                                      >
+                                        <Printer className="w-3.5 h-3.5" />
+                                        <span>Print PO Audit</span>
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  {/* 4 Summary Cards */}
+                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                                      <div className="text-[10px] font-bold text-slate-500 uppercase">Total Ordered</div>
+                                      <div className="text-sm font-black text-slate-900 mt-0.5">
+                                        {breakdown.totalItemsCount} items ({breakdown.totalOrderedQty} units)
+                                      </div>
+                                      <div className="text-[10px] text-slate-500 font-medium">Rs. {breakdown.totalOrderedAmount.toLocaleString()}</div>
+                                    </div>
+                                    <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
+                                      <div className="text-[10px] font-bold text-emerald-700 uppercase">Received in GRN</div>
+                                      <div className="text-sm font-black text-emerald-800 mt-0.5">
+                                        {breakdown.fulfilledItemsCount} complete ({breakdown.totalReceivedQty} units)
+                                      </div>
+                                      <div className="text-[10px] text-emerald-600 font-medium">Rs. {breakdown.totalReceivedAmount.toLocaleString()}</div>
+                                    </div>
+                                    <div className={`p-2.5 rounded-xl border ${breakdown.hasPendingItems ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
+                                      <div className={`text-[10px] font-bold uppercase ${breakdown.hasPendingItems ? 'text-amber-700' : 'text-slate-500'}`}>
+                                        Remaining / Pending
+                                      </div>
+                                      <div className={`text-sm font-black mt-0.5 ${breakdown.hasPendingItems ? 'text-amber-900' : 'text-slate-400'}`}>
+                                        {breakdown.totalRemainingQty > 0 ? `${breakdown.remainingItemsList.length} items (${breakdown.totalRemainingQty} units)` : '0 units (All Complete)'}
+                                      </div>
+                                      <div className={`text-[10px] font-bold ${breakdown.hasPendingItems ? 'text-amber-700' : 'text-slate-400'}`}>
+                                        Pending Val: Rs. {breakdown.totalRemainingAmount.toLocaleString()}
+                                      </div>
+                                    </div>
+                                    <div className="bg-indigo-50 p-2.5 rounded-xl border border-indigo-200">
+                                      <div className="text-[10px] font-bold text-indigo-700 uppercase">Linked GRN Receipts</div>
+                                      <div className="text-sm font-black text-indigo-900 mt-0.5">
+                                        {breakdown.linkedGrns.length > 0 ? `${breakdown.linkedGrns.length} GRN(s) Logged` : 'No GRN yet'}
+                                      </div>
+                                      <div className="text-[10px] text-indigo-600 font-mono font-medium truncate">
+                                        {breakdown.linkedGrns.map(g => g.GRNID).join(', ') || 'Pending initial receipt'}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {/* Item-by-item Table */}
+                                  <div className="overflow-x-auto rounded-xl border border-slate-200">
+                                    <table className="w-full text-left text-xs">
+                                      <thead>
+                                        <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                                          <th className="p-2.5 text-center w-10">#</th>
+                                          <th className="p-2.5">Medicine / Item Name</th>
+                                          <th className="p-2.5 text-center">Ordered Qty</th>
+                                          <th className="p-2.5 text-center">Received in GRN</th>
+                                          <th className="p-2.5 text-center bg-amber-50 text-amber-900 border-x border-amber-200">Remaining / Pending</th>
+                                          <th className="p-2.5 text-right">Unit Rate (Rs.)</th>
+                                          <th className="p-2.5 text-right">Pending Value (Rs.)</th>
+                                          <th className="p-2.5 text-center">Fulfillment</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100 bg-white">
+                                        {breakdown.items.map((it, iIdx) => (
+                                          <tr key={iIdx} className={it.RemainingQty > 0 ? 'bg-amber-50/20 hover:bg-amber-50/40' : 'hover:bg-slate-50'}>
+                                            <td className="p-2.5 text-center font-bold text-slate-400">{iIdx + 1}</td>
+                                            <td className="p-2.5">
+                                              <div className="font-bold text-slate-900">{it.ItemName}</div>
+                                              {it.Category && <div className="text-[10px] text-indigo-600 font-semibold">{it.Category}</div>}
+                                            </td>
+                                            <td className="p-2.5 text-center font-bold text-slate-700">{it.OrderedQty}</td>
+                                            <td className="p-2.5 text-center">
+                                              <span className={`font-bold ${it.ReceivedQty > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                                {it.ReceivedQty}
+                                              </span>
+                                              {it.GrnNumbers.length > 0 && (
+                                                <div className="text-[9px] font-mono text-slate-500">{it.GrnNumbers.join(', ')}</div>
+                                              )}
+                                            </td>
+                                            <td className="p-2.5 text-center border-x border-amber-200 bg-amber-50/40">
+                                              {it.RemainingQty > 0 ? (
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                                                  {it.RemainingQty} Pending
+                                                </span>
+                                              ) : (
+                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                                  ‚úì Fulfilled
+                                                </span>
+                                              )}
+                                            </td>
+                                            <td className="p-2.5 text-right text-slate-600">Rs. {it.UnitPrice.toLocaleString()}</td>
+                                            <td className="p-2.5 text-right font-bold text-slate-900">
+                                              {it.RemainingQty > 0 ? `Rs. ${it.RemainingTotal.toLocaleString()}` : '‚Äî'}
+                                            </td>
+                                            <td className="p-2.5 text-center">
+                                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                                it.FulfillmentStatus === 'Fulfilled'
+                                                  ? 'bg-emerald-100 text-emerald-800'
+                                                  : it.FulfillmentStatus === 'Partially Received'
+                                                  ? 'bg-amber-100 text-amber-900'
+                                                  : 'bg-rose-100 text-rose-800'
+                                              }`}>
+                                                {it.FulfillmentStatus}
+                                              </span>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })
                   )}
                 </tbody>
               </table>
@@ -10133,2837 +10426,94 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                         <tbody className="divide-y divide-slate-100">
                           {bulkGrnParsedItems.map((item, idx) => (
                             <tr key={idx} className="hover:bg-slate-50/80">
-                              <td className="p-2 text-center text-[10px] text-slate-400 font-bold">{idx + 1}</td>
-                              <td className="p-2">
-                                <span className="font-bold text-slate-800 block text-xs">{item.ItemName}</span>
-                                <div className="flex items-center space-x-1 mt-0.5">
-                                  {item.isMatchedPo ? (
-                                    <span className="px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded font-bold text-[9px]">
-                                      In PO ({item.OrderedQty} ordered)
-                                    </span>
-                                  ) : (
-                                    <span className="px-1 py-0.2 bg-amber-100 text-amber-800 rounded font-bold text-[9px]">
-                                      Extra Item
-                                    </span>
-                                  )}
-                                </div>
-                              </td>
-                              <td className="p-2 text-center">
-                                <input
-                                  type="text"
-                                  placeholder="Batch #"
-                                  value={item.BatchNo || ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, BatchNo: val } : it));
-                                  }}
-                                  className="w-24 p-1 border border-slate-200 rounded text-[11px] font-mono font-bold bg-amber-50/50 text-amber-900 text-center"
-                                />
-                              </td>
-                              <td className="p-2 text-center">
-                                <input
-                                  type="date"
-                                  value={item.MfgDate || ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, MfgDate: val } : it));
-                                  }}
-                                  className="w-24 p-1 border border-slate-200 rounded text-[11px] font-mono bg-white"
-                                />
-                              </td>
-                              <td className="p-2 text-center">
-                                <input
-                                  type="date"
-                                  value={item.ExpiryDate || ''}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, ExpiryDate: val } : it));
-                                  }}
-                                  className="w-24 p-1 border border-slate-200 rounded text-[11px] font-mono bg-white"
-                                />
-                              </td>
-                              <td className="p-2 text-right">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  step="any"
-                                  value={item.UnitPrice}
-                                  onChange={(e) => {
-                                    const val = Number(e.target.value);
-                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, UnitPrice: val } : it));
-                                  }}
-                                  className="w-16 p-1 border border-slate-200 rounded text-right text-xs font-bold bg-white"
-                                />
-                              </td>
-                              <td className="p-2 text-center">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  value={item.ReceivedQty}
-                                  onChange={(e) => {
-                                    const val = Number(e.target.value);
-                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, ReceivedQty: val } : it));
-                                  }}
-                                  className="w-14 p-1 border border-emerald-300 rounded text-center text-xs font-bold bg-emerald-50/60 text-emerald-950"
-                                />
-                              </td>
-                              <td className="p-2">
-                                <select
-                                  value={item.Category || medicineCategories[0] || 'BM Drops'}
-                                  onChange={(e) => {
-                                    const val = e.target.value;
-                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, Category: val } : it));
-                                  }}
-                                  className="w-full p-1 border border-indigo-200 rounded text-[11px] font-bold text-indigo-900 bg-indigo-50/50 cursor-pointer"
-                                >
-                                  {medicineCategories.map((cat, catIdx) => (
-                                    <option key={catIdx} value={cat}>{cat}</option>
-                                  ))}
-                                  {item.Category && !medicineCategories.includes(item.Category) && (
-                                    <option value={item.Category}>{item.Category}</option>
-                                  )}
-                                </select>
-                              </td>
-                              <td className="p-2 text-right font-extrabold text-slate-900 text-xs font-mono">
-                                Rs. {((Number(item.ReceivedQty) || 0) * (Number(item.UnitPrice) || 0)).toLocaleString()}
-                              </td>
-                              <td className="p-2 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => setBulkGrnParsedItems(prev => prev.filter((_, i) => i !== idx))}
-                                  className="text-slate-400 hover:text-rose-600 font-bold p-0.5 rounded cursor-pointer"
-                                  title="Remove Item"
-                                >
-                                  ‚úï
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
-                </div>
-
-                {/* Modal Actions */}
-                <div className="flex items-center justify-end space-x-2 pt-2 border-t border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setShowUploadBulkGrnModal(false)}
-                    className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    disabled={bulkGrnParsedItems.length === 0}
-                    onClick={handleApplyBulkGrnToForm}
-                    className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white font-extrabold text-xs shadow-md transition flex items-center space-x-1.5 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Apply to GRN ({bulkGrnParsedItems.length} Items)</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* POPUP MODAL: UNMATCHED CATEGORIES CONFIRMATION & MAPPING */}
-      {unmatchedCategoryDialog?.isOpen && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-[90] animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-amber-300 space-y-4 max-h-[90vh] flex flex-col">
-            {/* Header */}
-            <div className="flex items-start justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center space-x-3">
-                <div className="w-10 h-10 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-700 font-black text-xl shrink-0">
-                  ‚ö†Ô∏è
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-900 text-base flex items-center space-x-2">
-                    <span>Unmatched Categories Detected</span>
-                    <span className="px-2 py-0.5 rounded-full text-xs font-black bg-amber-100 text-amber-900 border border-amber-300">
-                      {unmatchedCategoryDialog.unmatchedList.length} Categories
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    The following categories were found in your Excel/Paste data but do not exist in the system. Choose to add them as new categories or map them to existing categories.
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setUnmatchedCategoryDialog(null)}
-                className="text-slate-400 hover:text-slate-700 text-xl font-bold leading-none p-1 rounded-lg cursor-pointer"
-              >
-                ‚úï
-              </button>
-            </div>
-
-            {/* Quick Bulk Toggle Actions */}
-            <div className="flex items-center justify-between bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-xs">
-              <span className="font-bold text-slate-700">Quick Actions:</span>
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUnmatchedCategoryDialog(prev => {
-                      if (!prev) return null;
-                      return {
-                        ...prev,
-                        unmatchedList: prev.unmatchedList.map(item => ({ ...item, action: 'new' }))
-                      };
-                    });
-                  }}
-                  className="px-2.5 py-1 bg-emerald-100 hover:bg-emerald-200 text-emerald-800 border border-emerald-300 font-bold rounded-lg text-[11px] transition cursor-pointer"
-                >
-                  ‚ûï Set All: Add as New Category
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setUnmatchedCategoryDialog(prev => {
-                      if (!prev) return null;
-                      return {
-                        ...prev,
-                        unmatchedList: prev.unmatchedList.map(item => ({ ...item, action: 'map' }))
-                      };
-                    });
-                  }}
-                  className="px-2.5 py-1 bg-indigo-100 hover:bg-indigo-200 text-indigo-800 border border-indigo-300 font-bold rounded-lg text-[11px] transition cursor-pointer"
-                >
-                  üîÑ Set All: Map to Existing
-                </button>
-              </div>
-            </div>
-
-            {/* Scrollable list of unmatched categories */}
-            <div className="overflow-y-auto max-h-[48vh] space-y-3 pr-1">
-              {unmatchedCategoryDialog.unmatchedList.map((item, idx) => (
-                <div key={idx} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 hover:bg-slate-50 space-y-2.5 transition">
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-black text-xs px-2.5 py-1 rounded-lg bg-amber-200/80 text-amber-900 border border-amber-300 font-mono">
-                        "{item.originalCategory}"
-                      </span>
-                      <span className="text-[11px] font-bold text-slate-500">
-                        ({item.count} items: {item.sampleItems.slice(0, 2).join(', ')}{item.count > 2 ? '...' : ''})
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pt-1">
-                    {/* Option 1: Add as new */}
-                    <label className={`flex items-start space-x-2 p-2 rounded-lg border cursor-pointer transition ${item.action === 'new' ? 'bg-emerald-50 border-emerald-400 text-emerald-950 font-bold' : 'bg-white border-slate-200 text-slate-600'}`}>
-                      <input
-                        type="radio"
-                        name={`cat-action-${idx}`}
-                        checked={item.action === 'new'}
-                        onChange={() => {
-                          setUnmatchedCategoryDialog(prev => {
-                            if (!prev) return null;
-                            const nextList = [...prev.unmatchedList];
-                            nextList[idx] = { ...nextList[idx], action: 'new' };
-                            return { ...prev, unmatchedList: nextList };
-                          });
-                        }}
-                        className="mt-0.5 accent-emerald-600 cursor-pointer"
-                      />
-                      <div className="text-xs">
-                        <div className="font-bold">Add as New Category</div>
-                        <div className="text-[10px] text-slate-500 mt-0.5">Creates permanent category in system</div>
-                      </div>
-                    </label>
-
-                    {/* Option 2: Map to existing */}
-                    <label className={`flex flex-col space-y-1 p-2 rounded-lg border cursor-pointer transition ${item.action === 'map' ? 'bg-indigo-50 border-indigo-400 text-indigo-950 font-bold' : 'bg-white border-slate-200 text-slate-600'}`}>
-                      <div className="flex items-center space-x-2">
-                        <input
-                          type="radio"
-                          name={`cat-action-${idx}`}
-                          checked={item.action === 'map'}
-                          onChange={() => {
-                            setUnmatchedCategoryDialog(prev => {
-                              if (!prev) return null;
-                              const nextList = [...prev.unmatchedList];
-                              nextList[idx] = { ...nextList[idx], action: 'map' };
-                              return { ...prev, unmatchedList: nextList };
-                            });
-                          }}
-                          className="accent-indigo-600 cursor-pointer"
-                        />
-                        <span className="text-xs font-bold">Map to Existing</span>
-                      </div>
-                      {item.action === 'map' && (
-                        <select
-                          value={item.mappedTo}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setUnmatchedCategoryDialog(prev => {
-                              if (!prev) return null;
-                              const nextList = [...prev.unmatchedList];
-                              nextList[idx] = { ...nextList[idx], mappedTo: val };
-                              return { ...prev, unmatchedList: nextList };
-                            });
-                          }}
-                          className="w-full mt-1 p-1 text-xs border border-indigo-300 rounded bg-white text-indigo-900 font-bold"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {medicineCategories.map((c, cIdx) => (
-                            <option key={cIdx} value={c}>{c}</option>
-                          ))}
-                        </select>
-                      )}
-                    </label>
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Footer actions */}
-            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setUnmatchedCategoryDialog(null)}
-                className="px-4 py-2 rounded-xl bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={handleResolveUnmatchedCategories}
-                className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs shadow-md transition flex items-center space-x-1.5 cursor-pointer"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Apply Categories & Continue GRN</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: CREATE / PROCESS GOODS RECEIVED NOTE (GRN) */}
-      {showGrnModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl max-w-6xl w-full p-6 shadow-2xl border border-slate-100 space-y-5 max-h-[92vh] overflow-y-auto">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div>
-                <h3 className="font-bold text-slate-900 text-lg flex items-center space-x-2">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                  <span>Receive Goods & Approve GRN (Stock Inward)</span>
-                </h3>
-                <p className="text-xs text-slate-500">Enter or select Purchase Order (PO Number) to fetch items, verify received quantities, and add stock to inventory</p>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setBulkGrnSelectedPoId(grnForm.POID);
-                    setBulkGrnRawText('');
-                    setBulkGrnParsedItems([]);
-                    setBulkGrnFileError('');
-                    setShowUploadBulkGrnModal(true);
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs transition shadow-xs flex items-center space-x-1 cursor-pointer"
-                  title="Upload Excel or Paste Bulk GRN Receipts"
-                >
-                  <FileSpreadsheet className="w-3.5 h-3.5" />
-                  <span>Upload Bulk GRN</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowGrnModal(false)}
-                  className="text-slate-400 hover:text-slate-600 font-bold p-1 rounded-lg hover:bg-slate-100 cursor-pointer"
-                >
-                  ‚úï
-                </button>
-              </div>
-            </div>
-
-            <form onSubmit={handleApproveGrn} className="space-y-4">
-              {/* PO SELECTOR & METADATA GRID */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Select Purchase Order (PO Number)</label>
-                  <select
-                    value={grnForm.POID}
-                    onChange={e => handleSelectPoForGrn(e.target.value)}
-                    className="w-full p-2 border rounded-xl text-xs font-mono font-bold bg-white text-indigo-700 border-indigo-200 focus:outline-hidden"
-                  >
-                    <option value="">-- Choose Purchase Order --</option>
-                    {purchaseOrders.map((p, idx) => (
-                      <option key={idx} value={p.POID}>
-                        {p.POID} ({p.VendorName}) - {p.Status === 'Received' ? '‚úì Fully Received' : p.Status === 'Partially Received' ? '‚ö° Partially Received' : 'Pending Order'}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">GRN Number</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={grnForm.GRNID}
-                    className="w-full p-2 border rounded-xl text-xs font-mono font-bold bg-slate-100 text-emerald-700"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Received Date</label>
-                  <input
-                    type="date"
-                    required
-                    value={grnForm.ReceivedDate}
-                    onChange={e => setGrnForm({ ...grnForm, ReceivedDate: e.target.value })}
-                    className="w-full p-2 border rounded-xl text-xs bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Supplier / Vendor</label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={grnForm.VendorName || 'No Vendor Selected'}
-                    className="w-full p-2 border rounded-xl text-xs font-bold bg-slate-100 text-slate-800"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Delivery Challan No.</label>
-                  <input
-                    type="text"
-                    placeholder=""
-                    value={grnForm.ChallanNo}
-                    onChange={e => setGrnForm({ ...grnForm, ChallanNo: e.target.value })}
-                    className="w-full p-2 border rounded-xl text-xs bg-white"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 block mb-1">Supplier Invoice No.</label>
-                  <input
-                    type="text"
-                    placeholder=""
-                    value={grnForm.SupplierInvoiceNo}
-                    onChange={e => setGrnForm({ ...grnForm, SupplierInvoiceNo: e.target.value })}
-                    className="w-full p-2 border rounded-xl text-xs bg-white"
-                  />
-                </div>
-              </div>
-
-              {/* PAYMENT TERMS & REAL-TIME SETTLEMENT ROUTING TOGGLE */}
-              <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div className="flex items-center space-x-3">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center font-bold text-white shadow-xs shrink-0 ${grnForm.PaymentMethod === 'Cash' ? 'bg-emerald-600' : 'bg-indigo-600'}`}>
-                    {grnForm.PaymentMethod === 'Cash' ? <Coins className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="text-xs font-black text-slate-900 uppercase tracking-wider">Purchase Payment Mode:</span>
-                      <span className={`px-2 py-0.5 rounded-md text-[11px] font-black uppercase ${grnForm.PaymentMethod === 'Cash' ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-indigo-100 text-indigo-800 border border-indigo-300'}`}>
-                        {grnForm.PaymentMethod === 'Cash' ? 'üíµ Cash Spot Payment (Cash Book Outflow)' : 'üí≥ Credit Purchase (Vendor Payable Account)'}
-                      </span>
-                    </div>
-                    <p className="text-[11px] text-slate-600 mt-0.5">
-                      {grnForm.PaymentMethod === 'Cash'
-                        ? '‚úÖ Cash Outflow: Generates Cash Payment Voucher (CPV), deducts cash from Clinic Cash Book & P&L, leaving vendor balance net zero (Rs. 0).'
-                        : 'üìã Credit Liability: Posts unpaid stock inward to Vendor Accounts Payable (AP) ledger for deferred settlement without deducting cash.'}
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-1.5 bg-white p-1 rounded-xl border border-slate-200 shadow-2xs self-start md:self-auto shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setGrnForm(prev => ({ ...prev, PaymentMethod: 'Credit' }))}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center space-x-1.5 ${
-                      grnForm.PaymentMethod !== 'Cash'
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <CreditCard className="w-3.5 h-3.5" />
-                    <span>Credit (Payable)</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setGrnForm(prev => ({ ...prev, PaymentMethod: 'Cash' }))}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-black transition cursor-pointer flex items-center space-x-1.5 ${
-                      grnForm.PaymentMethod === 'Cash'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Coins className="w-3.5 h-3.5" />
-                    <span>Cash (Spot Paid)</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* RECEIVED MEDICINES TABLE WITH PARTIAL DELIVERY COLUMNS */}
-              <div className="space-y-2">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                  <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                    PO Order Items & Partial Batch Receiving ({grnForm.Items.length} Line Items)
-                  </label>
-                  <div className="flex items-center space-x-2">
-                    {(() => {
-                      const selectedPo = purchaseOrders.find(p => p.POID === grnForm.POID);
-                      const pendingPoItems = selectedPo ? getPoItemsReceiptInfo(selectedPo) : [];
-                      const fullCount = pendingPoItems.length;
-                      if (fullCount > grnForm.Items.length) {
-                        return (
-                          <button
-                            type="button"
-                            onClick={handleResetGrnItems}
-                            className="text-[11px] text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md font-bold border border-indigo-200 transition flex items-center space-x-1 cursor-pointer"
-                          >
-                            <RotateCcw className="w-3 h-3" />
-                            <span>Restore Excluded Items ({fullCount - grnForm.Items.length} excluded)</span>
-                          </button>
-                        );
-                      }
-                      return null;
-                    })()}
-                    <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                      Partial receiving supported: Excluded items remain pending in PO for next batch
-                    </span>
-                  </div>
-                </div>
-
-                <div className="border border-slate-200 rounded-xl overflow-x-auto w-full grn-summary-card">
-                  <table className="w-full text-left text-xs min-w-[920px] grn-summary-table">
-                    <thead>
-                      <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                        <th className="p-2.5 w-24">Item ID</th>
-                        <th className="p-2.5 min-w-[150px]">Medicine Description</th>
-                        <th className="p-2.5 text-center w-24">Batch No.</th>
-                        <th className="p-2.5 text-center w-16">Ordered</th>
-                        <th className="p-2.5 text-center w-16">Prev. Recv</th>
-                        <th className="p-2.5 text-center w-16">Pending</th>
-                        <th className="p-2.5 text-center w-24">Now Receiving</th>
-                        <th className="p-2.5 text-right w-28 grn-unit-price">Unit Price</th>
-                        <th className="p-2.5 text-right w-24 grn-subtotal">Subtotal</th>
-                        <th className="p-2.5 text-center w-28 shrink-0 exclude-col">Exclude</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {grnForm.Items.length === 0 ? (
-                        <tr>
-                          <td colSpan={10} className="p-6 text-center text-slate-400 font-medium">
-                            No items in current GRN batch. {grnForm.POID ? 'All items were excluded from this delivery.' : 'Please select a Purchase Order from above!'}
-                            {grnForm.POID && (
-                              <div className="mt-2">
-                                <button
-                                  type="button"
-                                  onClick={handleResetGrnItems}
-                                  className="text-xs text-indigo-600 underline font-bold"
-                                >
-                                  Click here to restore all PO items
-                                </button>
-                              </div>
-                            )}
-                          </td>
-                        </tr>
-                      ) : (
-                        grnForm.Items.map((item, idx) => {
-                          const prevReceived = item.AlreadyReceivedQty || 0;
-                          const pending = item.PendingQty ?? Math.max(0, item.OrderedQty - prevReceived);
-                          const currentRecvQty = item.ReceivedQty === '' || item.ReceivedQty === undefined || item.ReceivedQty === null ? '' : item.ReceivedQty;
-                          const currentUnitPrice = item.UnitPrice === '' || item.UnitPrice === undefined || item.UnitPrice === null ? '' : item.UnitPrice;
-                          const numRecv = Number(currentRecvQty) || 0;
-                          const numPrice = Number(currentUnitPrice) || 0;
-                          const subtotal = numRecv * numPrice;
-
-                          return (
-                            <tr key={idx} className="hover:bg-slate-50">
-                              <td className="p-2.5 font-mono text-slate-500 font-bold">{item.ItemID}</td>
-                              <td className="p-2.5 font-bold text-slate-900">{item.ItemName}</td>
-                              <td className="p-2.5 text-center">
-                                <input
-                                  type="text"
-                                  placeholder=""
-                                  value={item.BatchNo || ''}
-                                  onChange={e => {
-                                    const val = e.target.value;
-                                    setGrnForm(prev => {
-                                      const updated = [...prev.Items];
-                                      updated[idx] = { ...updated[idx], BatchNo: val };
-                                      return { ...prev, Items: updated };
-                                    });
-                                  }}
-                                  className="w-22 p-1 border border-amber-200 rounded-lg text-xs text-center font-mono font-bold bg-amber-50 text-amber-900 focus:outline-hidden"
-                                />
-                              </td>
-                              <td className="p-2.5 text-center font-bold text-slate-600">{item.OrderedQty}</td>
-                              <td className="p-2.5 text-center font-bold text-indigo-600 bg-indigo-50/50">{prevReceived}</td>
-                              <td className="p-2.5 text-center font-bold text-amber-700 bg-amber-50/50">{pending}</td>
-                              <td className="p-2.5 text-center">
-                                <input
-                                  type="number"
-                                  min="0"
-                                  max={pending > 0 ? pending * 2 : 9999}
-                                  placeholder="0"
-                                  value={currentRecvQty}
-                                  onChange={e => {
-                                    const raw = e.target.value;
-                                    const val = raw === '' ? '' : Number(raw);
-                                    setGrnForm(prev => {
-                                      const updated = [...prev.Items];
-                                      const uPrice = Number(updated[idx].UnitPrice) || 0;
-                                      updated[idx] = {
-                                        ...updated[idx],
-                                        ReceivedQty: val as any,
-                                        LineTotal: (Number(val) || 0) * uPrice
-                                      };
-                                      return { ...prev, Items: updated };
-                                    });
-                                  }}
-                                  className="w-20 p-1.5 border border-emerald-400 rounded-lg text-xs text-center font-bold bg-white text-emerald-950 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                                />
-                              </td>
-                              <td className="p-2.5 text-right font-semibold text-slate-700 grn-unit-price">
-                                <div className="flex items-center justify-end space-x-1">
-                                  <span className="text-slate-400 font-bold text-xs">Rs.</span>
-                                  <input
-                                    type="number"
-                                    min="0"
-                                    step="any"
-                                    placeholder="0.00"
-                                    value={currentUnitPrice}
-                                    onChange={e => {
-                                      const raw = e.target.value;
-                                      const val = raw === '' ? '' : Number(raw);
-                                      setGrnForm(prev => {
-                                        const updated = [...prev.Items];
-                                        const rQty = Number(updated[idx].ReceivedQty) || 0;
-                                        updated[idx] = {
-                                          ...updated[idx],
-                                          UnitPrice: val as any,
-                                          LineTotal: rQty * (Number(val) || 0)
-                                        };
-                                        return { ...prev, Items: updated };
-                                      });
-                                    }}
-                                    className="w-22 p-1.5 border border-slate-300 rounded-lg text-xs text-right font-bold bg-white text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                                    title="Edit Unit Cost for Inward Stock"
-                                  />
-                                </div>
-                              </td>
-                              <td className="p-2.5 text-right font-bold text-slate-900 grn-subtotal">Rs. {subtotal.toLocaleString()}</td>
-                              <td className="p-2.5 text-center w-28 shrink-0 exclude-col">
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemoveGrnItem(idx)}
-                                  title="Exclude medicine item from this GRN batch (will remain pending in PO for next batch)"
-                                  className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition inline-flex items-center space-x-1 cursor-pointer whitespace-nowrap shrink-0 shadow-2xs"
-                                >
-                                  <XCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                                  <span>Exclude</span>
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-600 block mb-1">Verification / Quality Remarks</label>
-                <input
-                  type="text"
-                  placeholder=""
-                  value={grnForm.Remarks}
-                  onChange={e => setGrnForm({ ...grnForm, Remarks: e.target.value })}
-                  className="w-full p-2 border rounded-xl text-xs bg-white"
-                />
-              </div>
-
-              {/* FOOTER & APPROVE BUTTON */}
-              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-200">
-                <div className="text-sm">
-                  <span className="text-slate-500 font-bold">Total GRN Inward Value: </span>
-                  <span className="text-lg font-black text-emerald-700 ml-1">
-                    Rs. {grnForm.Items.reduce((sum, i) => sum + ((Number(i.ReceivedQty) || 0) * (Number(i.UnitPrice) || 0)), 0).toLocaleString()}
-                  </span>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={handlePreviewCurrentGrnForm}
-                    disabled={grnForm.Items.length === 0}
-                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition border border-slate-300 flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
-                    title="Preview Printable A4 GRN Document"
-                  >
-                    <Eye className="w-4 h-4 text-slate-600" />
-                    <span>Print Preview</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setShowGrnModal(false)}
-                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs cursor-pointer"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    disabled={grnForm.Items.length === 0 || !grnForm.POID}
-                    className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs transition shadow-sm flex items-center space-x-1.5 cursor-pointer"
-                  >
-                    <CheckCircle2 className="w-4 h-4" />
-                    <span>Approve GRN & Update Inventory Stock</span>
-                  </button>
-                </div>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: LOG TRANSACTION */}
-      {showTxnModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border space-y-4">
-            <h3 className="font-bold text-slate-900 text-base">Log Financial Voucher</h3>
-            <form onSubmit={handleAddTxn} className="space-y-3">
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Type</label>
-                  <select
-                    value={txnForm.Type}
-                    onChange={e => setTxnForm({ ...txnForm, Type: e.target.value as any })}
-                    className="w-full mt-1 p-2 border rounded-xl text-xs bg-white"
-                  >
-                    <option value="Expense">Expense</option>
-                    <option value="Income">Income</option>
-                    <option value="VendorPayment">Vendor Payment</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Payment Method</label>
-                  <select
-                    value={txnForm.PaymentMethod}
-                    onChange={e => setTxnForm({ ...txnForm, PaymentMethod: e.target.value as any })}
-                    className="w-full mt-1 p-2 border rounded-xl text-xs bg-white"
-                  >
-                    <option value="Cash">Cash</option>
-                    <option value="Bank">Bank Transfer</option>
-                    <option value="Cheque">Cheque</option>
-                  </select>
-                </div>
-              </div>
-
-              {txnForm.Type === 'VendorPayment' && (
-                <div className="space-y-3 bg-amber-50/70 p-3 rounded-xl border border-amber-200/80">
-                  <div>
-                    <label className="text-xs font-bold text-amber-900 block mb-1">Select Vendor / Supplier</label>
-                    <select
-                      value={txnForm.VendorName}
-                      onChange={e => {
-                        const v = vendors.find(item => item.VendorName === e.target.value);
-                        setTxnForm({
-                          ...txnForm,
-                          VendorName: e.target.value,
-                          VendorID: v?.VendorID || '',
-                          Amount: v?.Balance || txnForm.Amount || 0
-                        });
-                      }}
-                      className="w-full p-2 border rounded-xl text-xs bg-white font-bold text-slate-800 border-amber-300"
-                    >
-                      <option value="">-- Choose Vendor / Supplier --</option>
-                      {vendors.map((v, idx) => (
-                        <option key={idx} value={v.VendorName}>
-                          {v.VendorName} (Outstanding: Rs. {v.Balance.toLocaleString()})
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="text-xs font-bold text-amber-900 block mb-1">
-                      Vendor Invoice Number / Bill No <span className="text-rose-600">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      value={txnForm.ReferenceNo || ''}
-                      onChange={e => setTxnForm({ 
-                        ...txnForm, 
-                        ReferenceNo: e.target.value,
-                        Description: e.target.value ? `Payment against Vendor Invoice #${e.target.value} for ${txnForm.VendorName || 'Vendor'}` : txnForm.Description
-                      })}
-                      placeholder=""
-                      className="w-full p-2 border rounded-xl text-xs bg-white font-mono font-bold text-indigo-900 border-amber-300 focus:outline-hidden focus:ring-2 focus:ring-amber-500"
-                    />
-
-                    {(() => {
-                      const matchingGrns = grns.filter(g => 
-                        (txnForm.VendorID && g.VendorID === txnForm.VendorID) ||
-                        (txnForm.VendorName && g.VendorName === txnForm.VendorName)
-                      );
-                      if (matchingGrns.length === 0) return null;
-
-                      return (
-                        <div className="mt-2">
-                          <span className="text-[10px] font-bold text-amber-800 block mb-1">
-                            Available GRNs/Invoices for this Vendor:
-                          </span>
-                          <div className="flex flex-wrap gap-1 max-h-24 overflow-y-auto">
-                            {matchingGrns.map((g, gIdx) => {
-                              const invLabel = g.SupplierInvoiceNo || g.ChallanNo || g.GRNID;
-                              return (
-                                <button
-                                  type="button"
-                                  key={gIdx}
-                                  onClick={() => setTxnForm({
-                                    ...txnForm,
-                                    ReferenceNo: invLabel,
-                                    Amount: g.TotalAmount || txnForm.Amount || 0,
-                                    Description: `Payment against Vendor Invoice #${invLabel} (${g.GRNID})`
-                                  })}
-                                  className="text-[10px] px-2 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-mono font-bold transition cursor-pointer"
-                                >
-                                  #{invLabel} (Rs. {(g.TotalAmount || 0).toLocaleString()})
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      );
-                    })()}
-                  </div>
-                </div>
-              )}
-
-              <div>
-                <label className="text-xs font-bold text-slate-600">Category Name</label>
-                <input
-                  type="text"
-                  required
-                  value={txnForm.Category}
-                  onChange={e => setTxnForm({ ...txnForm, Category: e.target.value })}
-                  placeholder=""
-                  className="w-full mt-1 p-2 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-600">Amount (Rs.)</label>
-                <input
-                  type="number"
-                  required
-                  value={txnForm.Amount || ''}
-                  onChange={e => setTxnForm({ ...txnForm, Amount: Number(e.target.value) })}
-                  placeholder=""
-                  className="w-full mt-1 p-2 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-600">Description</label>
-                <input
-                  type="text"
-                  value={txnForm.Description}
-                  onChange={e => setTxnForm({ ...txnForm, Description: e.target.value })}
-                  placeholder=""
-                  className="w-full mt-1 p-2 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowTxnModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs"
-                >
-                  Post Voucher
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: ADD EMPLOYEE */}
-      {showEmpModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border space-y-4">
-            <h3 className="font-bold text-slate-900 text-base">Add Staff Employee Profile</h3>
-            <form onSubmit={handleAddEmployee} className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-600">Full Name</label>
-                <input
-                  type="text"
-                  required
-                  value={empForm.FullName}
-                  onChange={e => setEmpForm({ ...empForm, FullName: e.target.value })}
-                  placeholder=""
-                  className="w-full mt-1 p-2 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Role</label>
-                  <input
-                    type="text"
-                    value={empForm.Role}
-                    onChange={e => setEmpForm({ ...empForm, Role: e.target.value })}
-                    placeholder=""
-                    className="w-full mt-1 p-2 border rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Monthly Salary (Rs.)</label>
-                  <input
-                    type="number"
-                    required
-                    value={empForm.Salary || ''}
-                    onChange={e => setEmpForm({ ...empForm, Salary: Number(e.target.value) })}
-                    placeholder=""
-                    className="w-full mt-1 p-2 border rounded-xl text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Phone</label>
-                  <input
-                    type="text"
-                    value={empForm.Phone}
-                    onChange={e => setEmpForm({ ...empForm, Phone: e.target.value })}
-                    placeholder=""
-                    className="w-full mt-1 p-2 border rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-600">CNIC</label>
-                  <input
-                    type="text"
-                    value={empForm.CNIC}
-                    onChange={e => setEmpForm({ ...empForm, CNIC: e.target.value })}
-                    placeholder=""
-                    className="w-full mt-1 p-2 border rounded-xl text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowEmpModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs"
-                >
-                  Save Employee
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: PROCESS PAYROLL */}
-      {showPayrollModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border space-y-4">
-            <h3 className="font-bold text-slate-900 text-base">Process Monthly Staff Salary Payroll</h3>
-            <form onSubmit={handleProcessPayroll} className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-600">Select Employee</label>
-                <select
-                  required
-                  value={payrollForm.EmployeeID}
-                  onChange={e => {
-                    const emp = employees.find(item => item.EmployeeID === e.target.value);
-                    setPayrollForm({
-                      ...payrollForm,
-                      EmployeeID: e.target.value,
-                      BasicSalary: emp?.Salary || 0
-                    });
-                  }}
-                  className="w-full mt-1 p-2 border rounded-xl text-xs bg-white font-bold"
-                >
-                  <option value="">-- Choose Employee --</option>
-                  {employees.map((emp, idx) => (
-                    <option key={idx} value={emp.EmployeeID}>{emp.FullName} ({emp.Role}) - Rs. {emp.Salary.toLocaleString()}</option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Month / Year</label>
-                  <input
-                    type="month"
-                    required
-                    value={payrollForm.MonthYear}
-                    onChange={e => setPayrollForm({ ...payrollForm, MonthYear: e.target.value })}
-                    className="w-full mt-1 p-2 border rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Basic Salary</label>
-                  <input
-                    type="number"
-                    value={payrollForm.BasicSalary}
-                    onChange={e => setPayrollForm({ ...payrollForm, BasicSalary: Number(e.target.value) })}
-                    className="w-full mt-1 p-2 border rounded-xl text-xs font-bold"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Allowances (Rs.)</label>
-                  <input
-                    type="number"
-                    value={payrollForm.Allowances}
-                    onChange={e => setPayrollForm({ ...payrollForm, Allowances: Number(e.target.value) })}
-                    className="w-full mt-1 p-2 border rounded-xl text-xs"
-                  />
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Deductions (Rs.)</label>
-                  <input
-                    type="number"
-                    value={payrollForm.Deductions}
-                    onChange={e => setPayrollForm({ ...payrollForm, Deductions: Number(e.target.value) })}
-                    className="w-full mt-1 p-2 border rounded-xl text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowPayrollModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-bold text-xs"
-                >
-                  Confirm & Disburse Payroll
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: ADD EXPENSE */}
-      {showExpenseModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border space-y-4">
-            <div className="flex items-center justify-between">
-              <h3 className="font-bold text-slate-900 text-base">Record Operational Expense</h3>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowExpenseModal(false);
-                  setShowAddCategoryInput(false);
-                  setNewCategoryName('');
-                }}
-                className="p-1 text-slate-400 hover:text-slate-600 rounded-lg transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <form onSubmit={handleAddExpense} className="space-y-3">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-bold text-slate-700">Categories (Grid View)</label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setShowAddCategoryInput(!showAddCategoryInput);
-                      setEditingCategoryName(null);
-                      setNewCategoryName('');
-                    }}
-                    className="text-[11px] font-extrabold text-indigo-600 hover:text-indigo-800 flex items-center space-x-1 cursor-pointer bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-lg border border-indigo-200 transition"
-                  >
-                    <Plus className="w-3 h-3" />
-                    <span>Add Category</span>
-                  </button>
-                </div>
-
-                {/* Inline New Category Creation Input */}
-                {showAddCategoryInput && (
-                  <div className="p-2.5 bg-indigo-50/90 border border-indigo-200 rounded-xl space-y-2 animate-fadeIn">
-                    <label className="text-[10px] font-extrabold text-indigo-900 uppercase tracking-wide block">
-                      New Category Name
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        value={newCategoryName}
-                        onChange={(e) => setNewCategoryName(e.target.value)}
-                        placeholder=""
-                        className="flex-1 p-2 text-xs border border-indigo-300 rounded-lg bg-white font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleSaveNewCategory();
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSaveNewCategory}
-                        className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition cursor-pointer shadow-2xs whitespace-nowrap"
-                      >
-                        Save
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setShowAddCategoryInput(false);
-                          setNewCategoryName('');
-                        }}
-                        className="px-2.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-lg transition cursor-pointer"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Inline Edit Category Input */}
-                {editingCategoryName && (
-                  <div className="p-2.5 bg-amber-50/90 border border-amber-300 rounded-xl space-y-2 animate-fadeIn">
-                    <div className="flex items-center justify-between">
-                      <label className="text-[10px] font-extrabold text-amber-900 uppercase tracking-wide block">
-                        Edit Category: <span className="underline">{editingCategoryName}</span>
-                      </label>
-                      <button
-                        type="button"
-                        onClick={() => setEditingCategoryName(null)}
-                        className="text-slate-400 hover:text-slate-600 p-0.5"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        value={editCategoryNewValue}
-                        onChange={(e) => setEditCategoryNewValue(e.target.value)}
-                        className="flex-1 p-2 text-xs border border-amber-300 rounded-lg bg-white font-medium focus:ring-2 focus:ring-amber-500 focus:outline-none"
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') {
-                            e.preventDefault();
-                            handleSaveEditedCategory();
-                          }
-                        }}
-                      />
-                      <button
-                        type="button"
-                        onClick={handleSaveEditedCategory}
-                        className="px-3 py-2 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-lg transition cursor-pointer shadow-2xs whitespace-nowrap"
-                      >
-                        Update
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Grid View of Categories */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 max-h-40 overflow-y-auto p-1.5 bg-slate-50 border border-slate-200 rounded-xl">
-                  {allExpenseCategories.map((cat) => {
-                    const isSelected = expenseForm.Category === cat;
-
-                    return (
-                      <div
-                        key={cat}
-                        onClick={() => setExpenseForm(prev => ({ ...prev, Category: cat }))}
-                        className={`group p-2 rounded-lg border text-[11px] font-bold transition cursor-pointer flex items-center justify-between gap-1 select-none ${
-                          isSelected
-                            ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
-                            : 'bg-white text-slate-800 border-slate-200 hover:border-indigo-300 hover:bg-indigo-50/60'
-                        }`}
-                      >
-                        <span className="truncate flex-1">{cat}</span>
-
-                        <div className="flex items-center space-x-0.5 shrink-0">
-                          {isSelected && (
-                            <CheckCircle2 className="w-3.5 h-3.5 text-white stroke-[2.5]" />
-                          )}
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleStartEditCategory(cat);
-                            }}
-                            title={`Edit ${cat}`}
-                            className={`p-0.5 rounded transition cursor-pointer ${
-                              isSelected
-                                ? 'hover:bg-white/20 text-white/90 hover:text-white'
-                                : 'hover:bg-slate-200 text-slate-400 hover:text-slate-700'
-                            }`}
-                          >
-                            <Edit className="w-3 h-3" />
-                          </button>
-
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              if (confirm(`Delete category "${cat}"?`)) {
-                                handleDeleteCategory(cat);
-                              }
-                            }}
-                            title={`Delete ${cat}`}
-                            className={`p-0.5 rounded transition cursor-pointer ${
-                              isSelected
-                                ? 'hover:bg-rose-500/80 text-white/90 hover:text-white'
-                                : 'hover:bg-rose-100 text-slate-400 hover:text-rose-600'
-                            }`}
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                <div className="pt-1">
-                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                    Selected Category: <strong className="text-indigo-700">{expenseForm.Category}</strong>
-                  </label>
-                  <select
-                    value={expenseForm.Category}
-                    onChange={e => setExpenseForm({ ...expenseForm, Category: e.target.value })}
-                    className="w-full mt-0.5 p-1.5 border rounded-lg text-xs bg-white font-bold focus:ring-2 focus:ring-indigo-500 text-slate-700"
-                  >
-                    {allExpenseCategories.map((cat) => (
-                      <option key={cat} value={cat}>
-                        {cat}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-600">Description</label>
-                <input
-                  type="text"
-                  required
-                  value={expenseForm.Description}
-                  onChange={e => setExpenseForm({ ...expenseForm, Description: e.target.value })}
-                  placeholder=""
-                  className="w-full mt-1 p-2 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-600">Amount (Rs.)</label>
-                <input
-                  type="number"
-                  required
-                  value={expenseForm.Amount || ''}
-                  onChange={e => setExpenseForm({ ...expenseForm, Amount: Number(e.target.value) })}
-                  placeholder=""
-                  className="w-full mt-1 p-2 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowExpenseModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs"
-                >
-                  Save Expense
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* MODAL: ADD ASSET */}
-      {showAssetModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-xl border space-y-4">
-            <h3 className="font-bold text-slate-900 text-base">Add Fixed Asset Record</h3>
-            <form onSubmit={handleAddAsset} className="space-y-3">
-              <div>
-                <label className="text-xs font-bold text-slate-600">Asset Name</label>
-                <input
-                  type="text"
-                  required
-                  value={assetForm.AssetName}
-                  onChange={e => setAssetForm({ ...assetForm, AssetName: e.target.value })}
-                  placeholder=""
-                  className="w-full mt-1 p-2 border rounded-xl text-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Category</label>
-                  <select
-                    value={assetForm.Category}
-                    onChange={e => setAssetForm({ ...assetForm, Category: e.target.value as any })}
-                    className="w-full mt-1 p-2 border rounded-xl text-xs bg-white"
-                  >
-                    <option value="Equipment">Equipment</option>
-                    <option value="IT Hardware">IT Hardware</option>
-                    <option value="Furniture">Furniture</option>
-                    <option value="Vehicle">Vehicle</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xs font-bold text-slate-600">Purchase Cost (Rs.)</label>
-                  <input
-                    type="number"
-                    required
-                    value={assetForm.PurchaseCost || ''}
-                    onChange={e => {
-                      const val = Number(e.target.value);
-                      setAssetForm({ ...assetForm, PurchaseCost: val, CurrentValue: val });
-                    }}
-                    placeholder=""
-                    className="w-full mt-1 p-2 border rounded-xl text-xs"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end space-x-2 pt-3">
-                <button
-                  type="button"
-                  onClick={() => setShowAssetModal(false)}
-                  className="px-4 py-2 rounded-xl bg-slate-100 text-slate-700 font-bold text-xs"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-2 rounded-xl bg-indigo-600 text-white font-bold text-xs"
-                >
-                  Save Fixed Asset
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* PRINTABLE VENDOR STATEMENT PREVIEW MODAL */}
-      {vendorPrintModalOpen && selectedVendor && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0 print:m-0 print:overflow-visible">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full flex flex-col h-[92vh] print:h-auto print:max-w-none print:w-full print:border-0 print:shadow-none print:rounded-none animate-fadeIn">
-            {/* Modal Control Bar (Hidden on Print) */}
-            <div className="p-4 border-b border-slate-200 flex items-center justify-between print:hidden bg-slate-50 rounded-t-2xl shrink-0">
-              <div>
-                <span className="text-xs font-black uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                  <Printer className="w-4 h-4 text-amber-600" />
-                  Vendor Account Statement A4 Letterhead Preview
-                </span>
-                <p className="text-[10px] text-slate-500">Official ledger statement for {selectedVendor.VendorName}</p>
-              </div>
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => handlePrintVendorStatement()}
-                  className="bg-amber-600 hover:bg-amber-700 text-white px-4 py-2 rounded-xl text-xs font-bold transition flex items-center shadow-xs cursor-pointer"
-                >
-                  <Printer className="w-4 h-4 mr-1.5" />
-                  Print Statement (A4)
-                </button>
-                <button
-                  onClick={() => setVendorPrintModalOpen(false)}
-                  className="text-slate-400 hover:text-slate-600 p-2 rounded-xl hover:bg-slate-200 transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Printable A4 Document Sheet */}
-            <div className="p-8 flex-1 overflow-y-auto space-y-6 print:p-0 print:overflow-visible text-slate-900 bg-white" id="vendor-printable-sheet">
-              {/* OFFICIAL PUNJAB HOMEOPATHIC CLINIC A4 LETTERHEAD HEADER */}
-              {(() => {
-                const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-                const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY ‚Ä¢ RESTORING BALANCE';
-                const cDoc = clinicSettings?.DoctorName || '';
-                const cDocSub = clinicSettings?.DoctorSignatureText || '';
-                const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
-                const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
-                const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
-                const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
-
-                return (
-                  <div className="border-b-2 border-slate-900 pb-3 mb-4 space-y-2">
-                    <div className="flex items-center justify-between gap-4">
-                      {/* Official Clinic Logo */}
-                      <div className="w-16 h-16 shrink-0 flex items-center justify-center">
-                        <img src={logoSrc} alt={cName} className="max-w-full max-h-full object-contain" />
-                      </div>
-
-                      {/* Center Branding */}
-                      <div className="text-center flex-1">
-                        <h1 className="text-xl sm:text-2xl font-black text-rose-950 uppercase tracking-tight font-serif leading-tight">
-                          {cName}
-                        </h1>
-                        <p className="text-[10px] font-extrabold text-rose-800 tracking-widest uppercase mt-0.5">
-                          {cTag}
-                        </p>
-                        <p className="text-[10px] text-slate-600 font-semibold mt-0.5">
-                          üìç {cAddr} &nbsp;|&nbsp; üìû {cPhone} &nbsp;|&nbsp; üåê {cWebsite.replace(/^https?:\/\//, '')}
-                        </p>
-                      </div>
-
-                      {/* Right Statement Badge */}
-                      <div className="text-right space-y-1 shrink-0">
-                        <span className="inline-block px-3 py-1 bg-amber-100 print:bg-slate-100 text-amber-900 print:text-slate-900 border border-amber-300 print:border-slate-400 font-black text-xs uppercase tracking-wider rounded-md">
-                          SUPPLIER STATEMENT
-                        </span>
-                        <p className="text-[10px] text-slate-500 font-mono pt-1">
-                          Statement Date: <span className="font-bold text-slate-800">{new Date().toLocaleDateString('en-GB')}</span>
-                        </p>
-                        <p className="text-[10px] text-slate-500 font-mono">
-                          Period Filter: <span className="font-bold text-slate-800 capitalize">{vendorDateFilter === 'all' ? 'All Time (Full Ledger)' : vendorDateFilter}</span>
-                        </p>
-                        <p className="text-[10px] text-slate-400 font-mono">
-                          Doc Ref: STMT-{selectedVendor.VendorID || 'VND'}-{new Date().toISOString().slice(0,10).replace(/-/g,'')}
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* SUPPLIER DETAILS & SUMMARY CARDS */}
-              <div className="grid grid-cols-2 gap-4 bg-slate-50 p-4 rounded-xl border border-slate-300 text-xs print:bg-slate-50">
-                <div className="space-y-1.5 border-r border-slate-200 pr-4">
-                  <p className="text-[10px] font-black uppercase text-amber-800 print:text-slate-800 tracking-wider flex items-center">
-                    <Building2 className="w-3.5 h-3.5 mr-1" />
-                    Supplier / Distributor Details
-                  </p>
-                  <p className="font-black text-sm text-slate-950">{selectedVendor.VendorName}</p>
-                  <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-slate-700 text-[11px]">
-                    <p>Vendor ID: <span className="font-mono font-bold text-slate-900">{selectedVendor.VendorID || 'N/A'}</span></p>
-                    <p>NTN / Tax ID: <span className="font-mono font-bold text-slate-900">{selectedVendor.TaxID || 'N/A'}</span></p>
-                    <p>Contact: <span className="font-bold text-slate-900">{selectedVendor.ContactPerson || 'N/A'}</span></p>
-                    <p>Phone: <span className="font-bold text-slate-900">{selectedVendor.Phone || 'N/A'}</span></p>
-                  </div>
-                  <p className="text-[11px] text-slate-600 truncate">Address: {selectedVendor.Address || 'N/A'}</p>
-                </div>
-
-                <div className="space-y-1.5 pl-2 text-right flex flex-col justify-between">
-                  <p className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                    Accounts Payable Financial Summary
-                  </p>
-                  <div className="space-y-1 text-xs">
-                    <div className="flex justify-between items-center text-slate-700">
-                      <span>Total Purchases / GRN Bills (Credit):</span>
-                      <span className="font-mono font-bold text-amber-800 print:text-slate-900">Rs. {vendorStatement.totalInvoiced.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between items-center text-slate-700">
-                      <span>Total Bill Payments Settled (Debit):</span>
-                      <span className="font-mono font-bold text-emerald-700 print:text-slate-900">Rs. {vendorStatement.totalPaid.toLocaleString()}</span>
-                    </div>
-                  </div>
-                  <div className="pt-2 border-t border-slate-300 flex justify-between items-center bg-amber-500/10 p-2 rounded-lg border border-amber-300/80 print:bg-slate-100 print:border-slate-400">
-                    <span className="text-xs font-black uppercase text-slate-900">Net Outstanding Balance:</span>
-                    <span className="text-base font-mono font-black text-amber-800 print:text-slate-950">Rs. {vendorStatement.closingBalance.toLocaleString()}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* STATEMENT ROWS TABLE (WITH PURCHASE ORDER NUMBER COLUMN) */}
-              <div className="border border-slate-300 rounded-xl overflow-hidden print:border-slate-400">
-                <table className="w-full text-left text-xs font-sans border-collapse">
-                  <thead>
-                    <tr className="bg-slate-900 text-white uppercase text-[9px] font-black tracking-wider print:bg-slate-950">
-                      <th className="p-2.5">Date</th>
-                      <th className="p-2.5">Type</th>
-                      <th className="p-2.5">Ref / Voucher #</th>
-                      <th className="p-2.5">P.O. Number</th>
-                      <th className="p-2.5">Description / Particulars</th>
-                      <th className="p-2.5 text-right">Debit (Paid)</th>
-                      <th className="p-2.5 text-right">Credit (Bill)</th>
-                      <th className="p-2.5 text-right">Running Balance</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-200 bg-white text-[11px]">
-                    {vendorStatement.statementRows.length === 0 ? (
-                      <tr>
-                        <td colSpan={8} className="p-6 text-center text-slate-400 font-bold">
-                          No transactions or GRNs recorded for this vendor in selected period.
-                        </td>
-                      </tr>
-                    ) : (
-                      vendorStatement.statementRows.map((row, idx) => (
-                        <tr key={idx} className="hover:bg-slate-50">
-                          <td className="p-2.5 font-mono text-slate-700 whitespace-nowrap">{row.date}</td>
-                          <td className="p-2.5 whitespace-nowrap">
-                            <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
-                              row.credit > 0 ? 'bg-amber-100 text-amber-900 print:bg-slate-100 print:text-slate-900' : 'bg-emerald-100 text-emerald-900 print:bg-slate-100 print:text-slate-900'
-                            }`}>
-                              {row.type}
-                            </span>
-                          </td>
-                          <td className="p-2.5 font-mono font-bold text-slate-900 whitespace-nowrap">{row.refNo}</td>
-                          <td className="p-2.5 font-mono font-bold text-indigo-700 print:text-slate-900 whitespace-nowrap">
-                            {row.poNo !== 'N/A' ? row.poNo : '-'}
-                          </td>
-                          <td className="p-2.5 text-slate-700">{row.description}</td>
-                          <td className="p-2.5 text-right font-mono font-bold text-emerald-700 print:text-slate-900 whitespace-nowrap">
-                            {row.debit > 0 ? `Rs. ${row.debit.toLocaleString()}` : '-'}
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-bold text-amber-700 print:text-slate-900 whitespace-nowrap">
-                            {row.credit > 0 ? `Rs. ${row.credit.toLocaleString()}` : '-'}
-                          </td>
-                          <td className="p-2.5 text-right font-mono font-black text-slate-950 whitespace-nowrap">
-                            Rs. {(row.runningBalance || 0).toLocaleString()}
-                          </td>
-                        </tr>
-                      ))
-                    )}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-slate-100 font-bold border-t-2 border-slate-900 text-slate-900 text-xs">
-                      <td colSpan={5} className="p-2.5 text-right uppercase font-black">Total Ledger Summary:</td>
-                      <td className="p-2.5 text-right font-mono font-black text-emerald-800 print:text-slate-950 whitespace-nowrap">
-                        Rs. {vendorStatement.totalPaid.toLocaleString()}
-                      </td>
-                      <td className="p-2.5 text-right font-mono font-black text-amber-800 print:text-slate-950 whitespace-nowrap">
-                        Rs. {vendorStatement.totalInvoiced.toLocaleString()}
-                      </td>
-                      <td className="p-2.5 text-right font-mono font-black text-slate-950 whitespace-nowrap">
-                        Rs. {vendorStatement.closingBalance.toLocaleString()}
-                      </td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-
-              {/* AUDIT & SIGNATURES BLOCK FOR A4 LETTERHEAD */}
-              <div className="pt-8 mt-6 border-t border-slate-300 grid grid-cols-4 gap-4 text-center text-[10px] font-bold text-slate-700 print:pt-12">
-                <div className="space-y-1">
-                  <div className="border-b border-slate-400 pb-1 h-8 flex items-end justify-center font-mono text-[9px] text-slate-600">
-                    {currentUser?.FullName || 'Accountant'}
-                  </div>
-                  <p className="uppercase tracking-wider font-extrabold text-[9px]">PREPARED BY (ACCOUNTANT)</p>
-                  <p className="text-[8px] text-slate-500 font-medium">Accounts & Audit Desk</p>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="border-b border-slate-400 pb-1 h-8"></div>
-                  <p className="uppercase tracking-wider font-extrabold text-[9px]">CHECKED BY (AUDITOR)</p>
-                  <p className="text-[8px] text-slate-500 font-medium">Internal Audit Wing</p>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="border-b border-slate-400 pb-1 h-8"></div>
-                  <p className="uppercase tracking-wider font-extrabold text-[9px]">VENDOR STAMP & SIGN</p>
-                  <p className="text-[8px] text-slate-500 font-medium">Authorized Distributor Seal</p>
-                </div>
-
-                <div className="space-y-1">
-                  <div className="border-b-2 border-slate-900 pb-1 h-8 flex items-end justify-center font-black text-xs text-slate-900 font-serif">
-                    Zaigham Ali Anjum
-                  </div>
-                  <p className="uppercase tracking-wider font-extrabold text-[10px] text-rose-900">MR. ZAIGHAM ALI ANJUM</p>
-                  <p className="text-[9px] text-slate-800 font-bold">Manager Operations & Administrative Head</p>
-                  <p className="text-[8px] text-emerald-800 font-bold">Punjab Homeopathic Clinic & Pharmacy</p>
-                </div>
-              </div>
-
-              {/* FOOTER DISCLAIMER */}
-              <div className="pt-4 border-t border-slate-200 text-between flex items-center justify-between text-[9px] text-slate-400 font-mono">
-                <p>Punjab Homeopathic Clinic & Pharmacy ‚Ä¢ Accounts Payable Ledger System ‚Ä¢ Confidential Document</p>
-                <p>Printed on: {new Date().toLocaleString('en-GB')}</p>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PAY VENDOR BILL POPUP MODAL */}
-      {payVendorModalData && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-2xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-              <div className="flex items-center space-x-3">
-                <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl font-bold">
-                  <Coins className="w-6 h-6 text-emerald-600" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-900 text-base">Pay Vendor Bill & Clear Payable</h3>
-                  <p className="text-xs text-slate-500">
-                    Vendor: <strong className="text-slate-800">{payVendorModalData.vendor.VendorName}</strong> ({payVendorModalData.vendor.VendorID || 'N/A'})
-                  </p>
-                </div>
-              </div>
-              <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPoHistoryFilterPo(payVendorModalData.poId || payVendorModalData.invNo || 'ALL');
-                    setPoHistoryModalData({
-                      vendor: payVendorModalData.vendor,
-                      poId: payVendorModalData.poId || payVendorModalData.invNo
-                    });
-                  }}
-                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
-                  title="View Payment History for P.O. in Grid View"
-                >
-                  <History className="w-4 h-4" />
-                  <span>Payment History for P.O.</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handlePrintVendorStatement(payVendorModalData.vendor)}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
-                  title="Print official Vendor Statement summary & bill history"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Print Vendor Statement</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPayVendorModalData(null)}
-                  className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* VENDOR FINANCIAL SUMMARY CARD (BASED ON GRN HISTORY & PAYMENTS) */}
-            {(() => {
-              const vVendor = payVendorModalData.vendor;
-              const vName = (vVendor.VendorName || '').trim().toLowerCase();
-              const vId = (vVendor.VendorID || vVendor._id || '').trim().toLowerCase();
-
-              const vGrns = (grns || []).filter(g => {
-                const sName = (g.SupplierName || g.VendorName || '').trim().toLowerCase();
-                const sId = (g.SupplierID || g.VendorID || '').trim().toLowerCase();
-                return (vName && sName === vName) || (vId && sId === vId) || (sName && vName.includes(sName));
-              });
-
-              const totalGrnBilled = vGrns.reduce((sum, g) => sum + Number(g.TotalAmount || 0), 0);
-              const totalGrnsCount = vGrns.length;
-
-              const vTxns = (transactions || []).filter(t => {
-                const tVName = (t.VendorName || '').trim().toLowerCase();
-                const tVId = (t.VendorID || '').trim().toLowerCase();
-                const isVendorPay = t.Type === 'VendorPayment' || t.Category === 'Vendor Payment' || (t.Type === 'Expense' && tVName);
-                return isVendorPay && ((vName && tVName === vName) || (vId && tVId === vId) || (tVName && vName.includes(tVName)));
-              });
-
-              const totalPaidToVendor = vTxns.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
-              const currentBalance = vVendor.Balance || 0;
-
-              return (
-                <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-xl p-4 shadow-md space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-700/80 pb-2.5">
-                    <div className="flex items-center space-x-2">
-                      <div className="p-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg border border-emerald-500/30">
-                        <Coins className="w-4 h-4" />
-                      </div>
-                      <div>
-                        <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400 block">Vendor Financial Summary</span>
-                        <p className="text-[10px] text-slate-300">Based on verified GRN delivery records and payment logs</p>
-                      </div>
-                    </div>
-                    <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full border ${
-                      currentBalance > 0
-                        ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
-                        : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
-                    }`}>
-                      {currentBalance > 0 ? '‚óè Outstanding Due' : '‚úì Account Cleared'}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {/* Card 1: Total Outstanding Payable */}
-                    <div className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-lg p-3 space-y-0.5">
-                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Total Outstanding Payable</span>
-                      <div className="text-xl font-black font-mono text-emerald-400">
-                        Rs. {currentBalance.toLocaleString()}
-                      </div>
-                      <span className="text-[9px] text-slate-400 block">Current Ledger Balance</span>
-                    </div>
-
-                    {/* Card 2: Total Billed from GRNs */}
-                    <div className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-lg p-3 space-y-0.5">
-                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Total GRN Purchases</span>
-                      <div className="text-xl font-black font-mono text-amber-300">
-                        Rs. {totalGrnBilled.toLocaleString()}
-                      </div>
-                      <span className="text-[9px] text-slate-400 block">{totalGrnsCount} Received {totalGrnsCount === 1 ? 'GRN' : 'GRNs'} Logged</span>
-                    </div>
-
-                    {/* Card 3: Total Payments Settled */}
-                    <div className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-lg p-3 space-y-0.5">
-                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Total Settled Payments</span>
-                      <div className="text-xl font-black font-mono text-teal-300">
-                        Rs. {totalPaidToVendor.toLocaleString()}
-                      </div>
-                      <span className="text-[9px] text-slate-400 block">{vTxns.length} Payment {vTxns.length === 1 ? 'Voucher' : 'Vouchers'}</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })()}
-
-            {/* Purchase Orders & GRNs for this Vendor */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-extrabold text-slate-700 uppercase tracking-wider flex items-center gap-1.5">
-                  <Boxes className="w-4 h-4 text-indigo-600" />
-                  <span>Select Purchase Order / Invoice Number</span>
-                </label>
-                <span className="text-[11px] text-slate-500 italic">Click PO to auto-fill invoice & amount</span>
-              </div>
-
-              {(() => {
-                const vPos = purchaseOrders.filter(po => 
-                  (po.VendorID && po.VendorID === payVendorModalData.vendor.VendorID) || 
-                  (po.VendorName && po.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())
-                );
-                const vGrns = grns.filter(g => 
-                  (g.VendorID && g.VendorID === payVendorModalData.vendor.VendorID) || 
-                  (g.VendorName && g.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())
-                );
-
-                if (vPos.length === 0 && vGrns.length === 0) {
-                  return (
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500 font-medium text-center">
-                      No prior Purchase Orders or GRNs logged for this vendor. Enter Supplier Invoice Number manually below.
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-40 overflow-y-auto p-1 bg-slate-50 border border-slate-200 rounded-xl">
-                    {vPos.map((po, idx) => {
-                      const matchGrn = vGrns.find(g => g.POID === po.POID);
-                      const invStr = matchGrn?.SupplierInvoiceNo || po.POID;
-                      const isSelected = payVendorModalData.invNo === invStr || payVendorModalData.poId === po.POID;
-
-                      const poTotal = po.TotalAmount || 0;
-                      const alreadyPaidForPo = transactions
-                        .filter(t => 
-                          (t.VendorID === payVendorModalData.vendor.VendorID || (t.VendorName && t.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())) &&
-                          t.Type === 'VendorPayment' &&
-                          (t.ReferenceNo === po.POID || t.ReferenceNo === invStr || (t.Description && t.Description.includes(po.POID)))
-                        )
-                        .reduce((sum, t) => sum + Number(t.Amount || 0), 0);
-
-                      const poOutstanding = Math.max(0, poTotal - alreadyPaidForPo);
-
-                      return (
-                        <button
-                          key={po.POID || idx}
-                          type="button"
-                          onClick={() => {
-                            setPayVendorModalData(prev => prev ? ({
-                              ...prev,
-                              invNo: invStr,
-                              poId: po.POID,
-                              amount: poOutstanding > 0 ? poOutstanding : poTotal,
-                              description: `Payment against PO #${po.POID} (Invoice #${invStr}) for ${prev.vendor.VendorName}`
-                            }) : null);
-                          }}
-                          className={`p-2.5 rounded-lg border text-left transition flex items-center justify-between cursor-pointer ${
-                            isSelected
-                              ? 'bg-indigo-50 border-indigo-500 ring-2 ring-indigo-200 text-indigo-950 font-bold'
-                              : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-100/80 text-slate-700'
-                          }`}
-                        >
-                          <div>
-                            <div className="flex items-center space-x-1.5">
-                              <span className="font-mono text-xs font-black text-indigo-700">P.O. #{po.POID}</span>
-                              {matchGrn?.SupplierInvoiceNo && (
-                                <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded border font-mono">
-                                  Inv: {matchGrn.SupplierInvoiceNo}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-slate-500 mt-0.5">
-                              Total: Rs. {poTotal.toLocaleString()} {alreadyPaidForPo > 0 && `| Paid: Rs. ${alreadyPaidForPo.toLocaleString()}`}
-                            </div>
-                          </div>
-                          <div className="text-right">
-                            <div className="text-[10px] text-slate-500 uppercase font-bold">Remaining</div>
-                            <div className="text-xs font-black font-mono text-amber-800">Rs. {poOutstanding.toLocaleString()}</div>
-                          </div>
-                        </button>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
-            </div>
-
-            {/* Payment Form */}
-            <form onSubmit={handleConfirmPayVendor} className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">
-                    Vendor Invoice / Supplier Bill No <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder=""
-                    value={payVendorModalData.invNo}
-                    onChange={e => setPayVendorModalData({ ...payVendorModalData, invNo: e.target.value })}
-                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-mono font-bold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="text-xs font-bold text-slate-700">
-                      Payment Amount (PKR) <span className="text-rose-500">*</span>
-                    </label>
-                    
-                    {/* Quick percentage calculation buttons based on selected PO balance or vendor balance */}
-                    {(() => {
-                      const vPos = purchaseOrders.filter(po => 
-                        (po.VendorID && po.VendorID === payVendorModalData.vendor.VendorID) || 
-                        (po.VendorName && po.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())
-                      );
-                      const vGrns = grns.filter(g => 
-                        (g.VendorID && g.VendorID === payVendorModalData.vendor.VendorID) || 
-                        (g.VendorName && g.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())
-                      );
-                      const selectedPo = vPos.find(p => p.POID === payVendorModalData.poId || p.POID === payVendorModalData.invNo);
-                      
-                      let maxAmt = payVendorModalData.vendor.Balance;
-                      if (selectedPo) {
-                        const poTotal = selectedPo.TotalAmount || 0;
-                        const matchGrn = vGrns.find(g => g.POID === selectedPo.POID);
-                        const invStr = matchGrn?.SupplierInvoiceNo || selectedPo.POID;
-                        const alreadyPaid = transactions
-                          .filter(t => 
-                            (t.VendorID === payVendorModalData.vendor.VendorID || (t.VendorName && t.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())) &&
-                            t.Type === 'VendorPayment' &&
-                            (t.ReferenceNo === selectedPo.POID || t.ReferenceNo === invStr || (t.Description && t.Description.includes(selectedPo.POID)))
-                          )
-                          .reduce((sum, t) => sum + Number(t.Amount || 0), 0);
-                        const rem = Math.max(0, poTotal - alreadyPaid);
-                        if (rem > 0) maxAmt = rem;
-                      }
-
-                      return (
-                        <div className="flex items-center space-x-1">
-                          {[25, 50, 75, 100].map(pct => {
-                            const calculated = Math.round((maxAmt * pct) / 100);
-                            return (
-                              <button
-                                key={pct}
-                                type="button"
-                                onClick={() => setPayVendorModalData({ ...payVendorModalData, amount: calculated })}
-                                className="px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-black rounded border border-emerald-300 transition cursor-pointer"
-                                title={`Set ${pct}% of balance (Rs. ${calculated.toLocaleString()})`}
-                              >
-                                {pct}%
-                              </button>
-                            );
-                          })}
-                        </div>
-                      );
-                    })()}
-                  </div>
-                  <input
-                    type="number"
-                    required
-                    min={1}
-                    step="any"
-                    placeholder=""
-                    value={payVendorModalData.amount || ''}
-                    onChange={e => setPayVendorModalData({ ...payVendorModalData, amount: Number(e.target.value) })}
-                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-mono font-bold text-emerald-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">Payment Method</label>
-                  <select
-                    value={payVendorModalData.paymentMethod}
-                    onChange={e => setPayVendorModalData({ ...payVendorModalData, paymentMethod: e.target.value as any })}
-                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  >
-                    <option value="Cash">Cash</option>
-                    <option value="Bank">Bank Transfer / Online</option>
-                    <option value="Cheque">Cheque</option>
-                    <option value="Online">Online Gateway</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">Payment Date</label>
-                  <input
-                    type="date"
-                    required
-                    value={payVendorModalData.date}
-                    onChange={e => setPayVendorModalData({ ...payVendorModalData, date: e.target.value })}
-                    className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="text-xs font-bold text-slate-700 mb-1 block">Payment Description / Notes</label>
-                <input
-                  type="text"
-                  placeholder=""
-                  value={payVendorModalData.description}
-                  onChange={e => setPayVendorModalData({ ...payVendorModalData, description: e.target.value })}
-                  className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                />
-              </div>
-
-              {/* LIVE PO & PAYABLE CALCULATION BREAKDOWN */}
-              {(() => {
-                const vPos = purchaseOrders.filter(po => 
-                  (po.VendorID && po.VendorID === payVendorModalData.vendor.VendorID) || 
-                  (po.VendorName && po.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())
-                );
-                const vGrns = grns.filter(g => 
-                  (g.VendorID && g.VendorID === payVendorModalData.vendor.VendorID) || 
-                  (g.VendorName && g.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())
-                );
-                
-                const selectedPo = vPos.find(p => p.POID === payVendorModalData.poId || p.POID === payVendorModalData.invNo);
-                
-                let poTotal = 0;
-                let poPaid = 0;
-                let poOutstandingBefore = 0;
-
-                if (selectedPo) {
-                  poTotal = selectedPo.TotalAmount || 0;
-                  const matchGrn = vGrns.find(g => g.POID === selectedPo.POID);
-                  const invStr = matchGrn?.SupplierInvoiceNo || selectedPo.POID;
-                  poPaid = transactions
-                    .filter(t => 
-                      (t.VendorID === payVendorModalData.vendor.VendorID || (t.VendorName && t.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())) &&
-                      t.Type === 'VendorPayment' &&
-                      (t.ReferenceNo === selectedPo.POID || t.ReferenceNo === invStr || (t.Description && t.Description.includes(selectedPo.POID)))
-                    )
-                    .reduce((sum, t) => sum + Number(t.Amount || 0), 0);
-                  poOutstandingBefore = Math.max(0, poTotal - poPaid);
-                } else {
-                  poTotal = payVendorModalData.vendor.Balance;
-                  poOutstandingBefore = payVendorModalData.vendor.Balance;
-                }
-
-                const payingAmt = Number(payVendorModalData.amount || 0);
-                const poResidualAfter = Math.max(0, poOutstandingBefore - payingAmt);
-                const vendorPayableAfter = Math.max(0, payVendorModalData.vendor.Balance - payingAmt);
-
-                return (
-                  <div className="bg-slate-900 text-white rounded-xl p-3.5 space-y-2.5 border border-slate-800 shadow-inner">
-                    <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                      <div className="flex items-center space-x-2">
-                        <Calculator className="w-4 h-4 text-emerald-400" />
-                        <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                          {selectedPo ? `P.O. #${selectedPo.POID} Payment Breakdown` : 'Vendor Payable Breakdown'}
-                        </span>
-                      </div>
-                      <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
-                        Automatic Adjustment
-                      </span>
-                    </div>
-
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                      <div className="bg-slate-800/60 p-2 rounded-lg border border-slate-700/60">
-                        <span className="text-slate-400 text-[10px] uppercase font-semibold block">Total PO Bill</span>
-                        <span className="font-mono font-bold text-slate-100">
-                          Rs. {poTotal.toLocaleString()}
-                        </span>
-                      </div>
-
-                      <div className="bg-slate-800/60 p-2 rounded-lg border border-slate-700/60">
-                        <span className="text-slate-400 text-[10px] uppercase font-semibold block">Already Settled</span>
-                        <span className="font-mono font-bold text-emerald-400">
-                          Rs. {poPaid.toLocaleString()}
-                        </span>
-                      </div>
-
-                      <div className="bg-slate-800/60 p-2 rounded-lg border border-slate-700/60">
-                        <span className="text-slate-400 text-[10px] uppercase font-semibold block">Paying Now</span>
-                        <span className="font-mono font-black text-amber-400">
-                          - Rs. {payingAmt.toLocaleString()}
-                        </span>
-                      </div>
-
-                      <div className="bg-slate-800/60 p-2 rounded-lg border border-slate-700/60">
-                        <span className="text-slate-400 text-[10px] uppercase font-bold block">
-                          {selectedPo ? 'Residual PO Balance' : 'Payable Remaining'}
-                        </span>
-                        <span className={`font-mono font-black ${poResidualAfter === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                          Rs. {poResidualAfter.toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="text-[11px] text-slate-300 bg-slate-800/90 p-2 rounded-lg border border-slate-700/80 flex items-center justify-between">
-                      <span className="font-medium">Total Vendor Payable After This Payment:</span>
-                      <strong className="font-mono text-emerald-400 font-black text-xs">
-                        Rs. {vendorPayableAfter.toLocaleString()}
-                      </strong>
-                    </div>
-                  </div>
-                );
-              })()}
-
-              {/* Modal Buttons */}
-              <div className="flex items-center justify-end space-x-3 pt-3 border-t border-slate-200">
-                <button
-                  type="button"
-                  onClick={() => setPayVendorModalData(null)}
-                  className="px-4 py-2.5 rounded-xl border border-slate-300 text-slate-700 font-bold text-xs hover:bg-slate-100 transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={isSubmitting}
-                  className="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs shadow-md transition flex items-center space-x-2 cursor-pointer disabled:opacity-50"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Confirm & Post Vendor Payment</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* VENDOR PURCHASE ORDERS MODAL */}
-      {vendorPoModalData && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-4xl w-full p-6 shadow-2xl border border-slate-200 space-y-5 max-h-[90vh] overflow-y-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-              <div className="flex items-center space-x-3">
-                <div className="p-2.5 bg-indigo-100 text-indigo-800 rounded-xl font-bold">
-                  <Boxes className="w-6 h-6 text-indigo-600" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-900 text-base">
-                    Purchase Orders ‚Äî {vendorPoModalData.VendorName}
-                  </h3>
-                  <p className="text-xs text-slate-500">
-                    Vendor Code: <strong className="text-slate-800">{vendorPoModalData.VendorID || 'N/A'}</strong> | Contact: {vendorPoModalData.Phone || 'N/A'}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setVendorPoModalData(null)}
-                className="p-1.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {(() => {
-              const vPos = purchaseOrders.filter(po => 
-                (po.VendorID && po.VendorID === vendorPoModalData.VendorID) || 
-                (po.VendorName && po.VendorName.toLowerCase() === vendorPoModalData.VendorName.toLowerCase())
-              );
-
-              if (vPos.length === 0) {
-                return (
-                  <div className="p-8 text-center bg-slate-50 border border-dashed border-slate-300 rounded-2xl space-y-3">
-                    <Boxes className="w-10 h-10 text-slate-300 mx-auto" />
-                    <div className="text-slate-700 font-bold text-sm">No Purchase Orders Found</div>
-                    <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                      No official purchase orders have been created for {vendorPoModalData.VendorName} yet.
-                    </p>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const targetVendor = {
-                          VendorID: vendorPoModalData.VendorID || '',
-                          VendorName: vendorPoModalData.VendorName || ''
-                        };
-                        setVendorPoModalData(null);
-                        handleOpenNewPoModal(targetVendor);
-                      }}
-                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl transition inline-flex items-center space-x-1.5 shadow-xs cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>Create New PO for this Vendor</span>
-                    </button>
-                  </div>
-                );
-              }
-
-              const totalValue = vPos.reduce((acc, p) => acc + (p.TotalAmount || 0), 0);
-
-              return (
-                <div className="space-y-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 border border-slate-200 rounded-xl p-3 gap-2">
-                    <div className="text-xs font-bold text-slate-700">
-                      Total Purchase Orders: <span className="text-indigo-700 font-black">{vPos.length} Orders</span>
-                    </div>
-                    <div className="text-xs font-bold text-slate-700">
-                      Total Orders Value: <span className="text-emerald-700 font-mono font-black">Rs. {totalValue.toLocaleString()}</span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const targetVendor = {
-                          VendorID: vendorPoModalData.VendorID || '',
-                          VendorName: vendorPoModalData.VendorName || ''
-                        };
-                        setVendorPoModalData(null);
-                        handleOpenNewPoModal(targetVendor);
-                      }}
-                      className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg transition inline-flex items-center space-x-1 cursor-pointer"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>New PO</span>
-                    </button>
-                  </div>
-
-                  <div className="overflow-x-auto border border-slate-200 rounded-xl">
-                    <table className="w-full text-left text-xs">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-700 font-extrabold uppercase text-[10px] tracking-wider">
-                          <th className="p-3">PO Ref No</th>
-                          <th className="p-3">Order Date</th>
-                          <th className="p-3">Expected Delivery</th>
-                          <th className="p-3 text-center">Items Count</th>
-                          <th className="p-3 text-right">Total Amount</th>
-                          <th className="p-3 text-center">Status</th>
-                          <th className="p-3 text-center">Actions</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {vPos.map((po, idx) => (
-                          <tr key={po.POID || idx} className="hover:bg-slate-50 transition">
-                            <td className="p-3 font-mono font-bold text-indigo-700">{po.POID}</td>
-                            <td className="p-3 text-slate-600">{po.OrderDate}</td>
-                            <td className="p-3 text-slate-600">{po.ExpectedDeliveryDate || 'Immediate'}</td>
-                            <td className="p-3 text-center font-bold text-slate-700">
-                              {po.Items?.length || 0} items
-                            </td>
-                            <td className="p-3 text-right font-mono font-bold text-slate-900">
-                              Rs. {(po.TotalAmount || 0).toLocaleString()}
-                            </td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                po.Status === 'Received'
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                  : po.Status === 'Partially Received'
-                                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                  : 'bg-indigo-100 text-indigo-900 border border-indigo-300'
-                              }`}>
-                                {po.Status || 'Pending'}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center">
-                              <div className="flex items-center justify-center space-x-1.5">
-                                {isPoStockReceivedOrLocked(po) ? (
-                                  <button
-                                    type="button"
-                                    disabled
-                                    className="px-2 py-1 bg-slate-100 text-slate-400 font-bold rounded border border-slate-200 cursor-not-allowed opacity-60 flex items-center space-x-1"
-                                    title="üîí Locked: Stock/GRN has already been added for this PO."
-                                  >
-                                    <Lock className="w-3 h-3 text-slate-400" />
-                                    <span>Locked</span>
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setVendorPoModalData(null);
-                                      handleOpenEditPoModal(po);
-                                    }}
-                                    className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-800 font-bold rounded border border-amber-200 transition cursor-pointer flex items-center space-x-1"
-                                    title="Edit Purchase Order items/quantities"
-                                  >
-                                    <Pencil className="w-3 h-3 text-amber-600" />
-                                    <span>Edit</span>
-                                  </button>
-                                )}
-                                <button
-                                  type="button"
-                                  onClick={() => handlePrintPo(po)}
-                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded border border-slate-300 transition cursor-pointer flex items-center space-x-1"
-                                  title="Print Official PO"
-                                >
-                                  <Printer className="w-3 h-3 text-slate-600" />
-                                  <span>Print</span>
-                                </button>
-                                {po.Status !== 'Received' && (
-                                  <button
-                                    type="button"
-                                    onClick={() => {
-                                      setVendorPoModalData(null);
-                                      handleOpenGrnForPo(po);
-                                    }}
-                                    className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold rounded border border-emerald-200 transition cursor-pointer flex items-center space-x-1"
-                                    title="Process Goods Received Note (GRN)"
-                                  >
-                                    <PackageCheck className="w-3 h-3 text-emerald-600" />
-                                    <span>GRN</span>
-                                  </button>
-                                )}
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })()}
-
-            <div className="flex items-center justify-end pt-3 border-t border-slate-200">
-              <button
-                type="button"
-                onClick={() => setVendorPoModalData(null)}
-                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
-              >
-                Close Window
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PAYMENT HISTORY FOR P.O. POPUP MODAL (GRID-VIEW) */}
-      {poHistoryModalData && (() => {
-        const vVendor = poHistoryModalData.vendor;
-        const vPos = purchaseOrders.filter(po => 
-          (po.VendorID && po.VendorID === vVendor.VendorID) || 
-          (po.VendorName && po.VendorName.toLowerCase() === vVendor.VendorName.toLowerCase())
-        );
-        const vGrns = grns.filter(g => 
-          (g.VendorID && g.VendorID === vVendor.VendorID) || 
-          (g.VendorName && g.VendorName.toLowerCase() === vVendor.VendorName.toLowerCase())
-        );
-
-        const activePoObj = vPos.find(p => p.POID === poHistoryFilterPo);
-
-        const poPaymentTxns = transactions.filter(t => {
-          const isVendorMatch = (t.VendorID === vVendor.VendorID) || 
-                                (t.VendorName && t.VendorName.toLowerCase() === vVendor.VendorName.toLowerCase());
-          const isPay = t.Type === 'VendorPayment' || t.Category === 'Vendor Payment' || (t.Type === 'Expense' && t.VendorName);
-          if (!isVendorMatch || !isPay) return false;
-
-          if (poHistoryFilterPo !== 'ALL') {
-            const matchGrn = vGrns.find(g => g.POID === poHistoryFilterPo);
-            const invStr = matchGrn?.SupplierInvoiceNo || poHistoryFilterPo;
-            return (t.ReferenceNo === poHistoryFilterPo || t.ReferenceNo === invStr || (t.Description && t.Description.includes(poHistoryFilterPo)));
-          }
-          return true;
-        });
-
-        const totalPaidInHistory = poPaymentTxns.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
-        let totalPoCost = 0;
-        if (activePoObj) {
-          totalPoCost = Number(activePoObj.TotalAmount || 0);
-        } else {
-          totalPoCost = vPos.reduce((sum, p) => sum + Number(p.TotalAmount || 0), 0);
-        }
-        const remainingPoBalance = Math.max(0, totalPoCost - totalPaidInHistory);
-
-        return (
-          <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto animate-fadeIn">
-            <div className="bg-white rounded-2xl max-w-5xl w-full p-6 space-y-5 shadow-2xl border border-slate-200 my-8 max-h-[90vh] overflow-y-auto">
-              {/* Modal Header */}
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-200 pb-4 gap-3">
-                <div className="flex items-center space-x-3">
-                  <div className="p-3 bg-amber-500 text-white rounded-xl shadow-xs">
-                    <History className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h3 className="font-black text-slate-900 text-lg">
-                      {poHistoryFilterPo !== 'ALL' ? `Payment History for P.O. #${poHistoryFilterPo}` : `P.O. Payment History & Clearing`}
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Vendor: <strong className="text-slate-800">{vVendor.VendorName}</strong> ({vVendor.VendorID || 'N/A'})
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2 flex-wrap gap-y-1">
-                  <button
-                    type="button"
-                    onClick={() => handlePrintVendorStatement(vVendor)}
-                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
-                    title="Print Official Vendor Statement (A4)"
-                  >
-                    <Printer className="w-4 h-4" />
-                    <span>Print Vendor Statement</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPoHistoryModalData(null)}
-                    className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* PO Selection & Filter Bar */}
-              <div className="bg-amber-50/70 p-3.5 rounded-xl border border-amber-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-                <div className="flex items-center space-x-2 w-full sm:w-auto">
-                  <label className="font-extrabold text-amber-950 uppercase tracking-wider text-[11px] whitespace-nowrap flex items-center gap-1">
-                    <Boxes className="w-4 h-4 text-amber-700" />
-                    <span>Select Purchase Order:</span>
-                  </label>
-                  <select
-                    value={poHistoryFilterPo}
-                    onChange={(e) => setPoHistoryFilterPo(e.target.value)}
-                    className="p-2 bg-white border border-amber-300 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500 shadow-2xs cursor-pointer w-full sm:w-auto min-w-[220px]"
-                  >
-                    <option value="ALL">All Purchase Orders ({vPos.length} POs)</option>
-                    {vPos.map((po, idx) => (
-                      <option key={po.POID || idx} value={po.POID}>
-                        P.O. #{po.POID} - Total: Rs. {Number(po.TotalAmount || 0).toLocaleString()} ({po.Status || 'Active'})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div className="flex items-center space-x-2 text-[11px] text-amber-900 font-bold">
-                  <span className="bg-white/90 px-3 py-1 rounded-lg border border-amber-200 shadow-2xs">
-                    {poPaymentTxns.length} Payment {poPaymentTxns.length === 1 ? 'Voucher' : 'Vouchers'} Found
-                  </span>
-                </div>
-              </div>
-
-              {/* Summary Metrics Banner */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div className="bg-slate-900 text-white rounded-xl p-3.5 shadow-sm space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block">
-                    {activePoObj ? `P.O. #${activePoObj.POID} Total Cost` : `Total Vendor PO Cost`}
-                  </span>
-                  <div className="text-xl font-black font-mono text-amber-300">
-                    Rs. {totalPoCost.toLocaleString()}
-                  </div>
-                  <span className="text-[10px] text-slate-400 block">{vPos.length} Purchase Orders Logged</span>
-                </div>
-
-                <div className="bg-emerald-900 text-white rounded-xl p-3.5 shadow-sm space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-300 block">Total Payments Paid</span>
-                  <div className="text-xl font-black font-mono text-emerald-200">
-                    Rs. {totalPaidInHistory.toLocaleString()}
-                  </div>
-                  <span className="text-[10px] text-emerald-300 block">{poPaymentTxns.length} Settled Payment Transactions</span>
-                </div>
-
-                <div className="bg-amber-900 text-white rounded-xl p-3.5 shadow-sm space-y-1">
-                  <span className="text-[10px] font-bold uppercase tracking-wider text-amber-300 block">Remaining Due Balance</span>
-                  <div className="text-xl font-black font-mono text-amber-200">
-                    Rs. {remainingPoBalance.toLocaleString()}
-                  </div>
-                  <span className="text-[10px] text-amber-300 block">{remainingPoBalance === 0 ? '‚úì Fully Cleared' : '‚óè Outstanding Payable'}</span>
-                </div>
-              </div>
-
-              {/* GRID-VIEW CARDS DISPLAY */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                  <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-2">
-                    <Receipt className="w-4 h-4 text-emerald-600" />
-                    <span>Payment History Grid View</span>
-                  </h4>
-                  <span className="text-[11px] text-slate-500 italic">Individual payment receipts & voucher cards</span>
-                </div>
-
-                {poPaymentTxns.length === 0 ? (
-                  <div className="p-10 text-center bg-slate-50 border border-slate-200 rounded-2xl space-y-2">
-                    <History className="w-10 h-10 text-slate-300 mx-auto" />
-                    <p className="text-slate-600 text-xs font-bold">
-                      No payment history recorded for {poHistoryFilterPo !== 'ALL' ? `P.O. #${poHistoryFilterPo}` : 'this vendor'} yet.
-                    </p>
-                    <p className="text-slate-400 text-[11px]">
-                      Payments logged using "Pay Vendor Bill" will appear here in this grid view.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5">
-                    {poPaymentTxns.map((pt, idx) => (
-                      <div 
-                        key={pt.TransactionID || pt._id || idx}
-                        className="bg-white border border-slate-200 hover:border-emerald-400 rounded-xl p-4 shadow-xs hover:shadow-md transition space-y-3 flex flex-col justify-between relative group"
-                      >
-                        <div className="space-y-2">
-                          {/* Card Header */}
-                          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                            <span className="text-[10px] font-mono font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
-                              {pt.Date || pt.TransactionDate || 'N/A'}
-                            </span>
-                            <span className="text-[10px] font-mono font-black text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                              #{pt.TransactionID || pt.ReferenceNo || 'PAY-VOUCHER'}
-                            </span>
-                          </div>
-
-                          {/* Amount Paid */}
-                          <div>
-                            <span className="text-[10px] font-bold uppercase text-slate-400 tracking-wider block">Amount Paid</span>
-                            <div className="text-lg font-black font-mono text-emerald-700">
-                              Rs. {Number(pt.Amount || 0).toLocaleString()}
-                            </div>
-                          </div>
-
-                          {/* Mode & Ref Info */}
-                          <div className="flex items-center space-x-2 text-[11px]">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                              {pt.PaymentMethod || 'Cash'}
-                            </span>
-                            <span className="text-slate-500 text-[10px] truncate max-w-[140px]" title={pt.ReferenceNo}>
-                              Ref: {pt.ReferenceNo || 'N/A'}
-                            </span>
-                          </div>
-
-                          {/* Description */}
-                          <div className="bg-slate-50 p-2 rounded-lg text-[11px] text-slate-600 border border-slate-100 italic line-clamp-2">
-                            "{pt.Description || 'Vendor bill settlement payment'}"
-                          </div>
-                        </div>
-
-                        {/* Footer Action */}
-                        <div className="pt-2 border-t border-slate-100 flex items-center justify-between">
-                          <span className="text-[10px] text-slate-400 font-medium">Verified Payment Log</span>
-                          <button
-                            type="button"
-                            onClick={() => handlePrintSinglePaymentVoucher(pt, vVendor)}
-                            className="px-2.5 py-1 text-[11px] font-bold text-amber-900 bg-amber-50 hover:bg-amber-100 border border-amber-300 rounded-lg transition flex items-center space-x-1 cursor-pointer shadow-2xs"
-                            title="Print Payment Voucher Receipt"
-                          >
-                            <Printer className="w-3.5 h-3.5 text-amber-700" />
-                            <span>Print Voucher</span>
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="flex items-center justify-between pt-3 border-t border-slate-200 text-xs">
-                <span className="text-slate-500 font-medium">
-                  Showing payment records for {vVendor.VendorName}
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setPoHistoryModalData(null)}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer"
-                >
-                  Close Window
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* VENDOR PAYMENT & SETTLEMENT HISTORY STANDALONE MODAL */}
-      {showPaymentHistoryModal && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-5xl w-full p-6 space-y-5 shadow-2xl border border-slate-200 my-8">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-              <div className="flex items-center space-x-3">
-                <div className="p-2.5 bg-amber-100 text-amber-800 rounded-xl">
-                  <History className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-black text-slate-900">Vendor Payment & Settlement History</h3>
-                  <p className="text-xs text-slate-500">View complete accounts payable settlement logs & payment vouchers</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowPaymentHistoryModal(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Filter Toolbar */}
-            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 flex flex-wrap items-center justify-between gap-3 text-xs">
-              <div className="flex items-center space-x-3 flex-wrap gap-y-2">
-                <div className="flex items-center space-x-1.5">
-                  <label className="font-bold text-slate-700 flex items-center space-x-1">
-                    <Building2 className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Vendor:</span>
-                  </label>
-                  <select
-                    value={historyVendorFilter}
-                    onChange={(e) => setHistoryVendorFilter(e.target.value)}
-                    className="p-1.5 bg-white border border-slate-300 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-2 focus:ring-amber-500"
-                  >
-                    <option value="ALL">All Vendors / Distributors ({vendors.length})</option>
-                    {vendors.map((v) => (
-                      <option key={v.VendorID || v._id} value={v.VendorName}>
-                        {v.VendorName} ({v.VendorID})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <span className="text-slate-300 font-bold hidden sm:inline">|</span>
-
-                <div className="flex items-center space-x-1.5">
-                  <label className="font-bold text-slate-700 flex items-center space-x-1">
-                    <Calendar className="w-3.5 h-3.5 text-slate-500" />
-                    <span>Dates:</span>
-                  </label>
-                  <input
-                    type="date"
-                    value={historyStartDate}
-                    onChange={(e) => setHistoryStartDate(e.target.value)}
-                    className="p-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-800 focus:outline-none"
-                  />
-                  <span className="text-slate-400 font-bold">to</span>
-                  <input
-                    type="date"
-                    value={historyEndDate}
-                    onChange={(e) => setHistoryEndDate(e.target.value)}
-                    className="p-1.5 bg-white border border-slate-300 rounded-lg text-xs font-mono text-slate-800 focus:outline-none"
-                  />
-                </div>
-              </div>
-
-              {/* Presets */}
-              <div className="flex items-center space-x-1">
-                {(historyStartDate || historyEndDate || historyVendorFilter !== 'ALL') && (
-                  <button
-                    type="button"
-                    onClick={() => { setHistoryStartDate(''); setHistoryEndDate(''); setHistoryVendorFilter('ALL'); }}
-                    className="px-2.5 py-1 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg text-[11px] font-bold text-slate-700 transition cursor-pointer"
-                  >
-                    Reset Filters
-                  </button>
-                )}
-              </div>
-            </div>
-
-            {/* Payment Transactions Table */}
-            {(() => {
-              const paymentTxns = transactions.filter(t => {
-                if (t.Type !== 'VendorPayment') return false;
-                if (historyVendorFilter !== 'ALL') {
-                  const vMatch = (t.VendorName && t.VendorName.trim().toLowerCase() === historyVendorFilter.trim().toLowerCase()) ||
-                                 (t.VendorID && t.VendorID === historyVendorFilter);
-                  if (!vMatch) return false;
-                }
-                const tDate = t.Date || t.TransactionDate || '';
-                if (historyStartDate && tDate < historyStartDate) return false;
-                if (historyEndDate && tDate > historyEndDate) return false;
-                return true;
-              });
-
-              const totalPaidAmount = paymentTxns.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
-
-              return (
-                <div className="space-y-3">
-                  <div className="flex items-center justify-between text-xs font-bold text-slate-600 bg-amber-50/80 p-3 rounded-xl border border-amber-200/80">
-                    <span className="flex items-center space-x-1.5">
-                      <Receipt className="w-4 h-4 text-amber-700" />
-                      <span>Found {paymentTxns.length} payment voucher(s)</span>
-                    </span>
-                    <span className="text-emerald-700 font-black text-sm">
-                      Total Settlement Paid: Rs. {totalPaidAmount.toLocaleString()}
-                    </span>
-                  </div>
-
-                  <div className="max-h-96 overflow-y-auto border border-slate-200 rounded-xl">
-                    <table className="w-full text-left text-xs">
-                      <thead className="bg-slate-800 text-white font-bold sticky top-0 z-10">
-                        <tr>
-                          <th className="p-3">#</th>
-                          <th className="p-3">Payment Date</th>
-                          <th className="p-3">Voucher Ref #</th>
-                          <th className="p-3">Vendor / Distributor</th>
-                          <th className="p-3">Payment Mode</th>
-                          <th className="p-3 text-right">Amount Paid</th>
-                          <th className="p-3">Description / Remarks</th>
-                          <th className="p-3 text-center">Action</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100 font-medium">
-                        {paymentTxns.length === 0 ? (
-                          <tr>
-                            <td colSpan={8} className="p-8 text-center text-slate-400">
-                              No vendor payment voucher records found.
-                            </td>
-                          </tr>
-                        ) : (
-                          paymentTxns.map((pt, idx) => {
-                            const vendorObj = vendors.find(v => 
-                              (pt.VendorID && v.VendorID === pt.VendorID) ||
-                              (pt.VendorName && v.VendorName.trim().toLowerCase() === pt.VendorName.trim().toLowerCase())
-                            ) || ({ VendorName: pt.VendorName || 'Supplier', VendorID: pt.VendorID || 'N/A', Phone: '', Address: '' } as ErpVendor);
-
-                            return (
-                              <tr key={pt._id || idx} className="hover:bg-slate-50">
-                                <td className="p-3 text-slate-400 font-bold">{idx + 1}</td>
-                                <td className="p-3 font-mono font-bold text-slate-700">{pt.Date || pt.TransactionDate || 'N/A'}</td>
-                                <td className="p-3 font-mono font-bold text-indigo-700">{pt.TransactionID || pt.ReferenceNo || 'N/A'}</td>
-                                <td className="p-3 font-bold text-slate-900">{pt.VendorName || 'N/A'}</td>
-                                <td className="p-3">
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-700 border border-slate-200">
-                                    {pt.PaymentMethod || 'Cash'}
-                                  </span>
-                                </td>
-                                <td className="p-3 text-right font-black text-emerald-600 bg-emerald-50/50">
-                                  Rs. {Number(pt.Amount || 0).toLocaleString()}
-                                </td>
-                                <td className="p-3 text-slate-600 max-w-xs truncate">{pt.Description || 'Vendor Bill Settlement'}</td>
-                                <td className="p-3 text-center">
-                                  <button
-                                    type="button"
-                                    onClick={() => handlePrintSinglePaymentVoucher(pt, vendorObj)}
-                                    className="px-2.5 py-1 text-[10px] font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 rounded border border-indigo-200 transition cursor-pointer flex items-center space-x-1 mx-auto"
-                                    title="Print Official Payment Voucher"
-                                  >
-                                    <Printer className="w-3 h-3" />
-                                    <span>Print Voucher</span>
-                                  </button>
-                                </td>
-                              </tr>
-                            );
-                          })
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-              );
-            })()}
-
-            <div className="flex justify-end pt-2 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setShowPaymentHistoryModal(false)}
-                className="px-5 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs transition cursor-pointer"
-              >
-                Close Window
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* QR Code Scanner & Generator Modals */}
-      <ItemQRScannerModal
-        isOpen={showQrScannerModal}
-        onClose={() => setShowQrScannerModal(false)}
-        onScanSuccess={(parsed) => {
-          setMedicineSearchTerm(parsed.itemId || parsed.itemName);
-          setShowQrScannerModal(false);
-        }}
-      />
-
-      <ItemQRGeneratorModal
-        isOpen={showQrGeneratorModal}
-        onClose={() => setShowQrGeneratorModal(false)}
-        items={inventoryItems.map((itm: any) => ({
-          ItemID: itm.ItemID || `ITM-${Math.floor(100 + Math.random() * 900)}`,
-          ItemName: itm.ItemName || 'Medicine Item',
-          MedicineType: itm.MedicineType || 'P',
-          Category: itm.Category || 'General',
-          Price: itm.Price || itm.PurchasePrice || 100,
-          CStock: itm.CStock ?? itm.Stock ?? 0,
-          Unit: itm.Unit || 'Pack'
-        }))}
-        clinicName="ERP Pharmacy Operations"
-      />
-
-      {/* Dedicated GRN Print Preview Modal */}
-      <GrnPrintPreviewModal
-        isOpen={showGrnPrintPreviewModal}
-        onClose={() => {
-          setShowGrnPrintPreviewModal(false);
-          setGrnPrintPreviewData(null);
-        }}
-        grn={grnPrintPreviewData}
-        clinicSettings={clinicSettings}
-        currentUser={currentUser}
-      />
-
-      {/* WhatsApp Purchase Order Modal */}
-      {showWhatsAppPoModal && selectedPoForWhatsApp && (
-        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl max-w-xl w-full max-h-[92vh] flex flex-col shadow-2xl border border-slate-200 animate-in fade-in zoom-in duration-150 my-auto">
-            {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 px-5 py-3.5 shrink-0 bg-white rounded-t-2xl">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-xl bg-emerald-500 text-white flex items-center justify-center shadow-xs shrink-0">
-                  <WhatsAppIcon className="w-4 h-4 text-white" />
-                </div>
-                <div>
-                  <h3 className="text-sm sm:text-base font-bold text-slate-900 leading-tight">Send Purchase Order via WhatsApp</h3>
-                  <p className="text-[11px] text-slate-500">Send formatted order details & PDF directly to Vendor</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowWhatsAppPoModal(false)}
-                className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Scrollable Body */}
-            <div className="flex-1 overflow-y-auto px-5 py-3.5 space-y-3">
-              {/* PO & Vendor Brief Summary */}
-              <div className="bg-emerald-50/80 border border-emerald-200 rounded-xl p-3 flex items-center justify-between">
-                <div>
-                  <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Purchase Order</div>
-                  <div className="text-xs sm:text-sm font-black font-mono text-emerald-950">{selectedPoForWhatsApp.POID}</div>
-                  <div className="text-xs font-bold text-slate-800 truncate max-w-[200px] sm:max-w-xs">{selectedPoForWhatsApp.VendorName}</div>
-                </div>
-                <div className="text-right shrink-0">
-                  <div className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider">Total Amount</div>
-                  <div className="text-xs sm:text-sm font-extrabold text-emerald-900 font-mono">
-                    Rs. {Number(selectedPoForWhatsApp.TotalAmount || 0).toLocaleString()}
-                  </div>
-                  <div className="text-[10px] font-bold text-slate-600">
-                    {selectedPoForWhatsApp.Items?.length || 0} Medicines Ordered
-                  </div>
-                </div>
-              </div>
-
-              {/* Vendor WhatsApp Phone Number Input */}
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-700">
-                  Vendor WhatsApp Number <span className="text-rose-500">*</span>
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. 03001234567 or +923001234567"
-                  value={whatsAppTargetPhone}
-                  onChange={e => setWhatsAppTargetPhone(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs font-mono font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
-                <p className="text-[10.5px] text-slate-500 leading-tight">
-                  Enter vendor mobile number (e.g. 03001234567 or international 923001234567).
-                </p>
-              </div>
-
-              {/* Custom Notes / Delivery Instructions */}
-              <div className="space-y-1">
-                <label className="block text-xs font-bold text-slate-700">
-                  Special Delivery Instructions / Urgency (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Urgent delivery needed by tomorrow afternoon..."
-                  value={whatsAppCustomNote}
-                  onChange={e => setWhatsAppCustomNote(e.target.value)}
-                  className="w-full px-3 py-1.5 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-800 focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
-
-              {/* WhatsApp Text Preview */}
-              <div className="space-y-1">
-                <div className="flex items-center justify-between">
-                  <label className="block text-xs font-bold text-slate-700">WhatsApp Message Preview</label>
-                  <span className="text-[9.5px] font-bold text-emerald-800 bg-emerald-100/80 px-2 py-0.5 rounded">Auto-Formatted</span>
-                </div>
-                <div className="p-2.5 bg-slate-900 text-slate-100 rounded-xl text-[10.5px] font-mono whitespace-pre-wrap max-h-32 sm:max-h-36 overflow-y-auto border border-slate-800 leading-relaxed shadow-inner">
-                  {generateWhatsAppPurchaseOrderText({
-                    poId: selectedPoForWhatsApp.POID,
-                    vendorName: selectedPoForWhatsApp.VendorName,
-                    vendorPhone: whatsAppTargetPhone,
-                    orderDate: selectedPoForWhatsApp.OrderDate,
-                    expectedDeliveryDate: selectedPoForWhatsApp.ExpectedDeliveryDate,
-                    totalAmount: selectedPoForWhatsApp.TotalAmount,
-                    paymentMethod: selectedPoForWhatsApp.PaymentMethod || (selectedPoForWhatsApp as any).PaymentTerms,
-                    items: selectedPoForWhatsApp.Items || [],
-                    notes: whatsAppCustomNote,
-                    clinicName: clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY',
-                    clinicAddress: clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore',
-                    clinicPhone: clinicSettings?.PhoneMobile || '+92-311-4000608',
-                    preparedBy: currentUser?.FullName || 'Mr. Zaigham Ali Anjum'
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Fixed Footer */}
-            <div className="flex flex-col-reverse sm:flex-row items-center justify-between gap-2 px-5 py-3 border-t border-slate-100 bg-slate-50/90 rounded-b-2xl shrink-0">
-              <button
-                type="button"
-                onClick={() => setShowWhatsAppPoModal(false)}
-                className="w-full sm:w-auto px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-
-              <div className="flex flex-col sm:flex-row items-center gap-2 w-full sm:w-auto">
-                <button
-                  type="button"
-                  onClick={() => handleSendPoWhatsApp(false)}
-                  className="w-full sm:w-auto px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs"
-                >
-                  <WhatsAppIcon className="w-4 h-4 text-white" />
-                  <span className="whitespace-nowrap">Send Text on WhatsApp</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSendPoWhatsApp(true)}
-                  className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-xs border border-slate-700"
-                  title="Opens WhatsApp AND generates official PO PDF print so you can attach it to the vendor"
-                >
-                  <Printer className="w-4 h-4 text-emerald-400" />
-                  <span className="whitespace-nowrap">Send on WhatsApp & PDF</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                              <td className="p-2 text-center text-[10px] text-slate-xúÏ}Îr€Jöÿˇ<EÕâEû1u≥‰ãFíã¢hõ;í»°hü={ˆdëâ1Hp P≤F£™˝ë¸JRõ⁄Ÿ≠TmmÌ$yÖT™Ú<ÛôGH}çÓFÉ§$˚ÿ®:«"	4˙Ú›Ø€Ë"òƒµÛ¿¨‹xÉèËóhÛvo=¸;dºˆ‚Í˚Nù:cweZ€Z)z?Mùâ¯XÚvª„Z‰;±[{éßuÓ˝ÙÀèL-v«k-¸?xO≤xﬂ¿ªÃºŒw?"*™ı›IÏÜè”wkkõh◊6÷v,Åùçù8q‰:zâ*œ)6`
+Øû^„Wo°ÛaÕª°„jõx»‚˘∞'a0õ‹í6Ì«”è?YÕÆ÷u⁄®Bó–nË~_ﬂ¢Ä˛]µ[áÂ TEªK⁄g|ÓÜÈŒ–èK€óÊ«8t@ÿ≤7‡∂L◊1ú"‹\HI∑ÇªÇzìÈ,∂XU|=≈/Ä¡W,Óû˙ÀF¯d‹pÂ∞˝¬ÊπK«üπ˚V…cß˙√–ÍjÒû"L#g2ƒœW‹*⁄?@7V'€&QoF˚»]ãùpË∆kd"ø≤z>r„√ôˇ·u8È8a‰ §¢ 4t/aÔ⁄ÿôV*^¸yd^⁄ﬂﬂG@|_¢¥∂∂?±ÂÓíô‹b$Ú‚j’f∑6{# …UmkM1¶ù
+¿˛a§xK@/äTõõ´(™çÉI  ]Ç¢;Î;$}¡qñ¡a·◊?Gd‡+‘'√#¸ÿó‘lπü<PcPæy6«˘≈@jÛ„‘Øø$`MW¸^•{4z√Qº|pùÃÄãÿ ÏÿõÏØlÿ‹≈Ót≈ô\ó≈É∑/ÓÑ^ﬂΩ'8%ãØdÒ¿
+óÜ…íÔ6ü⁄„Å7Æ$f%ëOÓä|ﬂ>à ﬁu˚ÆwI’¬/»ÖEﬂò´»=Wˆü»ÄŒåJHÁa©˚©d4x±cqˆwÑV÷ ◊w˚6p/BgìÇa^É2v^ﬂõ∏Ï;œç~‹¯â»'á'Ë(¶— ßπ∞Ωò˘æpΩ…¿fA%5Ã∞ªA+ƒÀ>Q•±?£ ¨MœNQ¥≤÷Â°ÑÓkﬂ¡ªáˇ◊|$ªki¶
+¶±L–˜zˇÜ>}Àº= ˇﬂ[ß∑YYà,LD‹Ëò@ˇ£GË≈¬ºIﬂü‹®íπª
+∑ó[û
+Ân§œ•Vic£·ŒeT
+ë.ò¸d„sb´‡tlb÷ç÷–M•¬8ôÃG´@î6™Ë;îπ#ë¨ÿÔ’µ88˙éÔû≈°7V
+7Ì~‰ìÛYkÖﬁn#v` Î{˝ò¥†àûè']©¸]Jø°4—çÑçN}ü˙(∏t√]
+$A‰÷ûäﬁLÙ6÷vÍVñN·ùÒbø≥ÎéÒkàùy9‘Ìœˇ˙œxEOdqº¬wÑ¶;LgÄü=◊∫«ÒœŒπÔ™V´1õ≥Øsﬂﬂ¨áNÇÊëı>≠}∑û∂ÿeÙ€Y{◊5w2H‹G[h„ˇ1vÁÙ%íô–™ëÚ®s6
+ÆﬁN˝¿0$"´≠\8~‰jŒ%ÎmŸoÀÚ⁄G¯s™{QIæz¬)%˝¯,É.úÑb
+;â<¬QäqF}ˆg“w}Â˘Î¡z±Ωx¿‚`ˇÊ<Gé÷|w2åGD€PÔjr4X™¯n}:ıØŸëÙÇWA8∂9å’ap…˛©x¸K8>Û› C¶_cπ*˝éù¿$àkéÔW\L# ≤í'‚åFŒ ∏™ç‚Y©òJŒ{“{çë€ˇ–¬æÔneœm4™mØËî‚:< ˚å‚ ΩÓû¢ä˛Ën	˘ç™zû≤î4GÒeÓ+ÈãÃGåúÏ/†QùvÁmù¥èÍ«ªËÌÈIΩ◊x”<BçzØ˘∫›m5œP£}˙™’≈?¥⁄ßË:©w:≠”◊9ªôM∆‘7ÕEµ#œÒÉ·À5/jO›IVÃë<Ô#ÜoÇIJm#%X2ZÜ?;˝¨Z’Œ˝YH§$-Ödß¯Ù~_˚ÒVÕúâ7Ü±<BŒÄ¸;òÖ¿Tms'K&Âiq´NÇ['∆Œ«⁄˘+QNûrêÖo≥z
+uG·¢‡zçg#å`vó£üËZ‡µ~‡KDŒÊçÎ¿p2„00çÎÖq≤#Án|Â‚˝gÛ9œ2
+mOœkOr‹¬>é!ˇl˛È+¸"åNõqIÏ∫]+<j¡ÈóÚﬂIB9||6X∞˝PSsƒ?ˇÀˇ¯ˇ˜ÏêéÆKâΩ£'π≥¨ÓDÆÅ¶ÈåîÏºÂ∏ÜR=π1Vd‹Å)N@∞EIìu÷CˆSÒB|ZI_G.÷íÔèΩ(N®g∫Lı≤duÙD˘˝4'ñÉËê‘^î1>ß7˛<kM†”Ûs∏rC¯Ô%&hË:òÖ®˘ãÎ'¬§d‡ƒ¬¥ÑŸ"r?‚Ö¬ù10∫é@ICçQÄı`,Œ` øåë°â{%æ(1%ô“_Òùd†Ï\÷î;2ùü«Ë•≥Ñìóﬂ™œø2¡¿ßê≠t®T*‰®üJá>&£xs∞$2qâ9âCª?,ÚªïWÄ‘‹[• IˇÕÔÒıÇ·–wµÍÅΩjêê˘a¿xô[ZÁXS*f'AoÚ≤¨ÇÁûû”5±uÏ™“ûß®»ü^æ.íÆ%ËSõZ0…≠:≠wÅ*ﬂ¿MU∫Ò,ú Äbù9î›¢7¯Æ≠≠¡`èµ7dh‰.5RdÈ&acâçëôm›Òc‰êÛŸE´òî¨¢€™.ÙÓV=˘[•çWi”ïxÃ—-6ÂÄ√úBë@£Ö®wY§(†≥h.°*•É˚gtÊ∆®Ó˚ª®éI1¶¬ßò
+s QR≠ˇ|Ÿµ≈7<¯2ÁAzgÑËn»√.˚·>@˜/˙ßˇò¬Ó	
+D®å`∑z=3«’Œ˙!á@ÌG>à4¡Ez“¢ÿRƒ„`S/∞XÖU%gÜÁÃ¥•ÌÁ†-q%Í	õ⁄féKXäïÃ« Âi=1d^ƒÂ‚Åø%cŒ~b«Wfz¨dÕ⁄IuB ∞Ùº’¶ª≤¢ÄNÉXà	≥1‘rÅ†uEHD¬%Ôœ˙s[=¬ /≤B]E ÜﬁƒÒóëŒÍm®Œ≠—‡^LT√ÏX¸{oE|K7|óyÿ"g<ı]j/ä0©w+è—VuÌ∑ﬂ+´è—jıVx†-Ù≠b™∏äv!.NGçö†. \gÀŒCŒ0Ù˛ñãs4ﬁM?n°°3•VÍ<û“®Fõ˙˛6ˆ
+Jé JNfÄ…ãÎs∏yü≥{ˆq¡ñ	êGA+KKE*˚-›d dà±ïäIxØ3A≤ ≤-À,/vÚNŒ(1$©Eo˙ÒÈ∆∆ÍÌ˚[-@öCv®b-'–ªy&t”05Æ—e÷æ%‘ÌΩﬁá“)ÿ•ïõ£Nàp(pX@x°W9Ü-åƒRL˛O@˚ËG&πdô≈OÊQ¯Û?‚m¸	B§ïÃó9©€< óØ9JñóíRÀ:Ï7√ißËM≠xÚ¿2n ;W§6 G¶#:ÌSˇÑêA¶ r[îØˇqsÉ»\jP#tÒWòßπ·ÿô‡Ì‡ÚÃ5n®—∆¯V√è{ÎÑ®))nÜDn%R\bÈ)K'πô9ë;6óA$â0NâdY#	º€íd|Gr	¢çEh§•ùã÷ö®-Ï≤È…2Ùv	w>öª,™[íÓRu±h»%Q^3Ì-Å†ó^Ü1ˆt◊_©ñj≈ œïIW,ìMdOC+åëa≈!öbúoÍzÅ%fÿƒZŒc˘E†ﬂo˘˘ô°sÿb∂æI| ¯µF|ïp'9ö4E3 2Ö?w-äÉi'¶Œê8¢MAw¶ÿ'}úÈc‘∑ã1Õ∆ñf"K!Æ‘*ﬁ“Çe∞‘<öHE™üL1XÊôÈlWØÇ ƒga7L.BÎâ&BkSa,xxﬂ⁄GdÂOUâ•5V.∂4t™ÎFÅÈ {àQ´hÁÊüzÄp(ÚÃ%Ü@	qèPØ√õÃ\àä“xM˛RÌÜ&ª‘Ë6ÎΩ&ZGùnª—<;CØ€Ì£3‘m6ö≠wÕ#t⁄∆øV¥™bËR4
+ÆxÏ‚‹qJ;Û«)·GÔ(JÈ©eîRƒ5√ù$JiÏÓíQ^"]s∏©ÀG#) Pu£∏¡ mY}–Ä;+v≤V?å·öhAä(,6ΩÇ`	Fú≥IË‡Y≈gZì+'h£’¡,6°,+M≤ﬁ /ô∞c‘ôÖ˝ƒ ëÇ,®“i≥î∏*»˛.Ã [ı·£«Gáe9ö[Ä~7s0~«◊±äÖ˘Ñ®Dd˛¯Iorâ∑ñXarq&ÍÄíO<(ÄE—ûëmÉ ;≠AeN ¶v≠”ni”Ù…Æs’√áQY]-ºULA¯Òß¬€_yæ€√ 4é≠â—éCMæ£Ö?Ù	qÎH>∞9xùNJ`tJIA”ÚI≈Í0ÀÄ†´ßQXÄ4ãƒﬂ Úƒú∆ëù_uv˝+3Œ πnú•‡¡ˇç§ÄMàœ@èÔwL¿‡√"røDñú∆íq J‰¶Ö]Cô°HBY–âΩwÅqo–ŸÏ|Ï≈B(=êiºCpÕõ˜AìÄjt÷<n6zÌ.DK7{ı£zØéœ∫u§0⁄:÷∆¡±ˆÑ8÷ûHë^viM®ÆRerﬁT$K˛¥Ç⁄¯~gEl∆§·L@L9)∞6#ÇY}\ tzòtV»à¿*gÊH$¢œª∑<ó¬ß(ê±<€êÕ‰[q˙≥h7ò≈>÷Îk#o0pïà¨Ò&dr)WVj5L*E≠fVÌo¶Ï~r;≥+LMŸ§ëÏ»¶Ù∞ÙÜ~™‡øﬁaM:IÈΩ*™¡og±œ"jF‰yéƒÔÁ˝#zÖœÂ•_Ô¢Ïò≥∆X	Œ‹è˛ÀˇD™üvÒx‡c!À◊ZﬁÕ{®6åËM":ﬂ˚·(0?äç&d‘ªCä*≤èlO¸|î\"„πË0yIòÚõåÿ—´ä◊™Ù›˚=çÍ-r@˙⁄K°˚ªô∫õ‚”ÅŸXQ\,Zº¶œ“>6PZ˜Ç÷9 “`tª$*l*»Úg{6õN}œ|QB˜ò\RÕ‚4`3C\Û—–¿π∞SÉìI1÷OÛ‘é\√mxç9*ÊŒùkwspôÍïÍ[§„cS:’x¬lq3ÊKGÃ÷‰2˙Óßtƒ|nljãun∏OÏ»ï_™t≠˙'Õ”Í5ª'gX€Í6Î«µ^Î§âU∞^Ô∏I~Ï∂ﬂˆ aµ◊~˝˙∏i°ÉÕ£]es9Ak#á¡¸m¥áïŒ"ë≤\fÓ˘õ˜ LÃB;µÑ;TóI≠4<√}õ*fŒı?{‚∆£`@eÜç‰hJàËa·?i†É>∆«f¯ΩF‡M"ÖπL2¯]{,Òxq√	öõJT~–¢;ä¥V‰eJ÷nå÷nÿE/ÒœêÙvÂ†ÍJ¢≤›É⁄Æ&WK7Åõ˜™î—±™˙ô\:õ“∞°¨HÆÕí¿hs√>√Sfs´˘”?˛ü–Ÿ4àìÆêØÉ‡jœbp†T…<ÒÌˇQ8LıÚ
+∏√$ã¢ﬁ'ÒﬁUÉÚ9G|∑“a¿SN≤6ºÇ˙ÙÖ£›R¢¥ˇ'∫_l_v—kwÇ¬,…˜|ﬂ≥˛LGçŒªÍcÑ°m÷è1z√=a0Fﬂõx}îÓÙ#‘yt¸2>/AÅø§ªzÓ¯‡KF7Føw√ U†~“FuM?MrP¸œ¸†é=Á‹Û=®÷◊	"<áŸdÍx‹˜·ﬂ∏@ÿ1≤„ãíÛ¨‘;U<´¡ê‘/Â¬Ò–¿¢cﬂ%´ΩÚBr0Y&ÕÊçFkPÊÚEH,¿c¿‰üò≤DªÆÅ'&>«\O,JÛCÚâd¯Ùó]≤ÜC<&´"'e ü>=xíiV$	∫òÛãî.â`Î‚!
+º˙ﬂÍ‚«‘à¯ç"f8ØíΩD"9_¿ã|Ã&ÕÍ!’°±"¶„‚EÓÉaH]aÿiUöÂSO¬}>O‡¥„íSÒ3ÇŒºjò¿»*LåÙ— Fˇ`9*âè9iµ≠”ÊÍ’±ûÙ}´˜+X›^´~åéö«¯¶Ó®—>~{rzf°E%˘ç∂™Mö°0Nï'¸w°Ú§â‡(gxnüïg÷i3
+Ò⁄ÉÏA›	¥õ≥uØ$‚R∂0‘±7qYu(ÂÎm´7s™ ,éí»¥è$ß–fï)©îH|7≠-¢#¯ÿSÍdÈt˜ˆ≈óΩDC7fø0}krT“[†—œè⁄∞f˙0O4H⁄‰æÙ6v∫«!;}¯ ©NØjàËf°œ¶Ë[õ"óˆÂ-ÛqåÑõê˘öÀTö¥¡W)POM=›\F<	ËRÎãÇXWÿ◊.‹±DeLS3>énc*–Ë_IÑ»∂ñh'O≥ /¨Ñ.ƒö@Q‹#ïõîjJP∫E.{ƒ@ìwV◊‘‚ù
+Ûn´∫(uc¶¥Ïk”UWÇ	±-™5~]ÖK∏8	‚a™ÑòhÏ¶'C†	ﬂ3vº	'êŒá):hgêôÄïFLƒ5™óû+/§}¥! U+	∆¸Hı'fÑ≈`Uãf„±^◊˙X.VsDRÚTa¬•AíÓE⁄›`ÏMjW JR#≈—…∫˙Ò»u¥5]˜‚Pieï\@†(ÉEM@¶!U ∆p=OV ÌPÎho=ï|ûÌ»ÊŒÈÛv¬≤/–ëıCèÃ1™XoüŒê ƒı∞‡hõOWXÀΩ•å’Å¥"êj.ó3Eª•l⁄)ñqkﬁi≠n<‡s≥â◊¶P.{Â *g#R:{·¡∑6ù«ò„¯‡u¢-æœS[<„'¥¨$£z¶Ë-√SZúﬁ#%ñ≈âaÇÜÊ⁄5bË^¯•çiπ[cüÀ=sihRÖ<œ0°ﬁøŸ‹êj∏<Õ7∫Hci	∆ÔŸ∏†Z˘i¿8âGÊ¨xXCX« D™ÅJ[«¥ñ>@
+rÆOmôÒ»ã–ÄπôiyèéÔÇ2¬¬∂9åã<ÊúcñMA„âÏL,™ÛÀúi€ıÿ∏˚“Ì•%\zÈ¬‰˚ÿ"ÔÏ2˚ËUº'ëô£9Êÿ!Xﬁ Pº±÷5’{{Î÷õk≤õÍ±õ;Øfë\QÉ…îÀÙEÃ~í∏®}≤oku¬\ÆÖ÷§≥Å)_4£|Úq/ÇÁ_æD'N<¬s¸•x§∆µXÇÁaÃL•obtÿ&<œ^(Œòò√Va‚ ü ,±Æç≠ªw /´§KˆÎ	&Õ!¯Ö/≤Ã˛êü^ˆ˜‹‰íüãß6ôçaﬂ“ñMŸÕ¨Z6ÜØ,;é‘£x$Œ∂—~2∑Ôí·•.„A/ì ïêïU«r’√
+iqæ“ËH©ÿI¶-7Ô}›:ö≥57ì"K—[{Œ7‹iœ3}ËNˆ≤‰…^Kj1Ïﬁk€(Ÿ/a˜b˛ÍŸÇPbm¬
+kãê)M ~'w/∂7_††E+≥Ò[édÆOê‹UæGÁñ¢˜UR@OÂ Ö⁄Çû…rÒ=€‘ÉÏuG›‹$›FILû¶ƒDË+ÔDD©ÅûÄ(‹…€”ÚˆŸé◊n*µ|¢4Ù.˙Fb°lü/ë˙ma	„æl-C∏À¥¨ÃJ wLµCÁjN™-R}2
+·ò∆§ ¸É}◊ÀflIéŸÄ‹ﬁl^ˆb˘ ±!ÎsÕ?ù9ìk˚¿oÿ9t7iÜáIªæ—m≤ÓÁ√/!ZóÑ))Ω€ñ<Së¥ó-Ó	å⁄Â’∂ƒ©;Cf¶–v‡¡Y©–à0r«û*^6z3ÑπJ„Ë*¬Jc+KíëNÃ!_9ËFk≈Ó≥d|[fVûùïah%[ÉÀåkMù.ìø≤‹´TWÒ99ÿ‚<lÈ\l!>∂4Nñl5©8YÆïß˝ÿss≥¯í{∂óÂgéFˆÂ;c≥Œö£-èßŸr5Kæ¶‘sú--√•„k’W∞µ4N«‘eg>û´√—ÑÄK‚FköÑ¨‚"Âol∆*‰êVÊÔ%2RUΩ°¨sè¥ÈÂÛ›vó¢/<üÇøÜÜôqØÕòñ” $´ÄÈﬂ8—ï%]ÿâ§!∏Œ«™\yæo›QµYâæHbKIÃ≥e{§È„q	h•1PﬁÑ†ù}("xNùW°3Ma$À_ékÔØiù,MÃ´∏OIV ˘∑¡h\ï8±Ìº{ÏAl®µÆcY⁄¬ó⁄ñ≈⁄v≈%¢}5Ö‘ Ö…>ïífﬂAÅ0ØO™’°uÙõôY2X≈;·áH¬™øÕˆ˜B{{ÆpôÜjªÌ+ê!,dóóõ√}˜´vª◊ÑbCıNß€~◊Dáo{Ωˆ©Eå∂>Ó∫8c’T·T_n(Ø“©É,L˙ü‰±"r#!ˇL¢x¥k
+”SU•ÃJ1xqÏkUW¬Ê≥.Óí∏‹J%öçyÎx¸'˙%™p¡÷Àã˘UAÓıd{Vµ˙R÷rBÑíZËää-ö¶	µ_N" ÃÃsØTUeH©&òi„l}ë}'Ú\Mª4<QÚøJ≠	ûUæ’âÌe
+π™zm´˜ì…Kl!lmB?Î€Ké∞$Ÿ8%*K5Ø%ÊN*√ Ósnôb≥ö'±e˘	WñÂÔJîI.uô‰O¨[}D ‡u´7DÓaÇıMqù6UÂÚï%UMËKVõå∆ülè˘§NÏ#Ùñÿ$†<	-≥JUÁªÌ+u≈ÔJóe>nøFΩn˝Ù¨ﬁ ‰•⁄ÀΩèY{yﬁ⁄ „Å¢¥rö≠+Y™h1t	_98ÜËï7¡hY,!>_XSør0¿˚´¨]Y‹ı]™Dπ•Mµ[R9‚–ÔaÚ≥Xu»¯#•:0ímëúﬁGAÚg<F0BNÏß¶ÕÂqX√âyk‰h®C∂‘cÛ„‘ù ¥∞?Ãï	•á[ì~0∆œ“K=J´∞‰^–y¯l©∞bÓÎ%¬XRÖd#/⁄2	ŒãÅùîÈ˝9¿§-Øê‰ÂR‡sËL>@¬À‰ÍKæ  V‚yÃ[7√êKˇ]"ºiTmë¥P_T4Õçty—O2=œH©)}Q±q™∂⁄ìf◊lqD0WÊ´˘2‰^Ojá«å:9‰ÍΩj∞ˆ@2è!⁄g•_Xö2o(M¬≈ÑjápàR!`Ω9OƒXÉAP¿e√]È$d/~™u¥ã._ÆÒ4Ä‘ÙX}Ÿß‰°CV
+?√∑ü˛JlS¶6©TwfÛö¬ÙÈ˘≤ı\≠ühsúÙÂës∞]X!S`$ô·≤∏82“óGæQ¿dlŒﬁâ*ÌY≈qpÏR+‘%?·º°HÔ@-Z´Æ à©¡ìπóùP*ÕÏŸÈ&Uâ}ˆ!xâNç50ƒÄAÂÖÔÃµ∂LT–dRin,—õ£¢]()ÂN†ö£9§‹$àhADîP¥7	S∞ßjBmN⁄yâﬁsiÕ:–vÈ4ÒÌMˆô[‚„˚V¡\»Æ–è´∑Ô—nB ÖËàú÷Qiï∞)îÇ∏sEÚ˝“Û°‹Z?@4ƒt]◊õ÷™|i£ÖﬂÚ:ú@Åè!˛Ûck‡ï!<≠ÖâJˆÙhŒ‚0˝|[æ¨‰∂pÜLÑÅ¸mZû©xà∏åaLjÓ®E¸Çd°“Èô∫:äéˆ$û€Wz’/œ'6Ê◊›”hù!gDPë8ÁÈ~ÓöfX\˘BÎº"Óm0Ol≤ŒU[€]´‰Î&sbÑ•£aÀ";.
+Óﬁ‰Úò00Í˘äΩ@~Üi≠f˙ëîæ∑Ï§Yî≥{ó·DdÅÌ∞åxóÌ6rszŸI–Èïa;¸ÏÂíÒpçxSQX!€çòag‹ãœKsﬂﬁ0Ä∏≠æ∑xóû)âóÁy…ïÕîŸ,%äE…±l{@Ê/õ ë_à{HÑ‡JÓ8Ué”‚ÄB€(íÇ–?ÛAµ¨7˝¨y±Æ^O©ˆ©∑w?ñ"⁄õ¡Àé1HÕíƒÃßa¢∂÷Ò1,„C
+≈≈yxsè,ÔD¶˙Èª;®>¬ﬁ˛HSåWÎ?∂« ˘∆êlD_ÿ·fJ-Y•„ﬁ¥»ÈôT œÂËríÆæÕÙ]ˆ∆dQ‹Mk◊$∞8F¢( ¬Æ†&˙a˛ﬁâ˙∏ã’©K)œπ4®2Œ›Ω÷º~˝Ë5O:«ÌöMŸ}ﬂOø∫ÔÓ˚˙ úãÑw Æ]u¬‡¬Û›>|˛h	G˛r?t÷{ ÕO	GÄ)Ë<Cyv–§OQv¿Üxå¯?^ a›¿_®ùﬁ -7º»÷}Æ>l¡∫õëÖıv9ámﬂÏhπwÇ˘◊ËÃÒ¨oôÂsãÉ4e¡⁄t‰ÁÃÊcSÿû7©§§˛Iû¸'åˇùQ0π@ﬁ¥Dê!æíÄƒÿr⁄j‹À—¡ã;9·s>∏œEõ„R˚WmÓû¥π3Á“M4ÄVÁ:›v£yvΩªÌ„cY£Î8◊a‡˚_µ:ÉVáU∏æE(ëÆàÜ«d∂Å∂˙ã=uÔ*ãÓ„∞©WÙ¥}≈∫‹îÆç0	˛"uJàUúu∂b¶uEÿp™8øÙUˆq~ñ;Èlµ˛J®ëﬁ¶s¶∞çÜ9t"Øœ%Zº∂óÇ†¨ŒSÊ)ÉÚä6’DVä˙hªƒb≤ªIœñ¯„Ò«¢ ;mÄ~VÑºÚEbZ@ÚôËûUT£Åt›|U›˝¥U±r∫8πOX‚'§≠£\g°Âcg~}Q$dJ0[!3É…2Œ¢d∏zNz °-åI›ï	@qjI[ŒπehdI≠.h¨ˇ3PÓÎæ\ÅÏ›≠}HÈ´óÈx˜ür—û±X2∫˜3L_Ωú3L«˚‰œs—˜EùÓ´ŒØ_ù¶ﬂËºk&÷¯°#/:üÖ¥˘:ƒ[ àC˜Ø;Õ”≥º?ó&ê~A⁄øuSV¸&Øãó∑t›>ûjO°È9¶txØìÃ]Ÿj†y3-ê(ÅJìÂ÷@·ÃuPÈîÏÓ˙`¿cﬁZ¿HÃOú∫W¸nÿû Í™‚NÖ∂ö©x∑)wh ıÚ}*ïR≥8U–óøŒr®a¶Í⁄´∆XC–ªıÈæœôû_∫Ωn)†&£îìCû	ëù»íØAò}ÁπWFidô%]tÊË~)æ’ÛÇ€bÄ°j2ÃÄ4dròû±B∏4ôîöÊö‰Á–Qv*»7l}n.8$óö´∑+∆=ãéÆ%ÚÃ;˛Ln•mÏ»  ¶I`ÓÂQrﬂmëJåüjÚ
+‘]Z è ê¢Ó„Æ2®È:±…¯Kã~föOºê£ÒÖùÑöÑJ g‚çM/úÅ€R#ºÂ≈<!5»Ω–wœ¶YD⁄¸õÃF¬;’3¶Y.‹€®¡e”àÈFì,æÎCˇS≈®‚ri]&íÊ£Ã≤ë¥KL9JåΩ*àí<§‹D“&qŸıÉÉ…Ø›Î£‡jílç)qÓ‹µ.Î§÷Ñ_5µÁÜÀ%Âû1tπŒÃè+9îkÉO8"ÛC˙√“ÊÃk¢evŸÂsIïˆ§’ËÁõUùûP’)Î#ï9ƒ≥ J\*’ÊÎŸÍñ©O•ÅıÍˆ∑ ”g…˚oW‡*/mOZãp
+í+Ko°Li;©⁄›õjwÛàÍ¸2dJI¢{RÄÿPhÿ|Ó⁄‹+Õ˘ú©åÃ@j†'ºŒ +∏y1≥¥®êTñ…I
+˘ºΩ9Ö•hd§“"Göè8üƒÅ≤±õOéN:¡Æ®Œ‚÷ú´lîUÓàîòt+¸∂—∞ß Î“x˘©…Ç <…Å∏W§0q9Å∞©¡^*,#Ó)”yKI{I-âüè∞€Ô~FÚ^vAÂEæ¥åøî.˛)
+|¥`ÍÉ≤˛ƒÜÇ$X«T|ø–çw”èOh≈LLiÕãÌπÊoì∂VV¢ŒöîTÒ∆Ò}fÆL◊@√r˙Nl@ZV#¢af§míK«…d`d∆#i*¢¿Ä}”¬ â¬C…ÆÃJ”)&}¢*Bè†Tt¿£[]y,≤…qﬁº‚]û
+ú∑óÂL{Ê 	äX§—¿#BÇ—∑F¬öúëë4æD´⁄‡ÿ¨›‡ŸÜÿid’8Í.5◊öH(˙ñS8r6
+Y≈¢Ô”˝koﬂÎÕ …‰™ËÑ≥Ij2SÓä≈EÄ4.Í«±R¿∏öÙK—Oc®ÄcUAxøæ*µ‘µÖIá¡∑ˆ#V-~*Ë⁄¢¢É¬ã-
+‘ÿó¶I∑XnÄÀ]ã‚`⁄	É©3$ˆ⁄"9 ë∞∏ïëƒ’+(˙a.ŒBãÙﬂº'™»∑l¥ I/ëíLE´ªÅJ1.K¨ác~Çb,÷∑DÏ=S–»wf§ákWTY._©å`“b⁄ºó&¯≈0Jé§ÑœÅ=ñà?'¯qªO„*Ôè0®`j–ÁL{Ö¬Ì À˜’"	.äKtêàd¨…Øvà∆&ˇŸ°©CπCÍ˛.€»∏õFd„%0Ô◊z°çdT
+€ÙwÍ&~T«”+É∫ÌöÈLcM˘<ÀóÏcﬂ—Ω4“A"àÊ.ÃŒ'√‹ãSπÃ^
+)Ú®Z/Z§é∫Úu πÑÇ¥NÛ	”/Jh“»¥‡T4ÓS0∂ãIä)©÷B%”ÍKböê√§=0˛[èQ&- \AX≠ -•(˚gQÂ»¢‹Ö ˇ•ã ô‡ÁPi9'¸–E ƒC._®Ã| ?ìÇeüV‹¥"2Úk‹Ù˝‰J”ù∑^‡›J◊œŒö=9L∫a˘ÇÇ§Á+|ıä¨ûÏ¢!œ%ä^ë«Ó=öNˆaJ^9n ‡/˚™Wu˛ Â…8èQ2–gÀ˘<;.ç#]DøIœ∂¨v£?\≠fÛIˆàjbü“>a…üÂ˙îı–'\9!4+K?î‰’,úxÒÜH˛,ŸÚl‰ı}öùë?J=‹éGXv< ˇ|∫Ì—faÊÖî†|äa)ÊâëyŸW3∑®¿oA˚©Ÿ‘Ø«Jqñª0<FT⁄ òµ•Ü7Í⁄)ilô_K°yE¯TR˚*¿ﬂß /»~%ƒw∫≠”^˝∏âﬁ5Oè⁄]t÷´˜ö'Õ”˛©˘Æ’¸û ˘¢pOõzëV’h⁄X?bfT÷øa^°ˇŸ<B?¸DÚœÖw¿4wùÛ(g¯∏ËG˛^˙)—Ë«iÚ√8˘+ı“ãºsﬂ-Ø[ËÇJÔ?W?∂Ò_å:•Õ[∞,áFµ_l]é~bSâÎ£èí ˙◊`ËÈK˘bÿ+Öª˘D…W∆ÿV¢¯ùÆÅ?ƒ”:tBTyC(a.N¿¢ö›…á‡nÛΩ8œoJq‡€˙Z1xá/%&[™–hC @â$Ä9Ãùk!Ã5ªœ≠ÅÖ"©˝dﬂM%têOb 4NÜtı~üÿÃŒb<“U•æçé›=rùo-Ø 7Íh›Ω©Œ˜íı∏`ÅÌ‚¬#˝ó}w0=9ô48∫…±Cﬂﬁ˙‘Ç»-µ™gO‰«q–I&[©ÓíE|€–?%ìQ»ù©+U±\föà
+≥ B‹8$Ä™Ü4Úú `ï˙væKÃ<<:/úºSp;≈.T;≥˚™˚ƒÂ[ÊIó‰ˆy°íprÿ%“^c¸Q–üë√9πn>Å"Oçü≥Ë¨ˇ‰•ß9Ó(ÛDŸ–ïh√»ÏØP°°6Â≥¨E0≥¢¬J⁄Ø^µ-,stﬁû˛U˝Ωiü4€ùzÔM´Å«≠S¸µfØ◊Ïæi÷è¸ØŸUÑãÍ;Q≈¶O≤FˆÒVxØÜ…$&Á—Àµ˘L~J?èG®Û¶ﬁ=©7~XÕ++Ï=g®}≈q0zx€»k2®Ø—iΩ˜∂[?>˛˝˘ÔˇÍ6œzÌ.|X?Æü6ö˙7·SWº	ÕçèüÕŒµ#úy√â∂Äd¬˙°ÍÉA®]4¸ï!aàÕ¢éè%éugΩv¬ë_éfè—±3
+BWˇR∆XÒ"Ú˝IpÓ˘t—ø|±U{≤π	¥`„È∆s˝ÄﬂªÁ–Á¸ê¸n«”hw}}:õ¸÷9c7ò:Ò»ÎØM?h«ˆÒYüÖ™Ja°5vÜÙÎìQˇÔ‡ëµËr∏™à˘5ƒ˚ÊR&h%zÆÄ•”Û⁄Ë^∏çL≈T£⁄E◊ fÚÙ"®ŒÖ∫ˆ@ˆ≠û¬UmÛ)¶©õOAØPS0àÓy„!ä¬˛˛;™[‰¯Ò˛Mü@[IqõZH\9˘38ˇ-Ñ„”éobL‹—µ˝Â˚“†S?iﬂ‚[Bà0[9∏’Øx¥ôóv}°'Ç-Hæiº”ãeàMÏG1}"rCÔãÇŒ ˘¡ö€7ÁÅÔ≠è6Î–J©™‹8≤ÑÁîΩß<∆–tI4ö•`∆ò∞õ&úìjmÊ+â(l/«ôΩ≈¨˛Úß?˛W<5 ±∑Ë—‰<ö˛ÍÙ¯ÈﬂO¥x|Ó∑ˇÚﬂoå∆≠Ö.±¶U÷ˇ°t/wˇv˝o◊◊cäoà‚7¨∏‡ªtR°Ú–¡JDY∞… úém⁄ÖÁ4>è§°÷hWWû’≥ôfıê™‹l º“§Kzá,iR…2Jz*≥ òáÂ|≠Ó…≈ÿÒ¿go;ù„VS∞ÚN”‹j÷V1ö]jÉ¸íÈ%«ÑˇP‰úÍ∫ﬁØ@E	ÚT%mb	Y9⁄UwR{}∏Z-»J]⁄f÷l\n”» <¿–ÏπƒjQﬂôz1ö~π∑T∞Üµ“ÅhŒü„˚´"[«|©Áa—ØB˙›º∫ävë¸‹=lÕ∂ı÷Ä$€u/v1†ûÙjj„AÎà6+?=ZΩ≠eœøu÷Êuà◊"¨S∫ïç«õ’îÆ’÷áè$f•~“%ƒ…≤"mJ™–âÃ=jˆÍ≠„3¨yúΩ=9©w@çz˜ËLA*≠<√€„|çﬁ
+õeRª ì#âÓ®≠Æ$W&ZSXEß°Fp,‡Ù9]Jñü´»rN
+P$çÈƒ·√ôÁÉt£M+äV
+‰≠Ø—:T>ƒ¿zéµÌπXvÙ#%)!2ª!2œà∆≠N®ú%Œê>≤i≠+…ˇ#$ÓÈvsz¿€>ÈH°‹19√]ucT‚tΩæ )ú∑Ò$N{ß¯DzŒ«ÂÕVr`Zw˙±-KPæïçÅyLLJΩùµZ‡›T+∑|ßûf™P}S!$ÛCPñÖ›úπY49∞9)&cõ≠ “∞©œãPÈ3Î≥±*!8IKEç,ı“`Û
+DP[ïò_ygBÔ≥ŸxÏÑ◊%én3h	ÛÅl1»(Ór›D?&–Ezô'ÅF‚◊›StË˘~Ñ*çäLTwjíXcªÅ£Ñ Õ.≥ﬁ,ñ‡≤¶ˆUø˝‹ ÷ÚXˆ∂¬6Ï¿:"Ü+ﬂ† ë{æÃ]ÂïÖüÕ±Ø«[÷ûÍ»'-%µ8/%üÑPÅhc}sCìı.Îãê‰¶–@’Z§À9:•c8uc‘û≈QÃ¨SáéëF@Pø‚`ë©¯b¬≥<Ù˝ ¬≥bì*∫¿1˚ÿ"™'›ˆ˜gàFWTæoıﬁ†Œ€n„M˝¨â⁄]pXúæ=9ƒˇ4⁄«oONÛ>sù!7jÇÃûxeòo‹,ˆ®Û(#E6›w/‚¨2r&º:∞:ﬂôFÍ¸∫Ω<œ®à3˛G1DÙñJ†¯„â;J"ºÑ/îäI2π\e∞ïP$˜÷„Qπßz◊”9û¬j.fV¨ã5˙E˘:kÌ5úW˛a!Ò	œ¢„Ñ±◊ü˘NïJêÅ`TÃPàru°Å(„F`@ãç‘ùM&≠“èÖ	’ƒA«{Òy0∏ﬂèÒCbÌ±?RÕ6[¬√®Â([R—Æ¢5ﬂùÒ™¡‹≥Å^Í’À·?Fﬁ3L˜oûﬂf∑)ù	*;i¯b≤„ú‘áÓ∞æXø√bYÑBíÈ‡HlH<Ú"féBﬁ$	#CSb[3ÿhbY—ü"BU¥´›+ÛÜìº—0∏*Í∞E76:l	€*EHfêÎî_Jjvæ‘¡ûÔx∫5ÌñˆUäC‰π¸Õ{EÏ<∞∞6 ¨§OÈ¡Å¯’åQ^iÅWHHYafïï’·≤g2ˇ¢ÃX∆‹æ7§”ãD™ö+/jÕòA~7Éï6wI`°{qÃa⁄∑
+íîﬁî≤†I&:0E˙‰`¿0î|â¡†¶âï_`Oe]ã¢£êª<ˇ®aÍlùGôöoˇÑ±SÙ{“˜∑È◊yI˚˝]Ój¡˙”®ªÂ≠>C}ÑÂ”Ô?âı¶_.˚ñ^+—™*Ø©–ƒd&“`≥ö_Ê‹À”3i(á†ÊﬁÍ"	D SãfA†»¢ø©ïèÕL∆WU¡3™‘N≠Lí∂vnçõ™<È¡Æ0sı‚q”›ÆQö~8—iﬂ•¿™¨·F/’›¡JÕVÜ%≠So¯ª◊µ.qYEvñ“Î2h^j$∆?ÄÕ¬ﬁ4S{‘ÍÅÎ¥ıöY6œ–·qªÒkÙ™›ïbJãç1”∏ˆBrûlÄí´lõ˘\szï©ûQ √ Ä¬¶ïQbíW€c4—Å(Å2=Øm¢ãf¶KHPìro$}Ñ
+ˆr∆§Z√Ì”¨ø∑ëæLz/sY8ìX…?-ΩF⁄ÄU\ô¯ Aß€Ï‘ªÕ#t¯™‘çˆ€”^˝¥Wµr¿“ÅûkcBHqËïÉƒ!Û’g Sπ—áÂ¯§ñtÊ+w∏≈ç7Õ∆Ø˘N∂ªK›ﬁ¿%tå£õ˚=û‘ó≥πi"ﬂIá—∫•ÇÓ,°˜{¨«ãÅgÆ„?¿kBö≠…V6æNíÁ“HV˝˙≥[gåÍæáÍìﬂŒ∆˜E©Ñ–*êK⁄ëw◊–ﬂ‘[Øﬂ‘OP˝∏ÖÍßıˆ§ƒ—Àt˚y÷Ãw‚L;ìéåÑz∆ﬁ¿ sÈ¢7Æ3òÿDiSxgáÿ£7iÑ=èÑ:#';˝k‘)øTØ⁄ÌWµŒ«ı÷â2ôD¡ˇ∑5¨?©œ ›~≈±ÚÍ#(äòÉpã-"â$π  ÆF\Gxb‰“çuÄ'ë<áHΩø¯≈$lÄ†dö*¸2ziìÁó˚™D.s˝û≈|ÿ:>FùvÁm'üæ<uÆiTI)√ìvÊNU~∫H}"S¢mârE[iæ∞PØ»òrÃ(-/äˇ„ãH+ñ2ø¥âøÄ„xÿ¢ú≤bê◊Áˇb
+ûˇ≥œˇT÷L–ı “Z~üg´fá«^#¿íıûBj ”Ïò∫¸›≤%Kµ¶$°,8Ö1ü'
+ìêéGòT∏N»)Ç™±.y]ûtgôÂéV¬ßo”◊SC∏Ûàπv©àQdÂUQ•1ÏNeN*Õ9ÚßcôêL#¬@ÀfAí*)gie=‘ûh*º¡º:Øi»w'®(∂p¥∞oäüº…Âi@’≥„c]ø4Ò=…£ùwÁíàˆ,kÑi*+öør<u±e©ôl©ö"∂+N˛ŒÁyQ?iV∑9˘õ˜§≈Ø.n
+G|Øê+,é±#".XC‡M“N,ñ	Œ|å|π&ôFïÈ¶†≠B0w≈kú1§˝kA”¢Néˆù @hn¿≥2ØHÛr"jr∆å„¯«àûﬂ¬Ã¿BÊ$OÂA\$Ùm‰2B«f÷)®≠M Ö	lŒŸª˝®K¿$ÚW≠”˙)…ÍÛVPÂ∞~÷<BÌSÆ˚¶πÓ?ÄÊRˇBËŒÚQq∫ú~V™å¡…æû°»Ñû=»JT.sy4◊+6°7f˙Õï6∞DïÔ¡kÚCQiÑ˜wﬁ¿<Æz‡◊!ñ2Ò–C¯?ˇ„O’µ¬Ã+CS•Éà/o∏∆3O¯“Üs.5ö.6ò.tò¬¨ÂyÌÙ@†¨ù˙˛>=£*WÅÜﬂ‡›Kk@øè¯S‰^Ã˚˛l‡FÙ˚™"ﬂJ≥—ƒgÉ7ƒd“ëãÏ¸ZËf}∑R¡t1Rj0£_Ú‚x√5‚°KWoT„ˇ‘P¬ﬂ5»›¸4ÆK Ωè 2aUY@àMÄø„ê/xÓÒ;zÒúÕ€û±"/X5ŸGÒQ“∆‰{ ˜´0vúÌÖ∆Ó@‚-qV y‡ÅÆ[o‚<¿ê¬ﬂ1% “M!ê›ûA6É≤@“^êê5 Y8åÛpØŸÅ Ûøpˇ~BûDónv⁄“
+≥≈0t~E-jÁ!∫É±†õ^zéòâ§aW;ÅH–√¡|¬D†Ò ±e®T˛ÂŸ$û±®˚s4´ˆ^.£©jŒH±ô5R@¢¿ñdßÿñ∫ëf¨>‚ÉOåâ
+ÜI6#œ€«~”•dz˚YT[∑Äı3fàíKpZJ>˚∞S‚ŸÄ’´Æ°w··øAt∏æáø∏f°≠P]x 2õ˝`-9£Xki(|ë∂&ﬂLÄÖÿ∏h£/%
+qÄ6¥[(FdäÄöV:»§≤¿-€Ü†…l`¶
+ÚÖ!≈€tÉ"0oÚÀÑÂ¸˘øˇC&—ÂhÊíÄ—?ˇÎìJ{ƒÇÊ4Q^Ö…&TK
+"ÿTµ8U”?VL∆	hs—‡!q=‹†´≥°3CC≤RŒù%<Ïæë4·i&€T»DGÙ1OÙ=üBN¥À/»_SU…∆ë ™TSìª14&¬´ﬁ=ïkâÌ´ΩÃBIäDaÚú‰∂8»1!x?ˇˇÇ‡xCíï∫lHK(kúe’ôáÇ≥õ¨∆s/\Ã5ËF÷Ö∞DΩ	o°∏ 6´∑PlËÜÃ'2s9≠_dÚ%Û=X6p∆Æ„[√¶®Â<xR›äÍﬂ∑âù<Ûu
+ô,cè@'˚;Z]j∆±ÚkIëSå!Æpﬁü† ÅÑÓ&ŸVLJ.Ú·ÍKñ÷¨T˛.s„•CÛô	ºKñ\>>∫*ç'ì¢Ø∏L≠”¥w§¥·h±xﬂ$1Sg≠÷5–1ÈGRx©’«lå‘®”∆z4~ÌlÙõ»#‰ìÄz*ö–òÇ˙©óù åQS∂x
+l‹5‡Q≈∆·_Rì—£GH¸ËUÏ÷%ñ„»‹ì˘"kë≤zW˛±º#Yk€‚÷Z0÷f¨¥™©3{2\⁄ñ•ﬁÀÜ‰æÉ&… .Ÿ¥U∞í	FO˙≠∫O≤°ﬁ© pÚ$SÿJ
+£(æ≠è}√∂µLÌîî‰´§DÇyÍ´OD9Òu5	¡J BeÈ;ìô„˚◊Sã‡Jù´Â/
+ Ut†/QP÷¨ë≤ûS,∫h{#ﬂìÅT,q:⁄iÄ(íó;“¥\s7õ±˜GËÉ˚&ı/ákù6«∏Ä¸≠Ìo√¨◊ìK,§‡ë¯†/S/=@/¡F+,i~≠v_—Ëò{≠:»Åƒ?KP £¯÷i@≈ArøÏΩ0OÿÒC◊\ÉÏˆ*;∑ÑVÏÀ8*¥w°åk¡é
+2@ñ‚≈KßxU<¨aﬁ/ÜÒ9<ÛÆ{·b]ú¿çpÜ‘˚!ˇòÇ~R¨‰@-|ë:!8Xk“Î‡“ˇ2ó€° ¯D{Ã>:q‚∆Áèïç«	`÷rp¶’»$‡“ãdÌ€	¸¶≥.à‡óUàø‘”–ΩÑg…ø/ë6§ä_kkkp´.Ää_Ñ¨Ï2`*∫ôE]—Ì)∫Ÿa˝v≥ßLm´ŸÔv˘i95øÁ*ö3t< ',˚˛‚[~x∑®¬ô(˛í.Ô∂J/æoå"∫ΩÒı∑P;ÇƒyËË"πÀ.ô“ƒ$üw›wL>≤Î*	RTO!e6;N≠˙I3vŒ•ÖÓÏ¨uªÿ¥=	Ägü¡ùóò+Ãu∏·ü:˛r2åëÌÚÒ2‡∞À*é¶˜ﬁæ◊üö1?€ËÂ‚wÿ˘uäjf4}55E	/©ê´ÙãCä+I¿ucn2°Û÷≥ÕX∫∆q§Eç_#ıCí⁄hOÏJ	ÛOy7]J~%ÊödVªeÃá/∞Y±[T¶6u°iãäp“∫KÕmå–ÊçlË&'œPÌ˝|G¯6wõ¢¡Ç{P|É∂¸{QÅ˚Ωï3IË◊cVCÚ	Á;«,Ç*Ì˘œìRá&©™d∑ÿ>Íc%È•k¿©)¬P¶ƒµ‚…ºìqwËö7U*{bì¶púO ﬁÿ≈©%6˙≠.…Di*,◊båúcHbdÜiÂ)r…LƒYOM$µìf5’%˘Ç$a„;ìsz˛f∂ñ9ZŸZÙoe›nu™±m∑hÖhM‘Ê«}ÃÖc´∆‡™≥¸úìt#Q¨1rTU∂π˙≥hó…[¬A£ﬂ≥ò¥±ÄÜéÂ:ÿ⁄√tÈÿ* i]Ti—“yN5ò&ZÈ¸∫[]å»Ä‘Ê†^øôÅ5Xûtu¬§J+iû“›ùÛX¢§ËVaŒY
+∆nVè£ÛNÍÌÙÙZƒZOØª≥ŸÀ„ﬂßÂû^6æ2V|∂ò;≤ÂK£ﬂ£Eﬂj£8C ±ÃÀÍîÿ,À™!eÀx°≈⁄9hæˆ]∞¯~¨ècSN èw’ﬁãtyjÖ∏©Q5} ⁄∏ZŒP-º¿h∞.k≤ñ∆-VP
+lÕ¿ˆÜ‡œ◊<ø1XiñeifaàÊaìÅxN±n0
+Y°;∂±∆ÏÖQ¿∑ò¸çÓÖwå^≈ˆe{kèπª‹è[;è—^Ï3¸ÔÊ∆∆OƒÕ5Ìkí;ƒãÖˆ3qÉxì»Ó·≤Ra¬ÉU±ﬁÄ7⁄3-VÕ÷^h[ßµ∞˜„bãã≠qù^VizZIü´Ö}”â˘‚ïM˜LåUR‘~jü4ñ»Gw+Åd˜íBûüîkTú€cí˘yÛ˛3 o…±¸{\$"gÖ⁄|“]…õ!™Ê≥ï^Ù≈E V`Ø†óŸ8oÏ˘e∞ñhm!Í4}¨Wë˙<!trzÏMˆo6’Àãbw∫ø‚L©∫p-§{;	=_’¡/¶Çsƒd$´äWLWî-R+ÁBj¬=jÁãYú∏}‚∆£``≤Q…°$»∞º:˙]¿LÊ9ÛçŸ9◊˜9I◊•Ÿo4ÜäÄ yt„W∞Ñ:Z9ÄˇÔ≠”_¨;t& ÀiÚıÄ≠\êx∆6ÈãZj†∆ì+œÄ¸[ÍQ˙∂ï˙/zçwˆ π6±∑N!ÒìA⁄Cd~3*ÌüÉËëét∏\Éq–BJCÛÓ¡2™¸R·H(ËlQô^-ßA	%∫¯axômÙÖÇÄºÑ™ˆäÑ11Ï√
+‘ñhKÆhÈÎ∑ﬁ5¡L
+aêRç˙q„ÌqΩ◊jü¢√n≥˛Î£ˆ˜ß
+É◊êÌØ!€ÀŸÕ=îï7˜XvS;´¬öJo`IÌÔÇá˝–ΩBóﬁúª€∆<∑ŸwŸﬂ•õzì},¥Ï⁄ÿt?GkÓ<v‹OœÇ´˛vIV[52©-∑†Tô	»ı#∑ ΩÊr‰®ß7«P
+Û0s˚8◊xhj^f;g4ò®∂ë;ê∫n‰fòr\Ä’Xﬁ∆¸JjÈ€ı‹ç√-§Ω+.⁄È5π˜îH"—5{Ã‘zÅ>ÍIb“2>+≠ÅÒÖUÑÒ&}√ˆ%ÉyN‘⁄Wqôßda&◊@U1/_i@_¶E©”?∂9ñfßÖ ºDÔi∞È∑7iJ3kC◊˘ÄèmB%±Ä&^ì"˘—–?© eyéÙ`¡ˆÆ,Ë öı!®Y’ﬁNm¶nÃÑÆœ‚ siØèÍ CÿÌ≤ÊÀ~/r€ πm≥$Æ¬ûF:¨~NÎc{ß’ïûk)œ*ÕﬂèNä⁄LLoô‘w¨YAê\aM Î÷’I ≥?ÃÒ∑ãA˘œ„xÍ‘üÀk,ÔÄÏj≤$GT™+’uB¬˝—ipµ·»∏äŒ¶∆NáÀ_(mRg¶Wñ7ØrÈíêB*⁄ëJú˚&qÓss_UÅ2%@¬ñ$Ï≤ñ∆´2Íí)f!fµ†Ø*CËÃñ8Üü¨8±¶∂√ì°› €k`{æQú0f_t&”ˇárPIX£Á÷É|v&‹ÌÏ\æÄAË ∑Í±kV'j:%™ ∞¶sµ˛Aìˇ†∞˘“Óá,2∏∏ˇå˛ÄÒ⁄”^hC1]üöªÏC∞@°ÏèX ù^g$5Mûl»y~2Ô«zé¢úˆÇ5¥@2}ÖØhﬁÚ„IdQÌÍ¿ã ä˚7^D”]b¿≈;∏£⁄¡°ÿã$ñ$¢œÔdZz’™˙¸ñúñ ≥‡;º¯:†[m¯^c‰ˆ?4º∞Ôª[ek»≥º ßQ,PØyJ…+ãüC:í¯ù}€"V ΩÛ∂€xS?k¢v˜®Ÿ=À˜-b$-¯y¥-⁄˛⁄∂h°∂EÃ˜òÑ≤œÂö)*`	Mã
+*`›Sœ"%ñãÎ¸˘ÔˇIÅ bføícﬂQª#‘Æ]œ#›ú≈÷EiÀ£?@á∂ÿÈ«ª™’vF¡ƒMSÆx±ÜGfÚB¡;yÍ:ô‡![g(6 ≤mÜöo(≥\ÕΩ,Êp’9Íı¶ˆFówœõ∞–ÏÖŒ˚îE√TÆ◊náiÌy¶ˇ≤æ’¿âFâ9WÃ \^Mb71å¬ˇ$Uo¸ë20ù!_©5jÖﬁ´jßAéPæÇπõ‘V⁄«8x4N¶l(ÜñÙ‚`å:ìësÈ¢sR∏$tI∏=Tf1qtÌ∆∫⁄göÍÍÊ§õÎ =¨iâMbå`ﬂò™¡Qo◊Äñ4Æ⁄T'›˝8y…H⁄ÅnıaÛzí≠ÜÊ„∑ßÓ‰‘ΩbœUƒΩ—>´≠ü£“Àı’ ´3b¿î3x$Ï¥fn™ïˆ·≤Iπ–B:˛¨l€™“¨Aß–—≠-Wv5˚àÙY÷FC√íw$*è≈Ò¿ßﬂå¶ÅüËóò±ËZÂH#[7—ówP›MŒñteÏ>∏æ»ﬂapõÂˇru%ß¨BøŒ◊kÆR"Òùπ∂≤WcZ#5ÆÅ<ör€[6ƒ\%çóæ.∆øpÈ%1T¶fVU%ÖRUIï˘˚ïÀ¸<πÃ|˝ı|&´ÅÛôeÛàß¡ˇ˘e,2Búÿo®,91ÿΩò∏"4Åﬂ¥û^Q0C<rùÅ¡£áíyKYπ,°?©}Càß+NŸ«÷‡©IéW0ﬂÔ∫X ﬁ[èGe¶Ö iñJ˘ß°µ©Wrƒ˙ï$[Nπ‡è¥B˘|C±˙_î_‘«ã≈gÌFg—¢£‘i∏¨y¸k®˜3s/>ô&º«0D’Æ˚#”å/O;MaeS8‡Ü™v™8-…4≥#zaä
+∑≈yèµ¡b≈C°÷al¿lÕ+≤¶%:A¿õÂ…±â#åNikGÖ?≠.2∆SJ^¸ÇÙ|…Ì0 ≠ﬂRéeû—‹s&∏¨?·ƒR\8y"ÒU•≠´%¢ [KA≈¯‰Ò\∏Ñ"∏P‡hπ.0_·¬˚@IçcÁ˝wä*≤¬ı2”éMYæ@[ü¿f¸]yr'å=RÛæ¸4ixH2I˙ÒEnäIˇ$ª	ÆÍ˝.˘±ŸÉD∞–Î&› óƒ~¢sËeS≥ÙÓ!€⁄«6GE\º5^‘	Œ‚†ˇÅJ;ƒò˝¡`ºØB•lã”µ-^Wπ≤$pqØ∑’ÕYdã6m‘…ö€”Ø:9¢ô61	0N¯XËÜ‚sÃˇT2î´±€⁄E˛/˙ßDÙv9òuhÉ6Çº{‡IøŒ` v¬Ë¥◊l^SpÌ¡˚%›4iÔåaÛôÒ—EŸ&OYU,ÅJã?<úñ™Rü^Û®ÓŸ+U‰õ/Êö¸T_Ó-{kÆßó≥xC“TØW2êÁ∏FÔ‹2-œ`´‰ŒSdÿıﬂÕú	æ…s£%bÊ9}œ◊‚]πæ_ñbDÇF∞ä;¡(ãäﬁ÷»Tï$D¢‡›¡r&Üm kx-Êí>µ•1C≤c	©E¡ï+Y<jsw`ß]¸¨<êq›∞Ä‘€É%J2™-T⁄√§ ≈}ì¿ÌÍË‰ˇu8!EÂÔçˆó.“VÑR¸ﬁ˚·ù0ËªQÑ^¡ J™BuT¡RWuô¿ÈpÜ.	ƒ‘‚õ^Zí‡Ÿ>∞)Â_†"ôåwxÜXsb∫”Ÿ◊âEªÑüvŒé°Â"ÀK∆ì?h–ò&0€4
+î!k¯ñ‘æ˜RÆ‰}2Eçiø0ƒwÍ?ú4O{ËMÎ¨◊Ó˛Ä^Aê1§‰v⁄ù∑_åIDÎ®ˆÆ’¸æ*∆OÉ7^·u6ÿXf,N-qCÊcÈ„øí)⁄V‘ˆŒ\Xeé ∂Ãà¶–µjnidÃïc
+óS≤>L©≈H´ÅJón'hüˇ÷\ÓÖü¸+≤‚lè6^“Ä≈€C;e©íH¶hà(vŒà,âÍò‡GÂ˙!E;¶æ ÷)‹«_)&é◊k’!@òÒÓâw Òñä8∏&ëª*œ93àù¸&ªqxúo»å™<™Ê¬Ò#7rèÂì
+´ı„„U9¯≤\KÕ<å‰«≤o©)çñåá©Z* ´[^sEyÅYòyõ_ŒÑ#∑y¨I∫£∑&lpBgTZ®x‘@¢Øêì)î∞ ÄÏŸgübØÓŒ;\ÑuÊkºdáÀƒéëuMÛÎ“FêÂ˜;©$NìZ;/gí-"N¢¶ÿzÒxqi˜ñÇ#7‘5§‰îJ ŸëíríåãÙúÒuÌyôÃã‹ú•FÌ≥våùÊœﬁQEü?é∫¬7Il©.÷Ö”Ç|Óé.Nõ∑™jSdÏI∏R∂é?‘∫jnÖäaı`¯¢¿#¿ã«‰ΩÖb1¥∂å¸‹#,_ª8s5…u?Â¸ÿ8ÀÑüú!‰˜TndI&MÁQWÓ“ƒΩõı√†|ãbﬂUËL	Œ\k˙òÏT≈v)ΩıîÓò–\8˙
+€Ø‚j≥ÀGãÛóåœ«≠™‘.	m˙‘&S&&ãGï˙∂“º£q••‘l.CsØ7uè3.0 ¡<ßrÍÃ•Ñ≤≠E”… ÿ‡“Ï±eZôygK)&∆Å6¢˝âDã(qEáé¯◊˙≥V§Mõ•ü:ƒÊgﬁÑ;¢7À–/&ﬂ‡W^ÈìóÚõU˘™,¨dG_.çGÍê“Ñû–âLBAÛÛÑïjõ‰)r…Ñbpt6œfWäÕÙ‹%ø°°\«Ç’ˇs¸[áÿ¨<t≈Õ°6TÓ˝`Ö„öBœIËO&4€î£êˆxÀ<kãCß"^"<ÀôB9XÑXˇqkBªÊ.¸èÂ*(•ïK˘BÃÔË¥£™π,…8P>eh4So.óöTcMLÏ_Ãï?´à>º‚l‹Tù(®:i
+Ä›¥jC˛|≠lÈUÆ8PÃVê›/Á»pL uÑxjÉæöPJ∏S ÷P¶õ¨A"Å/&ü+&FñMà◊{Ã˙#7$≈ùÿﬂ—Í-MUUo∑¶\G)x6è¨4ú∏X˙Ê}P;‘Ç˝ôõ?±V%ÌÎü“Ìè∆âBÆëπKZ ©
+^ïJC¶öb7¢]X(ı)⁄(Ú“h|∞®Ω-[=™M– ïé)À|!œK›V˚âVÉK≥¬®Ì«*2XØPõéAΩ«)Y˛ˇ   ˇˇ‘]€r€8}üØ¿z∂bg∆ñØ…8Œ≠€Iºe«éÂd*;µµ√H¥≈â$™H…è÷ﬂ∞˚∞/˚uÛ%€Ä$ 6@Pí/ÒCbKºÄ@£Ÿó”ß˘∂1¥ˆa|qaù˘Íï∏Ù>	ú⁄∆L'È*#ÂΩÁÁ)JÇæZ ‘ﬂMÀ1Õ*˘1s{¶‰RÊ (≈+ÊﬁàIaØ…ô…
+Ÿﬁ8Ã8ÁØ5*Ñ§Ræi!)M1ÜÇAÒœˇ˝áΩ#àûá∆ioŸ?ˇ˚o¶0àg4~ã÷Ú◊öÔ÷<©Ãvõß{-∂w–:9l~Úxπ∫¯4ÊL’Dd?În˘—Â˝¡¨∑ä.Ì‡YK¡9|g8™‰˚vakd»∆çæA£Âc:X[ü≠v∑Íà§IWâÆN*3j/º8¬3$ï≠ÿX"û-eÿ•0ÚX;H:µ’ï›ò\≥@˝À1¯å|•í¶\~™íæX◊ëåŒOK˚RéL¡©í√Í¢b…V¢+G+ÇO)âW™bÙŒx¸"¨«‚T4-∂ßTÿoQ‡¨œó[=n-±qääm”Ô“⁄D∆Ôˆ˛eÏ◊ a É!ã¢˙Äõıó∞Cjç‹FòaAÛW˙˝ŒéJ…ﬁª(ª÷öcgØ}‰·µ„†¨ﬁ∏ÂG≈ƒN=|ˆœ®ìπ˜÷Û©Ã£mì…X´é£‹2˘4∂î∞ª8É$•Ã_%F‡—|I$!‹ºXáx<¥¡%ÖªñWò´πÉxMÓÇ˛≥Á>]˜òˆ’∑^’ªBﬁŒØ9&{§≤Û˚ï´=JNGç¨VóΩº4÷∆qß<ÖOÌ[ù'-rüJ™Ë≥“Œ£Ñ<÷nV?ﬂ€∂ù
+U·≈ÄÕO+è?Ïæ›?ùyJ‹\Ë¯Éí+£nº'Tµ‰Œ∫ÉÇÚv–MÆ¨ì@1B/9†‹ÉﬁÖáÈSA≠.u8NÌ*‰ä˘Ù[ø£∏Ç!ÜÏÉÛxfÌCÜ+Î*ôöÂŒ”U#˚l<‹w'jaæÀ∞ëÓçiúBwÍ¸ „AûÄÁ¸≤æ≈ÛYœv]T√±;lBËèy®R?πSqtıdNµ—|ã?Ú∏$≈;I¯)ågq‡&}ªOñ˝,Wí2|ú8iY~Fõ2Â!n`KC{Ò⁄U{Q±ì´ÊgÛu„ÊÙ"Œ˘,π@#Ãåë˛ıµYzõ’Äjt$√$:èî∞÷a|·!y%Q˛•PvËI‘3¸*Ü&Û‹ævcP≤C—	, ∫&ºÜ=•∞∏KT}2õ^3?©$~‹”´‚U≤≈ìSƒdP√uÖ
+çIó¯eLVæŸÔ¸r*¶Eå—GΩUïπªçŸø¥Âiø≤?≥∆‡≤R™àY∫IdÖªÓ«ÖŒ®x„UQµ∫ÒWtÊïH‹<ï|±e<J≤ÑòÊŸË¢…]°¥]ë¯˘T'Y˙Zÿ+îÏªÄÏà‡.\ a⁄Z=ö⁄Añ/=`≠˝≥≥√}≠ñ©u÷|∑◊<<~∑_ÓìêÇ∏H§.…uKpÅ†oô}Wm÷oπ-Çï∑°Ç>∞.†z∂ÊÑwi“ZÈ5@∏
+˚Réu∂˛ò`Ì∏?ÏÖ qAªç>iäJñ”(*Êl/æ¿®}¶~eÙ>Ω'ÕZÙv_‚•MU=nJÃ÷¸;
+†[ ¿úgq‹˚L :›ûïÀYËî"§ Åå3†7k(Çˆúr⁄¸Øgcó≤Ä?	Í<gøƒ9ézòt›pö≥≈FuÁ˘dÈ¡M°7e™H‹E»ï?~Ûm˘‰)úí|◊û8pa8ÛÓïs¿qŒ«3ë≤U∂SìD∞©cÅ _déJP¶<úgx.˝ôóZY…%¶orXÊ•jA€Ω˝8z~Õª∆T:ºåM≠§øu:†ñtŒ˘ó^¸+€?ﬂú6Ÿ@f:Å€7ˆU&ò[Iß‘%—`8¶Uâx°w‡⁄t@W5-–#ŒÆZWœ‰gﬁ∂í)r.C=ºΩcù#Æ‰˙G±c±Êµ"˚ÉŒTÎ!œ˚¶W£nUM¬ÛO◊º”µ’'KÊÓ@ÆØèÚâ˙∆UK˜-Ss-…öê;rqÒ·SB4åè5KAå˘©çﬁ…NÕ≈Ü∞Ÿ}%âé∆jz5_ß('“Pß(îÌ·F[ê¯®‰PhQv∆›=Sb›ù…Üıâ<ƒ2
+H&ãøîπ0LZ
+ÍÏ
+ß(À$/Kâ<Ñ¶˝H¢˛“CÇ˝É∏1y0rèT$‚”Lî!H¶‚^$Á¯V5wÑ#,¯%∏Ó@ÜíLâ–pãEÁrz	ÜˇÚåôﬂ’XﬁLßÂW{ahª™këÙr& =Ü™ôüÆ ˘T,∆mj∑2Ú„®éÕ9Î⁄Î	&Ïé˛zuA'i3KKƒkõÕ¸2UxXü§è0my1õ	,Ω◊Z¬ö8W”«w~]â‘ÄüΩ	É(ÇP¢~(ô;FiÇ9OâÀ∞˜Ì÷">û<.Qê‹}€2¶µmÀú¿iπÇ=?\YcÄ}‡Hi?së˚1≤? ˜”4U…ﬁœ”6e)2ÆÁl™»†≥üòÂAf4c7«U$*bcïaÕHÚeN˝\æ•v.eΩÁDÃ#q
+>ç‚^Ù Û…ˆµ>kzüUÉwΩ
+¨Ù.ñprS?+È_–,4X;ﬁl¥ùîÏCÿ⁄Õù+MR˛ÄíZO∆Ù8s⁄%Ÿ€WˇA °jB^Í&§Ú≠áEZ\,3ä/Ωå‚a•Ìl
+äN‘∑4—∫ÀÈCA€3„[\VöŸ©èüÅÿñÔÅΩÉΩÏX≥”w<≈?ÿ5R∂üÛ¶pŒQ9∫	´?E«#	Ôlx‰—Œ¬›3»à M‡é`ÉÆ{¥≤\ªŒ-õ(˘¡±Á?ΩïìzC!;M í9”≠<da.(Ykè:ãÕÊ5ÆP≤Ú¡º…’ß\»¬ä(ô›JùNæÍµCÁ	Ëû˝/N@E8ï¿ÀùK£V±JÒ/fÿ2uzÒK‹&âΩÇ3{{ıe®¬rÆ—C[¡àI>¶`¨Ö#”± ÁÖÜ~”N7m–°ùÛ§ñ∑vq®I"_◊ôüÏM'Ô≥K‹v%˛8{X3©2˚{Ã$oê«;ÄÁ7F?HË˜I®Fƒfk~#¸ÒÔOŸ.ñ	µ⁄ÇÁ{¬ˇÃû¿™yÆgÿ Ú˝©<ñùﬂ#J±±«sÃ|ü®áèKèf,ô~tiµ‚~›∑±ú:í4Ïî‹/∏ÿx»Ìh∂¬ iwœ¬§/n†≤<‡¶ãÚÆº&ÏÆÒ(|√Ÿ–VÛXöúó|Ê\3£T=7˙Ò•Ÿ·ØÅÁìh o7îxﬁ¬S8™—®ø√Ç¡ïÄé®sÖ°wG4ƒÔ85øú≠¸u¬©íœ{qú,·{ÍG¡ù“‹â¡Ôc?0˝á◊ø.◊n]v≈‹vŒ÷Ñ£ıœæ¡<ë8Q˝Dî<j'dÙÈ‚‡úLì‘”áwD[^òˇ =7¸CÔ‰¬Sj∑·ΩÏ‰M¯ÔÏÂK˛W˛áv¸áA4G„ob‹`É˝ ØUKª¢∂P:˚ß'‡ I?h_1êXfÃÆ-î‰KU¡‰ÿåªÏ…"å$ƒZv	ÚUˆÈõd ⁄PâÏÚHhï…IyØPÁóv?⁄8íÍ§$Å/‡E˘s"—≤{vÄ˛∑r‹8∑qÙ!8®¯£ºãqñÓ£¥9ö◊ÃÊìó,€ï`@E‡ô¬ŒI¸:NÚã’ •s8˘<êÈõ}BÄ˙ú∞È4=£ˇﬁ@˙oÉÓ≥ßû±òGò’Îˇˇà„>˛ﬂã∞≤˛à„Ÿ	‚Œ€Ö¥K£@– Å$~U˙çqg ºnêπ1Û¸Ø+€`'oÊI·”Í÷HeÎ’úZ!{.:ôIA;Ë£QÚs¸û7ÖüGﬁ©æÄj∆Ìh‹∞»"9G"£–B;‘ÿƒóQêo∞zíGﬁ·<Ì=B≠,ƒΩéÇ®á@˙ìΩ◊¨%†zòÄí1Õ{ß7¥óèïÏ£¿.mC`tÓò^®îV;â{=û®|Öπ›.∑ô$’‘Ü5«/˘ô‰ƒ5IûÁ|ï^¸ÃJDk€Q	op∫MU˜k›≤£Q´ˆmTZ/Ù-ÎÏg@’ød∫‘F5©√åN»W∂‡µ¨}{+•∞Y„ÀÇS√Õ¬y÷ëh=¸›xÀ E®‘≠ıÁΩ¶‰ ¬ß3Ø®A”¶≤]ÊÀÏ‚ÚìÒ\zÆ=»Ü˝£+µf≤h`j)†Ã›ΩóY∂á|ù;V©ÿCd?Ú:ídG¬J’UÕòóìP)vÄ»‰dÄ$∂´Áƒ/n®ìç´≈≠'çÁI¿ÔÔ˘Ï‹u†ºî-^”x}*®:]v·a¿SY∂∂π∂∂æ±πıËÒO`_∞ülPWêêÓØÚ	œ8"õ/
+%∂™;îf¡œÂ}Ä›eTON<-0ﬁNﬁΩM˝UÜy[M>¯Œr[mèj$˚`ƒ)Cñ≤
+◊èrD√%¶küøs%Ó°é¿ﬁY\¢ñù[FÓÅUe‡aAòˆ˝ªÔ˝∏œ€»Úz•∞Å-s[7ÖñÑﬂ£‹Ü<CAtï} A¥Øÿ“ÒPÃV9ƒ~ÛõñbûÄ„ yûΩÄ~ú`'å‡W4éçF√cãe¬U™∑çãÛÓlì%7øcÌ"ükˇ3Y@õQ∆Î∆<K»|wJ˛LGaöaˆXŒ™PíΩÁâPi+OÁ„‚0bä˘Ø	é– ÎÃ9ÆE8\ûœºÓﬂHΩ–Ö⁄ör.ﬁ"J_ñaä˙b…⁄‹»Ïp¯›Û∫≠(zdñƒûå©Dò9 xr!B˘aÓy´çqQóh<Ÿ0>ËÏ–°EÓß,ìg]*h´*œ¬u	∂"å
+˙,>Oà≤›ˆ8;Ä>?¸}»O îºÎR˚ƒ±ÙUGÖeoªòb¸”◊™8ÎÇò`⁄’@®Êf≤„1[ï“∑Âöƒv;Ó ‡m~˘}ˆ _Ó≈ÚÔ˙"?±cÑÿ_6vÛÔDñ„√ªø5_±∑«G˚«'Õ≥∑ªl˜‡¸˜Äùºmû5w?-∫Óíc˜Ë…Ø˘Ω÷◊X´Ù¢~ê∞”8Ë,≥7A“ç√Óxô›8	ù7ìblﬁä|$å0ºÿÿ+õÎÎﬂZ{º∂mπ$hê!Ú¨ø∫⁄Q/»¬^‰æí˚{ v`–gÕ^ƒöÉﬂ∆˝E‚Ç◊ƒŸ7(ËiΩÊ…?î≥Ô&Ë5ÿQ‡Õ´-º* 6äËóÉyN1&∞MM¶Ω?ﬁm[l‚éÉü•6N´”F(∞YF‰ïﬂËsÍ;è]z%ë…°>
+≤q[ô⁄ﬁßø⁄‹x∑∂√Ì'q∂n÷´±d*>0_4µéG…®¯.YuÊ≈⁄$Ri[z™õHŒF`©wùÃrp[nR$OlˆúE÷nZ∞p6a(LKcˇnﬂ° ê∂ÁO4IâƒÚaj?-ºúÊª=ñôù)ãsàﬂ1œO9ä çŸU<fmê∞÷Év∆ç´Q7î&†ß@⁄[èÍ~ƒñµîœ["aπ∂jë4?ØMfg¢®¥œ>˝Ó˙ªˇ  ˇˇ 26\K

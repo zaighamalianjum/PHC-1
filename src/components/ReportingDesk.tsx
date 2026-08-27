@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import {
   FileText,
+  ChevronRight,
   Printer,
   Download,
   Calendar,
@@ -458,6 +459,7 @@ export default function ReportingDesk({
 
   // Active Report Type Selection
   const [activeReport, setActiveReport] = useState<ReportType>('pending_payments');
+  const [expandedPoReportId, setExpandedPoReportId] = useState<string | null>(null);
 
   // Dynamic Date, Fiscal Year & Month Calculation
   const now = new Date();
@@ -773,29 +775,120 @@ export default function ReportingDesk({
     return { totalExpense, byCategory, count: expenseData.length };
   }, [expenseData]);
 
-  // Report 4: Purchase Orders & GRN Details
+  // Report 4: Purchase Orders & GRN Details with Partial Receiving & Itemized Breakdown
   const poData = useMemo(() => {
     return effectivePOs
       .filter(p => isWithinDateRange(p.OrderDate))
       .filter(p => {
-        const matchesSearch = p.POID.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          p.VendorName.toLowerCase().includes(searchQuery.toLowerCase());
+        const matchesSearch = (p.POID || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (p.VendorName || '').toLowerCase().includes(searchQuery.toLowerCase());
         return matchesSearch;
       })
       .map(p => {
-        const linkedGrn = effectiveGrns.find(g => g.POID === p.POID);
+        const targetPoId = String(p.POID || '').trim().toLowerCase();
+        const linkedGrns = effectiveGrns.filter(g => String(g.POID || (g as any).PoID || '').trim().toLowerCase() === targetPoId && g.Status !== 'Cancelled');
+        const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        let totalOrderedQty = 0;
+        let totalReceivedQty = 0;
+        let totalRemainingQty = 0;
+        let totalReceivedVal = 0;
+        let totalRemainingVal = 0;
+
+        const itemsBreakdown = (p.Items || []).map((item, idx) => {
+          const ord = Number(item.Qty) || 0;
+          const price = Number(item.UnitPrice) || 0;
+          let rec = 0;
+          const receivingGrnIds: string[] = [];
+
+          linkedGrns.forEach(g => {
+            if (Array.isArray(g.Items)) {
+              let matched = null;
+              if (item.ItemID && String(item.ItemID).trim() !== '') {
+                matched = g.Items.find((gi: any) => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(item.ItemID).trim().toLowerCase());
+              }
+              if (!matched && item.ItemName && String(item.ItemName).trim() !== '') {
+                matched = g.Items.find((gi: any) => gi.ItemName && norm(gi.ItemName) === norm(item.ItemName));
+              }
+              if (!matched && g.Items[idx]) {
+                matched = g.Items[idx];
+              }
+              if (matched) {
+                const qty = Number(matched.ReceivedQty ?? matched.Qty ?? matched.QtyReceived ?? matched.Quantity ?? 0);
+                if (qty > 0) {
+                  rec += qty;
+                  if (g.GRNID && !receivingGrnIds.includes(g.GRNID)) {
+                    receivingGrnIds.push(g.GRNID);
+                  }
+                }
+              }
+            }
+          });
+
+          const rem = Math.max(0, ord - rec);
+          totalOrderedQty += ord;
+          totalReceivedQty += rec;
+          totalRemainingQty += rem;
+          totalReceivedVal += (rec * price);
+          totalRemainingVal += (rem * price);
+
+          return {
+            ...item,
+            OrderedQty: ord,
+            ReceivedQty: rec,
+            RemainingQty: rem,
+            UnitPrice: price,
+            OrderedTotal: ord * price,
+            ReceivedTotal: rec * price,
+            RemainingTotal: rem * price,
+            ReceivingGrnIds: receivingGrnIds,
+            Status: rem === 0 && ord > 0 ? 'Fulfilled' : rec > 0 ? 'Partially Received' : 'Pending Delivery'
+          };
+        });
+
+        const effectiveStatus = totalOrderedQty > 0 && totalReceivedQty >= totalOrderedQty
+          ? 'Received'
+          : totalReceivedQty > 0
+          ? 'Partially Received'
+          : (p.Status || 'Approved');
+
         return {
           ...p,
-          linkedGrn
+          Status: effectiveStatus,
+          linkedGrns,
+          linkedGrn: linkedGrns[0],
+          itemsBreakdown,
+          totalOrderedQty,
+          totalReceivedQty,
+          totalRemainingQty,
+          totalReceivedVal,
+          totalRemainingVal
         };
       });
   }, [effectivePOs, effectiveGrns, startDate, endDate, datePreset, searchQuery]);
 
   const poSummary = useMemo(() => {
     const totalPoAmount = poData.reduce((sum, p) => sum + (Number(p.TotalAmount) || 0), 0);
-    const receivedCount = poData.filter(p => p.linkedGrn || p.Status === 'Received').length;
-    const pendingCount = poData.length - receivedCount;
-    return { totalPoAmount, receivedCount, pendingCount, totalPos: poData.length };
+    const totalReceivedAmount = poData.reduce((sum, p) => sum + (Number(p.totalReceivedVal) || 0), 0);
+    const totalPendingAmount = poData.reduce((sum, p) => sum + (Number(p.totalRemainingVal) || 0), 0);
+    const totalOrderedUnits = poData.reduce((sum, p) => sum + (Number(p.totalOrderedQty) || 0), 0);
+    const totalReceivedUnits = poData.reduce((sum, p) => sum + (Number(p.totalReceivedQty) || 0), 0);
+    const totalPendingUnits = poData.reduce((sum, p) => sum + (Number(p.totalRemainingQty) || 0), 0);
+    const fullyReceivedCount = poData.filter(p => p.Status === 'Received').length;
+    const partialCount = poData.filter(p => p.Status === 'Partially Received').length;
+    const pendingCount = poData.filter(p => p.Status !== 'Received' && p.Status !== 'Partially Received').length;
+    return {
+      totalPoAmount,
+      totalReceivedAmount,
+      totalPendingAmount,
+      totalOrderedUnits,
+      totalReceivedUnits,
+      totalPendingUnits,
+      fullyReceivedCount,
+      partialCount,
+      pendingCount,
+      totalPos: poData.length
+    };
   }, [poData]);
 
   // Report 5: Current Stock & Inventory Valuation
@@ -2180,10 +2273,38 @@ export default function ReportingDesk({
         e.ExpenseID, e.Category, e.Description, e.Amount, e.ExpenseDate, e.PaymentMethod, e.ReceiptRef || 'N/A'
       ]);
     } else if (activeReport === 'purchase_orders') {
-      headers = ['PO ID', 'Vendor Name', 'Order Date', 'Delivery Date', 'Total Amount', 'Status', 'GRN ID'];
+      headers = ['PO ID', 'Vendor / Supplier', 'Order Date', 'Delivery Date', 'Payment Terms', 'Total Ordered Units', 'Received in GRN Units', 'Remaining / Pending Units', 'Total PO Value (Rs.)', 'Received Value (Rs.)', 'Pending Balance Value (Rs.)', 'Status', 'Linked GRNs'];
       rows = poData.map(p => [
-        p.POID, p.VendorName, p.OrderDate, p.ExpectedDeliveryDate, p.TotalAmount, p.Status, p.linkedGrn?.GRNID || 'Pending GRN'
+        p.POID,
+        p.VendorName,
+        p.OrderDate,
+        p.ExpectedDeliveryDate || 'N/A',
+        (p.PaymentMethod === 'Cash' || (p as any).PaymentTerms === 'Cash') ? 'Cash' : 'Credit',
+        p.totalOrderedQty,
+        p.totalReceivedQty,
+        p.totalRemainingQty,
+        p.TotalAmount,
+        p.totalReceivedVal,
+        p.totalRemainingVal,
+        p.Status,
+        p.linkedGrns && p.linkedGrns.length > 0 ? p.linkedGrns.map((g: any) => g.GRNID).join('; ') : 'Pending GRN'
       ]);
+      rows.push([
+        'TOTAL',
+        `Grand Total (${poSummary.totalPos} Purchase Orders)`,
+        '—',
+        '—',
+        '—',
+        poSummary.totalOrderedUnits,
+        poSummary.totalReceivedUnits,
+        poSummary.totalPendingUnits,
+        poSummary.totalPoAmount,
+        poSummary.totalReceivedAmount,
+        poSummary.totalPendingAmount,
+        `${poSummary.fullyReceivedCount} Fully Received, ${poSummary.partialCount} Partial, ${poSummary.pendingCount} Pending`,
+        '—'
+      ]);
+
     } else if (activeReport === 'current_stock') {
       headers = ['Item ID', 'Medicine / Item Name', 'Category', 'Current Stock', 'Purchase Price', 'Retail Price', 'Total Stock Valuation (Rs.)'];
       rows = currentStockData.map(i => [
@@ -4317,60 +4438,202 @@ export default function ReportingDesk({
           <div className="overflow-x-auto">
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+                <tr className="bg-slate-50 text-slate-600 font-bold border-b border-slate-200">
                   <th className="p-3">PO ID</th>
                   <th className="p-3">Supplier / Vendor</th>
                   <th className="p-3 text-center">Order Date</th>
-                  <th className="p-3 text-center">Expected Delivery</th>
-                  <th className="p-3 text-center">Items Count</th>
+                  <th className="p-3 text-center">Delivery Date</th>
+                  <th className="p-3 text-center">Ordered / Rec / Rem</th>
                   <th className="p-3 text-right">Total Amount</th>
+                  <th className="p-3 text-right">Pending Value</th>
                   <th className="p-3 text-center">PO Status</th>
-                  <th className="p-3 text-center">GRN Receipt</th>
+                  <th className="p-3 text-center">GRN Details</th>
+                  <th className="p-3 text-center">Action</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
                 {poData.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-6 text-center text-slate-400 font-medium">
+                    <td colSpan={10} className="p-8 text-center text-slate-400 font-medium">
                       No Purchase Orders found for period ({startDate} to {endDate}).
                     </td>
                   </tr>
                 ) : (
-                  poData.map((p, idx) => (
-                    <tr key={p._id || p.POID || idx} className="hover:bg-slate-50">
-                      <td className="p-3">
-                        <div className="flex items-center space-x-1.5">
-                          <span className="font-mono font-bold text-indigo-600">{p.POID}</span>
-                          {(p.PaymentMethod === 'Cash' || (p as any).PaymentTerms === 'Cash') ? (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">CASH</span>
-                          ) : (
-                            <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">CREDIT</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="p-3 font-bold text-slate-900">{p.VendorName}</td>
-                      <td className="p-3 text-center text-slate-600">{p.OrderDate}</td>
-                      <td className="p-3 text-center text-slate-600">{p.ExpectedDeliveryDate || 'N/A'}</td>
-                      <td className="p-3 text-center font-bold text-slate-700">{p.Items?.length || 0}</td>
-                      <td className="p-3 text-right font-black text-slate-900">Rs. {p.TotalAmount.toLocaleString()}</td>
-                      <td className="p-3 text-center">
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
-                          {p.Status}
-                        </span>
-                      </td>
-                      <td className="p-3 text-center">
-                        {p.linkedGrn ? (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                            GRN #{p.linkedGrn.GRNID} Approved
-                          </span>
-                        ) : (
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-800">
-                            Pending GRN
-                          </span>
+                  poData.map((p, idx) => {
+                    const isExpanded = expandedPoReportId === p.POID;
+                    return (
+                      <React.Fragment key={p._id || p.POID || idx}>
+                        <tr className={`hover:bg-slate-50 transition-colors ${isExpanded ? 'bg-indigo-50/40' : ''}`}>
+                          <td className="p-3">
+                            <div className="flex items-center space-x-2">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedPoReportId(isExpanded ? null : p.POID)}
+                                className={`w-6 h-6 rounded flex items-center justify-center border cursor-pointer transition ${
+                                  isExpanded
+                                    ? 'bg-indigo-600 text-white border-indigo-600'
+                                    : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
+                                }`}
+                                title={isExpanded ? 'Hide item fulfillment details' : 'View item fulfillment details'}
+                              >
+                                <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
+                              </button>
+                              <div className="flex items-center space-x-1.5">
+                                <span className="font-mono font-bold text-indigo-600">{p.POID}</span>
+                                {(p.PaymentMethod === 'Cash' || (p as any).PaymentTerms === 'Cash') ? (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300">CASH</span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200">CREDIT</span>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td className="p-3 font-bold text-slate-900">{p.VendorName}</td>
+                          <td className="p-3 text-center text-slate-600">{p.OrderDate}</td>
+                          <td className="p-3 text-center text-slate-600">{p.ExpectedDeliveryDate || 'N/A'}</td>
+                          <td className="p-3 text-center">
+                            <div className="font-bold text-slate-800">
+                              {p.totalOrderedQty} ord / <span className="text-emerald-700">{p.totalReceivedQty} rec</span>
+                            </div>
+                            {p.totalRemainingQty > 0 ? (
+                              <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                                {p.totalRemainingQty} pending
+                              </span>
+                            ) : (
+                              <span className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                ✓ Complete
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-right font-black text-slate-900">Rs. {p.TotalAmount.toLocaleString()}</td>
+                          <td className="p-3 text-right font-bold text-amber-900">
+                            {p.totalRemainingVal > 0 ? `Rs. ${p.totalRemainingVal.toLocaleString()}` : '—'}
+                          </td>
+                          <td className="p-3 text-center">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              p.Status === 'Received'
+                                ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                : p.Status === 'Partially Received'
+                                ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                                : 'bg-blue-100 text-blue-800'
+                            }`}>
+                              {p.Status === 'Received' ? '✓ Fully Received' : p.Status === 'Partially Received' ? '⚡ Partially Received' : p.Status}
+                            </span>
+                          </td>
+                          <td className="p-3 text-center">
+                            {p.linkedGrns && p.linkedGrns.length > 0 ? (
+                              <div className="space-y-0.5">
+                                {p.linkedGrns.map((g: any) => (
+                                  <span key={g.GRNID} className="inline-block px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200 mr-1">
+                                    {g.GRNID}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-100 text-slate-600">
+                                Pending GRN
+                              </span>
+                            )}
+                          </td>
+                          <td className="p-3 text-center">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedPoReportId(isExpanded ? null : p.POID)}
+                              className="px-2.5 py-1 rounded-lg text-[11px] font-bold bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 transition cursor-pointer"
+                            >
+                              {isExpanded ? 'Hide Items' : 'View Items'}
+                            </button>
+                          </td>
+                        </tr>
+
+                        {/* EXPANDED ROW: ITEM-BY-ITEM ORDERED, RECEIVED, AND REMAINING BREAKDOWN */}
+                        {isExpanded && (
+                          <tr className="bg-slate-50 border-b-2 border-indigo-200">
+                            <td colSpan={10} className="p-4 sm:p-5">
+                              <div className="bg-white rounded-xl border border-indigo-100 shadow-sm p-4 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center space-x-2">
+                                    <span className="font-mono font-bold text-xs text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded">
+                                      {p.POID}
+                                    </span>
+                                    <span className="text-xs font-bold text-slate-800">
+                                      Item-Wise Fulfillment & Remaining Delivery Tracking
+                                    </span>
+                                  </div>
+                                  <div className="text-xs text-slate-600">
+                                    Supplier: <strong>{p.VendorName}</strong> | Ordered: {p.OrderDate}
+                                  </div>
+                                </div>
+
+                                <div className="overflow-x-auto rounded-lg border border-slate-200">
+                                  <table className="w-full text-left text-xs">
+                                    <thead>
+                                      <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                                        <th className="p-2 text-center w-10">#</th>
+                                        <th className="p-2">Medicine / Item</th>
+                                        <th className="p-2 text-center">Ordered Qty</th>
+                                        <th className="p-2 text-center">Received in GRN</th>
+                                        <th className="p-2 text-center bg-amber-50 text-amber-900 border-x border-amber-200">Remaining / Pending</th>
+                                        <th className="p-2 text-right">Unit Rate (Rs.)</th>
+                                        <th className="p-2 text-right">Pending Value (Rs.)</th>
+                                        <th className="p-2 text-center">Status</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100 bg-white">
+                                      {p.itemsBreakdown.map((it: any, iIdx: number) => (
+                                        <tr key={iIdx} className={it.RemainingQty > 0 ? 'bg-amber-50/20' : ''}>
+                                          <td className="p-2 text-center font-bold text-slate-400">{iIdx + 1}</td>
+                                          <td className="p-2">
+                                            <div className="font-bold text-slate-900">{it.ItemName}</div>
+                                            {it.Category && <div className="text-[10px] text-indigo-600">{it.Category}</div>}
+                                          </td>
+                                          <td className="p-2 text-center font-bold text-slate-700">{it.OrderedQty}</td>
+                                          <td className="p-2 text-center">
+                                            <span className={`font-bold ${it.ReceivedQty > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
+                                              {it.ReceivedQty}
+                                            </span>
+                                            {it.ReceivingGrnIds && it.ReceivingGrnIds.length > 0 && (
+                                              <div className="text-[9px] font-mono text-slate-500">{it.ReceivingGrnIds.join(', ')}</div>
+                                            )}
+                                          </td>
+                                          <td className="p-2 text-center border-x border-amber-200 bg-amber-50/30">
+                                            {it.RemainingQty > 0 ? (
+                                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
+                                                {it.RemainingQty} Pending
+                                              </span>
+                                            ) : (
+                                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                                ✓ Fulfilled
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className="p-2 text-right text-slate-600">Rs. {it.UnitPrice.toLocaleString()}</td>
+                                          <td className="p-2 text-right font-bold text-slate-900">
+                                            {it.RemainingQty > 0 ? `Rs. ${it.RemainingTotal.toLocaleString()}` : '—'}
+                                          </td>
+                                          <td className="p-2 text-center">
+                                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                              it.Status === 'Fulfilled'
+                                                ? 'bg-emerald-100 text-emerald-800'
+                                                : it.Status === 'Partially Received'
+                                                ? 'bg-amber-100 text-amber-900'
+                                                : 'bg-rose-100 text-rose-800'
+                                            }`}>
+                                              {it.Status}
+                                            </span>
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
                         )}
-                      </td>
-                    </tr>
-                  ))
+                      </React.Fragment>
+                    );
+                  })
                 )}
               </tbody>
             </table>
