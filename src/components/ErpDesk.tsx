@@ -99,7 +99,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [vendorDateFilter, setVendorDateFilter] = useState<'all' | 'daily' | 'weekly' | 'monthly' | 'yearly'>('all');
   const [vendorPrintModalOpen, setVendorPrintModalOpen] = useState<boolean>(false);
   const [expandedGrnId, setExpandedGrnId] = useState<string | null>(null);
-  const [expandedPoId, setExpandedPoId] = useState<string | null>(null);
 
   // Core ERP State Collections
   const [vendors, setVendors] = useState<ErpVendor[]>([]);
@@ -3444,9 +3443,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
     const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
 
-    const breakdown = getPoItemFulfillmentBreakdown(selectedPoForWhatsApp, grns);
-    const isPartial = selectedPoForWhatsApp.Status === 'Partially Received' || (breakdown.totalRemainingQty > 0 && breakdown.totalReceivedQty > 0);
-
     const url = generateWhatsAppPurchaseOrderUrl({
       poId: selectedPoForWhatsApp.POID,
       vendorName: selectedPoForWhatsApp.VendorName,
@@ -3455,19 +3451,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       expectedDeliveryDate: selectedPoForWhatsApp.ExpectedDeliveryDate,
       totalAmount: selectedPoForWhatsApp.TotalAmount,
       paymentMethod: selectedPoForWhatsApp.PaymentMethod || (selectedPoForWhatsApp as any).PaymentTerms,
-      status: selectedPoForWhatsApp.Status,
-      isPartialDelivery: isPartial,
-      totalReceivedQty: breakdown.totalReceivedQty,
-      totalRemainingQty: breakdown.totalRemainingQty,
-      items: breakdown.items.map(i => ({
-        ItemName: i.ItemName,
-        Qty: i.OrderedQty,
-        ReceivedQty: i.ReceivedQty,
-        RemainingQty: i.RemainingQty,
-        UnitPrice: i.UnitPrice,
-        Category: i.Category,
-        BatchNo: i.BatchNo
-      })),
+      items: selectedPoForWhatsApp.Items || [],
       notes: whatsAppCustomNote,
       clinicName: cName,
       clinicAddress: cAddress,
@@ -3525,41 +3509,21 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     window.dispatchEvent(new CustomEvent('phc_db_updated'));
   };
 
-  // Robust PO Item Fulfillment and Remaining / Balance Calculation
-  const getPoItemFulfillmentBreakdown = (po: ErpPurchaseOrder, grnsList: ErpGrn[] = grns) => {
-    if (!po) {
-      return {
-        items: [],
-        remainingItemsList: [],
-        totalOrderedQty: 0,
-        totalReceivedQty: 0,
-        totalRemainingQty: 0,
-        totalOrderedAmount: 0,
-        totalReceivedAmount: 0,
-        totalRemainingAmount: 0,
-        totalItemsCount: 0,
-        fulfilledItemsCount: 0,
-        partiallyReceivedItemsCount: 0,
-        pendingItemsCount: 0,
-        hasPendingItems: false,
-        isFullyReceived: false,
-        linkedGrns: []
-      };
-    }
+  const calculatePoStatus = (po: ErpPurchaseOrder, grnsList: ErpGrn[], extraReceivingItems?: any[]): 'Received' | 'Partially Received' | 'Approved' | 'Sent' | 'Draft' => {
+    if (!po || !Array.isArray(po.Items) || po.Items.length === 0) return (po?.Status as any) || 'Approved';
+    
+    const approvedGrns = grnsList.filter(g => g.POID === po.POID && (g.Status === 'Approved' || !g.Status));
+    
+    let isFullyReceived = true;
+    let isPartiallyReceived = false;
 
-    const targetPoId = String(po.POID || '').trim().toLowerCase();
-    const approvedGrns = (grnsList || []).filter(g => {
-      const gPoId = String(g.POID || (g as any).PoID || '').trim().toLowerCase();
-      return gPoId === targetPoId && g.Status !== 'Cancelled';
-    });
+    let totalOrderedSum = 0;
+    let totalReceivedSum = 0;
 
-    const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-    const items = (po.Items || []).map((poItem, idx) => {
+    po.Items.forEach((poItem, idx) => {
       const ordered = Number(poItem.Qty) || 0;
-      const unitPrice = Number(poItem.UnitPrice) || 0;
-      let receivedQty = 0;
-      const receivingGrnIds: string[] = [];
+      totalOrderedSum += ordered;
+      let cumulativeReceived = 0;
 
       approvedGrns.forEach(g => {
         if (Array.isArray(g.Items)) {
@@ -3568,103 +3532,50 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             matched = g.Items.find((gi: any) => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(poItem.ItemID).trim().toLowerCase());
           }
           if (!matched && poItem.ItemName && String(poItem.ItemName).trim() !== '') {
-            matched = g.Items.find((gi: any) => gi.ItemName && norm(gi.ItemName) === norm(poItem.ItemName));
+            matched = g.Items.find((gi: any) => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(poItem.ItemName).trim().toLowerCase());
           }
           if (!matched && g.Items[idx]) {
             matched = g.Items[idx];
           }
           if (matched) {
-            const qty = Number(matched.ReceivedQty ?? matched.Qty ?? matched.QtyReceived ?? matched.Quantity ?? 0);
-            if (qty > 0) {
-              receivedQty += qty;
-              if (g.GRNID && !receivingGrnIds.includes(g.GRNID)) {
-                receivingGrnIds.push(g.GRNID);
-              }
-            }
+            cumulativeReceived += Number(matched.ReceivedQty) || Number(matched.Qty) || 0;
           }
         }
       });
 
-      const remainingQty = Math.max(0, ordered - receivedQty);
-      const orderedTotal = ordered * unitPrice;
-      const receivedTotal = receivedQty * unitPrice;
-      const remainingTotal = remainingQty * unitPrice;
-
-      let fulfillmentStatus: 'Fulfilled' | 'Partially Received' | 'Pending Delivery' = 'Pending Delivery';
-      if (receivedQty >= ordered && ordered > 0) {
-        fulfillmentStatus = 'Fulfilled';
-      } else if (receivedQty > 0) {
-        fulfillmentStatus = 'Partially Received';
+      if (extraReceivingItems && extraReceivingItems.length > 0) {
+        let currentGrnItem = null;
+        if (poItem.ItemID && String(poItem.ItemID).trim() !== '') {
+          currentGrnItem = extraReceivingItems.find((gi: any) => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(poItem.ItemID).trim().toLowerCase());
+        }
+        if (!currentGrnItem && poItem.ItemName && String(poItem.ItemName).trim() !== '') {
+          currentGrnItem = extraReceivingItems.find((gi: any) => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(poItem.ItemName).trim().toLowerCase());
+        }
+        if (!currentGrnItem && extraReceivingItems[idx]) {
+          currentGrnItem = extraReceivingItems[idx];
+        }
+        if (currentGrnItem) {
+          cumulativeReceived += Number(currentGrnItem.ReceivedQty) || Number(currentGrnItem.Qty) || 0;
+        }
       }
 
-      return {
-        ItemID: poItem.ItemID,
-        ItemName: poItem.ItemName,
-        Category: poItem.Category,
-        BatchNo: poItem.BatchNo,
-        OrderedQty: ordered,
-        ReceivedQty: receivedQty,
-        RemainingQty: remainingQty,
-        UnitPrice: unitPrice,
-        OrderedTotal: orderedTotal,
-        ReceivedTotal: receivedTotal,
-        RemainingTotal: remainingTotal,
-        FulfillmentStatus: fulfillmentStatus,
-        GrnNumbers: receivingGrnIds
-      };
+      totalReceivedSum += cumulativeReceived;
+
+      if (cumulativeReceived < ordered) {
+        isFullyReceived = false;
+      }
+      if (cumulativeReceived > 0) {
+        isPartiallyReceived = true;
+      }
     });
 
-    const totalOrderedQty = items.reduce((sum, i) => sum + i.OrderedQty, 0);
-    const totalReceivedQty = items.reduce((sum, i) => sum + i.ReceivedQty, 0);
-    const totalRemainingQty = items.reduce((sum, i) => sum + i.RemainingQty, 0);
-    const totalOrderedAmount = items.reduce((sum, i) => sum + i.OrderedTotal, 0);
-    const totalReceivedAmount = items.reduce((sum, i) => sum + i.ReceivedTotal, 0);
-    const totalRemainingAmount = items.reduce((sum, i) => sum + i.RemainingTotal, 0);
-
-    const totalItemsCount = items.length;
-    const fulfilledItemsCount = items.filter(i => i.FulfillmentStatus === 'Fulfilled').length;
-    const partiallyReceivedItemsCount = items.filter(i => i.FulfillmentStatus === 'Partially Received').length;
-    const pendingItemsCount = items.filter(i => i.FulfillmentStatus === 'Pending Delivery').length;
-
-    const remainingItemsList = items.filter(i => i.RemainingQty > 0);
-
-    return {
-      items,
-      remainingItemsList,
-      totalOrderedQty,
-      totalReceivedQty,
-      totalRemainingQty,
-      totalOrderedAmount,
-      totalReceivedAmount,
-      totalRemainingAmount,
-      totalItemsCount,
-      fulfilledItemsCount,
-      partiallyReceivedItemsCount,
-      pendingItemsCount,
-      hasPendingItems: totalRemainingQty > 0,
-      isFullyReceived: totalOrderedQty > 0 && totalReceivedQty >= totalOrderedQty,
-      linkedGrns: approvedGrns
-    };
-  };
-
-  const calculatePoStatus = (po: ErpPurchaseOrder, grnsList: ErpGrn[], extraReceivingItems?: any[]): 'Received' | 'Partially Received' | 'Approved' | 'Sent' | 'Draft' => {
-    if (!po || !Array.isArray(po.Items) || po.Items.length === 0) return (po?.Status as any) || 'Approved';
-    
-    const breakdown = getPoItemFulfillmentBreakdown(po, grnsList);
-    
-    let extraReceived = 0;
-    if (extraReceivingItems && extraReceivingItems.length > 0) {
-      extraReceivingItems.forEach(gi => {
-        extraReceived += Number(gi.ReceivedQty ?? gi.Qty ?? 0);
-      });
+    if (totalOrderedSum > 0 && totalReceivedSum >= totalOrderedSum) {
+      isFullyReceived = true;
     }
 
-    const effectiveTotalReceived = breakdown.totalReceivedQty + extraReceived;
-    if (breakdown.totalOrderedQty > 0 && effectiveTotalReceived >= breakdown.totalOrderedQty) {
-      return 'Received';
-    }
-    if (effectiveTotalReceived > 0) {
-      return 'Partially Received';
+    if (approvedGrns.length > 0 || (extraReceivingItems && extraReceivingItems.length > 0)) {
+      if (isFullyReceived) return 'Received';
+      if (isPartiallyReceived) return 'Partially Received';
     }
 
     return (po.Status && po.Status !== 'Received' && po.Status !== 'Partially Received') ? (po.Status as any) : 'Approved';
@@ -3672,32 +3583,54 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
   // HANDLERS FOR GOODS RECEIVED NOTE (GRN) & PARTIAL BATCH RECEIVING
   const getPoItemsReceiptInfo = (po: ErpPurchaseOrder) => {
-    const breakdown = getPoItemFulfillmentBreakdown(po, grns);
-    const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const approvedGrns = grns.filter(g => g.POID === po.POID && (g.Status === 'Approved' || !g.Status));
+    const items = po.Items.map((i, idx) => {
+      const ordered = Number(i.Qty) || 0;
+      let alreadyReceived = 0;
+      approvedGrns.forEach(g => {
+        if (Array.isArray(g.Items)) {
+          let matched = null;
+          if (i.ItemID && String(i.ItemID).trim() !== '') {
+            matched = g.Items.find(gi => gi.ItemID && String(gi.ItemID).trim().toLowerCase() === String(i.ItemID).trim().toLowerCase());
+          }
+          if (!matched && i.ItemName && String(i.ItemName).trim() !== '') {
+            matched = g.Items.find(gi => gi.ItemName && String(gi.ItemName).trim().toLowerCase() === String(i.ItemName).trim().toLowerCase());
+          }
+          if (!matched && g.Items[idx]) {
+            matched = g.Items[idx];
+          }
+          if (matched) {
+            alreadyReceived += Number(matched.ReceivedQty) || Number(matched.Qty) || 0;
+          }
+        }
+      });
+      const pending = Math.max(0, ordered - alreadyReceived);
 
-    // Return only items that still have pending remaining quantities to receive
-    return breakdown.remainingItemsList.map(item => {
+      const norm = (s: any) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
       const matchedInv = (inventoryItems || []).find((inv: any) =>
-        (item.ItemID && inv.ItemID && String(inv.ItemID).trim().toLowerCase() === String(item.ItemID).trim().toLowerCase()) ||
-        (item.ItemName && inv.ItemName && norm(inv.ItemName) === norm(item.ItemName))
+        (i.ItemID && inv.ItemID && String(inv.ItemID).trim().toLowerCase() === String(i.ItemID).trim().toLowerCase()) ||
+        (i.ItemName && inv.ItemName && norm(inv.ItemName) === norm(i.ItemName))
       );
-      const displayItemId = matchedInv?.ItemID || item.ItemID;
+
+      const displayItemId = matchedInv?.ItemID || i.ItemID;
 
       return {
         ItemID: displayItemId,
-        ItemName: item.ItemName,
-        OrderedQty: item.OrderedQty,
-        AlreadyReceivedQty: item.ReceivedQty,
-        PendingQty: item.RemainingQty,
+        ItemName: i.ItemName,
+        OrderedQty: ordered,
+        AlreadyReceivedQty: alreadyReceived,
+        PendingQty: pending,
         ReceivedQty: '' as any, // Empty textbox for physical verification
-        UnitPrice: item.UnitPrice > 0 ? item.UnitPrice : ('' as any), // Default to PO rate
+        UnitPrice: '' as any, // Empty textbox for supplier invoice rate
         LineTotal: 0,
-        BatchNo: item.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
+        BatchNo: i.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
         MfgDate: new Date().toISOString().split('T')[0],
         ExpiryDate: new Date(Date.now() + 365 * 2 * 86400000).toISOString().split('T')[0]
       };
     });
+    return items.filter(i => i.PendingQty > 0);
   };
+
   const handleOpenGrnForPo = (po?: ErpPurchaseOrder) => {
     if (po) {
       setGrnForm({
@@ -5344,6 +5277,431 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     setTimeout(() => setSyncMessage(null), 3000);
   };
 
+  // PRINT REMAINING / PENDING ITEMS TO RECEIVE (BACKORDER SLIP)
+  const handlePrintRemainingItems = (poInput?: ErpPurchaseOrder | { POID: string; VendorID?: string; VendorName?: string; Items?: any[] }) => {
+    let targetPo: ErpPurchaseOrder | undefined;
+    let itemsToPrint: Array<{
+      ItemID: string;
+      ItemName: string;
+      Category?: string;
+      OrderedQty: number;
+      AlreadyReceivedQty: number;
+      PendingQty: number;
+      UnitPrice: number;
+      LineTotal: number;
+    }> = [];
+
+    if (poInput && 'POID' in poInput && poInput.POID) {
+      targetPo = purchaseOrders.find(p => p.POID === poInput.POID);
+    }
+
+    const effectivePo = targetPo || (poInput as ErpPurchaseOrder) || purchaseOrders[0];
+    if (!effectivePo) {
+      alert('No Purchase Order selected.');
+      return;
+    }
+
+    // Check if passed from grnForm with edited/pending items
+    if (poInput && Array.isArray((poInput as any).Items) && (poInput as any).Items.length > 0 && ('PendingQty' in (poInput as any).Items[0] || 'AlreadyReceivedQty' in (poInput as any).Items[0])) {
+      itemsToPrint = (poInput as any).Items
+        .map((i: any) => {
+          const ordered = Number(i.OrderedQty || i.Qty || 0);
+          const recSoFar = Number(i.AlreadyReceivedQty || 0) + (Number(i.ReceivedQty) || 0);
+          const pending = Math.max(0, ordered - recSoFar);
+          const uPrice = Number(i.UnitPrice) || Number(i.PurchasePrice) || Number(i.Rate) || 0;
+          return {
+            ItemID: i.ItemID || 'N/A',
+            ItemName: i.ItemName || 'Medicine Item',
+            Category: i.Category || '',
+            OrderedQty: ordered,
+            AlreadyReceivedQty: recSoFar,
+            PendingQty: pending,
+            UnitPrice: uPrice,
+            LineTotal: pending * uPrice
+          };
+        })
+        .filter((i: any) => i.PendingQty > 0);
+    } else {
+      const poReceiptInfo = getPoItemsReceiptInfo(effectivePo);
+      itemsToPrint = poReceiptInfo
+        .map(i => {
+          const matchedPoItem = effectivePo.Items?.find(pi => pi.ItemID === i.ItemID || pi.ItemName === i.ItemName);
+          const uPrice = Number(i.UnitPrice) || Number(matchedPoItem?.UnitPrice) || 0;
+          return {
+            ItemID: i.ItemID || 'N/A',
+            ItemName: i.ItemName || 'Medicine Item',
+            Category: matchedPoItem?.Category || '',
+            OrderedQty: i.OrderedQty,
+            AlreadyReceivedQty: i.AlreadyReceivedQty || 0,
+            PendingQty: i.PendingQty,
+            UnitPrice: uPrice,
+            LineTotal: i.PendingQty * uPrice
+          };
+        })
+        .filter(i => i.PendingQty > 0);
+    }
+
+    if (itemsToPrint.length === 0) {
+      alert(`All items for Purchase Order #${effectivePo.POID} have already been fully received. There are no remaining pending items!`);
+      return;
+    }
+
+    const printWin = window.open('', '_blank', 'width=950,height=900');
+    if (!printWin) {
+      alert('Popup blocked. Please allow popups to print Remaining Items Slip.');
+      return;
+    }
+
+    const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
+    const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
+    const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
+
+    const totalOrderedUnits = itemsToPrint.reduce((s, i) => s + i.OrderedQty, 0);
+    const totalReceivedUnits = itemsToPrint.reduce((s, i) => s + i.AlreadyReceivedQty, 0);
+    const totalPendingUnits = itemsToPrint.reduce((s, i) => s + i.PendingQty, 0);
+    const totalPendingValue = itemsToPrint.reduce((s, i) => s + i.LineTotal, 0);
+
+    const rowsHtml = itemsToPrint.map((item, idx) => `
+      <tr style="border-bottom: 1px solid #e2e8f0; ${idx % 2 === 1 ? 'background: #fafafa;' : ''}">
+        <td style="padding: 6px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; color: #64748b;">${idx + 1}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; font-family: monospace; font-weight: 700; color: #4338ca; text-align: center;">${item.ItemID}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; font-weight: 700; color: #0f172a;">
+          ${item.ItemName}
+          ${item.Category ? `<span style="font-size: 8.5px; color: #6366f1; margin-left: 6px; font-weight: 600;">[${item.Category}]</span>` : ''}
+        </td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; text-align: center; font-weight: 700; color: #334155;">${item.OrderedQty}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; text-align: center; font-weight: 800; color: #047857; background: #f0fdf4;">${item.AlreadyReceivedQty}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; text-align: center; font-weight: 900; color: #b45309; background: #fef3c7; font-size: 12px;">${item.PendingQty}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; text-align: right; font-family: monospace; font-weight: 700; color: #334155;">Rs. ${item.UnitPrice.toLocaleString()}</td>
+        <td style="padding: 6px; border: 1px solid #cbd5e1; text-align: right; font-family: monospace; font-weight: 900; color: #b45309;">Rs. ${item.LineTotal.toLocaleString()}</td>
+      </tr>
+    `).join('');
+
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>PO Remaining Items Slip - ${effectivePo.POID} - ${cName}</title>
+          <style>
+            @page {
+              size: A4 portrait;
+              margin: 10mm 12mm 12mm 12mm;
+            }
+            body {
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+              color: #0f172a;
+              margin: 0;
+              padding: 0;
+              font-size: 11px;
+              line-height: 1.4;
+              background: #ffffff;
+            }
+            * { box-sizing: border-box; }
+            .letterhead-header {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              border-bottom: 3px double #b45309;
+              padding-bottom: 10px;
+              margin-bottom: 12px;
+              gap: 12px;
+            }
+            .logo-col {
+              width: 80px;
+              height: 80px;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              flex-shrink: 0;
+            }
+            .logo-img {
+              max-width: 100%;
+              max-height: 100%;
+              object-fit: contain;
+            }
+            .clinic-info {
+              text-align: center;
+              flex: 1;
+            }
+            .clinic-name {
+              font-family: Georgia, "Times New Roman", serif;
+              font-size: 24px;
+              font-weight: 900;
+              color: #881337;
+              text-transform: uppercase;
+              margin: 0;
+              letter-spacing: -0.5px;
+              line-height: 1.1;
+            }
+            .clinic-tagline {
+              font-size: 10px;
+              font-weight: 800;
+              color: #be123c;
+              letter-spacing: 1.5px;
+              text-transform: uppercase;
+              margin-top: 2px;
+            }
+            .report-banner {
+              background: #b45309;
+              color: #ffffff;
+              padding: 8px 14px;
+              border-radius: 6px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              margin-bottom: 10px;
+            }
+            .report-banner-title {
+              font-size: 12px;
+              font-weight: 900;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+              color: #ffffff;
+            }
+            .report-banner-ref {
+              font-size: 10px;
+              font-family: monospace;
+              color: #fef3c7;
+              font-weight: 700;
+            }
+            .meta-grid {
+              background: #fffbeb;
+              border: 1.5px solid #fde68a;
+              border-radius: 8px;
+              padding: 10px 14px;
+              margin-bottom: 10px;
+              display: grid;
+              grid-template-columns: 1fr 1fr 1fr;
+              gap: 8px;
+              font-size: 11px;
+            }
+            .meta-item {
+              display: flex;
+              flex-direction: column;
+            }
+            .meta-label {
+              font-size: 9px;
+              font-weight: 800;
+              color: #92400e;
+              text-transform: uppercase;
+              letter-spacing: 0.5px;
+            }
+            .meta-value {
+              font-weight: 700;
+              color: #1e293b;
+              margin-top: 1px;
+            }
+            .kpi-grid {
+              display: grid;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 8px;
+              margin-bottom: 12px;
+            }
+            .kpi-card {
+              background: #f8fafc;
+              border: 1px solid #e2e8f0;
+              border-radius: 6px;
+              padding: 8px 10px;
+              text-align: center;
+            }
+            .kpi-label {
+              font-size: 8.5px;
+              font-weight: 800;
+              text-transform: uppercase;
+              color: #64748b;
+            }
+            .kpi-val {
+              font-size: 14px;
+              font-weight: 900;
+              font-family: monospace;
+              margin-top: 2px;
+            }
+            table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 6px;
+              font-size: 10.5px;
+            }
+            th {
+              background: #78350f;
+              color: #ffffff;
+              padding: 6px;
+              border: 1px solid #78350f;
+              font-size: 9px;
+              text-transform: uppercase;
+              letter-spacing: 0.3px;
+            }
+            .signature-section {
+              display: flex;
+              justify-content: space-between;
+              margin-top: 25px;
+              padding-top: 10px;
+              page-break-inside: avoid;
+            }
+            .sig-box {
+              text-align: center;
+              width: 170px;
+            }
+            .sig-line-text {
+              border-bottom: 1.5px solid #0f172a;
+              padding-bottom: 4px;
+              font-weight: 800;
+              font-size: 10px;
+              min-height: 22px;
+              display: flex;
+              align-items: flex-end;
+              justify-content: center;
+            }
+            .sig-title-primary {
+              font-size: 9px;
+              font-weight: 900;
+              color: #0f172a;
+              margin-top: 4px;
+              text-transform: uppercase;
+            }
+            .official-footer {
+              margin-top: 15px;
+              border-top: 1px solid #e2e8f0;
+              padding-top: 8px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              font-size: 9px;
+              color: #64748b;
+              font-weight: 600;
+            }
+          </style>
+        </head>
+        <body>
+          <div class="letterhead-header">
+            <div class="logo-col">
+              <img src="${logoSrc}" alt="PHC Logo" class="logo-img" />
+            </div>
+            <div class="clinic-info">
+              <h1 class="clinic-name">${cName}</h1>
+              <div class="clinic-tagline">${cTag}</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
+              <div style="font-size: 10px; font-weight: 800; color: #064e3b; text-transform: uppercase; margin-top: 3px;">
+                Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
+              </div>
+            </div>
+            <div class="logo-col" style="visibility: hidden;">
+              <img src="${logoSrc}" alt="PHC Logo" class="logo-img" />
+            </div>
+          </div>
+
+          <div class="report-banner">
+            <span class="report-banner-title">ğŸ“‹ PURCHASE ORDER - REMAINING / PENDING ITEMS TO RECEIVE (BACKORDER SLIP)</span>
+            <span class="report-banner-ref">PO REF: PHC-PO-${effectivePo.POID}</span>
+          </div>
+
+          <div class="meta-grid">
+            <div class="meta-item">
+              <span class="meta-label">Purchase Order ID</span>
+              <span class="meta-value" style="color: #4338ca; font-weight: 800;">${effectivePo.POID}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Supplier / Vendor</span>
+              <span class="meta-value" style="font-weight: 800;">${effectivePo.VendorName} (${effectivePo.VendorID || 'N/A'})</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Order Date</span>
+              <span class="meta-value">${effectivePo.OrderDate}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">PO Status</span>
+              <span class="meta-value" style="color: #b45309; font-weight: 800;">âš¡ PARTIALLY RECEIVED (PENDING ITEMS)</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Audit Printed By</span>
+              <span class="meta-value">${currentUser?.FullName || 'Store Manager'}</span>
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Printed Date & Time</span>
+              <span class="meta-value">${new Date().toLocaleString()}</span>
+            </div>
+          </div>
+
+          <div class="kpi-grid">
+            <div class="kpi-card" style="border-left: 3px solid #6366f1; background: #eef2ff;">
+              <div class="kpi-label" style="color: #4338ca;">Total Pending Items</div>
+              <div class="kpi-val" style="color: #4338ca;">${itemsToPrint.length} Lines</div>
+            </div>
+            <div class="kpi-card" style="border-left: 3px solid #3b82f6; background: #eff6ff;">
+              <div class="kpi-label" style="color: #1d4ed8;">Ordered Units</div>
+              <div class="kpi-val" style="color: #1d4ed8;">${totalOrderedUnits.toLocaleString()}</div>
+            </div>
+            <div class="kpi-card" style="border-left: 3px solid #10b981; background: #ecfdf5;">
+              <div class="kpi-label" style="color: #047857;">Received So Far</div>
+              <div class="kpi-val" style="color: #047857;">${totalReceivedUnits.toLocaleString()}</div>
+            </div>
+            <div class="kpi-card" style="border-left: 3px solid #f59e0b; background: #fffbeb;">
+              <div class="kpi-label" style="color: #b45309;">Remaining Units to Receive</div>
+              <div class="kpi-val" style="color: #b45309;">${totalPendingUnits.toLocaleString()}</div>
+            </div>
+          </div>
+
+          <table style="border: 1px solid #cbd5e1;">
+            <thead>
+              <tr>
+                <th style="width: 25px; text-align: center;">#</th>
+                <th style="width: 65px; text-align: center;">Item Code</th>
+                <th style="text-align: left;">Pending Medicine Description</th>
+                <th style="width: 55px; text-align: center;">Ordered</th>
+                <th style="width: 60px; text-align: center;">Received</th>
+                <th style="width: 70px; text-align: center; background: #b45309;">Remaining</th>
+                <th style="width: 75px; text-align: right;">Unit Price</th>
+                <th style="width: 90px; text-align: right; background: #b45309;">Pending Value</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+            </tbody>
+            <tfoot>
+              <tr style="background: #fef3c7; font-weight: 900; border-top: 2px solid #b45309;">
+                <td colspan="5" style="padding: 7px; text-align: right; text-transform: uppercase; color: #78350f;">Total Remaining Pending Delivery:</td>
+                <td style="padding: 7px; text-align: center; font-family: monospace; font-size: 12px; color: #b45309; font-weight: 900;">${totalPendingUnits.toLocaleString()}</td>
+                <td style="padding: 7px; text-align: right; color: #78350f;">Est. Balance:</td>
+                <td style="padding: 7px; text-align: right; font-family: monospace; font-size: 12px; color: #b45309; font-weight: 900;">Rs. ${totalPendingValue.toLocaleString()}</td>
+              </tr>
+            </tfoot>
+          </table>
+
+          <div style="margin-top: 12px; padding: 8px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; font-size: 10px; color: #92400e;">
+            <strong>Note for Supplier / Store Inward:</strong> Please expedite the delivery of remaining pending items listed above. Once received, process via Goods Received Note (GRN) to update pharmacy stock inventory.
+          </div>
+
+          <div class="signature-section">
+            <div class="sig-box">
+              <div class="sig-line-text">${currentUser?.FullName || 'Store Receiving Officer'}</div>
+              <div class="sig-title-primary">STORE INWARD OFFICER</div>
+            </div>
+            <div class="sig-box">
+              <div class="sig-line-text">Verified & Stamped</div>
+              <div class="sig-title-primary">CHECKED & VERIFIED BY</div>
+            </div>
+            <div class="sig-box">
+              <div class="sig-line-text">Dr. / Pharmacist Incharge</div>
+              <div class="sig-title-primary">AUTHORIZED PHARMACY APPROVAL</div>
+            </div>
+          </div>
+
+          <div class="official-footer">
+            <span>System Document: PHC-PO-REM-${effectivePo.POID}</span>
+            <span>Generated from Punjab Homoeopathic Clinic ERP System</span>
+            <span>Page 1 of 1</span>
+          </div>
+        </body>
+      </html>
+    `);
+
+    printWin.document.close();
+    setTimeout(() => {
+      printWin.focus();
+      printWin.print();
+    }, 400);
+  };
+
   // PRINT PURCHASE ORDER FUNCTION (3 Columns Layout: Medicine Name & Required Qty / Received / Balance)
   const handlePrintPo = (po: ErpPurchaseOrder) => {
     const printWin = window.open('', '_blank', 'width=950,height=900');
@@ -5412,11 +5770,60 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       return matchesPo || matchesInvoice;
     });
 
-    const totalPoPaymentsPaid = poPayments.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
-    const pendingPoDues = Math.max(0, effectivePoBilledValue - totalPoPaymentsPaid);
+    // Vendor overall ledger dues and credit settlement history
+    const allVendorTxns = (transactions || []).filter(t => {
+      if (targetVendor) {
+        return (
+          (t.VendorID && t.VendorID === targetVendor.VendorID) ||
+          (t.VendorName && targetVendor.VendorName && t.VendorName.toLowerCase() === targetVendor.VendorName.toLowerCase())
+        );
+      }
+      return (
+        (po.VendorID && t.VendorID === po.VendorID) ||
+        (po.VendorName && t.VendorName && t.VendorName.toLowerCase() === po.VendorName.toLowerCase())
+      );
+    });
 
-    // Vendor overall ledger dues (if vendor found)
-    const vendorTotalOutstandingBalance = targetVendor ? Number(targetVendor.Balance || 0) : pendingPoDues;
+    // Credit payments paid to vendor (excluding invoices and spot cash entries)
+    const vendorCreditPayments = allVendorTxns.filter(t => {
+      const type = String(t.Type || '').toLowerCase();
+      const cat = String(t.Category || '').toLowerCase();
+      const payMethod = String(t.PaymentMethod || '').toLowerCase();
+      if (type === 'vendorinvoice' || payMethod === 'credit') return false;
+      return type === 'vendorpayment' || type === 'vendor_payment' || cat === 'vendor payment' || cat === 'vendor bill settlement' || (type === 'expense' && (t.VendorID || t.VendorName));
+    });
+
+    const vendorTotalCreditPaid = vendorCreditPayments.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
+
+    // Vendor total credit invoiced across all credit GRNs / POs
+    const vendorCreditGrns = (grns || []).filter(g => {
+      const isVM = targetVendor
+        ? (g.VendorID === targetVendor.VendorID || (g.VendorName && targetVendor.VendorName && g.VendorName.toLowerCase() === targetVendor.VendorName.toLowerCase()))
+        : ((po.VendorID && g.VendorID === po.VendorID) || (po.VendorName && g.VendorName && g.VendorName.toLowerCase() === po.VendorName.toLowerCase()));
+      const isCredit = String(g.PaymentMethod || '').toLowerCase() !== 'cash';
+      return isVM && isCredit && g.Status !== 'Cancelled';
+    });
+
+    const vendorTotalCreditGrnAmount = vendorCreditGrns.reduce((sum, g) => sum + Number(g.TotalAmount || 0), 0);
+
+    // Vendor Gross Credit Dues (Total Outstanding Billed on Credit)
+    const vendorGrossCreditBilled = Math.max(
+      vendorTotalCreditGrnAmount,
+      (targetVendor ? Number(targetVendor.Balance || 0) + vendorTotalCreditPaid : effectivePoBilledValue)
+    );
+
+    // Vendor Net Remaining Outstanding Balance
+    const vendorNetRemainingDues = targetVendor ? Number(targetVendor.Balance || 0) : Math.max(0, vendorGrossCreditBilled - vendorTotalCreditPaid);
+
+    // PO Credit settlement payments: strictly credit settlement payments paid against this PO
+    const poCreditPayments = isCashOrder ? [] : poPayments.filter(t => {
+      const cat = String(t.Category || '').toLowerCase();
+      const type = String(t.Type || '').toLowerCase();
+      const payMethod = String(t.PaymentMethod || '').toLowerCase();
+      if (type === 'vendorinvoice' || payMethod === 'credit') return false;
+      return !cat.includes('cash spot payment');
+    });
+    const totalCreditSettledForPo = isCashOrder ? 0 : poCreditPayments.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
 
     const totalItems = po.Items.length;
     const colSize = Math.max(1, Math.ceil(totalItems / (hasGrns ? 2 : 3)));
@@ -5527,7 +5934,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               <tfoot>
                 <tr style="background: #f8fafc; font-weight: 900; border-top: 1.5px solid #4338ca;">
                   <td colspan="6" style="padding: 6px; text-align: right; text-transform: uppercase; color: #1e293b;">Total Bill Payments Settled:</td>
-                  <td style="padding: 6px; text-align: right; font-family: monospace; font-size: 11px; color: #047857;">Rs. ${totalPoPaymentsPaid.toLocaleString()}</td>
+                  <td style="padding: 6px; text-align: right; font-family: monospace; font-size: 11px; color: #047857;">Rs. ${totalCreditSettledForPo.toLocaleString()}</td>
                 </tr>
               </tfoot>
             </table>
@@ -5536,61 +5943,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       `;
     }
 
-    // Build Received Goods Summary HTML if GRNs exist
-    let grnSummaryHtml = '';
-    if (hasGrns) {
-      const grnBatchesHtml = poGrns.map((g, gIdx) => {
-        const itemRows = (g.Items || []).filter(i => Number(i.ReceivedQty || 0) > 0).map((i, iIdx) => `
-          <tr style="border-bottom: 1px solid #e2e8f0;">
-            <td style="padding: 4px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; color: #64748b; width: 24px;">${iIdx + 1}</td>
-            <td style="padding: 4px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f172a;">
-              ${i.ItemName}
-              ${i.BatchNo ? `<span style="font-size: 8.5px; color: #047857; font-weight: 700; margin-left: 6px;">[Batch: ${i.BatchNo} ${i.ExpiryDate ? `| Exp: ${i.ExpiryDate}` : ''}]</span>` : ''}
-            </td>
-            <td style="padding: 4px; border: 1px solid #cbd5e1; text-align: center; font-weight: 800; color: #047857; background: #ecfdf5; width: 80px;">${i.ReceivedQty}</td>
-            <td style="padding: 4px; border: 1px solid #cbd5e1; text-align: right; font-weight: 700; color: #0f172a; width: 85px;">Rs. ${Number(i.UnitPrice || 0).toLocaleString()}</td>
-            <td style="padding: 4px; border: 1px solid #cbd5e1; text-align: right; font-weight: 800; color: #0f172a; width: 95px;">Rs. ${Number(i.LineTotal || (i.ReceivedQty * i.UnitPrice) || 0).toLocaleString()}</td>
-          </tr>
-        `).join('');
-
-        return `
-          <div style="margin: 8px 0; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: #ffffff;">
-            <div style="background: #1e293b; color: #ffffff; padding: 5px 10px; font-size: 10px; font-weight: 800; display: flex; justify-content: space-between; align-items: center;">
-              <span>GRN #${gIdx + 1}: <u style="color: #6ee7b7; text-decoration: none;">${g.GRNID}</u> &nbsp;|&nbsp; Date: ${g.ReceivedDate}</span>
-              <span>Inv / Challan #: <u style="color: #fde047; text-decoration: none;">${g.SupplierInvoiceNo || g.ChallanNo || 'N/A'}</u> &nbsp;|&nbsp; GRN Amount: Rs. ${(g.TotalAmount || 0).toLocaleString()}</span>
-            </div>
-            <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
-              <thead>
-                <tr style="background: #f1f5f9; color: #334155; font-size: 8.5px; text-transform: uppercase;">
-                  <th style="padding: 4px; border: 1px solid #cbd5e1; width: 24px;">#</th>
-                  <th style="padding: 4px; border: 1px solid #cbd5e1; text-align: left;">Received Item Name & Batch Info</th>
-                  <th style="padding: 4px; border: 1px solid #cbd5e1; text-align: center; width: 80px;">Received Qty</th>
-                  <th style="padding: 4px; border: 1px solid #cbd5e1; text-align: right; width: 85px;">Unit Price</th>
-                  <th style="padding: 4px; border: 1px solid #cbd5e1; text-align: right; width: 95px;">Sub Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemRows || `<tr><td colspan="5" style="text-align: center; padding: 6px; color: #64748b;">No items recorded in this GRN batch.</td></tr>`}
-              </tbody>
-            </table>
-          </div>
-        `;
-      }).join('');
-
-      grnSummaryHtml = `
-        <div style="margin-top: 14px; border: 1.5px solid #047857; border-radius: 8px; overflow: hidden; background: #f0fdf4;">
-          <div style="background: #047857; color: #ffffff; padding: 6px 12px; font-weight: 900; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center;">
-            <span>âš¡ ITEMS RECEIVED IN GRN (GOODS RECEIVING SUMMARY)</span>
-            <span>Total ${poGrns.length} GRN Batch(es) Received</span>
-          </div>
-          <div style="padding: 8px;">
-            ${grnBatchesHtml}
-          </div>
-        </div>
-      `;
-    }
-
-    printWin.document.write(`
+        printWin.document.write(`
       <!DOCTYPE html>
       <html>
         <head>
@@ -5745,8 +6098,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             }
             .financial-grid {
               display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 12px;
+              grid-template-columns: repeat(4, 1fr);
+              gap: 8px;
             }
             .financial-stat {
               background: #f8fafc;
@@ -5947,18 +6300,28 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           <div class="financial-summary-card">
             <div class="financial-title">
               <span>ğŸ“Š PO Financial Status, Payments & Outstanding Dues</span>
-              <span style="font-size: 9.5px; font-weight: bold; color: #475569;">Vendor Code: ${po.VendorID || 'N/A'}</span>
+              <span style="font-size: 9.5px; font-weight: bold; color: #475569;">Vendor: ${po.VendorName || 'Supplier'} (${po.VendorID || 'N/A'})</span>
             </div>
             <div class="financial-grid">
               <div class="financial-stat" style="border-left: 3px solid #047857; background: #f0fdf4;">
                 <span class="financial-stat-label" style="color: #047857;">Total Payments Settled</span>
-                <span class="financial-stat-value" style="color: #047857;">Rs. ${totalPoPaymentsPaid.toLocaleString()}</span>
-                <span class="financial-stat-sub">${poPayments.length} Payment Voucher(s) Paid</span>
+                <span class="financial-stat-value" style="color: #047857;">Rs. ${totalCreditSettledForPo.toLocaleString()}</span>
+                <span class="financial-stat-sub">${isCashOrder ? 'Spot Cash Paid Order' : `${poCreditPayments.length} Credit Voucher(s) Paid`}</span>
               </div>
-              <div class="financial-stat" style="border-left: 3px solid #881337; background: #fff1f2;">
-                <span class="financial-stat-label" style="color: #9f1239;">Vendor Total Outstanding</span>
-                <span class="financial-stat-value" style="color: #9f1239;">Rs. ${vendorTotalOutstandingBalance.toLocaleString()}</span>
-                <span class="financial-stat-sub">Cumulative Payable Balance</span>
+              <div class="financial-stat" style="border-left: 3px solid #4338ca; background: #eef2ff;">
+                <span class="financial-stat-label" style="color: #4338ca;">Vendor Total Outstanding</span>
+                <span class="financial-stat-value" style="color: #4338ca;">Rs. ${vendorGrossCreditBilled.toLocaleString()}</span>
+                <span class="financial-stat-sub">Cumulative Gross Credit Billed</span>
+              </div>
+              <div class="financial-stat" style="border-left: 3px solid #059669; background: #ecfdf5;">
+                <span class="financial-stat-label" style="color: #059669;">Vendor Paid Outstanding Amount</span>
+                <span class="financial-stat-value" style="color: #059669;">Rs. ${vendorTotalCreditPaid.toLocaleString()}</span>
+                <span class="financial-stat-sub">Total Payments Settled to Vendor</span>
+              </div>
+              <div class="financial-stat" style="border-left: 3px solid #9f1239; background: #fff1f2;">
+                <span class="financial-stat-label" style="color: #9f1239;">Vendor Net Remaining Balance</span>
+                <span class="financial-stat-value" style="color: #9f1239;">Rs. ${vendorNetRemainingDues.toLocaleString()}</span>
+                <span class="financial-stat-sub">Remaining Unpaid Credit Dues</span>
               </div>
             </div>
           </div>
@@ -5972,8 +6335,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
           ${po.Notes ? `<div style="margin-top: 10px; padding: 8px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; font-size: 10.5px;"><strong>Special Instructions / Vendor Notes:</strong> ${po.Notes}</div>` : ''}
 
-          <!-- Items Received via GRN Breakdown Section -->
-          ${grnSummaryHtml}
+
 
           <!-- Bill Payments Settlement Section -->
           ${paymentHistoryHtml}
@@ -7695,337 +8057,122 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                       </td>
                     </tr>
                   ) : (
-                    filteredPurchaseOrders.map((po, idx) => {
-                      const breakdown = getPoItemFulfillmentBreakdown(po, grns);
-                      const isExpanded = expandedPoId === po.POID;
-
-                      return (
-                        <React.Fragment key={po.POID || po._id || idx}>
-                          <tr className={`hover:bg-slate-50 transition-colors ${isExpanded ? 'bg-indigo-50/40' : ''}`}>
-                            <td className="p-3">
-                              <div className="flex items-center space-x-2">
-                                <button
-                                  type="button"
-                                  onClick={() => setExpandedPoId(isExpanded ? null : po.POID)}
-                                  className={`w-6 h-6 rounded-md flex items-center justify-center transition cursor-pointer border ${
-                                    isExpanded
-                                      ? 'bg-indigo-600 text-white border-indigo-600'
-                                      : 'bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-200'
-                                  }`}
-                                  title={isExpanded ? 'Hide item breakdown & remaining balance' : 'View item breakdown & remaining balance'}
-                                >
-                                  <ChevronRight className={`w-3.5 h-3.5 transition-transform duration-200 ${isExpanded ? 'rotate-90' : ''}`} />
-                                </button>
-                                <div className="flex items-center space-x-1.5">
-                                  <span className="font-mono font-bold text-indigo-600">{po.POID}</span>
-                                  {po.PaymentMethod === 'Cash' || (po as any).PaymentTerms === 'Cash' ? (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">CASH</span>
-                                  ) : (
-                                    <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">CREDIT</span>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                            <td className="p-3 font-bold text-slate-900">{po.VendorName}</td>
-                            <td className="p-3 text-slate-600">{po.OrderDate}</td>
-                            <td className="p-3 text-slate-600">{po.ExpectedDeliveryDate || 'N/A'}</td>
-                            <td className="p-3 text-center">
-                              <div className="font-bold text-slate-700">{po.Items?.length || 0} items</div>
-                              {breakdown.totalReceivedQty > 0 && breakdown.totalRemainingQty > 0 ? (
-                                <div className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-50 text-amber-900 border border-amber-200">
-                                  âš¡ {breakdown.totalRemainingQty} pcs remaining
-                                </div>
-                              ) : breakdown.isFullyReceived ? (
-                                <div className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-50 text-emerald-800 border border-emerald-200">
-                                  âœ“ All {breakdown.totalOrderedQty} received
-                                </div>
-                              ) : (
-                                <div className="inline-block mt-0.5 px-1.5 py-0.5 rounded text-[10px] font-medium bg-slate-100 text-slate-600">
-                                  All {breakdown.totalOrderedQty} pending
-                                </div>
-                              )}
-                            </td>
-                            <td className="p-3 text-right font-bold text-slate-900">Rs. {po.TotalAmount.toLocaleString()}</td>
-                            <td className="p-3 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                                po.Status === 'Received' || breakdown.isFullyReceived
-                                  ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                  : po.Status === 'Partially Received' || breakdown.totalReceivedQty > 0
-                                  ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                  : 'bg-blue-100 text-blue-800'
-                              }`}>
-                                {po.Status === 'Received' || breakdown.isFullyReceived
-                                  ? 'âœ“ Fully Received'
-                                  : po.Status === 'Partially Received' || breakdown.totalReceivedQty > 0
-                                  ? 'âš¡ Partially Received'
-                                  : po.Status || 'Approved'}
-                              </span>
-                            </td>
-                            <td className="p-3 text-center whitespace-nowrap">
-                              <div className="inline-flex items-center justify-center gap-1.5 align-middle">
-                                {/* Toggle Items Details */}
-                                <button
-                                  type="button"
-                                  onClick={() => setExpandedPoId(isExpanded ? null : po.POID)}
-                                  className={`h-7 px-2 border rounded-lg text-[11px] font-bold transition inline-flex items-center space-x-1 cursor-pointer shrink-0 ${
-                                    isExpanded
-                                      ? 'bg-indigo-600 text-white border-indigo-600 shadow-xs'
-                                      : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border-indigo-200'
-                                  }`}
-                                  title="View Item-Wise Ordered, Received, and Remaining Balance"
-                                >
-                                  <FileText className="w-3.5 h-3.5" />
-                                  <span>{isExpanded ? 'Hide' : 'Items'}</span>
-                                </button>
-
-                                {/* EDIT PO BUTTON: Enabled when pending/sent, locked when stock/GRN processed */}
-                                {isPoStockReceivedOrLocked(po) ? (
-                                  <button
-                                    type="button"
-                                    disabled
-                                    className="w-7 h-7 bg-slate-100 text-slate-400 border border-slate-200 rounded-lg inline-flex items-center justify-center cursor-not-allowed opacity-60 shadow-2xs"
-                                    title="ğŸ”’ Locked: Stock/GRN has already been added for this PO. Editing is not allowed."
-                                  >
-                                    <Lock className="w-3.5 h-3.5 text-slate-400" />
-                                  </button>
-                                ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenEditPoModal(po)}
-                                    className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shadow-2xs"
-                                    title="Edit Purchase Order (Add/Update items before stock receipt)"
-                                  >
-                                    <Pencil className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-
-                                {po.Status !== 'Received' && !breakdown.isFullyReceived ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => handleOpenGrnForPo(po)}
-                                    className="h-7 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition inline-flex items-center justify-center space-x-1 cursor-pointer shrink-0"
-                                    title="Process GRN stock inward for remaining items of this PO"
-                                  >
-                                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                                    <span className="whitespace-nowrap">
-                                      {po.Status === 'Partially Received' || breakdown.totalReceivedQty > 0
-                                        ? `Receive (${breakdown.totalRemainingQty})`
-                                        : 'Receive Stock'}
-                                    </span>
-                                  </button>
-                                ) : (
-                                  <span className="h-7 px-2.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[11px] font-extrabold inline-flex items-center justify-center shrink-0">
-                                    Stock Added
-                                  </span>
-                                )}
-
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenPoWhatsAppModal(po)}
-                                  className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition inline-flex items-center justify-center space-x-1 cursor-pointer shadow-xs shrink-0"
-                                  title="Send Purchase Order & Remaining Items to Vendor via WhatsApp"
-                                >
-                                  <WhatsAppIcon className="w-3.5 h-3.5 text-white" />
-                                  <span className="whitespace-nowrap">WhatsApp</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handlePrintPo(po)}
-                                  className="w-7 h-7 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shrink-0 shadow-2xs"
-                                  title="Print Official PO with Balance Tracking"
-                                >
-                                  <Printer className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeletePo(po)}
-                                  className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shrink-0 shadow-2xs"
-                                  title="Delete PO"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-
-                          {/* EXPANDABLE ROW: ITEM-WISE ORDERED, RECEIVED, AND REMAINING BREAKDOWN */}
-                          {isExpanded && (
-                            <tr className="bg-slate-50/90 border-b-2 border-indigo-200">
-                              <td colSpan={8} className="p-4 sm:p-5">
-                                <div className="bg-white rounded-2xl border border-indigo-100 shadow-sm p-4 sm:p-5 space-y-4">
-                                  {/* Header & Status Alert */}
-                                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 pb-3 border-b border-slate-100">
-                                    <div>
-                                      <div className="flex items-center space-x-2">
-                                        <span className="font-mono font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2.5 py-0.5 rounded-lg text-xs">
-                                          {po.POID}
-                                        </span>
-                                        <h4 className="text-sm font-black text-slate-900">
-                                          PO Items Fulfillment & Remaining Stock Balance
-                                        </h4>
-                                        <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-extrabold ${
-                                          breakdown.isFullyReceived
-                                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                            : breakdown.totalReceivedQty > 0
-                                            ? 'bg-amber-100 text-amber-900 border border-amber-300'
-                                            : 'bg-blue-100 text-blue-800'
-                                        }`}>
-                                          {breakdown.isFullyReceived
-                                            ? 'âœ“ All Items Received'
-                                            : breakdown.totalReceivedQty > 0
-                                            ? `âš¡ Partially Received (${breakdown.totalRemainingQty} pcs pending)`
-                                            : 'â³ Awaiting Full Delivery'}
-                                        </span>
-                                      </div>
-                                      <p className="text-xs text-slate-500 mt-1">
-                                        Supplier: <strong className="text-slate-800">{po.VendorName}</strong> &nbsp;|&nbsp; Ordered: {po.OrderDate} &nbsp;|&nbsp; Expected Delivery: {po.ExpectedDeliveryDate || 'N/A'}
-                                      </p>
-                                    </div>
-
-                                    {/* Action Buttons in Expanded Row */}
-                                    <div className="flex items-center flex-wrap gap-2 shrink-0">
-                                      {breakdown.hasPendingItems && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenGrnForPo(po)}
-                                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition flex items-center space-x-1.5 shadow-xs cursor-pointer"
-                                          title="Open GRN Stock Inward for the remaining pending items"
-                                        >
-                                          <CheckCircle2 className="w-3.5 h-3.5" />
-                                          <span>Receive Remaining Items ({breakdown.totalRemainingQty} pcs)</span>
-                                        </button>
-                                      )}
-                                      {breakdown.hasPendingItems && (
-                                        <button
-                                          type="button"
-                                          onClick={() => handleOpenPoWhatsAppModal(po)}
-                                          className="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-300 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer"
-                                          title="Send WhatsApp Reminder to vendor with only pending items"
-                                        >
-                                          <WhatsAppIcon className="w-3.5 h-3.5 text-emerald-600" />
-                                          <span>WhatsApp Remaining Reminder</span>
-                                        </button>
-                                      )}
-                                      <button
-                                        type="button"
-                                        onClick={() => handlePrintPo(po)}
-                                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer"
-                                        title="Print Official PO with fulfillment and balance summary"
-                                      >
-                                        <Printer className="w-3.5 h-3.5" />
-                                        <span>Print PO Audit</span>
-                                      </button>
-                                    </div>
-                                  </div>
-
-                                  {/* 4 Summary Cards */}
-                                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                                      <div className="text-[10px] font-bold text-slate-500 uppercase">Total Ordered</div>
-                                      <div className="text-sm font-black text-slate-900 mt-0.5">
-                                        {breakdown.totalItemsCount} items ({breakdown.totalOrderedQty} units)
-                                      </div>
-                                      <div className="text-[10px] text-slate-500 font-medium">Rs. {breakdown.totalOrderedAmount.toLocaleString()}</div>
-                                    </div>
-                                    <div className="bg-emerald-50 p-2.5 rounded-xl border border-emerald-200">
-                                      <div className="text-[10px] font-bold text-emerald-700 uppercase">Received in GRN</div>
-                                      <div className="text-sm font-black text-emerald-800 mt-0.5">
-                                        {breakdown.fulfilledItemsCount} complete ({breakdown.totalReceivedQty} units)
-                                      </div>
-                                      <div className="text-[10px] text-emerald-600 font-medium">Rs. {breakdown.totalReceivedAmount.toLocaleString()}</div>
-                                    </div>
-                                    <div className={`p-2.5 rounded-xl border ${breakdown.hasPendingItems ? 'bg-amber-50 border-amber-200' : 'bg-slate-50 border-slate-200'}`}>
-                                      <div className={`text-[10px] font-bold uppercase ${breakdown.hasPendingItems ? 'text-amber-700' : 'text-slate-500'}`}>
-                                        Remaining / Pending
-                                      </div>
-                                      <div className={`text-sm font-black mt-0.5 ${breakdown.hasPendingItems ? 'text-amber-900' : 'text-slate-400'}`}>
-                                        {breakdown.totalRemainingQty > 0 ? `${breakdown.remainingItemsList.length} items (${breakdown.totalRemainingQty} units)` : '0 units (All Complete)'}
-                                      </div>
-                                      <div className={`text-[10px] font-bold ${breakdown.hasPendingItems ? 'text-amber-700' : 'text-slate-400'}`}>
-                                        Pending Val: Rs. {breakdown.totalRemainingAmount.toLocaleString()}
-                                      </div>
-                                    </div>
-                                    <div className="bg-indigo-50 p-2.5 rounded-xl border border-indigo-200">
-                                      <div className="text-[10px] font-bold text-indigo-700 uppercase">Linked GRN Receipts</div>
-                                      <div className="text-sm font-black text-indigo-900 mt-0.5">
-                                        {breakdown.linkedGrns.length > 0 ? `${breakdown.linkedGrns.length} GRN(s) Logged` : 'No GRN yet'}
-                                      </div>
-                                      <div className="text-[10px] text-indigo-600 font-mono font-medium truncate">
-                                        {breakdown.linkedGrns.map(g => g.GRNID).join(', ') || 'Pending initial receipt'}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {/* Item-by-item Table */}
-                                  <div className="overflow-x-auto rounded-xl border border-slate-200">
-                                    <table className="w-full text-left text-xs">
-                                      <thead>
-                                        <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
-                                          <th className="p-2.5 text-center w-10">#</th>
-                                          <th className="p-2.5">Medicine / Item Name</th>
-                                          <th className="p-2.5 text-center">Ordered Qty</th>
-                                          <th className="p-2.5 text-center">Received in GRN</th>
-                                          <th className="p-2.5 text-center bg-amber-50 text-amber-900 border-x border-amber-200">Remaining / Pending</th>
-                                          <th className="p-2.5 text-right">Unit Rate (Rs.)</th>
-                                          <th className="p-2.5 text-right">Pending Value (Rs.)</th>
-                                          <th className="p-2.5 text-center">Fulfillment</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody className="divide-y divide-slate-100 bg-white">
-                                        {breakdown.items.map((it, iIdx) => (
-                                          <tr key={iIdx} className={it.RemainingQty > 0 ? 'bg-amber-50/20 hover:bg-amber-50/40' : 'hover:bg-slate-50'}>
-                                            <td className="p-2.5 text-center font-bold text-slate-400">{iIdx + 1}</td>
-                                            <td className="p-2.5">
-                                              <div className="font-bold text-slate-900">{it.ItemName}</div>
-                                              {it.Category && <div className="text-[10px] text-indigo-600 font-semibold">{it.Category}</div>}
-                                            </td>
-                                            <td className="p-2.5 text-center font-bold text-slate-700">{it.OrderedQty}</td>
-                                            <td className="p-2.5 text-center">
-                                              <span className={`font-bold ${it.ReceivedQty > 0 ? 'text-emerald-700' : 'text-slate-400'}`}>
-                                                {it.ReceivedQty}
-                                              </span>
-                                              {it.GrnNumbers.length > 0 && (
-                                                <div className="text-[9px] font-mono text-slate-500">{it.GrnNumbers.join(', ')}</div>
-                                              )}
-                                            </td>
-                                            <td className="p-2.5 text-center border-x border-amber-200 bg-amber-50/40">
-                                              {it.RemainingQty > 0 ? (
-                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-100 text-amber-900 border border-amber-300">
-                                                  {it.RemainingQty} Pending
-                                                </span>
-                                              ) : (
-                                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
-                                                  âœ“ Fulfilled
-                                                </span>
-                                              )}
-                                            </td>
-                                            <td className="p-2.5 text-right text-slate-600">Rs. {it.UnitPrice.toLocaleString()}</td>
-                                            <td className="p-2.5 text-right font-bold text-slate-900">
-                                              {it.RemainingQty > 0 ? `Rs. ${it.RemainingTotal.toLocaleString()}` : 'â€”'}
-                                            </td>
-                                            <td className="p-2.5 text-center">
-                                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                                                it.FulfillmentStatus === 'Fulfilled'
-                                                  ? 'bg-emerald-100 text-emerald-800'
-                                                  : it.FulfillmentStatus === 'Partially Received'
-                                                  ? 'bg-amber-100 text-amber-900'
-                                                  : 'bg-rose-100 text-rose-800'
-                                              }`}>
-                                                {it.FulfillmentStatus}
-                                              </span>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                      </tbody>
-                                    </table>
-                                  </div>
-                                </div>
-                              </td>
-                            </tr>
+                    filteredPurchaseOrders.map((po, idx) => (
+                      <tr key={idx} className="hover:bg-slate-50">
+                        <td className="p-3">
+                          <div className="flex items-center space-x-1.5">
+                            <span className="font-mono font-bold text-indigo-600">{po.POID}</span>
+                            {po.PaymentMethod === 'Cash' || (po as any).PaymentTerms === 'Cash' ? (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-100 text-emerald-800 border border-emerald-300 shrink-0">CASH</span>
+                            ) : (
+                              <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-indigo-100 text-indigo-800 border border-indigo-200 shrink-0">CREDIT</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="p-3 font-bold text-slate-900">{po.VendorName}</td>
+                        <td className="p-3 text-slate-600">{po.OrderDate}</td>
+                        <td className="p-3 text-slate-600">{po.ExpectedDeliveryDate}</td>
+                        <td className="p-3 text-center">
+                          <div className="font-bold text-slate-700">{po.Items?.length || 0} items</div>
+                          {po.Items && po.Items.some(i => i.BatchNo) && (
+                            <div
+                              className="text-[10px] font-mono text-amber-800 font-semibold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200 inline-block mt-0.5 cursor-help"
+                              title={po.Items.map(i => `${i.ItemName}: Batch ${i.BatchNo || 'N/A'}`).join(' | ')}
+                            >
+                              Batch: {po.Items.find(i => i.BatchNo)?.BatchNo} {po.Items.length > 1 ? `+${po.Items.length - 1}` : ''}
+                            </div>
                           )}
-                        </React.Fragment>
-                      );
-                    })
+                        </td>
+                        <td className="p-3 text-right font-bold text-slate-900">Rs. {po.TotalAmount.toLocaleString()}</td>
+                        <td className="p-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            po.Status === 'Received'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                              : po.Status === 'Partially Received'
+                              ? 'bg-amber-100 text-amber-900 border border-amber-300'
+                              : 'bg-blue-100 text-blue-800'
+                          }`}>
+                            {po.Status === 'Received' ? 'âœ“ Fully Received' : po.Status === 'Partially Received' ? 'âš¡ Partially Received' : po.Status}
+                          </span>
+                        </td>
+                        <td className="p-3 text-center whitespace-nowrap">
+                          <div className="inline-flex items-center justify-center gap-1.5 align-middle">
+                            {/* EDIT PO BUTTON: Enabled when pending/sent, locked when stock/GRN processed */}
+                            {isPoStockReceivedOrLocked(po) ? (
+                              <button
+                                type="button"
+                                disabled
+                                className="w-7 h-7 bg-slate-100 text-slate-400 border border-slate-200 rounded-lg inline-flex items-center justify-center cursor-not-allowed opacity-60 shadow-2xs"
+                                title="ğŸ”’ Locked: Stock/GRN has already been added for this PO. Editing is not allowed."
+                              >
+                                <Lock className="w-3.5 h-3.5 text-slate-400" />
+                              </button>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditPoModal(po)}
+                                className="w-7 h-7 bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shadow-2xs"
+                                title="Edit Purchase Order (Add/Update items before stock receipt)"
+                              >
+                                <Pencil className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+
+                            {po.Status !== 'Received' ? (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenGrnForPo(po)}
+                                className="h-7 px-2.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 rounded-lg text-[11px] font-bold transition inline-flex items-center justify-center space-x-1 cursor-pointer shrink-0"
+                                title="Process GRN stock inward for this PO"
+                              >
+                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                                <span className="whitespace-nowrap">{po.Status === 'Partially Received' ? 'Receive Next' : 'Receive Stock'}</span>
+                              </button>
+                            ) : (
+                              <span className="h-7 px-2.5 bg-emerald-50 text-emerald-600 border border-emerald-200 rounded-lg text-[11px] font-extrabold inline-flex items-center justify-center shrink-0">
+                                Stock Added
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleOpenPoWhatsAppModal(po)}
+                              className="h-7 px-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-[11px] font-bold transition inline-flex items-center justify-center space-x-1 cursor-pointer shadow-xs shrink-0"
+                              title="Send Purchase Order & PDF to Vendor via WhatsApp"
+                            >
+                              <WhatsAppIcon className="w-3.5 h-3.5 text-white" />
+                              <span className="whitespace-nowrap">WhatsApp</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handlePrintPo(po)}
+                              className="w-7 h-7 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shrink-0 shadow-2xs"
+                              title="Print Official PO"
+                            >
+                              <Printer className="w-3.5 h-3.5" />
+                            </button>
+                            {po.Status === 'Partially Received' && (
+                              <button
+                                type="button"
+                                onClick={() => handlePrintRemainingItems(po)}
+                                className="h-7 px-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[10.5px] font-extrabold transition inline-flex items-center justify-center space-x-1 cursor-pointer shadow-2xs shrink-0"
+                                title="Print Remaining / Pending Items to Receive (Backorder Slip)"
+                              >
+                                <Printer className="w-3 h-3 text-amber-700" />
+                                <span className="whitespace-nowrap">Remaining Slip</span>
+                              </button>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleDeletePo(po)}
+                              className="w-7 h-7 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg transition inline-flex items-center justify-center cursor-pointer shrink-0 shadow-2xs"
+                              title="Delete PO"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
                   )}
                 </tbody>
               </table>
@@ -10426,94 +10573,112 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                         <tbody className="divide-y divide-slate-100">
                           {bulkGrnParsedItems.map((item, idx) => (
                             <tr key={idx} className="hover:bg-slate-50/80">
-                              <td className="p-2 text-center text-[10px] text-slate-xœì}ërÛJšØÿ<EÍ‰E1u³ä‹F’‹¢h›;’È¡hŸ={öd‘‰1Hp P²F£ªı‘üJR›ÚÙ­Tmmí$y…Tªò<ó™GH}îFƒ¤$ûØ¨:Ç"	4úòİ¯Ûè"˜ÄµóÀ¬Üxƒè—hóvo=ü;d¼öâêûN:cweZÛZ)z?M‰øXòv»ãZä;±[{§uîıôËL-vÇk-ü?xO²xßÀ»Ì¼Îw?"*ªõİIì†Ówkk›h×6Öv,8qä:z‰*Ï)6`
-¯^ãWo¡óaÍ»¡ãj›xÈâù°'a0›Ü’6íÇÓ?YÍ®ÖuÚ¨B—Ğnè~_ß¢€ş]µ[‡å TE»KÚg|î†éÎĞKÛ—æÇ8t@Ø²7à¶L×1œ"Ü\HI·‚»‚z“é,¶XU|=Å/€ÁW,îúËFødÜpå°ıÂæ¹KÇŸ¹ûVÉc§úÃĞêjñ"L#g2ÄÏWÜ*Ú?@7V'Û&QoFûÈ]‹pèÆkd"¿²z>rãÃ™ÿáu8é8aä ¤¢Ê4t/ağïÚØ™V*^üyd^ÚßßG@|_¢´¶¶?±åî’™Üb$òâjÕf·6{# ÉUmkM1¦
-Àşa¤xK@/ŠT››«(ªƒI  ]‚¢;ë;$}Áq–Áaá×?Gdà+Ô'Ã#üØ—Ôl¹Ÿ<PcP¾y6ÇùÅ@jóãÔ¯¿$`MWü^¥{4ğzÃQ¼|pÌ€‹Ø ìØ›ì¯lØÜÅîtÅ™\—Åƒ·/î„^ß½'8%‹¯dñÀ
-—†É’ï6ŸÚã7®$f%‘OîŠ|ß>ˆ Şuû®wIÕÂ/È…Eß˜«È=WöŸÈ€ÎŒJHça©û©d4x±cqöw„VÖ ×wû6p/Bg“‚a^ƒ2v^ß›¸ì;Ï~Üø‰È'‡'è(¦Ñ §ğ¹°½˜ù¾p½ÉÀfA%5Ì°»A+ÄğË>Q¥±?£ ¬MÏNQ´²Öå¡„îkßÁ»‡ÿ×|$»ki¦
-¦±LĞ÷zÿ†>}Ë¼= ÿß[§·YYˆ,LDÜè˜@ÿ£GèÅÂ¼IßŸÜ¨’¹»
-·—[
-ån¤Ï¥Vic£áÎeT
-‘.˜üdãsb«àtlbÖÖĞM¥Â8™ÌG«@”6ªè;”¹#‘¬ØïÕµ88úïÅ¡7V
-7í~ä“óYk…Şn#v`Êë{ı˜ğ´ ˆ']©ü]J¿¡4Ñ„N}Ÿú(¸tÃ]
-$AäÖŠŞLô6ÖvêV–Náñb¿³ëñkˆy9ÔíÏÿúÏxEOdq¼Âw„¦;Lg€Ÿ=×ºÇñÏÎ¹ïªV«1›³¯sßß¬‡N‚æ‘õ>­}·¶ØeôÛY{×5w2HÜG[hãÿ1vçô%’™Ğª‘ò¨s6
-®ŞNıÀ0$"«­\8~äjÎ%ëmÙoËòÚGøsª{QI¾zÂ)%ıø,ƒ.œ„b
-;‰<ÂQŠqF}ögÒw}åùëÁz±½xÀâ`ÿæ<GÖ|w2ŒGDÛPïjr4Xªøn}:õ¯Ù‘ô‚WA8¶9ŒÕapÉş©xüK8>óİ C¦_c¹*ıÀ$ˆkïW\L#Ê²’'âŒFÎ ¸ªâY©˜JÎ{Ò{‘ÛÿĞğÂ¾ïneÏm4ªm¯è”â:< ûŒâ ½î¢Šşèn	ùªz²”4Gñeî+é‹ÌGŒœì/ Qvçm´êÇ»èíéI½×xÓ<Bz¯ùºİm5ÏP£}úªÕÅ?´Ú§è:©w:­Ó×9»™MÆÔ7ÍEµ#ÏñƒáË5/jOİIVÌ‘<ï#†o‚IJm#%X2Z†?;ı¬ZÕÎıYH¤$-…d§øô~_ûñVÍœ‰7†±<BÎ€ü;˜…ÀTms'K&åiq«N‚['ÆÎÇÚù+QNr…o³z
-uGá¢àzg#Œ`v—£ŸèZàµ~àKDÎæëÀp2ã00ë…q²#çn|åâıgó9Ï2
-ğmOÏkOrÜÂ>!ÿlşé+ü"ŒN›qIìº]+<jÁé—òßIB9||6X°ıPSsÄ?ÿËÿøÿ÷ì®K‰½£'¹³¬îD®¦éŒ”ì¼å¸†R=¹1VdÜ)N@ğ°EI“uÖğCöSñB|ZI_G.Ö’ï½(N¨gºLõ²duôDùı4'–ƒèÔ^”1>§7ş<kM Óós¸rCøï%&hè:˜…¨ù‹ë'Â¤dàÄÂ´„Ù"r?â…Â10º@ICQ€õ`,Î` ¿Œ‘¡‰{%¾(1%™Ò_ñd ì\Ö”;2ŸÇè¥³„“—ßªÏ¿2ÁÀ§­t¨T*ä¨ŸJ‡>&£xs°$2q‰9‰C»?,ò»•W€ÔÜ[¥ IÿÍïñõ‚áĞwµê½jùaÀx™[ZçXS*f'Aoò²¬‚çÓ5±uìªÒ§¨ÈŸ^¾.’®%èS›Z0É­:­w*ßÀMUºñ,œ €b9”İ¢7ø®­­Á`µ7dhä.5Rdé&ac‰‘™mİñcäóÙE«˜”¬¢Ûª.ôîV=ù[¥WiÓ•xÌÑ-6å€ÃœB‘@£…¨wY¤ğ( ³h.¡*¥ƒûgtæÆ¨îû»¨I1¦Â§˜
-s QR­ÿ|ÙµğÅ7<ø2çAzg„ènÈÃ.ûá>@÷/ú§ÿ˜Âî	
-D¨Œ`·z=3ÇÕÎú!‡@íG>ˆ4ÁEzÒ¢ØRÄã`S/°X…U%g†çÌ´¥íç -q%ê	›ÚfKXŠ•ÌÇ åi=1d^Äåâ¿%cÎ~bÇWfz¬dÍÚIuB °ô¼Õ¦»²¢€NƒXˆ	³1Ôr uEHDÂ%ïÏús[=ÂÊ/²B]EÊ†ŞÄñ—‘Îêm¨Î­Ñà^LTÃìXü{oE|K7|—yØ"g<õ]j/Š0©w+ÑVuí·ß+«ÑjõVx -ô­bª¸Šv!.NGš . \gËÎCÎ0ôş–‹s4ŞM?n¡¡3¥Vê<Ò¨F›úş6ö
-JÊJNf€É‹ës¸yŸ³{öqÁ–	GA+KKE*û-İdÊdˆ±•ŠIx¯3A² ²-Ë,/vòNÎ(1$©EoúñéÆÆêíû[-@šCv¨b-'Ğ»y&tÓ05®ÑeÖ¾%Ôí½Ş‡Ò)Ø¥•›£Nˆp(pX@x¡W9†-ŒÄRLğşO@ûèG&¹d™ÅOæQøó?âmü	B¤•Ì—9©Û< —¯9J–—’RË:ì7Ãi§èM­xòÀ2n ;W¤6ÊG¦#:íSÿ„A¦Êr[”¯ÿqsƒÈ\jP#tñW˜§¹áØ™àíàòÌ5n¨ÑÆøVÃ{ë„¨))n†Dn%R\bé)K'¹™9‘;6—A$‰0N‰dY#	¼Û’d|Gr	¢Eh¤¥‹Öš¨-ì²éÉ2ôv	w>š»,ª[’îRu±hÈ%Q^3í- —^†1öt×_©–jÅ Ï•IW,“MdOC+Œ‘aÅ!šbœoêz%fØÄZÎcùE ßoùù™¡sØb¶¾I| øµF|•p'9š4E3 2…?w-Šƒi'¦Î8¢MAw¦Ø'}œécÔ·‹1ÍÆ–f"K!®Ô*ŞÒ‚e°Ô<šHEªŸL1Xæ™élW¯‚ Äga7L.Bë‰&BkSa,xxßÚGdåOU‰¥5V.¶4tªëFéÊ{ˆQ«hçæŸz€p(òÌ%†@	qP¯Ã›Ì\ˆŠÒxMşRí†&»Ôè6ë½&ZGn»Ñ<;C¯Ûí£3Ôm6š­wÍ#tÚÆ¿Vğ´ªbèR4
-®xìâÜqJ;óÇ)áGï(Jé©e”RÄ5Ã$Jiìî’Q^"]s¸©ËG#) Pu£¸ÁÊmY}Ğ€;+v²V?ŒášhAŠ(,6½‚`	Fœ³IèàYÅgZ“+'h£ÕÁ,6¡,+M²Ş /™°cÔ™…ıÄ ‘‚,¨Òi³”¸*Èş.Ì [õá£ÇG‡e9š[€~7s0~Ç×±Š…ù„¨DdşøIor‰·–Xarq&ê€’O<(€EÑ‘mƒÊ;­AeN ¦v­ÓniÓôÉ®sÕÃ‡QY]-¼ULAøñ§ÂÛ_y¾ÛÃ 4­‰ÑCM¾£…?ô	qëH>°9xNJ`tJIAÓòIÅê0Ë€ «§QX€4‹Äß òÄœÆ‘_uvı+3Î ¹nœ¥àÁÿ¤€MˆÏ@ïwLÀàÃ"r¿D–œÆ’q Jä¦…]C™¡HBYĞ‰½wqoĞÙì|ìÅB(=i¼CpÍ›÷A“€jtÖ<n6zí.DK7{õ£z¯Ïºu¤0Ú:ÖÆÁ±ö„8ÖH‘^viM¨®RerŞT$Kş´‚Úø~gElÆ¤áL@L9)°6#‚Y}\ tz˜tVÈˆÀ*gæH$¢Ï»·<—Â§(±<ÛÍä[qú³h7˜Å>Öëk#o0p•ˆ¬ñ&dr)WVj5L*E­fVío¦ì~r;³+LMÙ¤‘ìÈ¦ô°ô†~ªà¿ŞaM:Ié½*ªÁog±Ï"jFäyÄïğçı#z…Ïå¥_ï¢ì˜³ÆX	ÎÜşËÿDªŸvñxàc!Ë×ZŞÍ{¨6ŒèM":ßûá(0?Š&dÔ»CŠ*²lOü|”\"ã¹è0yI˜ò›ŒØÑ«Š×ªôİû=ê-r@úÚK¡û»™º›âÓÙXQ\,Z¼¦ÏÒ>6PZ÷‚Ö9ÊÒ`t»$*l*Èòğg{6›N}Ï|QB÷ğ˜\RÍâ4`3C\óÑĞÀ¹°Sƒ“I1ÖOóÔ\Ãmx9*æÎkwsp™ê•ê[¤ãcS:ÕxÂlq3æKGÌÖä2ğúî§tÄ|nlj‹un¸OìÈ•_ªt­ú'ÍÓê5»'gXÛê6ëÇµ^ë¤‰U°^ï¸I~ì¶ßö aµ×~ıú¸i¡ƒÍ£]es9Ak#‡Áüm´‡•Î"‘²\fîù›÷ÊLÌB;µ„;T—I­4<Ã}›*fÎõ?{âÆ£`@eğ†ähJˆèaá?i ƒ>ÆÇfø½FàM"…¹L2ø]{,ñxqÃ	š›JT~Ğ¢;Š´VäeJÖnŒÖnØE/ñÏôvå êJ¢²İƒÚ®&WK7›÷ª”Ñ±ªú™\:›Ò°¡¬H®Í’ÀhsÃ>ÃSfs«ùÓ?şŸĞÙ4ˆ“®¯ƒàjÏbp TÉ<ñíÿQ8Lõò
-¸ğÃ$‹¢Ş'ñŞUƒò9G|·ÒaÀSN²6¼‚úô…£İR¢´ÿ'º_l_vÑkw‚Â,É÷|ß³şLGÎ»êc„¡mÖ1zÃ=a0Fß›x}”îô#Ôytü2>/A¿¤»zîøàKF7F¿wÃ U ~ÒFuM?MrPüÏü =çÜó=¨Ö×	"<‡ÙdêxÜ÷áß¸@Ø1²ã‹’ó¬Ô;U<«ÁÔ/åÂñĞÀ¢cß%«½òğBr0Y&ÍæFkPæòEH,ÀcÀäŸ˜²D»®'&>Ç\O,JóCò‰døô—]²†C<&«"'e Ÿ>=x’iV$	º˜ó‹ğ”.‰`ëâ!
-¼úßêâÇÔˆø"f8¯’½D"9_À‹|Ì&Íê!Õ¡±"¦ãâEîƒaH]aØiUšåSOÂ}>Oà´ã’Sñ3‚Î¼j˜ÀÈ*LŒğôÑ Fÿ`9*‰9iµ­ÓæêÕ±ô}«÷+Xİ^«~ŒšÇø¦î¨Ñ>~{rzf¡E%ù¶ªMš¡0N•'üw¡ò¤‰à(gxnŸ•gÖi3
-ñÚƒìAİ	´›³u¯$âR¶0Ô±7qYu(åëm«7sª ,’È´$§Ğf•)©”H|7­-¢#øØSêdét÷öÅ—½DC7f¿0}krTÒ[ ÑÏÚ°fú0O4HÚä¾ô6vºÇ!;}ø ©N¯jˆèf¡Ï¦è[›"—öå-óqŒ„›ùšËTš´ÁW)POM=İ\F<	èRë‹‚XWØ×.Ü±DeLS3>nc*Ğè_I„È¶–h'O³ /¬„.Äš@QÜ#•›”jJPºE.{Ä@ğ“wV×Ôâ
-ón«º(uc¦´ìkÓUW‚	±-ª5~]…K¸8	âaª„˜hì¦'C 	ß3v¼	'Î‡):hg™€•FLÄ5ª—+/¤}´! U+	ÆüHõ'f„Å`U‹fã±^×úX.VsDRòTaÂ¥A’îEÚİ`ìMjW JR#ÅÑÉºúñÈu´5]÷âPie•\@ (ƒEM@¦!U Æp=OV íPëho=•|íÈæÎéóvÂ²/Ğ‘õCÌ1ªXoŸÎÊÄõ°àh›OWXË½¥ŒÕ´"j.—3E»¥lÚ)–qkŞi­n<àsğ³‰×¦P.{å *g#R:{áÁ·6Ç˜ãøàu¢-¾ÏS[<ã'´¬$£z¦è-ÃSZœŞ#%–Å‰a‚†æÚ5bè^ø¥i¹[cŸË=sihR…<ğÏ0¡Ş¿ÙÜj¸<Í7ºHci	ÆïÙ¸ ZùiÀ8‰Gæ¬xXCXÇÊDªJ[Ç´–>@
-r®Om™ñÈ‹Ğ€¹™iyï‚2ÂÂ¶9Œ‹<æœc–ğMAã‰ìL,ªóËœiÛõØ¸ûÒí¥%\zéÂäûğØ"ïì2ûèU¼'‘™£9æØ!XŞ ğP¼±Ö5Õ{{ëÖ›k²›ê±›;¯f‘\QƒÉ”ËôEÌ~’¸¨}²okuÂ\®…Ö¤³)_4£|òq/‚ç_¾D'N<Âsü¥x¤ÆµX‚çaÌL¥obtØ&<Ï^(Î˜˜ÃVaâÊŸ ,±®­»w /«¤Köë	&Í!ø…/²ÌşŸ^ö÷Üä’Ÿ‹§6™aßÒ–MÙÍ¬Z6†¯,;Ô£x$Î¶Ñ~2·ï’á¥.ãA/“ ••UÇrÕÃ
-iq¾ÒèH©ØI¦-7ï}İ:š³57“"KÑ[{Î7ÜiÏ3}èNö²äÉ^Kj1ìŞkÛ(Ù/a÷bşêÙ‚PbmÂ
-kğ‹)M ~'w/¶7_  E+³ñ[d®OÜU¾Gç–¢÷UR@OåÊ…Ú‚Érñ=ÛÔƒìuGİÜ$İFIL¦ÄDè+ïDD©€(ÜÉÛÓòöÙ×ğn*µ|¢4ô.úFb¡lŸ/‘úma	ã¾l-C¸Ë´¬ÌJ wLµCçjNª-R}2
-á˜Æ¤ üƒ}×ËflIÙ€ÜŞl^öbùÊ±!ësÍ?9“kûÀoØ9t7iğ†‡I»¾Ñm²îçÃ/!Z—„))½Û–<S‘´—-î	ŒÚåÕ¶Ä©;Cf¦ĞvàÁY©Ğˆ0rÇ*^6z3„¹Jãè*ÂJc+K’‘NÌ!_9èFkÅî³d|[fV•ah%[ƒËŒkM.“¿²Ü«TWñ99Øâ<lé\l!>¶4N–l5©8Y®•§ıØss³ø’{¶—ågFöå;c³Îš£-§Ùr5K¾¦Ôsœ--Ã¥ãkÕW°µ4NÇÔeg>«ÃÑ„€KâFkš„¬â"åolÆ*äVæï%2RU½¡¬s´éåóİv—¢/<Ÿ‚¿††™q¯Í˜–Ó $«€éß8Ñ•%]Ø‰¤!¸ÎÇª\y¾oİQµY‰¾HbKIÌ³e{¤éãq	h¥1PŞ„ }("xNW¡3Ma$Ë_kï¯i,MÌ«¸OIV ù·Áh\•8±í¼{ìAl¨µ®cYÚÂ—Ú–ÅÚvÅ%¢}5…ÔÊ…É>•’fßA0¯OªÕ¡uô›™Y2XÅ;á‡HÂª¿Íö÷B{{®p™†j»í+!,d——›Ã}÷«v»×„bCõN§Û~×D‡o{½ö©EŒ¶>îº8cÕTáT_n(¯Ò©ƒ,LúŸä±"r#!ÿL¢x´k
-ÓSU¥ÌJ1xqìkUWÂæ³.î’¸ÜJ%šyëxü'ú%ªpÁÖË‹ùUAîõd{VµúRÖrB„’ZèŠŠ-š¦	µ_N" ÌÌs¯TUeH©&˜iãl}‘}'ò\M»4<Qò¿J­	U¾Õ‰íe
-¹ªzm«÷“ÉKl!lmB?ëÛK°$Ù8%*K5¯%æN*ÃÊîsn™b³š'±eù	W–åïJ”I.u™äO¬[}DÊàu«7Dîa‚õMq6Uåò•%UMèKV›ŒÆŸlù¤Nì#ô–Ø$ <	-³JUç»í+uÅïJ—e>n¿F½nıô¬Ş ä¥ÚË½Y{yŞÚÊã¢´rš­+Yªh1t	_98†è•7ÁhY,!>_XS¿r0Àû«¬]YÜõ]ªD¹¥Mµ[R9âĞïaò³XuÈø#¥:0’m‘œŞGAòg<F0BNì§¦ÍåqXÃ‰ykäh¨C¶ÔcóãÔ ´°?Ì•	¥‡[“~0ÆÏÒK=J«°ä^Ğyøl©°bîë%ÂXR…d#/Ú2	Î‹”éı9À¤-¯äåRàsèL>@ÂËäêK¾ ÊVâyÌ[7ÃKÿ]"¼iTm‘´P_T4ÍtyÑO2=ÏH©)}Q±qª¶Ú“f×lqD0Wæ«ù2ä^Oj‡ÇŒ:9äê½j°ö@2!Úg¥_Xš2o(MÂÅ„j‡pˆR!`½9OÄXƒAPÀeÃ]é$d/~ªu´‹._®ñ4€ÔôX}Ù§ä¡CV
-?Ã·ŸşJlS¦6©TwfóšÂôéù²õ\­Ÿhsœôå‘s°]X!S`$™á²¸82Ò—G¾QÀdlÎŞ‰*íYÅqpìR+Ô%?á¼¡Hï@-Z«®Êˆ©Á“¹—ğP*ÍìÙé&U‰}ö!x‰N50Ä€Aå…ïÌµ¶LTĞdRin,Ñ›£¢]()åN š£9¤Ü$ˆhAD”P´7	S°§jBmNÚy‰ŞsiÍ:Ğvé4ñíMö™[âãûVÁ\È®Ğ«·ïÑnB …èˆœÖQi•°)”‚¸sEòıÒó¡ÜZ?@4Ät]×›Öª|i£…ßò:œ@!şóckà•!<­…‰JöôhÎâ0ı|[¾¬ä¶p†L„ümZ©xˆ¸ğŒaLjî¨Eü‚d¡Òé™º:Šö$ÛWzÕ/Ï'6æ×İÓh!gDP‘8çé~îšfX\ùBë¼"îm0Ol²ÎU[Û]«äë&sb„¥£aË";.
-îŞäò˜00êùŠ½@~†i­fú‘”¾·ì¤Y”³{—áDdí°Œx—í6rszÙIĞé•a;üìå’ñpxSQX!Û˜agÜ‹ÏKsßŞ0€¸­¾·x—)‰—çyÉ•Í”Ù,%ŠEÉ±l{@æ/› ‘_ˆ{H„àJî8UÓâ€BÛ(’‚Ğ?óAµ¬7ı¬y±®^O©ö©·w?–"Ú›ÁË1HÍ’ÄÌ§a¢¶Öñ1,ãC
-ÅÅyxs,ïD¦úé»;¨>ÂŞşHSŒWë?¶ÇÊùÆlD_ØáfJ-Y¥ãŞ´Èé™TÊÏåèr’®¾Íô]öÆdQÜMk×$°8F¢( Â® &úaşŞ‰ú¸‹Õ©K)Ï¹4¨2Îİ½Ö¼~ıè5O:ÇíšMÙ}ßO¿ºïîûú œ‹„wÊ®]uÂàÂóİ>|şh	Gşr?tÖ{ ÍO	G€)è<CyvĞ¤OQvÀ†xŒø?^ğ aİÀ_¨ŞÊ-7¼ÈÖ}®>lÁº›‘…õv9‡mßìh¹w‚ù×èÌñ¬o™ås‹ƒ4eÁÚtäçÌæcğSØ7©¤¤şIü'ŒÿQ0¹@Ş´D!¾’€ÄØrÚjÜËÑÁ‹;9ás>¸ÏE›ãRûWmî´¹3çÒM4€Vç:İv£yv½»íãcY£ë8×aàû_µ:ƒV‡U¸¾E(‘®ˆ†Çd¶¶ú‹=uï*‹îã°©Wô´}ÅºÜ”®0	ş"uJˆUœu¶b¦uEØpª8¿ôUöq~–;élµşJ¨‘Ş¦s¦°†9t"¯Ï%Z¼¶—‚ ¬ÎSæ)ƒòŠ6ÕDVŠúh»Äb²»IÏ–øãñÇ¢ ;m€~V„¼òEbZ@ò™èUT£tğİ|Uİı´U±rº8¹OXâ'¤­£\g¡åcg~}Q$dJ0[!3ƒÉ2Î¢d¸zNz ¡-ŒIİ•	@qjI[Î¹ehdI­.h¬ÿ3Pîë¾\ìİ­}Hé«—éx÷ŸrÑ±X2º÷3L_½œ3LÇûäÏğsÑ÷Eî«Î¯_¦ßè¼k&Öø¡#/:Ÿ…´ù:Ä[ ˆC÷¯;ÍÓ³¼?—&~AÚ¿uSVü&¯‹—·tİ>jO¡é9¦tx¯“Ì]Ùj y3-(J“åÖ@áÌuPé”ìîú`ÀcŞZÀHÌOœºWünØÊêªâN…¶š©x·)whÊõò}*•R³8UĞ—¿Îr¨a¦êÚ«ÆXCĞ»õé¾Ï™_º½n) &£”“C	‘È’¯A˜}ç¹WFid™%]tæè~)¾Õó‚Ûb€¡j2Ì€4dr˜±B¸4™”šæšäğçĞQv*È7l}n.8$—š«·+Æ=‹®%òÌ;şLn¥mìÈÊÊ¦I`îåQrßm‘JŒŸjò
-Ô]Z  ¢îã®2¨é:±ÉøK‹~fšO¼£ñ…„š„J gâM/œÛR#¼åÅ<!5È½ĞwÏ¦YDÚü›ÌFÂ;Õ3¦Y.ÜÛ¨ÁeÓˆéF“,¾ëCÿSÅ¨âri]&’æ£Ì²‘´KL9JŒ½*ˆ’<¤ÜDÒ&qÙõƒƒÉ¯İë£àj’l)qîÜµ.ë¤Ö„_5µç†Ë%å1t¹ÎÌ+9”kƒO8"óCúÃÒæÌk¢evÙåsI•ö¤Õèç›UPÕ)ë#•9Ä³ÊJ\*ÕæëÙê–©O¥õêö· ÓgÉûoWà*/mOZ‹p
-’+Ko¡Li;©Úİ›jwóˆêü2dJI¢{R€ØPhØ|îÚÜ+Íùœ©ŒÌ@j '¼Î +¸y1³´¨T–ÉI
-ù¼½9…¥hd¤Ò"Gš8ŸÄ²±›ON:Á®¨ÎâÖœ«l”Uîˆ”˜t+ü¶Ñ°§ ëÒxù©É‚ <É¸W¤0q9°©Á^*,#î)ÓyKI{I-‰Ÿ°Ûï~Fò^vAåE¾´Œ¿”.ş)
-|´`êƒ²şÄ†‚$XÇT|¿ĞwÓOhÅLLiÍ‹í¹æo“¶VV¢Îš”TñÆñ}f®L×@ÃrúNl@ZV#¢af¤m’KÇÉd`dÆ#i*¢À€}ÓÂ ‰ÂCÉ®ÌJÓ)&}¢*B TtÀ£[]y,²ÉqŞ¼â]
-œ·—åL{æÊ	ŠX¤ÑÀ#B‚Ñ·FÂšœ‘‘4¾D«ÚàØ¬İàÙ†ØidÕ8ê.5×šH(ú–S8r6
-YÅ¢ïÓıkoßëÍ Éäªè„³Ij2SîŠÅE€4.êÇ±RÀ¸šôKÑOc¨€cUAx¿¾*µÔµ…I‡Á·ö#V-~*èÚ¢¢ƒÂ‹-
-ÔØ—¦I·Xn€Ë]‹â`Ú	ƒ©3$öÚ"9 ‘°¸•‘ÄÕ+(úa.ÎB‹ôß¼'ªÈ·l´ I/‘’LE«»J1.K¬‡c~‚b,Ö·Dì=SĞÈwf¤‡kWTY._©Œ`ÒbÚ¼—&øÅ0J¤„Ï=–ˆ?'øq»Oã*ï0¨`jĞçL{…ÂíÊË÷Õ"	.ŠKtˆd¬É¯vˆÆ&ÿÙ¡©C¹Cêş.ÛÈ¸›Fdã%0ï×z¡dT
-Ûôwê&~TÇÓ+ƒºíšéLcMù<Ë—ìcßÑ½4ÒA"ˆæ.ÌÎ'ÃÜ‹S¹Ì^
-)ò¨Z/Z¤ºòuÊ¹„‚´Nó	Ó/JhÒÈ´àT4îS0¶ğ‹IŠ)©ÖB%ÓêKbšÃ¤=0ş[Q&-Ê\AX­ -¥(ûgQåÈ¢Ü… ÿ¥‹ ™àçPi9'üĞEÊÄC._¨Ì|Ê?“‚eŸVÜ´"2òkÜôıäJÓ·^àİJ×ÏÎš=9Lºaù‚‚¤ç+|õŠ¬ì¢!Ï%Š^‘Çî=šNöaJ^9ğnÊà/ûªWuş åÉ8Q2ĞgËù<;.#]D¿IÏ¶¬v£?\­fóIöˆjbğŸÒ>aÉŸåú”õĞ'\9!4+K?”äÕ,œxñ†Hş,Ùòläõ}š‘?J=ÜGXv< ÿ|ºíÑfaæ…” |ğŠa)æğ‰‘yÙW3·¨ÀoAû©ÙÔ¯ÇJq–»0<FTÚÊ˜µ¥†7êÚ)il™_K¡yEøTRû*Àß§ /È~%Äwº­Ó^ığ¸‰Ş5OÚ]tÖ«÷š'ÍÓş©ù®ÕüÊù¢pO›z‘VÕhÚX?bfTÖ¿a^¡ÿÙ<B?üDòÏ…wÀ4wó(ğgø¸èGş^ú)ÑèÇiòÃ8ù+õÒ‹¼sß-¯[è‚Jï?W?¶ñ_Œ:¥Í[°,‡Fµ_l]~bS‰ë£’ ú×`èéKùbØ+…»ùDÉWÆØV¢ø®?ÄÓ:tBTyC(a.NÀ¢šİÉ‡ànó½8ÏoJqàÛúZ1x‡/%&[ªĞhCÊ@‰$€9Ìk!Ì5»Ï­…"©ıdßğM%tObÊ4N†tõ~ŸØÌÎb<ÒU¥¾İ=ro-¯ 7êhİ½©Î÷’õ¸`íâÂ#ı—}w0=9™48ºÉ±CßŞúÔ‚È-µªgOäÇğqĞI&[©î’E|ÛĞ?%“QÈ©+U±\fšˆ
-³ÊBÜ8$€ª†4òœ `•úv¾KÌ<<:/œ¼Sp;Å.T;³ûªûÄå[æI—äöy¡’prØ%Ò^cüQĞŸ‘Ã9¹n>"OŸ³è¬ÿä¥§9î(óDÙĞ•hÃÈì¯P¡¡6å³¬E0³¢ÂJÚ¯^µ-,stŞşUı½iŸ4ÛzïM«Ç­Süµf¯×ì¾iÖü¯ÙU„‹ê;ğQÅ¦O²FöñVx¯†É$&çÑËµùL~J?G¨ó¦Ş=©7~XÍ++ì=g¨}Åq0zxÛÈkğ2ğ¨¯Ñi½÷¶[?>şıùïÿê6Ïzí.|X?®Ÿ6šú7áSW¼	ÍŸÍÎµ#œyÃ‰¶€dÂú¡êƒA¨]4ü•!aˆÍ¢%ugğ½vÂ‘_fÑ±3
-BWÿRÆXñ"òıIpîùtÑ¿|±U{²¹	´`ãéÆsı€ß»çĞçüünÇÓhw}}:›üÖ9c7˜:ñÈë¯M?hÇöñYŸ…ªJa¡5v†ôë“Qÿïà‘µèr¸ªˆù5ÄûæR&h%z®€¥ÓóÚè^¸LÅT£ÚE×Êfòô"¨Î…ºö@ö­ÂUmó)¦©›OA¯PS0ˆîyã!ŠÂşş;ª[äøñşMŸ@[Iq›ZH\9ù38ÿ-„ãÓobLÜÑµıåûÒ S?ißâ[Bˆ0[9¸Õ¯x´™—v}¡'‚-H¾i¼Ó‹eˆMìG1}"rCï‹‚Î ùÁšÛ7çï­6ëĞJ©ªÜ8²„ç”½§<ÆĞtI4š¥`Æ˜°›&œ“jmæ+‰(l/Ç™½Å¬şò§?şW<5 ±·èÑä<šşêôøéßğO´x|î·ÿòßğoŒÆ­….±¦UÖÿ¡t/wÿvıo××cŠoˆâ7¬¸à»tR¡òĞÁJDY°É œmÚ…ç4>¤¡ÖhWWÕ³™fõªÜl ¼Ò¤Kz‡,iRÉ2Jz*³Ê˜‡å|­îÉÅØñÀgo;ãVS°òNÓÜjÖV1š]jƒü’é%Ç„ÿPäœêºŞ¯@E	òT%mb	Y9ÚUwR{}¸Z-ÈJ]ÚfÖl\nÓÈ <ÀĞì¹ÄjQß™z1š~¹·T°†µÒhÎŸãû«"[Ç|©çaÑ¯Búİ¼ºŠv‘üÜ=lÍ¶õÖ€$Ûu/v1 ôjjãAëˆ6+?=Z½­eÏ¿uÖæuˆ×"¬Sº•Ç›Õ”®ÕÖ‡$f¥~Ò%ÄÉ²"mJªĞ‰Ì=jöê­ã3¬yœ½=9©w@z÷èLA*­<ÃÛã|Ş
-›eR» “#‰î¨­®$W&ZSXE§¡Fp,àô9]J–Ÿ«ÈrN
-P$éÄáÃ™çƒt£M+ŠV
-ä­¯Ñ:T>ÄÀzµí¹Xvô#%)!2»!2ÏˆÆ­N¨œ%Î>²i­+Éÿ#$îévszÀÛ>éH¡Ü19Ã]ucTât½¾Ê)œ·ñ$N{§øDzÎÇåÍVr`Zwú±-KP¾•yLLJ½µZàİT+·|§fªP}S!$óCP–…İœ¹Y49°9)&c›­ Ò°©Ï‹Pé3ë³±*!8IKE,õÒ`ó
-DP[•˜_ygBï³Ùxì„×%n3h	ól1È(îrİD?&ĞEz™'Fâ×İStèù~„*ŠLTwj’Xc»£„ Í.³Ş,–à²¦öU¿ıÜÊÖòXö¶Â6ìÀ:"†+ß Ê‘{¾Ì]å•…ŸÍ±¯Ç[ÖêÈ'-%µ8/%Ÿ„Phc}sC“õ.ë‹ä¦Ğ@ÕZ¤Ë9:¥c8ucÔÅQÌ¬S‡‘F@P¿â`‘©øbÂ³<ôı Â³b“*ºÀ1ûØ"ª'İö÷gˆFWT¾oõŞ ÎÛnãMı¬‰Ú]pXœ¾=9Äÿ4ÚÇoONó>s!7j‚Ìxe˜oÜ,ö¨ó(#E6İw/â¬2r&¼:°:ß™Fêüº½<Ï¨ˆ3şG1Dô–J øã‰;J"¼„/”ŠI2¹\e°•P$÷ÖãQ¹§z×Ó9Âj.fV¬‹5úEù:kí5œWşa!ñ	Ï¢ã„±×ŸùN•J`TÌPˆru¡(ãF`@‹ÔM&­Ò…	ÕÄAÇ{ñy0¸ßñCbí±?RÍ6[ÂÃ¨å([RÑ®¢5ßñªÁÜ³^êÕËá?FŞ3L÷oßf·ğ)	*;iøb²ãœÔ‡î°¾X¿ÃbY„B’éàHlH<ò"fBŞ$	#CSb[3ØhbYÑŸ"BU´«İ+ó†“¼Ñ0¸*ê°E76:l	Û*EHfë”_Jjv¾ÔÁïxº5í–öUŠCä¹üÍ{Eì<°°6 ¬¤OéÁøÕŒQ^iWHHYaf••Õá²g2ÿ¢ÌXÆÜ¾7¤Ó‹Dªš+/jÍ˜A~7ƒ•6wI`¡{qÌaÚ·
-’”Ş”² I&:0Eúä`À0”|‰Á ¦‰•_`Oe]‹¢£»<ÿ¨aêlG™šoÿ„±Sô{Ò÷·é×yIûı]îjÁúÓ¨»å­>C}„åÓï?‰õ¦_.û–^+Ñª*¯©ĞÄd&Ò`³š_æÜËÓ3i(‡ æŞê"	D S‹fA È¢¿©•ÍLÆWğUÁ3ªÔN­L’¶vn›ª<éÁ®0sõâqÓİ®Qš~8Ñiß¥Àª¬áF/ÕİÁJÍV†%­Soø»×µ.qYEv–Òë2h^j$Æ?€ÍÂŞ4S{Ôêë´õšY6ÏĞáq»ñkôªİ•bJ‹1Ó¸öBrl€’«l›ù\sz•©QÊÃ €Â¦•Qb’WÛc4Ñ(2=¯m¢‹f¦KHP“ro$}„
-örÆ¤ZÃíÓ¬¿·‘¾Lz/sY8“XÉ?-½FÚ€U\™øÊA§ÛìÔ»Í#tøªÔöÛÓ^ı´WµrÀÒkcBHqè•ƒÄ!óÕg S¹Ñ‡åø¤–tæ+w¸Å7ÍÆ¯ùN¶»KİŞÀ%tŒ£›û=Ô—³¹i"ßI‡Ñº¥‚î,¡÷{¬Ç‹g®ã?ÀkBš­ÉV6¾N’çÒHVıú³[gŒê¾‡ê“ßÎÆ÷E©„Ğ*KÚ‘w×ĞßÔ[¯ßÔOPı¸…ê§õö¤ÄÑËtûyÖÌwâL;“Œ„zÆŞÀ sé¢7®3˜ØDiSxg‡Ø£7i„=„:#';ıkÔ)¿T¯ÚíWµÎÇõÖ‰2™DÁÿ·5¬?©ÏÊİ~Å±òê#(Š˜ƒp‹-"‰$¹  ®F\GxbäÒu€'‘<‡H½¿øÅ$l€ dš*ü2zi“ç—ûªD.sıÅ|Ø:>Fvçm'Ÿ¾<u®iTI)Ã“væNU~ºH}"S¢m‰rE[i¾°P¯È˜rÌ(-/Šÿã‹H+–2¿´‰¿€ãxØ¢œ²b×çÿb
-ÿ³ÏÿTÖLĞõ ÒZ~Ÿg«f‡Ç^#À’õBjÊÓì˜ºüİ²%Kµ¦$¡,8…1Ÿ'
-“G˜T¸NÈ)‚ª±.y]tg™åVÂ§oÓ×SC¸óˆ¹v©ˆQdåUQ¥ğ1ìNeN*Í9ò§c™L#Â@ËfA’*)gie=Ôh*¼Á¼:¯iÈw'¨(¶p´°oŠŸ¼Éåi@Õ³ãc]¿4ñ=É£wç’ˆö,k„i*+š¿r<u±e©™l©š"¶+NşÎçyQ?iV·9ù›÷¤Å¯.n
-G|¯+,±#".XCàMÒN,–	Î|Œ|¹&ğ™F•é¦ ­B0wÅkœ1¤ıkAÓ¢Nö @hnÀ³2¯Hór"jrÆŒãøÇˆßÂÌÀBæ$OåA\$ômä2BÇfÖ)¨­M …	lÎÙ»ı¨KÀ$òW­Óú)ÉêóVPå°~Ö<BíS®û¦¹î?€æRÿBèÎòQqºœ~VªŒÁÉ¾¡È„=ÈJT.sy4×+6¡7fúÍ•6°D•ïÁkòCQi„÷wŞÀ<®zà×!–2ñĞCø?ÿãOÕµÂÌ+CS¥ƒˆ/o¸Æ3OøÒ†s.5š.6˜.t˜Â¬åyíô@ ¬úş>=£*W†ßàİğKk@¿øSä^ÌğûşlàFôûª"ßJ³ÑÄgƒ7ÄdÒ‘‹ìüZèf}·RÁtğ1Rj0£_òâxÃ5â¡KWoTãÿÔPÂß5Èİü4®K ½ 2aUY@ˆM€¿ã/xîñ;zğñœÍÛ±"/X5ÙGñQÒÆä{ ÷«0vœí…Æî@â-qV yà®[oâ<ÀÂß1% ÒM!İA6ƒ²@Ò^5 Y8Œóp¯Ù ó¿pÿ~BD—nvÚÒ
-³Å0t~E-jç!ºƒ± ›^z˜‰¤aW;HĞÃÁ|ÂD ñ ±e¨TşåÙ$±¨ûs4«ö^.£©jÎH±™5R@¢À–d§Ø–º‘f¬>âƒOŒ‰ğ
-†I6#ÏÛÇ~Ó¥dzûYT[·€õ3fˆ’KpZJ>û°SâÙ€Õ«®¡wáá¿At¸¾‡¿¸f¡­P]x 2›ı`-9£Xki(|‘¶&ßL€…Ø¸h£/%
-q€6´[(FdŠ€šV:È¤²À-Û† Él`¦
-ò…!ÅÛtƒ"0oòË„åüù¿ÿC&Ñåhæ’€Ñ?ÿë“J{Ä‚æ4Q^…É&TK
-"ØTµ8UÓ?VLÆ	hsÑà!q=Ü «³¡3CC²RÎğ%<ì¾‘4ái&ÛTÈDGô1Oô=ŸBN´Ë/È_SUÉÆ‘ ªTS“»14&Â«Ş=•k‰í«½ÌBIŠDaòœä¶8È1!x?ÿÿ‚àxC’•ºlHK(kœeÕ™‡‚³›¬Æs/\Ì5èFÖ…°D½	o¡¸ 6«·Plè†Ì'2s9­_dò%ó=X6pÆ®ã[Ã¦¨å<xRİŠêß·‰<óu
-™,c@'û;Z]jÆ±òkI‘SŒ!®pŞŸ  „î&ÙVLJ.òáêK–Ö¬Tş.sã¥Có™	¼K–\>>º*'“¢¯¸L­Ó´w¤´áh±xß$1Sg­Ö5Ğ1éGRx©ÕÇlŒÔ¨ÓÆz4~ílô›È#ä“€z*šĞ˜‚ú©— ŒQS¶x
-lÜ5àQÅÆá_R“Ñ£GHüèUìÖ%–ãÈÜ“ù"k‘²zWş±¼#YkÛâÖZ0Öf¬´ª©3{2\Ú–¥ŞË†ä¾ƒ&É .Ù´U°’	FOú­ºO²¡Ş©Êpò$SØJ
-£(¾­}Ã¶µLí””ä«¤D‚yê«OD9ñu5	ÁJÊBeé;“™ãû×S‹àJ«å/
- Ut /QPÖ¬‘²S,ºh{#ß“T,q:Úi€(’—;Ò´\s7›±÷Gèƒû&õ/‡k6Ç¸€ü­íoÃ¬×“K,¤à‘ø /S/=@/ÁF+,i~­v_Ñè˜{­:ÈÄ?KP £øÖi@ÅAr¿ì½0OØñC×\ƒìö*;ğ·„VìË8*´w¡ŒkÁ
-2@–âÅK§xU<¬aŞ/†ñ9<ó®{áb]œÀp†Ôû!ÿ˜‚~R¬ä@-|‘:!8XkÒëàÒÿ2—Û¡ øD{Ì>:qâÆç•Ç	`Örp¦ÕÈ$àÒğ‹díÛ	ü¦³.ˆà—Uˆ¿ÔÓĞ½„gÉ¿/‘6¤Š_kkkp«.€Š_„¬ì2`*º™E]Ñí)ºÙaıv³§Lm«Ùïvùi95¿ç*š3t< ',ûşâ[~x·¨Â™(ş’.ï¶J/¾oŒ"ºğ½ñõ·P;‚Äyèè"¹Ë.™ÒÄ$ŸwİwL>²ë*	RTO!e6;N­úI3vÎ¥…îì¬u»Ø´=	€gŸÁ—˜+Ìu¸áŸ:şr2Œ‘íòñ2à°Ë*¦÷Ş¾×Ÿš1?ÛèåâwØùuŠjf4}55E	/©«ô‹CŠ+IÀucn2¡óÖ³ÍXºÆq¤E_#õC’ÚhOìJ	óOy7]J~%æšdV»eÌ‡/°Y±[T¦6u¡i‹ŠğpÒºKÍmŒĞælè&'ÏPíı|Gø6w›¢ğÁ‚{P|ƒ¶ü{Qû½•3ğIè×cVCò	ç;Ç,‚*íùÏ“R‡&©ªd·Ø>êc%é¥kÀ©)ÂP¦ÄµâÉ¼“qwèš7U*{b“¦pœOÊŞØÅ©%6ú­.ÉDi*,×bŒœcHbd†iå)ğrÉLÄYOM$µ“f5Õ%ù‚$aã;“szşf¶ğ–9ZÙZôoeİnuª±m·h…hMÔæÇ}Ì…c«Æàª³üœ“t#Q¬1rTU¶¹ú³h—É[ÂA£ß³˜´±€†å:ØÚÃtéØ* i]ğTiÑÒyN5˜&Zéüº[]ŒÈ€Ôæ ^¿™5XtuÂ¤J+iÒİóX¢¤èVaÎY
-ÆnV£óNêíôôZÄZO¯»³ÙËãß§å^6¾2V|¶˜;²åK£ß£Eßj£8C ±ÌËê”Ø,Ëª!eËx¡ÅÚ9h¾ö]°ø~¬cSN wÕŞ‹tyj…¸©Q5}ÊÚ¸ZÎP-¼Àh°.k²–Æ-VP
-lÍÀö†àÏ×<¿1Xi–eifaˆæa“xN±n0
-Y¡;¶±Æì…QÀ·˜üî…wŒ^Åöe{k¹»Ü[;Ñ^ì3üïæÆÆOÄÍ5ík’;Ä‹…ö3qƒx“Èîá²RağÂƒU±Ş€7Ú3-VÍÖ^h[§µ°÷ãb‹‹­q^VizZIŸ«…}Ó‰ùâ•M÷LŒURÔ~jŸ4–ÈGw+d÷’BŸ”kTœÛc’ùyóş3ÊoÉ±ü{\$"g…Ú|Ò]É›!ªæ³•^ôÅE V`¯ —Ù8oìùe°–hm!êğ4}¬W‘ú<!trzìMöo6ÕË‹bwº¿âL©ºp-¤{;	=_ÕÁ/¦‚sÄd$«ŠWLW”-R+çBjÂ=jç‹Yœ¸}âÆ£``²QÉ¡$È°¼:ú]ÀLæ9óÙ9×÷9I×¥Ùo4†Š€ÊytãW°„:Z9€ÿï­Ó_¬;t& Ëiòõ€­\xÆ6é‹Zj Æ“+Ï€ü[êQú¶•ú/zwöÊ¹6±·N!ñ“AÚCd~3*íŸƒè‘t¸\ƒqĞBJCóîÁ2ªüRáH(èlQ™^-§A	%ºøax™mô…‚€¼„ªöŠ„11ìÃ
-Ô–hK®héë·Ş5ÁL
-aRúqãíq½×jŸ¢Ãn³şë£ö÷§
-ƒğ×í¯!ÛËÙÍ=”•7÷XvS;«ÂšJo`Iíï‚‡ıĞ½B—Şœ»ÛÆ<·ÙwÙß¥›z“},´ìÚØt?Gkî<vÜOÏ‚«şvIV[52©-· T™	Èõ#· ½ærä¨§7ÇP
-ó0sû8×xhj^f;g4˜¨¶‘;ºnäf˜r\€ÕXŞÆüJjéÛõÜÃ-¤½+.Úé5¹÷”H"Ñ5{ÌÔz>êIbÒ2>+­ñ…U„ñ&}Ãö%ƒyNÔÚWq™§da&×@U1/_i@_¦E©Ó?¶9–f§… ¼Dïi°é·7iJ3kC×ù€mB%±€&^“"ùÑĞ?© eyô`Áö®,è šõ!¨YÕŞNm¦nÌ„®Ïâ si¯ê CØí²æË~/rÛÊ¹m³$®ÂF:¬~Nëc{§Õ•k)Ï*ÍßNŠÚLLo™Ôw¬YA\aM ëÖÕI ³?Ìñ·‹AùÏãxêÔŸËk,ï€ìj²$GTª+ÕuBÂıÑipµğáÈ¸ŠÎ¦ÆN‡Ë_(mRg¦W–7¯ré’B*Ú‘Jœû&qîss_U2%@Â–$ì²–Æ«2ê’)f!fµ ¯*CèÌ–8†Ÿ¬8±¦¶Ã“¡İ Ûk`{¾Qœ0f_t&Óÿ‡rPIX£çÖƒ|v&Üíì\¾€AèÊ·ê±kV'j:%ªÊ°¦sµşA“ÿ °ùÒî‡,2¸¸ÿŒş€ñÚÓ^hC1]Ÿš»ìC°@¡ìX ^g$5MlÈy~2ïÇz¢œö‚5´@2}…¯hŞòãIdQíêÀ‹ Šû7^DÓ]bÀÅ;¸£ÚÁ¡Ø‹$–$¢ÏïdZzÕªúü–œ–Ê³à;¼ø: [mø^cäö?4¼°ï»[ekÈ³¼ ğ§Q,P¯yJÉ+‹ŸC:’ø}Û"V ½ó¶ÛxS?k¢v÷¨Ù=Ë÷-b$-øy´-ÚşÚ¶h¡¶EÌ÷˜„²Ïåš)*`	M‹
-*`İSÏ"%–‹ëüùïÿI bf¿’cßQ»#Ô®]Ï#İœÅÖEiË£?@‡¶ØéÇ»ªÕvFÁÄMS®x±†GfòBÁ;yê:™à![g(6Ê²m†šo(³\Í½,æpÕ9êõğ¦öF—wÏ›°Ğì…Îû”EÃT®×n‡iíy¦ÿ²¾ÕÀ‰F‰9WÌÊ\^Mb71ŒÂÿ$Uoü‘20!_©5j…Ş«j§AP¾‚¹›ÔVÚÇ8x4N¦l(†–ôâ`Œ:“‘sé¢sR¸$tI¸=Tf1qtíÆºÚgšêêæ¤›ëÊ=¬i‰MbŒ`ß˜ªÁQo×€–4®ÚT'İı8yÉHÚnõaóz’­†æã·§îäÔ½bÏUÄ½Ñ>«­Ÿ£ÒËõÕÊ«3bÀ”3x$ì´fnª•öá²I¹ĞB:ş¬lÛªÒ¬A§ĞÑ­-Wv5ûˆôYÖFCÃ’w$*ÅñÀ§ßŒ¦ğŸè—˜±èZåH#[7Ñ—wPİMÎ–teì>¸¾Èßap›åÿru%§¬B¿Î×k®R"ñ¹¶²WcZğ#5®<šrÛ[6Ä\%—¾.Æ¿pé%1T¦fVU%…RUI•ùû•Ëü<¹Ì|ıõ|&«ó™eóˆ§Áÿùe,2BœØo¨,91Ø½˜¸"4ß´^Q0C<rÁ£‡’yKY¹,¡?©}Cˆ§+NÙÇÖà©IW0ßïºXÊŞ[Ge¦…Êi–Jù§¡µ©WrÄú•$[N¹à´Bù|C±ú_”_ÔÇ‹ÅgíFgÑ¢£Ôi¸¬yük¨÷3s/>™&¼Ç0DÕ®û#ÓŒ/O;MaeS8à†ªvª8-É4³#zaŠ
-·ÅyµÁbÅC¡ÖalÀlÍ+²¦%:AÀ›åÉ±‰#ŒNikG…?­.ğ2ÆSJ^ü‚ô|Éí0 ­ßReÑÜs&¸¬?áÄR\8y"ñU¥­«%¢ [KAÅøäñ\¸„"¸Pàh¹.0_áÂû@IcçıwŠ*²Âõ2ÓMY¾@[ŸÀfü]yr'Œ=Ró¾ü4ixH2IúñEnŠIÿ$»	®êı.ù±ÙƒD°Ğë&İ —Ä~¢sèeS³ôî!ÛÚÇ6GE\¼5^Ô	Îâ ÿJ;Ä˜ıÁ`¼¯B¥l‹Óµ-^W¹²$pq¯·ÕÍYd‹6mÔÉšÛÓ¯:9¢™61	0NøXè†âsÌÿT2”«±ÛÚEş/ú§Dôv9˜uhƒ6‚¼{àI¿Î` vÂè´×l^SpíÁû%İ4iïŒaó™ñÑEÙ&OYU,J‹?<œ–ªRŸ^ó¨îÙ+Uä›/æšüT_î-{k®§—³xCÒT¯W2ç¸FïÜ2-Ï`«äÎSdØõßÍœ	¾És£%bæ9}Ï×â]¹¾_–bD‚F°Š;Á(‹ŠŞÖÈT•$D¢àİÁr&†m kx-æ’>µ¥1C²c	©EÁ•+Y<jsw`§]ü¬<qİ°€ÔÛƒ%J2ª-TÚÃ¤ Å}“Àíêèäÿu8!Eåïö—.ÒV„RüŞûá0è»Q„^Á JªBuTÁRWu™Àép†.	ÄÔâ›^Z’àÙ>°)å_ "™Œwx†XsbºÓÙ×‰E»„ŸvÎ¡å"ËKÆ“?hĞ˜&0Û4
-”!kø–Ô¾÷ğR®ä}2Ei¿0Äwê?œ4O{èMë¬×îş€^A1¤ävÚ·_ŒIDë¨ö®Õü¾*ÆOƒ7^áu6ØXf,N-qCæcéã¿’)ÚVÔöÎ\Xe ¶Ìˆ¦ĞµjnidÌ•c
-—S²>L©ÅH«J—n'hŸÿÖ\î…Ÿü+²âl6^Ò€ÅÛC;e©’H¦hˆ(vğÎˆ,‰ê˜àGåú!E;¦¾ÊÖ)ÜÇ_)&×kÕ!@˜ğñî‰w ñ–Š8¸&‘»*Ï93ˆü&»qxœoÈŒª<ªæÂñ#7rå“
-«õããU9ø²\KÍ<ŒäÇ²o©)–Œ‡©Z*Ê«[^sEyY˜y›_Î„#·y¬Iº£·&lpBgTZ¨xÔ@¢¯“)”° €ìÙgŸb¯îÎ;\„uæk¼d‡ËÄ‘uMóëÒFå÷;©$N“Z;/g’-"N¢¦Øzñxqi÷–‚#7Ô5¤ä”JÊÙ‘’r’Œ‹ôœñuíy™Ì‹Üœ¥Fí³vŒæÏŞQEŸ?ºÂ7Il©.Ö…Ó‚|î.N›·ªjSdìI¸R¶?Ôºjn…Šaõ`ø¢À#À‹Çä½…b1´¶ŒüÜ#,_»8s5Éu?åüğØ8Ë„Ÿœ!ä÷TndI&MçQWîÒÄ½›õÃ |‹bßUèL	Î\kú˜ìTÅv)½õ”î˜Ğ\8ú
-Û¯âj³ËG‹ó—ŒÏÇ­ªğÔ.	múÔ&S&&‹G•ú¶Ò¼£q¥¥Ôl.Cs¯7u3.0 Á<§rêÌ¥„²­EÓÉÊØàÒì±eZ™ygK)&Æ6¢ı‰D‹(qE‡ø×ú³V¤M›¥Ÿ:ÄægŞ„;¢7ËĞ/&ßàW^é“—ò›Uùª,¬dG_.GêÒ„Ğ‰LBAóó„•j›ä)rÉ„bpt6ÏfWŠÍôÜ%¿¡¡\Ç‚Õÿsü[‡Ø¬<tÅÍ¡6Tîı`…ãšBÏIèO&4Û”£öxË<k‹C§"^"<Ë™B9X„XÿqkB»æ.üå*(¥•KùBÌïè´£ª¹,É8P>eh4So.—šTcMLì_Ì•?«ˆ>¼âlÜT(¨:i
-€İ´jCş|­léU®8PÌVİ/çÈpL u„xjƒ¾šPJ¸S ÖP¦›¬A"/&Ÿ+&F–Mˆ×{Ìú#7$ÅØßÑê-MUUo·¦\G)x6¬4œ¸Xúæ}P;Ô‚ı™›?±V%íëŸÒíÆ‰B®‘¹KZÊ©
-^•JC¦šb7¢]X(õ)Ú(òÒh|°¨½-[=ªMĞ •)Ë|!ÏKİVû‰VƒK³Â¨íÇ*2X¯P›A½Ç)Yşÿ   ÿÿÔ]ÛrÛ8}Ÿ¯Àz¶bgÆ–¯É8Î­ÛI¼eÇåd*;µµÃH´Å‰$ªHÉÖß°û°/ûuó%Û€$ 6@P’/ñCbK¼€@£Ù—Ó§ù¶1´öa|qaùê•¸ô>	œÚÆL'é*#å½çç)J‚¾Z ÔğßMË1Í*ù1s{¦äRæ (Å+æŞˆIa¯É™É
-ÙŞ8Ì8ç¯5*„¤R¾i!)M1†‚AñÏÿı‡½#ˆ‡ÆioÙ?ÿûo¦0ˆg4~‹Öò×šïÖ<©Ìv›§{-¶wĞ:9l~òx¹ºø4æLÕDd?ënùÑåıÁ¬·Š.íàYKÁ9|g8ªäûvakdÈÆ¾A£åc:X[Ÿ­v·êˆ¤IW‰®N*3j/¼8ğÂ3$•­ØX"-eØ¥0òX;H:µÕ•İ˜\³@ıË1øŒ|¥’¦\~ª’¾X×‘ŒÎOKûRLÁ©’Ãê¢bÉV¢+G+‚O)‰WªbôÎxü"ğ¬ÇâT4-¶§TØoQà¬Ï—[=n-±qŠŠmÓïÒÚDÆïöşeì× a ƒ!‹¢ú€›õ—°CjÜF˜aAóWúıÎJÉŞ»(»Öšcg¯}äáµã ¬Ş¸ğåGÅÄN=|öÏ¨“¹÷Öó©Ì£m“ÉX«£Ü2ù4¶”°»8ƒ$¥Ì_%FàÑ|I$!Ü¼X‡x<´Á%…»–W˜«¹ƒxMî‚ş³ç>]÷˜öÕ·^Õ»BŞÎ¯9&{¤²óû•«=JNG¬V—½¼4ÖÆq§<…Oí['-rŸJªè³ÒÎ£„<ÖnV?ßÛ¶
-UáÅ€ÍO+?ì¾İ?yJÜ\èøƒ’+£n¼'TµäÎºƒ‚òvĞM®¬“@1B/9 ÜƒŞ…‡éSA­.u8Ní*äŠùô[¿£¸‚!†ìƒóxfíC†+ë*™šåÎÓU#ûl<Üw'ja¾Ë°‘îiœBwêü ãA€çü²¾ÅóYÏv]TÃ±;lBèy¨R?¹SqtõdNµÑ|‹?ò¸$Å;Iø)Œgqà&}»O–ı,ğW’2|œ8iY~F›2å!n`KC{ñÚU{Q±“«ægóuãæô"Îù,¹@#ÌŒ‘şõµYzğ›Õ€jt$Ã$:”°Öa|á!y%Qş¥PvèIÔ3ü*†&óÜ¾vcP²CÑ	,Êº&¼†=¥°¸KT}2›^ğ3?©$~ÜÓ«âU²Å“SÄdPÃu…
-I—øeLV¾Ùïür*¦EŒÑG½U•¹»Ù¿´åi¿²?³Æà²RªˆYºId…»îÇ…Î¨xãUQµºñWtæ•HÜ<•|±e<J²„˜æÙè¢É]¡´]‘øùT'YúZØ+”ì»€ìˆà.\ÊaÚZ=šÚA–/=`­ı³³Ã}­–©uÖ|·×<<~·_î“‚¸H¤.ÉuKp o™}WmÖo¹-‚•·¡‚>°. z¶æ„wiÒZé5@¸
-ûRu¶ş˜`í¸?ì… qA»>iŠJ–Ó(*æl/¾À¨}¦~eô>½'ÍZôv_â¥MU=nJÌÖü;
- [ ÀœgqÜûL :İ•ËYè”"¤ÊŒ3 7k(‚öœrÚü¯gc—²€?	ê<g¿Ä9z˜tİpš³ÅFuçùdéÁM¡7eªHÜEÈ•?~ómùä)œ’|×8pa8óî•sÀqÎÇ3‘²U¶S“D°©cÊ_dğJP¦<œgx.ı™—ZYÉ%¦orXæ¥jAÛ½ı8z~Í»ÆT:¼ŒM­¤¿u: –tÎù—^ü+Û?ßœ6Ù@f:Û7öU&˜[I§Ô%Ñ`8¦U‰x¡wàÚt@W5-Ğ#Î®ZWÏägŞ¶’)r.C=¼½c#®äúG±c±æµ"ûƒÎTë!Ïû¦W£nUMÂóO×¼ÓµÕ'Kæî@®¯ò‰úÆUK÷-Ss-Éš;rqñáSB4Œ5KAŒù©ŞÉNÍÅ†°Ù}%‰Æjz5_§('ÒP§(”íáF[ø¨äPhQvÆİ=SbİÉ†õ‰<Ä2
-H&‹¿”¹0LZ
-êì
-§(Ë$/K‰<„¦ıH¢şÒC‚ıƒ¸1y0rT$âÓL”!H¦â^$çøV5w„#,ø%¸î@†’L‰Ğp‹Eçrz	†ÿòŒ™ßÕXŞL§åW{ah»ªk‘ôr&Ê=†ª™Ÿ®ÊùT,Æmj·2òã¨Í9ëÚë	&ìşzuA'i3KKÄk›Íü2UxXŸ¤0my1›	,½×ZÂš8WÓÇw~]‰Ô€Ÿ½	ƒ(‚P¢~(™;Fi‚9O‰Ë°÷íÖ"><.QÜ}Û2¦µmËœÀi¹‚=?\Yc€}àHi?s‘û1²?Ê÷Ó4UÉŞÏÓ6e)2®çlªÈ ³Ÿ˜åAf4c7ÇU$*bc•aÍHòeNı\¾¥v.e½çDÌ#q
->â^ôÊóÉöµ>kzŸUƒw½
-¬ô.–prS?+é_Ğ,4X;Şl´”ìCØÚÍ+MRş€’ZOÆô8sÚ%ÙÛWÿA ¡jB^ê&¤ò­‡EZ\,3Š/½Œâa¥íl
-ŠNÔ·4ÑºËéCAÛ3ã[\VšÙ©ŸØ–ï½ƒ½ìX³Ów<Å?Ø5R¶Ÿó¦pÎQ9º	«?EÇ#	ïlxäÑÎÂİ3Èˆ Mà`ƒ®{´²\»Î-›(ùÁ±ç?½•“zC!;MÊ’9Ó­<da.(Yk:‹Íæ5®P²òÁ¼ÉÕ§\ÈÂŠ(™İJN¾êµCç	èı/N@E8•ÀËK£V±Jñ/fØ2uzñKÜ&‰½‚3{{õe¨Âr®ÑC[ÁˆI>¦`¬…#Ó±Êç…†~ÓN7mĞ¡ó¤–·vq¨I"_×™ŸìM'ï³KÜv%ş8{X3©2û{Ì$oÇ;€ç7F?Hè÷I¨FÄfk~#üñïOÙ.–	µÚ‚ç{ÂÿÌÀªy®gØ òı©<–ß#J±±ÇsÌ|Ÿ¨‡Kf,™~tiµâ~İ·±œ:’4ì”Ü/¸ØxÈíh¶Â iwÏÂ¤/n ²<à¦‹ò®¼&ì®ñ(|ÃÙĞVóXšœ—|æ\3£T=7úñ¥Ùá¯ç“h o7”xŞÂS8ªÑ¨¿Ã‚Á•€¨s…¡wG4Äï85¿œ­üuÂ©’Ï{qœ,á{êGÁÒÜ‰Áïc?0ı‡×¿.×n]vÅÜvÎÖ„£õÏ¾Á<‘8QıD”<j'dôéâàœL“ÔÓ‡wD[^˜ÿÊ=7üCïäÂSj·á½ìäMøïìåKşWş‡vü‡A4GãobÜ`ƒı ¯UğK»¢¶P:û§'àÊI?h_1XfÌ®-”äKUÁäØŒ»ìÉ"Œ$ÄZv	òUöé›d ÚP‰ìòHh•ÉIy¯Pç—v?Ú8’ê¤$/àEùs"Ñ²{v€ş·rÜ8·qô!8¨ø£¼‹q–î£´9š×Ìæ“—,Û•`@Eà™ÂÎIü:Nò‹Õ ¥s8ù<é›}B€úœ°é4=£ÿŞ@úoƒî³§±˜G˜Õëğÿÿˆã>şß‹°²şˆãÙ	âÎÛ…´K£@Ğ $~Uúğqg ¼n¹1óü¯+Û`'oæIáÓêÖHeëÕœZ!{.:™IğA;è£Qòsü7…ŸGŞ©¾€jÆíhÜ°È"9G"£ĞB;ÔØÄ—Qoğ°z’GŞá<í=B­,Ä½‚¨‡@ú“½×¬% z˜€’1Í{§7´—•ì£À.mC`tî˜^¨”V;‰{=¨|…¹İ.·™$ÕÔ†5Ç/ù™äÄ5Iç|•^üÌJDkÛQ	opºMU÷kİ²£Q«ömTZ/ô-ëìg@Õ¿dºÔF5©ÃŒNÈW¶àµ¬}{+¥°YãË‚SÃÍÂyÖ‘h=üİxË E¨Ô­õç½¦ä Â§3¯¨AÓ¦²]æËìâò“ñ\z®=È†ı£+µf²h`j) Ìİ½—Y¶‡|;V©ØCd?ò:’dGÂJÕUÍ˜—“P)v€Èäd€$¶«çÄ/n¨“«Å­'çIÀïïùìÜu ¼”-^Óx}*¨:]váaÀSY¶¶¹¶¶¾±¹õèñO`_°ŸlPWî¯ò	Ï8"›/
-%¶ª;”fÁÏå}€İeTON<-0ŞNŞ½MıU†y[M>øÎr[mj$û`Ä)C–²
-×rDÃ%¦kŸ¿s%î¡ÀŞY\¢–[FîUeàaA˜öı»ïı¸ÏÛÈòz¥°-s[7…–„ß£Ü†<CAt•} A´¯ØÒñPÌV9Ä~ó›–b€ã y½€~œ`'ŒàW4FÃc‹eÂUª·‹óîl“%7¿cí"Ÿkÿ3Y@›QÆëÆ<KÈ|wJşLGašaöXÎªP’½ç‰Pi+Oçãâ0bŠù¯	ĞÊëÌ9®E8\Ï¼îßH½Ğ…Úšr.Ş"J_–aŠúbÉÚÜÈìpøİóº­(zd–ÄŒ©D˜9 xr!Bùaîy«qQ—h<Ù0>èìĞ¡Eî§,“g]*h«*ÏÂu	¶"Œ
-ú,>Oˆ²İö8;€>?ü}ÈOÊ”¼ëRûÄ±ôUG…eo»˜büÓ×ª8ë‚˜`ÚÕ@¨æf²ã1[•Ò·åšÄv;î àm~ù}ö _îÅòïúğ"?±c„Ø_6vóïD–ãÃ»¿5_±·ÇGûÇ'Í³·»l÷ğàü÷€¼m5w?-ºî’c÷èÉ¯ù½Ö×X«ô¢~°Ó8è,³7AÒğÃîx™İ8	7“blŞŠ|$Œ0¼ØØ+›ëëßZ{¼¶m¹$h!ò¬¿ºÚQ/ÈÂ^ä¾’û{ v`ĞgÍ^ÄšƒßÆıEâ‚×ÄÙ7(èi½æÉ?”³ï&è5ØQàÍ«-¼* 6Šè—ƒyN1&°MM¦½?Şm[lâƒŸ¥6N«ÓF(°YFä•ßèsê;]z%‘É¡>
-²q[™ÚŞ§¿ÚÜx·¶Ãí'q¶nÖ«±d*>0_4µGÉ¨ø.YuæÅÚ$Ri[zª›HÎF`©wÌrp[nR$OlöœEÖnZ°p6a(LKcÿnß¡ ¶çO4I‰Äòaj?-¼œæ»=–™)‹sˆß1ÏO9Š ÙU<fm°ÖƒvÆ«Q7”& §@Ú[ê~Ä–µ”Ï["a¹¶j‘4?¯Mfg¢¨´Ï>ıîú»ÿ  ÿÿ 26\K
+                              <td className="p-2 text-center text-[10px] text-slate-400 font-bold">{idx + 1}</td>
+                              <td className="p-2">
+                                <span className="font-bold text-slate-800 block text-xs">{item.ItemName}</span>
+                                <div className="flex items-center space-x-1 mt-0.5">
+                                  {item.isMatchedPo ? (
+                                    <span className="px-1 py-0.2 bg-emerald-100 text-emerald-800 rounded font-bold text-[9px]">
+                                      In PO ({item.OrderedQty} ordered)
+                                    </span>
+                                  ) : (
+                                    <span className="px-1 py-0.2 bg-amber-100 text-amber-800 rounded font-bold text-[9px]">
+                                      Extra Item
+                                    </span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="p-2 text-center">
+                                <input
+                                  type="text"
+                                  placeholder="Batch #"
+                                  value={item.BatchNo || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, BatchNo: val } : it));
+                                  }}
+                                  className="w-24 p-1 border border-slate-200 rounded text-[11px] font-mono font-bold bg-amber-50/50 text-amber-900 text-center"
+                                />
+                              </td>
+                              <td className="p-2 text-center">
+                                <input
+                                  type="date"
+                                  value={item.MfgDate || ''}
+                                  onChange={(e) => {
+                                    const val = e.target.value;
+                                    setBulkGrnParsedItexœì}ërÛH–æÿ}Š,u­EV›ºÙrÙjIŠ¢mNK"›¤]Sã©C$D¢l ”¬V+b~ìşÚİ˜é™Øˆ‰‰éİ}…ØçéØ~„Í“ ‘ÈL$HJrUUI ‘—“ç–ç|gUf¡{‰ü»1qf•Š?F^¾óĞÁÁò†ŸĞKtƒ666à§Ó‹Ñ±»{èÒñÑ-ÚC^\­şêß¡ÂëöÖâ¦ïDÑ™3qÖ®j;OÑ¬¶Îƒpè†ìŸZäã·×v¶¶PÌ§Cwˆb÷S\{¿½=ûôº¦qmLt>ª]½Ø]+|ëæaÁ-û›ñ°ğx(v~VÛ¡ı¸ÓØ×ŠÇxÓÙ<¶˜¢øz†_0tl††`•æîÁˆÉFóÓÌ¯aõĞş€Ö×m$˜6ÆÎt„›¨¸„(n,ÂëL£˜Èr7b'¹ñé‹© ¹ñÑÜÿø:œvœ0r‡-Üÿˆ5ñz•îÑĞkèÆñêÉu:Ÿœãm`qÿÄ›¬mÙÜÅîì`Í™^—İo§^Ü	½{OàŒ¾’İV4¸²ù>öÁö3û}@èşù)¢Ûá<ğ‡ŸËv¸+ö}ûA$ñ®;p½Kwø›øúçCäÂ ï…ÌUìŞ¸¡ãkOdB§”¤¦tşĞîÖæ³-zÿêÅ®ÅÚßÑ°!ûÈõİİ‹ÔÙÀ¬`„× †LÜ¡7ğ¦.ûÎs£÷[?ıäè‡Á,úè)|Bîƒl/æ¾¯ \o:ôFYQ!ôJ¾ew¿ÀwcúeŸ0ùîn¡Á<Œ‚°6<Â:»WLdİä©„ÎëÀÁ³‡ÿ×~"³[±Zµı`{Á}t¯nèÓ·œ@ñÇÛCòÿıMz›M«U›u¨ÿÑ#ô•b`ŞtàÏ‡nTÉÜ]…ÛËOµåğØ²ŸK²xû›”#Ü¹J)”,©’T™á³ `[0³n´n*&Éd9Z¦´UEß Ì‰fÅ~¯nÄÁI0p|·‡ŞtT)œ´ûÑOÎçqL­z»Ú9¯ï>bÆKv G¼ğ|ÜéJåïRøå‰vÛH˜aÕŸâU—n¸G‰$ˆÜÚ3ü]Ê¹fµ­İ„»•åSxf¼ØÇïìºü[wûó¿ş³Å¾¢+²ü¾Âw„¦;Lk€Ÿ=†×ºÇñÏÎ¹ïªV6»¿9ô.ó÷³¯sßßl~ƒNƒ!–‘õ0­}³™ov?,É…ï~B°Y#®…ıvÅŞÅuÍQ4sníŞQ³ÿ‰Ã8g·(7™i[o¤üÖéƒ«·3?p†l‘ÑV.?r5ë"²…O5¬“^ãQ0"¯}òA>§¶İ ÉWO8§¤¿ÍlÎB1‡F‘(Å{F½ög:p}åúëÉz¹¹zĞâğàæ<Ç6|w:ŠÇDÛRÏj²4X«ún}6ó¯Ù’ôƒWA8±YŒ]ÕbpÍş™¸üKXŞó½ S¦_c½*ı­À4ˆkïW\M#Æ²R&âŒÆÎ0¸ªM†âZæwß	Û˜K.ºÒû±;øØğÂïîdÏ§h\{º¦3VöñÛ§‡dQ ×İ3TÑ/İ-a¿Q«ğX)ÊRòÅ—¹¯¤/2ñædê´;o;è´}\?ÙCoÏNëıÆ›æ1jÔûÍ×ín«ÙCöÙ«VÿĞjŸ¡Gè´Şé´Î^ììf>8ñ`ì¹ªvì9~0z¹áEí™;Íªƒ9–ç}Â”áM1K©m¥, kF›ßâÏÎàã›Vµs-IË!ÙÇ^½ß×Ş¿À¦™3õ&Ğ–‡IÈ’‡óĞšªmïfÙ¤Ü-îÕI¶ÄŞçSíŠü•'Ï8ÉÂ·Y;ÅÕ‹0.J®×¸gĞÂzw9şşW¾Ä´amŞ¸4'ƒĞˆ°]'3rîÆW.ÖŸó¬ ØÆ›×ä¤E±PâÛ/ÿlşé+ü"¼¶·$æBg:¡›µÂ¥&LƒŞŸÊSc'>^¬Ø~¬©%âŸÿåü¿ÿûv›K¹{ÇO2“U¬ëŸ;‘kài:ge;où^C©†İ2îPÏcØã×ß®/hš”¨³2Ÿ™õ¦ı…~ù´š¾]l$ßŸxQœpÏt˜êaØêø‰òûYN-Õ!]¨]<¨Ió¢Còd¶šÀ¦çëpå†ğKÌĞĞu0QóV'6;N„YÉĞ‰„y=‹Eä~Â…;cÜ`t‘†ã Û Xœá~™ 'BS÷J|QbN2£¿â;ICÙ¾l(gd¶¸ŒÑk9f'¯9¾U¯eŠ‰O¡9ZÙP©VÈ·~ªú˜âÉÁšÈÔ%î$Níş¨@yÈÏVŞ RKo•Y ,ı7s<Ô3ÔF#ßÕšö¦AÂæG	ãaîÛ:'šR5›Ñ^ÈìBÒ¶“	_;¤cbãØSoH{™¢bzıºH»–¨Oíj5Ğ$÷è|´Şª|7UQèÆópŠ€ŠuîPv‹Şá»±±=ÖŞá‘{ÔI‘å›àl„‰%>Fæ¶u'‘CÖg­cV²n«UÍ;nÕ¿Uúx•>]IÆlÛb[4(¶UEBü‹ç9á"Y¤ô(lgÑ\ÂTjÿöÏ¨çÆ¨îû{¨Y1æÂg˜sQ0R­ÿ…|ÙµòÅ7<ù²Ãƒõ
+‡âqCvÙ÷AºùÓ?ıÇ”vOAQ°"BukºÕÛ™9©Ö„X³ù ÒéJ‹jK‘ŒƒI½Àj6•œ9î3³–>k‰QO0ÙÔ¶sRÂR­dg\@Rö$†ô‹¹xpŞ’qg?±“«‚0;Vòfí¦6!XºŞj×]YU@gA,%„Yj½@°º"$nÂ#ÏÏæs[;Âê\da*ySÇOŒt^o“¡¤£áx11½«ĞŞğTÄ·tÂ÷Ø	[äLf¾KıEfõneë1Ú©nüï÷Êúc´^½F‡h½Dë˜+®£=ˆ‹Ó±A£%¨6põ¾ì<åŒBoˆàà¹ˆğ2G“½ôã93ê¥ÎïSz×hÓ³¿íD¼‚‘£ò’“`öâúBn>äü‚\ğeåQÒÊòR‘Ë~M'™
+âl¥jëLĞƒ¬ˆ<•u–»{'k”8’Ôª7ıølkkıöÃ­– Í!;T‹±•èy¦tÒ07®ÑaÖ¾&Üíƒşe RğK+'GÿœáPà°„òB¯r*‰¥˜âù™€Ğ{¦¹d…ÅæVøóïñ4ş€!ÚJæËœÖmnëW‰%ëKI©uö›aµÓíM½¸ó 2Ç vG‘Ú(™è¬OıÉæZ;T(åZÖfxıûí-¢s©@ĞÅ_a™æ†gŠ§ƒë3×à¸¡Nã[?îo¦¦ä¸¹“hq‰§§,ŸänæDïØ^“$Ê8e’Id¤ğ>•4ã;â+Pm,B#­8íB¼ÖÄma–MO–á·+à¸‹ñÜUqİ’|—š‹EM®ˆóšyoAœ@½Œñ²cÏwñ•j­Vğ\;”lÅ5ÙÄö4¼ÂV¢)Æ‰áöfî°Xî›XËEc,[ŠÏ7‹üü‘m)v`‹Åú69àÄ¯uÒğà«D:ÉÑ¤é¶1 sàQús7¢8˜uÂ`æŒÈA´)èÎû¤3}Œv1¦ÙØÒLd)Ä•ZÅ[šC°Ì–šG­Hõ“)ËÜ3ïêU€zà,}“‹Ğz¢‰ĞÚV8şlí#²ò«ªŒÄÒ:+—›?:Õu£À¿tå9Ä[«hæŸz€p(ÅæY$Jâ¡‡7»¥9	4—j¿0D0±Ø¥F·Yï7Ñ&êtÛf¯‡^·ÛÇ=Ôm6š­wÍctÖÆ¿Vp·ªbèR4®xìâÂqJ»‹Ç)áGï(Jé™e”RÄ-Ãİ$Jiüî’S^b]S—FR "êFpƒÛ²ö aWìâ]±›õúá®‰¤…Åæ£×A0„]‚7NÙ$t°ƒ¨5½rÂ¡6JPÌbÊ²vØ$ãğ‰8Fy8CR›ĞA¥Óf)qUĞı/\ÌûèT=FxéñÒa]æ ßÍ¼¿c¼×±‰…å„¨D¤ÿøIoz‰§–xarq&ê€’Ï<(€EÑöÈ´¹ÃNĞVFábj7:íÖ±F1MŸì:W}¼•õõÂ[Å„÷?ŞşÊóİf¡±mMŒvjò-ÎCŸcélY§ÓŸRrĞDÌY˜Ã,‚FaÁ X$ş6Ù˜³8²;Wİ‡YïacÆFc×³|Çğ#+`â=Ğï÷;&`ôa¹_"KNcÉ J
+ä¶…_C™¡HBYò{ÿïi<A½ùùÄ‹…Pz`Óx†2gÀI4oşšT£^ó¤Ùè·»-İì×ëı:^ëÖ±Âi[x°6
+kOÈÁÚ)ÒËîDZª«¤TÙ‡œwÉšÿ¹B`r~½"1c²ğ. fœŠX›Á¼>.:]LÚ«dDà•³¿s$UŠçİˆSKáSÀdüßnÉnò²qóh/˜Ç>¶ëkco8t•YsšÉ¥\[;¬Õx0©´µšÙ´¿™±ûÉíÌ¯03Ld{FN°%›ÑÅÒ;ø¨‚ÿz‡-é „i¿­¢üÖ‹xQ7"Ïs$çş×?¢Wx]®QúõÊ>€%kŒàÌ=ğè¿üO¤úi?; g,døZÏ»yÕ½KDwö~G{„İ¦Í¨?¡²^ ö~ŒlOı|”\ÒFÆ}ÑíämÀTŞdÔvˆ^U¼VeïŞïêpjD€´Ìé±—B÷ws/t‡6Ä»½±â¸XµxMŸ¥!|¬¡÷‚âey0º]6²<üÚöæ³™ïáo"Êè~¦— Yœ¬gˆ[>¸ĞîÔìIúñùçº#]Ómx%*–Îw³p3k—cÜ7ÄBÜfùX—Î4'a¶{3iæç¾1[ÓËÀ¸ŸÓó¾±®-»Ô¹æ>³%W~©²µêßŸ6Ïú¨ßìö°µÕmÖOjıÖi›`ışI“üØm¿íCÂj¿ıúõIÓÂ[ÄºÊær‚ÕFşƒ+øÛè%&E"e¹4ÌÜó7”™˜…~jiïP[&õÒğKôuj˜9×üì©ƒ!ÕÁN4–£)!¢‡…ÿ¤ú›æ÷7îZpÉàwí7°ÆãÅ'jn*ü gDwi­ÈË”¼İx[»á ½8Ä?CÒÛ•7Ô•Äd³Ø®&WK×›ª”Ñ‰
+}‰t.íMiÚÈ©êÆ\ ‰Œ¶·ìs1L1ev4·ş—?ıãÿAğ	õfAœLp…|uQ{ÃJ•ôßş¿¥ÃÔ.¯0…?L²(êï]5ŸÄw+xÊIÖ‡gÌµ˜í”£ı?Ñùbó²‡^»S¼˜fI¾çSø.˜Æà:jtŞU#LmóAŒ·7ÜsÔğ½©7@éL?BG'!ãóøK:«çgÉhêÆè÷n 
+à'mU7ôİ$õÇÿÌêÄsÎ=ß´¾Ná>Ì§3Çãg9»#¶Œlù¢d=+õN÷j8"5ÄC¹pCÜ4ˆèØwÉh¯<<‡L†I³y£ñ††”¹¼EKÈpù'®,Ñ¯k‰É™cGO,JËCò‰døôWYÃ•!“U‚“2„ŒWŸ.<É4+Ò„_Ì‹ğ”.‰aëâ!
+Nõ¿ÖÅ©7âWV1#y•âİ¸A$–‘;x‘Á¬Yİ¤:4VÃÄtR¼è†ŸÁ°M]a»Ó
+šås#O"}~œÄi'%¤CÅuæuPkÂAVaj„§0–3¡’ø˜Óæq«Ñ:köP¿~„í¤ïZı7ØÀêö[õtÜ<Á7u¿GöÉÛÓ³…•ä7Úš6i†Â$5ğß…Æ“&‚ci¼¤?á¹Q×j§ÍÎdÈÉ?è/ôHAó—‚.PIT®,¸Ô‰7uÂ”FOĞz0D5®İ:6Åfa2Ú!1J,Ëu°wİ‰ƒU¹éˆ@°nbKMZ¬R*ÂÖ$›=IBÕ%ªJÁxºÄT»<™•¦J‘~¢Xğ™”ÌÄ¶±“)J-Xâ‘E TÆc/’út¯0d	—BP†û’ğ–´¼Œ4C—< Òí¢¤zddÆU°€›Š9£†ÆßGI€:@ÒÙéÖ°*3(JwH?‹ "ŞöŒ®x' K~ ¾ì%¹1û…E²´¦A%½¥Š%á{mô?}xñ$»ø@zc2ºÇ!e!}ø©TÕøÀ2LAê6X°ö(°ùp_¢t‘şšÑ\MìF8Ò”ìt8b›±!…[E8.Ñá_/Ä‚L“dŠõÇËÑb,êƒ+{0òò4‹…ÄFsèBH`G/«Ü¤¤TS’Ò-rÙ#½(yW!­vßé(¡0-ç¶ªKæ0
+ÈGÒ:À}%™¼Ú1¦‚…‹ka¢_DXu	BÌ4öÒ•!Ô„ïöÍYd½b¥ä$ğ sĞS4š‡^y]ÊIQP­<IÌò'êf`g˜¬jÑ|2qÂëÚ ›jÅ‘ +N:h,±{‘™xÓÚÄI“b±uÒ†N¯ŒÇ®£…>ŞCåa„tR*Š2¦ÚD¤P7¦+(´vÛµ÷7ãqÉçÙŒlïÂŒ¬²$%tìFƒĞ#ñ2´*–¥ =¤ê19¡[²µígk‡DV|â
+Úê@öèe—«in»•LÚ6¨‹bÑ)¤=nğ9!øùÔ‹k3@•_;€yDæ—nü)ÛMç1–8>ÎÒ¿–Ÿ‡çé‘“'}•q=Óôxäğ”vOï$r±c˜¡a«°vØú¼0~)­?Š
+Õ@CJ­A€õ~3êƒ›í-	êèY¾LúKC­ğşO
+@ıÏ&I<âW
+ÁÙñgDtlHFèK´^Ç¼–>@ğ4¹Ô§.bäY4EÁéø.<,»Á‘£ÉcØ’»t¿*¨Ïbm'Ó'I¦IlWŠæî+”Öpé¥Ë&ÜÄ cCPµK€¥Wñœ DzÆ°äXb‡LMt01`}ƒĞCñÄZ—0Â„Àe,ï`.]`*[ ™ª²›\UfÊ"gö"?Iøà™·ºÑ`×B…R Ä”V1>y;LÁó/_¢S'ã>~Ä*ò3“¢ğs-Óc7}ã 6áyöB±ÇÄk¼Wşd‰mm<hİ ¸{Y'5‹²7Xw0©¡Â»(|‘í`ö‡|÷²¿ç:—ü\Üµé|ó–V6ËNfÕr±q3|dÙv¤º1Å-q±’¾}“4ÿ+5Ú½,\TCV‚óå@ö
+yq¾XVÒ b	H Ê °O[Ç·‹•ÅáoR¤-Ší“8ø…ßP²ôN¹Ò€ú·ìeï–½D˜¢écb:°î½VW“ïì^Ì_=ŸA¬öP„ğ R ºƒ_¬‚‡øİcÄfÒ¿ƒ_y0ä=¶lÉã‘ÜU¾”í¢D\êâWœxŠJ­&a€>¿›Ã¨´ÍĞÉ^wTôP²m”ÌäYÊLRñ¼v¢©³÷,_gw@ÔîäíiaõØ»©Öò™òĞ»(¯Š•²>ltH,Dşé´ƒ5Œø²ÙhÆ]¦²kV¹c®:Wrm‘ë“V¨
+Çô0¦áì‹Ã>°`ÍHzœ(ä*€‹ŠËÇPNY?˜«‘ëDÈ™^Û7 Gã}ĞC÷’:ˆ¸™´8"&Ëæ~:ò‚ÚI4ŸòÔà©¥ÌTä¶f1pAPBUÉÚø!=Î…)TçxpQ*ÔëŒÜ‰§J‘Åa!)p²Ô¶ò`IrÒ‰Pk‡İh£øø,ißV˜•gef­±;;XÃÛßîö¬àÚPg•å¯¬ôJ8¥Í[P‚-/ÃV.Å–’c+“dÉÄPwJ’å*ŞÚ·½°4[B!”Ôbò,#ÑÈ¼|£lÖÍYK´ÕÉ4[©f)×”–`N²¥hu:¹&p}…XKÃEuB-1v“ip±ˆ¯&Ä%“c´F ¡9AÈ€¡A‰²i«PBZ¹¿W(HU°\ÙÃ=RÍšÌ¥^‰½h8ùûÎkÄˆHZµ™ÛTÀõo³8Ñ‘!J4áè,9xC•+Ï÷m¢;ª6#ÑWÍI|)R ¦})A}Ø:!­4Ê›’mW"“ìsúë4¸
+YJ#6šü²Ò¥şšÂÉiBÃÅ¹xF’gXfŒÍæÁUÉ!¶‚w¥º%	t"K‹«­ì­­ê]"(^ƒ7X.ü™”[şpô¼uD›è7s’ÉHdlø1ÒÆhkÕo³ÿ½ĞßÃ÷ İPM·=°iÂ2|uYä¹½¡ÏtxÕn÷›€ÉUïtºíwMtô¶ßoŸY¤2èÓŠ»M@ÀzT®¼I§²0ÙÒ‰Ñ	ûgÅ;X =S˜²q/$ ‹Á‹_kº1Ÿ=â!×Ñ­T¢9rÓD¨ùıU¸bëåÕüª ÷z²?«Z}™9%BÉ-tØ{Ë&Kj2RV“/ÆÓ&ÜKÏ½jPS•mJ5ÃLëËëƒˆljÄSxèôc(¿J<DëÔö2xÇª’ôêùLr,È<"’ª@s¯Ÿ’]rŒ5yHZ+ÀÖ¼–„;P–cÌ)`4e‚õj‘ü¯Õç%Z¢D–@/&5šxq»zj•PâËOcDĞ"ÕÓh³é€a}Ug¨‚/ÀªØeAY£ÉRØãúõYƒœ<ÈqÈ8åGè-ñI ŠE#¦¦óªS)³_|¨ø]iôò“ökÔïÖÏzõF¿•QJDyÿÓCB”/
+A>*ÈS¼ j)lïs'r×O‚zåMñ6‡¬†‘ÇÌÖÀ¼‡x~•¯j8r`ë6#uE¨Uä@¿ÙÏr ªñ'Êu %[,©ş'Aóg<FĞBNí§®Í(R¬.Ë¢PRîEDm~š¹S ö‡ÀSz¸5ü,ı·Ô£„åÀƒ-È¡^à³©¥B´ĞÜ×+¤±(ˆ$í¯†Ú28 Ë‘ˆğc ?Èî_#9ş¥ÈçÈ™~„„—éGÔ‘|œ­ÄóX¶şn)—ş»BzÓ˜Ú"k¡gQ™ ©¦ƒx’	èù– ²é±gÄúÂZT€%³ıweôšmîÍbÏ˜o.x&mYó€õ	$;1D!‰¥)óºë$\L …E”ğ²õî<qÇ‚Â^6Ü•vBŞâÅOµ÷ĞåËşš«O û”<tÄ£ğ3|úé¯ÄÇ`pej“Juk¶¨+LA!{ÏÕö‰6ÇI"£íB qÌ8‘d†Ëbq¤G¿·€ÉÙœ½UÚó8ŠrÀ±G½P—|…ó"ıjÑXu`<¦:hæ’ÛwÂ©4½g«›€Ÿÿ^ì#8%:4ŞÀÕ¾1CÒ™¸ )È¤8ÒÜˆdã¢]@^s§ zj)7)"Z5íMBì¹š@›Óv^¢\[sF¼]ZÍ_|}“}æ–œñ}­.dVèÇõÛh/a€BtLN{Pi•°+”‚¸s ò™¢*”[{ÂÏ3İÔ•p¶‚!Õæğ[^‡S øá°<ö±^ÁÓZš¨dWæ,ÒO ·å[ÀKnÛ !¡ÉDÈß¦=Ã3‡ˆÏ8Æ¤¨Ú_,T:=S‡Ó°•"›JÌõ¹s¥WıÒñ|âc~İ=‹6ÙæŒRğ:Ÿ{¦#_h¯Èñ6¸'¶Y·§Åİäë&³bD¤£QË";.JîŞôò„0Lêy`k`?£Òœ~$",ÎåìŞe8QY`:,#Ş%G»Şœ^vtzeÄ_»G¹f<Ú §ˆ©*¬PíZÌˆ3éÅû‹µ¹¯oAÜV?X¼K/”ÄK³ç9äÊv*lVÅ¢”X¶¥Ró—M€È/Ä9$Jp%·œªƒÓâ€BÛ(’‚Ğ?óBÄ¬Ö¼X‡×SªÊğí]Å€§ˆ–ğEğÀªcDZ³¤1ónØ…‡¨½u¼ËøBuqŞÂÁ#«[Q¶Ó`ûé‹ ,¨>ÂŞ~IÓ¯¶l—•ËŒ!ùˆ~f‹›8Zíf•–OxÓ2«g2),K—ÓtõÕØï²„,‹’àÇ´vµ4‹c$Š"ìêej¢/1ª{°q|Á¡??îµàİœà×Qó´sÒş¾Ù”ï›“Ù—ã{Ãñ}}	ÎÅÂ3å×®‹:apáùn‰3|şh‰ƒüÕ0~(@ù@:š;™‰ ]ĞåÅA“>EÅkâ1âmü$dÁƒ„et©jz/·´Üğ"ÛãsõbCÖE¿,¼·«Ylûš`«]¸SüËØ¿F=Çw°½eÖÏ-Ò”kSx“¯3ëáœÂv½iK%5õÏrå?ãıßÓûa äMËQiâHœ-g­Æ½,¼h¹•ƒ~Ì÷c±æ¸ÖşÅš»'k®ç\º‰ğÀæ\§Ûn4{=(1ÚmŸœÈ]Ç¹ßÿbÕ¬:lÂÜ(B‰vE,<¦Ó°	´µïX[ì©{7ñXt§M½¡§è+¶åftlDHğ©SB¬âüèa+€+ÂšSÅù¥¯²óÃ´ÜI{«=¯´ˆô6İÁ`ÚÛh˜#'ò\£Åc{)(Êêà<u`2(o©Ø`&²R­ĞGÛ%sİMº¶ä<,
+²ÓØágEÊ;$_$®T!Ÿ‰íYE5HßĞÉWá6è»­Š•ÓÅÉ}Æ?amh}ï:¦HßBíqí,n/Š¬ƒt	úc«dfv²¼gQÒÜ%ÂLv á-LHİ•@±jK[ÍºexdI«!hDƒÿ	÷uß®@÷îÖ?¤ ôÕ«¡´½{!ÏgsÓÒÊX3º÷5L_½š5LÛûì×ğÇbï‹6İ›_?:MYŞEÇL/<lñ=BÇ^t>±êËâ= ä@÷¯;Í³^ş<—&şŒ¬kS~“·ÅËûºî ÷
+µg˜Ü€Óá¹N2we¯äÍ¼@â*K–{…5gÜAeS²»ëÃ!yk 1?qæ^ñ»az*ëëŠ;Öjñn[®Ğ”+yıL‚R³8Uğ—¿ÎJÀ0S·VïX•@ĞëÓy_0=¿têRDMZ)§‡|+Dvz K¾eöç^µ‘UBºèÜ5:Òı*R|«æ…c‹!¦ªé(CÒÉazÆjÀ¥É¤Ô×”J9Ë•
+ò[Ÿ›‡d¸¡…j»â½gQÑµDyÇŸËçYlÊp˜æ.’ûdh‹ 1"¼ªÉ+P#t) ! î“®2©é*±Éû—‚~fŠO¼£ñ…™”š„K gêM`›^8C·¥ŞğÚ-/æ	©Iî…¾D<Í"Òæßd&Ş©î˜1ÍréjØF«.›²@Ì6šf÷»>ô?5Œ*.×Öef!Y>úÆ,+I³ÄŒ£ÄÙ«¢()ÁCÊM$eWLí^WÓdjL‰Cpçn|tY%µ&¬øº©<7\.{ÆÔqì^8s?®äpP©çxÂ™Ò/–6g^ˆZ”Ùe—Ï%!íI£Ñ÷7k:=¡¦SöŒT–ß˜PVêš€T›Ç³ÕSŸJãÕÍoA¦ÏŠçß¬®ÀU^Û´V9à2 ’+¡wPÚNB»{bƒv·ˆªÎ/C¦”¤º' Ä aóºks¯4?äs¦2:Á@OdAWpójfiU!A–Éi
+ù¼½…•X¤¥Ò*Gš¸˜Æ²±—ON*Á®ªÖâÖœ«lÔUîˆ•˜l«ımcaÏ@×ÿ¬÷åç¦ñ$â^`âr
+aSÑ‚½VXFİS¦ó–Òö,‰Ÿ²ÓïBú^v@åU¾Æ_Jÿ>
+˜ú ¢?q‚¡à	Ş1•Ü/<&{éÇ'ñ3SŠyñtKÆ¼àEcÒ²ÁJ$ê¬Ë@ÉoßgîÊt4,gàÄ†MË€1"fFÊ&¹´L6ÙÌ¸%"J Ì›–H,nÚÈveQšv1©Uj¥ªnİêà±È$Ëyóa„gyF8pŞ_–sí™‘ç)"Hÿ6¢G„£¯Œ5Y##k|‰ÖµÁ±Y¿Á·[b¥‘uc«{¤Õ\i"ô-gpä|²ŠUßg[ú×Ş~Ğ-šA“É¡è„óé 0™©tÅê"PWõíX+)à\Mê¥è;†w¨°Ç4¦‚ğ~=*µTµ….I‡ÁG·ö›?TmQñAáÅ 5öĞ4éÆ-Öàr7¢8˜uÂ`æŒˆ¿¶HH4¬ne41Âõ
+@?Ìà,¤ÿæ1E¾&d£%Hz‰œd&zİ\Â¸ãá²ÜõpáŸl1B›;âî;S°ÈwæM×Ğ¨._iŒ`ÖbnÚ<—&úÅ4J–¤Ä™{,Q'~Jôêö€Æ1T>cRÁÜ`À…ö¥Ûµ—ªE8\t/ÑFJl$“bM~µÛh¬ó?º­Fp(w	îïJwiwÛ¸Ù8æîµ~èDcY•Úmú;¸I†ÕñôÊ n»b:³XŸgáù’ÏØwõN/v(¢»‹óé(÷âTo·—BKÅ†<ª¶‹–ÁQW¾Nù€"—PĞÖi>aúEi€&M!ğ€L	NEá>€±Å¹˜A¡è’za-L2­½$¦I ;LÊã¿õ;ÊdE™„ÕÒJ@Ù(Gpı—A2o€ŸÒjVø¡AÊÄE.Tf^åŸ`Ùç7­ˆŒü7}?¹Òtæ­xwÒõ^¯Ù—Ã¤ë¦ŸQôbÀW¯ÈèÉ\!ò\ôŠ<vïéĞ´³yåÀ»©p€¿ìQ¯êüA*’v£¤¡­äğì¸4tû&]Û²Ö~qµ–ÍgY#ª‰ÉFë„%–«SÖGoœpxå„P¬,ıPª‘WópêÅsh"ù³dÉ³±7ğ](vFş(õp;cİñüóù–G›‡ƒ1¸ AùàˆaéÎá#ı²G3—¨ÀoA­ÙÔ¯ß•b/÷ y¼Qi)cV–Ş¨+§¤ñe~:B‹ªğ©¦öE¿O^ĞıJ‰ït[gıúÑI½k·»¨×¯÷›§Í³>ş©ù®Õüêù¢rO‹z‘RÕ„hÚØ?bnTV¿aQ¥ÿÛE”~Pø‰æŸï€nî9çQàÏñrÑü½ôSbĞ³ä‡IòWÒê¥yç¾[Ş¶Ğ•$§ÿÜüxŠÿbÜ)-Ş‚u94®½±s9şui,>JèÜ‚¡¤/åƒa¯îæ%_c[‰áGlº&üwëÈ	Qå- „¥8!‹j.t'‚û”ÏÅy~RŠ7ØĞ×ŠÁ;|(1™RmX€ÆRV J4,a>êÂ\±ûÜX(’úœƒÌ¾)#£„
+òIL™æĞ‡mºú`@|f½÷ƒTU©?E'nŒ›»Î—–W°u´îşLwö’=qÁ
+ÛÅ…Gê/ûîpvrÒ(pt“eb…¾ıÍ™“[6jU/$™ÈÇğrĞN&S©®’İø¶¡J!£Ğ;Ó£TÅp™k"*Ì
+(Kq“ªšÒÈsUêOóUb‘ÑyåäBÒØ©(v¡Ú™ÙWÅXØ'^(§Ø2Oº¤´Ï+•D’Ã,‘òbxÇƒ9YœŞØuó	ynüœEgåä'w(=ËIGY&Ê®ÄFŞğ`*µïe-‚å6*Œ¤ıêU«ÑÂ:GçíÙ_ÕĞ›öi³İ©÷ß´¨qÒ:Ãÿ SköûÍî›fıÁÿš]E¸¨¾5l$kä O…7õ=Ì&1;^n4Ègò#ØPú~<B7õîi½ñızŞXaïè;#í+N‚QĞÇÓF^ƒ‡[}Îêı·İúÉÉ÷èÏÿ¿P·Ùë·»ğıQı¤~Öhêß„W]ñ&üm,w4>Ş›Ÿk[èy£©¾€¤Ãú¦êÃa¨4üÈĞÄö&QÇÇGˆº3|Œ^;áØƒ/ÇóÇèÄ¡«1V¼ˆ|œ{>ô/_ìÔlo/Øz¶õ\ßàwîyü9ß$ÿšÇñ,ÚÛÜœÍ§¿uÎÇÁÄfN<ö³Ú¶}¼Ö½PµB)-´&Îˆ¾bs:ü<²]Ö1¿†xßœBÊ­ÄÎvéì¼öª>E&°U«vÑµ²›<½ÈVçJs ûVwáª¶ıóÔíg‰¢Wh)D÷½ÉEáàà†-Õ-rüøàf@ÅR’Dİ¦WNşÎaÄxµcÇ›wteù¼4h×BZ·¸Ä”&ÌFÎnõ#oçµ]BèÉŸ AšoïôbWb{£qLŸˆÜĞ»Àª 3L~0‡æÌyàû›ãmÃ8´Zª*7á9ï©wh:$ÍRĞcÌØMÎiµ6ı•T6—ôŞ¢WùÓÿ+î°Ø[ôhzÍ~õúüôoø'
+Ÿûí¿ü7üãq¡K¼i•Íÿ@8İË½¿İüÛÍÍÇ˜ã¢ø#.&ø.!T©<r°Q–ìCÒçcÛ6Aá9‹Ï#i¨5ZÕ•gõl§Y=Õƒ»$‡WštIï"M*YÆHOuVyça=_k{r5v24RGïm§sÒj
+^ÃjšKÍÚ†B±Km_Ò½dùñŠœS]ÕûµC@” OUÒ"–ğ‘ÁÑ®»ÓÚë£õjAVê*¶mfÌÆáv0àŠ=—-83/ÆJÓï!÷–*Ö0VÚÍùs|BdëX.õ=¬úUH¢b›W×Ñ’Ÿ»‡©yj=5 Évİ‹=L¨§ıšÚyĞ:¦ÅÊÏ×okÙõoõÚ‡x#Â6¥[Ùz¼½UMùZmsôxIfVê']Bœ¬+Ò¢¤
+›(Ù¹ÇÍ~½uÒÃ–Gïíéi½û=jÔ»Ç=«´:~šqÁgÑé­ğY&Ø˜I|pWÅhu\i˜hMá…Å±@Òç\t)[~®bË9-@‘4¦S‡æÚ69¼(Z-—¾F›€|ˆ‰õ[Û!:v±îèGJRRdvBd™M2V9¬P9Oœ5!}bÿR¬+éüGHÜÓÍæì—}>Ö±B¹brFºêÆ¸ÄÙf}s8íŞÆ8ëŸáé;ŸV×ÜXÉN€kİÄ¶"AùVÖ–1Q0-õvVh‰wS«Üòz©ÚêÛ
+%™'’€*ğ,ìåÜÍ¢ËõIÑÛl‘‡Í|@µÏì™„à,-U5²ÜK³»Ø©@ØªÄEøÊ›:Sbx÷æ“‰^—`8ºÉH@K¸dAÆp—quò˜P©eDx¿î¡#Ï÷#Ti„ 2Qİ+À$±Şí‰B6)p™==Àj	î!+j?TÕKĞ÷­,–Çª§¦hÆ!p\ùîUİóUÎ*Gşvyí8ŞªæTÿC>i)q¨Åy-©x%¢­Íí-MÖ»l/B’›ÂU[‘ºÍXî SZ†37FíyÅÌ;uäø©a$õ!É‘ª/¦}¶«£‡D¸W¬SeˆB8fÛCTõ$‚¢Ûş®‡htEå»Vÿê¼í6ŞÔ{MÔîÂÅÙÛÓ#üO£}òöô,f®säæIMĞÙ“Sv6nMûôğ(#E&İw/âìùdäL9:ˆ:ß™EêüºıN5TgÎÅ8ñ´T"Å÷/$é(©ğÒîx¡4L’ÎåÁÖÁÜßŒÇåê_Ïx
+›¹XX±*Öèåèl´7Xp^ù‡…Ä'Ü‹ÆŞ`î;aT¶)A‚V±`@`ÊÕ¥¢‚U@ -×Rw>
+¼Jßş%T3-ïÇçÁğZ|?Ş·˜k×ˆı‘Z¶Y£M”ãlIHE7¸Š6|w:Â£wÏz©OdT‡ÿ8Dxóö0C<¸y~›ÂgH<LPùqHÁ“ç, gè«»í;¬–E($™îÄ†Äc/bî(äM“024#ş±ƒ&Ö°ı*"TE{Ú¹2O8Éƒ«¢
+[tbC¡Â–0­R”5Ñf†y²Nå¥dfçÑ op7 àéÖ4[ÚW)Z44‘—ò7Øy&*`!6 Œd@ùÁ!¡øõŒS^éWhHYefÁêpİ3i‰Q¦-ã n?Ò†éE"UÍÈEZóÎ ¿›ÉJ›»¤#°Ğ½8£0í[„$åiJYÒ$˜#}rğ`J¾ÄdPÓÄÊ/1§²­E·£»¼x«azØºˆ1µØü‰`§Ûïhß_§_ç5íw9«ãO£îV7ú÷†O¿ÿ,Æ/¸~¹î[z¬Äªª}M•&¦3‘›Õü0^H‚Zz«Aˆ¦VÍ.‚@‘#DSÛ™Œnà«‚gT©Z˜¤míŞ65yÒ…]cîzŠÇ]w{F=haúáDg}—"«²½Vw#5{V4N½ãï^ÇºÂaùYJË`y©71ş|ö®™úÛãVN[¯Ie³‡NÚ_£Wí®SZìŒ™Åµç’óÌà”Ê²3×œ]eÂ3JePØ”2J\òjŒ&:å"Pfçµm4f±ÁÌu		jRîdPÅ^Î˜T[¸šõ÷6rÃ—I­arJÃ,œi¬”Ÿ–§FÚ€U\éøÚa§ÛìÔ»Íctô=ªÔöÛ³~ı¬_µ:€¥=×Æ„pèµÃä@æªÏA§8v£«9“ZÑš¯Şá7Ş4¿æ3{²İ]éô¶€.¡bÜïp§~>“›&òv¯[)éÎãqz¿Çv¼¸ĞsÿæXÒlÍ¶²ñu’>—F²jø×ß8XÜ:T÷=TŸşv>¹/N%„VÑ€\R¼»ş¦Şzı¦~Šê'-T?û«·§%–^æÛÏ³n¾Sgê€Ú™Td$Ük8ñ¦@ø›K½qáBÄ&j›Â;;$À½I#ìy¤ø#Ô;áÄ\›¨Nù¥B1xÕn÷!¸ªÕkœÔ[§Êd…üªı	>+?ö+•W/AQÄ„kXLI$Ép3â:Â#·j¬CÜAˆà9DêùÅ/&ùcCiªğË|è¥M_î«¹ÌõïyóQëäuÚ·|úòÌ¹¦Q!$¥wÚY8UùÙ2øD¦DÛpE;i¾°€WdL9fœ–ƒâ¿±iÅRæ—6ñö8n¶(§¬˜äõù¿˜ƒçÃÿìó?•˜	º@ZÏïóìÁªùÀc¿`
+ÉBjÊ³l›ºüİ²%
+¬)ID(§ğÎç‰Â$¤ãf®r *¬K^—gİYa¹«ÕğéÛôxªbw~cn\*b¼*ª> †İ©ÜI¥%G~u,’iDXÙ,HR¥å¬ÖC}’Eåƒ7XVá5ùîÅÎ‚ÖæMñ“7½<¨yvr¢«—&¾'y´¢;İ¹d¢]ËÇš¡›ÊÇŠú¯lO6£„šÉB…Ğü±œXqòw>Ï[ˆúI³ºÍÉß¼&-~uqQ8
+ğ½Fj¬°8.Ä–ˆÁ’ošVb±LpæmäsÈ5Ï4ªL×-
+ÁÂˆ/Ö{Æö¯%Mœ‘<ì+A>ĞÜş€ge2Y‘æåDÔåŒÇ9È1]¿¥ÌÄBú$wåI\$ôeä2JÇvöPP‹M …	l/X»ı3À%`ù«ÖYıŒdõ‹y+¨rTï5QûŒ„ë¾iA®û÷`¹Ô¿‡º^>*N—ÓÏ ÊèŠÌèÙƒ
+ r™Ë‹ ¹îØ°	½	³o®Ü°5ª|mÖXk˜oŠj#ü»¿ó†ævÕ¿±–‰›Á¿øù÷?T7.ˆ0¯ŒLHŞhƒgğ¡jÒ4lÚ0è(«„Y7ÊóÚé‚ ¬íúÁ]£*4W†ßàİğKkH¿øSä^,ğş|èFôûª"ßJ3ÑäÌO6¨É¤"™ùĞÎn¥‚ùàc4¢Ü`>A¿äàx£rB—WoUãÿÔTÂß5Èİü4®KG ıO” 2aUYBˆM„¿ã”/¹îñ;ºğñ‚ÍË1lš x‚(i
+cò=°ûuh;ÎÖBcw ñ–ŠØH^z ãÖÓ›Øp¤ôÇgLI€tD
+d·çIõ ,Âi?HØ!€,Æy:Œ7ìH¿ğşƒ„=‰Gş¹Şi¡'n‹Qè=üŠZÔÎCtÁ6½ô1/HÃ®v3
+‘`‡ƒû„©@“aâËP™ü«óI|Ë¢îÏiĞ¬úôrEUsNŠí¬“v$?ÅS©iÆë#>øÄ˜¯p`˜t3òŒ±|Œá7]:@¦¶ŸÚš8¬1Û(¹§•ä³??Åîx=±ézşT—¡ë{ø‹kÚ
+èÂCĞAˆÚì£hÅÅªXKğEZš|;!â3dä¢¾”8Ä!ÚÒN¡‘)jŠtIe[‚&³™*ÊšoÓ5jˆÀ¼É†óçÿş™D—ã¹KFÿü¯LöˆÍj¢¼
+“M,¸–D°­*qªæLÆ	‡h{Ñà!q<ü$@‡³¡sCC²RÎñe<ì¾]‘5án&Ûd¢cú‰'úšO!çÚáä¯©F²À8R „À•Šbj²dW"†ÆÄxÕ³§:Zb3Ã°—ùP’"Q˜<g&¹NrL‰ÙOÃÿFô²!ÉJ]5¥%œµˆÎ²æÌCÑÙMÖâ¹…‚.–šCt#ÛBX£ŞŒ§p\ ›õ[À¹Ã¥)ó	§Ì\NëÏˆ2ùù¬š8c×ñ­iS´rŒ<©mEíïÛÄOù:¥L–±G¨“ı­¯4ãXùµdÈ) cÈQ8¯OĞ„@Âw“l+¦%áê!K[Vªó.sáåæ·&ò.	¹||rUO&ÿD¸L½Ó´v¤4áh±xß$1Sç­ÖĞ1ÙGRxÁ‚`1NjÔic;Á	~í|ôëÈ#ä—€º+šĞ˜üÔËN Î¨<%6î†šğ¨bâğ/©ËèÑ#$~„íU|¬K<-Æ–¹&óEÖ#eõ®ücùƒd­o‹{kÁY›ñÒªº>ÊÌÉheS2’fdt/’ûŠ$¹dÓVÁK&8=é·ê:É¼S•ãäIØJ
+£ ßÖÇ>ŠaÛZ¡vF ùÁ+)±`úêFN|İ@MÂ°X¨,ÿ@g:w|ÿan\©sbµòEA Š
+ô% eÍ)«9Å¢‹nåk2P@Å«£ÍŠ"y¹³ MË5W³™8ñ`Œ‰.q¸_`VO÷åh£Óæ;. këÛ0ïõô+)¸%ŞèËô„. —`­4–¿V_Ñèè{­:ÈÄ?CPlFñ­³€ªƒä~ùôÂÜaÇ]gxºÛ« ìàÀ%´j_æ B{Ê-ØqAvåxñÊ9^7kè·áÃøîy×½p±-NèFXCzú!ÿ˜’~RDr ƒ¾H!8YkÒëàÒÿ²Ğ±Cñ‰ş˜têÄc¼Ÿ?U¶'„YËÑ™¾U£€KÀ/’µ/L;$ğ›Öº v€_V!ZüRGÌB÷%ÿ¾DÚ*~mllÀ­º *~¶²Çˆ©èfuE§§èf‡ÕÛÍ®2õ­f¿Ûã«]ÔäP,Ôü›hÎÈñ€œ°îû‹¯ùâİ¢
+¢øK:¼Û*¼ø<1ŠèÂÆ×ßv‰óĞñEr—‰\2ĞÄ%Ÿ?º wL>òÑU6¤O!63N½úI1v.¥…êì¬t»X´=	€gŸá8/qW˜q¸ãŸüåt#'ÚåãeàÀ.k8šŞ{ûA¿jÆülã)¿Ãî\Pg¨fZÓ£©) ¼$ †ô‹d‡#IÀucRn2¡óÖ½İXºÂq¤D_#ø!	6ß'vPÂüÂ]ŞK‡’‰sƒŒÂj¶Œùğ>+v‹ÊÕ¦š¶@„‡‹°Ö=êncŒ6ïdC79}îšhş€à;ÚÀ×¹ÛÀKÎAñZø÷"€û¹•3ğIè×`QCò	[ÇìUúóŸ'P‡!©B²[nõ±’ôÒàÔ€0”¸V<™wb2é5Có®JeMl’ÀNåIY»8µÄÆ¾Õ%™(]…åJÌ‚“sIŒÌ1­\—ÌTœÍÔu@R;0kVs]’/H6¾1N/^ÌŞ²@)[‹ú­¬Ú­Î4¶­­P­IÚ|»¹rlU\U`–¯s’n$ª5F G²ÍE0˜G{Lß>Êı6˜Ç¤Œt,WÁÖ¦KÇVIë‚§Jo-Ÿç\ƒY¢•Î¯»Õe¶‚q3 µû¸×oæà‚{U0ëhE¢ÍS¾¡sK”€Şaæœ¡àİÍPñø7ºÓI½Ÿ^Ëxëéuw>{¹ıûôÜÓ«ÀÇWÆ‹ÏsG¾|©õ{ôè[M§aâ$YâYŸ…àY5¤lï"¼XÛÍ×¾ßOõIlÊ	àñ®ºÆáô"ú€BœŠÔ©š>eí\-ç¨^`tX—uYKí5+¶n`{Gğ×¼¸3Xé–eena™ˆîa“ƒxA±®1JY¡;±ñÚİ­ÂÙbÂğ7ºG§cô*ö/Û{{ÌÕåŞïì>F»x°ßâ··¶~ Ç\³&¹C¼Xh?S7Èi™=¢\V*l¾A¸±*¶pãF¦Å¨ÙØ}ëô¢öA\ìq±u®ÓË*MO«ésgµ0o:5_¼²é‰³JŠÚOı“F¸|tñH~/)äùI¹BÅ¹9&™Ÿ7zXP~M–åß£à"Q9+Ôç“ÎJŞQ-p÷˜=¨ô¢/."°½ÌÎycÍ/ƒ·DëQ‡§éc½ŠÌç)á“Ğozp³­^»³ƒ5gªHÕ…k)ÛÛIøùº&~9œoL&@²¦xõÁlql‘Ú8RîÑ:_ÎãÄèS7C“7ˆj%I†åÅĞÖï‚f2/È¹oÈÎ¹¾?ÊI
+¸®Ì£qTTÏ£¿†5ÔñÚ!ü“şbõØ‘3ıYNÓ¨bå‚Ä3¶I]ÔR5Æ˜]¹¸äßRÒ·­ÒÑk<³WÎµ©‰ıMJ‰ŸÍÖ¡5Dw£hÿR@¿éH€;ØkĞîzHihŞ=xF•_*J:[ST¦VËYCB‰.~XG^f}¡"` /Õ^ñà’4&†}X‘Új	m%Ä•#-=áIë]\ÁƒjÔOoOêıVûu›õ_·¿;S8„¿„l	Ù^Í„hfè¡¼¼¹/À³›úYŞTzóHjNØÜ‹ téÍ¹»m\À»}Wíğ]¹«7™ÇBÏ®O÷ÇèÍ]ÄûùypÕß®Èk«ŞLjÏ-%(UfrıÈ-Ø^ä¨»·@S
+÷0;öq®qÓÔ½ÌfÎè0QM#?@êº‘7œcÎq^cyó#©¥o×K7N·ö®l¸h2¤×äŞS"‰DWì1ƒõuÔ“,Ä¤d|V[çC„ñ¦S}ÁöÁ<§ µö(.‹ Á  s¹*Ä¼<Ò€¦E©³?v9–æCA7x‰>Ğ`Ó¯o$Ö”fÖ…®ó/Û”JbM“"ùÑP?© eyô`Á÷®tİúÔ¬*o§vÓ?7fB×çq€¥´7@õ!!ÌvX‹e¿¹ídƒÜ²$®ÂšFº]ıœâck§èJÏŒØDÊµJó·Å¥“¢6×[&õ[V$Wˆ	d]º:	`6îsüírTşÓX:=ÏåØ«[ ;L–d‰JU¥úY­P‡Ht\-½8r®¢µ©±ÕáúÇ—J‹Ô…é••Íë\»$¬ªvÉ‚Kß$Î}aé«(SR $lIÊ.+i¼.o]ÒÅ,Å¬ÔUe:ó‚Uá'+I¬Ávx²%”› b{aMlÏ·ŠÆìAg2õ¨•”5ºn}ÈggÊİ^ÁÌåë”®|©»bu¢¥SU†U0­«õšü…Ï—V×8b‘ÁÅõgôŒÇÖÂ@³Àtujî²Á@ÙŸ°:»Î$Hj*š<Ù’óüdÙíœö’Ú`™¾â¬hQøñˆ$²¨fuèE@ÅÃƒ/¢é.1&àâÜUÍàH¬E’K’€èó3™B¯Z¡ÏïÈi©|0{¾Ã‹¯¡ºÕ„ï7ÆîàcÃ¾»SCåÁyJÅ÷ZJ^	~éHâwöe‹@zçm·ñ¦Şk¢v÷¸Ùíåë1–ü4Ê=ıR¶h©²Eìì1	#dŸË-R `	E‹
+°î©f‘R
+Ëà:şûRl1³_)±ï¨ÜjC×®æ‘®Ïbé¢´äÑ B[ìâ=Õh;ã`ê¦)G¼\Á#3«y¥àÜuNğ¥3eY6C-7”Y®æZÕÔëéM}]şxŞ´Í§Ğùó%h˜êèµÄ±Ã¬ö<SYD5t¢qâÎUD†€°2ãÏ«Yì6¦QøŸdêM>Q¦sä+­F­ÒaSí,È1ÊWĞw“ÙjÁû˜&I—`hI-!NÆ( =;—.:'À%¡KÂí™ÅÌÄÑµë°Ï4èêæ¤›käV´Ä&1Ap`LÕà[oÏ°-i\µ	'};dó’–´İêÃæõ,[ÿÍÇoÏÜé™{Å«ˆs£}V‹Ÿ£²ËÕÕÊ›3" `*<vZ3ÕJëpÙ¤\h!^¶ì5iÈ®AgPÑ­-#»šÏˆôYÖNCÁ’w$*ÅñÀg0xŒfdá?Ñ/±`Ñ•Ê‘Z¶.6¢‡wPİMÖ–Te>}‘¿Ãà
+ş6ëÿåp%g¡_wÖkF	)‘øÎ¶²OãZöGê\}4•¶·¬‰… W>.&¿qé%:1T®f†ª’R©
+Re±Á~‘2?M)³XıF½œÉZ ÅrfÕ²âiÆğÿBùBË’‚Ä‚'şªK.»“£Mà7ÅÓ+
+fˆÇ®34œhÅ¡äŞR"—%ü'õoñ4"â”}lîšp¼vˆå~×½ÀZöşf<.û0*§Y*åŸ†Òj¯ä˜Õ=*ßHN¹ä¡|±¦ş•õÉ2Mñ^A¹Ñy´l+u.knÿêÏ„¹ŸÃL^¼Ç0EÕ®û#%ÓÌY¶3`eS8ìvªØ-É5³+Â·ÅCyµÁ"â¡€uv¶æY×mlØ7«k’ï&¾™ u"H[X*üi}‰—1™RZñâôlÏ—ÜÚú-•Xæ-Üg²—õ+œxŠ;O4¾ŠÚºZ"
+`¹± Æ'çÂ%Á…‚DËU)@|…Ïei4×ß)Bd…ëe¦›¾@‹O`ÓşÜ¹ÆÁ¼/ßM’t’~|‘ëbR?É®ƒëús—|Ûì‹Æ"Xèu“Î0†Kb¿Ñ9ô²Á,½{Ê¶>c[ Ou‚^>rBi‡xgt‡xßW)ÛbumÁKà*K?õ¶º9kìĞ¢:]óiÆõ«AN•hfML¼'|¬tø;‡¦
+JÁjì&†V‘ÿËŸşé]=DfÊ !ïxÇ¯3Š•0:í›×\ûğ~ÉöËGš;cØ|¦=²è ì€€ÉSVˆ%p´øÃÓi)”úôZÄtÏ^©!ßz1·ägz¸·ìeÄ\O/İÎâIS»^)@[ì5zç)Àheû¦J®<EšİüİÜ™â›<7ZáÂ2gàùÚ=EG®¯—¥h‘l#Åì(DoëÍTv+I‰’wë™˜¶¬mèµXHöÔÆQ(ŒRË’+#V2xÔæÇvñ³Vô@ÚuÃVoO–”(I«¶TiO“7Å:®¢ş=~“ÈpbÚÒrïÍP³ÀC³Ú»ó½Sj–è9™´‰˜N¨++øš¢Ê‘3øH;Úó½Yu•<¹€úéŒ|[š)§ã‚?{vËWsõ³Ü#¡,½§¤Ã½iJ¥!‹¶,¿÷~4¦NÜ(B¯ƒ`¥å‡KU°²Ò­‰7½3rIØ²v
+ÁØ%w(îíƒlK›Â“«÷À™AİºÓ(rşS"ªaÁúºåò0Jf_<hˆ¥T³˜’i«)pÙğl×|çá¡\ÉódŠ±Ô~aˆÂïÔ¿?mõÑ›V¯ßî~^AH>$°wÚ·YDë¸ö®Õü®*FæÏ‚7^áu64_,ª39´Ï?ÆÀ~%?R*´0ô†hÏL‹¦@ÏjnhxKfœ¥Âá”DS*5i4€‹sév‚öùoÍàH|å_‘g+r –ÅÇ%ÜÄ¨vğ:¢,å
+Pğ£2ÚNÑŒ©¯²è;…óø+EÇñ˜a¬z¨—ÓÀŒg„gO¼‰·TÄàpm¹ërŸ3€Hã¯²‡ÛùŠô¨ÊcĞ.?r3jğXn1©²Z?9Y—C•Ë ÍÓH¾-û´RkÙÆxª ©<ºÕ•"•˜¥	QV±şÅá\€ã¹ÍïÚÉû­)kœğYa+-uˆaôAòÈ2°b@È®}ö)ö*áîüñ¤0Î<"R¶¹L¤%×,?.m¼e~¾Ü}jvş“;QSL½¸<Š(Î{KX“ËOØJ¥°íJ)lI~šE2Ûäºö¼L›E&ÛJc\9nÆúg‹çº©r5ˆîyLT‰­‹ã¼ Ÿé¦ËÕfyëC@ùmBÊº”Ûæ´›7B`•zœŸq¨¥Ü£· ­D‘˜äçaıÚu ôAƒß¯Ë[*CG’Z¦Çå”!®r#k2iò›çN“%b¶— òºû®BgFöÌµ¦ê‡ÉOUì—Òûjé¼€Í…¥¯°ù*Æf†ÈWZÊ¢d†E>Ê[µOírÇ!ìÖ&üU}ÀÀÔÂdğ¨RªtïhH\éY5§fG¹×›j-ÂhWI Ç39õpRúåÎ²É—e|piæØ2	Ó<³% ½‰s hµl¢Ñ"Ê\Ñ‘c#„ùµùíƒ4ÔbZ¤G‹o"±ÎeøÓoğ+¯ô©~y|sUv7;ÆÙÕƒò¸6„Cø	íÈ4 4ßO©¶¤¤"óR€N,>¡»™®»tÊn ·Y²VFN~ë66S¯¸¹­Í•+¥Xíq,zz°&&2˜2zÒŠ("(ºJ=UñåYÎ«ËÑ"T¼Ájøû„\¸LÖ« x.—:ú…˜ÕiGUs‹’QÓ¼Ê¨é„ hô²Ş].•tÇ–˜Xí›Vñ¯xÄÙ(Ã:1PuÚ»i:ÔüÅ
+uØò«”–âğXÍÃäŒ2¾êOÒco¥Œ;%`gºÉ:$úbú¹ògâdÙ†èÖwÁ|0vC…ÆşÖoib·zº5à6¥$`o>™8Øh8u1±",û i×Bü™Ki?±6%íÑ‚éôG“Ä ×èÜ… °râBV¥Ú	ïFôÀ¸¢ÿ‡n^š»b·e±ÖÚôÍ¦ÒÉ#e¦/dEª‹Ğ?ÑZpi%õıXÅÑëjÓ2¨çXbË×>	F#}ˆ¦-a~?'‚‹şe!m)Ë ü=Ï Z„úb‚İ+¤‹ÿ  ÿÿÔ]ÛrÛ8}Ÿ¯Àz¶bgÆ–¯É8ÎÅ¥ø’xË·XN¦²S[;´D[œH¢Š’œñhıû°û²_7_²İ H`%ù?$¶’ Ğh4ºOŸ&å‚
+‹f•l²™†=Wb)3”|‹y4b’Ûkrdr<Ïî(L?g¯5J„¤èR¾k!)Ñ‡œoôÏÿı‡íÇ]cˆ4‚]öÏÿş›)|û)éå¼5Y¼âŞš•ÙNıl·Áv§‡õÏ›«‹}fÆÄf4}Á«ö†©WVİÌz«èÒ<+q‡ïô‡¥ìø.ltÙ®Ñwh´|ŠBÇñ«åöF‘4É]ñ¨ÊŒšsoz<MéxeáB–ˆw°'ìZy¬$­ÊêÊnL®XcŠ>ø”ª¨”0©˜¬­R$Yç‘ôÎOJ’TôLçÎ©ÂÕE\”ÎD[öfßRÒ•ùèşøyî"°ó‘ÙŞRáŠF³¾_f-t¸µÄFTls~—Ö&òãÏ±¯ğ/`½	YÔ¹:Ü¬¿†R©ç6zKîKéY¢ÛÚRt®ŠGk™±2Ä©}èqjÇNYOãâ,?¬)&†8ÔÃgÿŒZéñŞz=y´-2ékÕq”&ûÌ†âvW®ÙVb8ÍM"	áùj¾‚§ômpIGš»es•BÛäè?{ìÓõŒI·¾Õ²J/òq~¥DH7Ù3•ã›?¯˜óë‘ =¬¥)ãºìe‰ä6FHå-|2E«¼iûTBEJÕDâ)²­İ¬Ì¾·-;ªÂSgëŸ—>|Üy¿w6õ¸+àJ®ôºñ
+jå’;íP|#Êî ›\iİ¼‡^r@:W§H¾Íq©Ãq*çì—Œ§ßüÅ­1äZ9è]ÆSkÒ]YUÉT$˜,wßgááº;UëmóU†e§ïLãäºSgÓõš¨ğ<ç—Õñá±®
+JSî¡íúcªÔOîT]5™Smt£d„å<ò¼ ù$Î)ŒGqà!]û™,ı™ã[’Ò}8iY^ M9à.n`KC{şÖ•{Q²’ËÆGs?qñ	2çx@CŒŒ‘şÕ•i*mğ‡Up€jä=ŸÂ$ºŒ·Öa|å!y)Qş©PvèIÔ3ü*º&ãÜ¾vcPÒCÑ	,Êª&¼†=¥p|¸º}"›^ğ3>©~ÜÃ«âUÒÉ“CÄ¤SÃu‡I§¦¼oUÓ5L‹è£z+K7r×æ³i‹)ÒçÊ‚ÿÌêƒÈJ©"¦©½’(Üy?.tFÉWFàÕhÇ_ñ0¯x’àáÉ®\ÄÓ®$‹‹i–ea*àÜJ›EĞ‘á‰ŸMv’¥
+Œ=CÉ¾
+Èú!îÄ¥¦­å£©ÕCdúÒÖØ;??ÜÓr™çõãİúáÉñ^±ªÈ ÄEê uJ¨¶ˆ}Èì‡*"²zÏED¬,'%d›UÕÓ•
+!N—&	œ„« ·/e_§«öÁ ÖŒ»ıN4›x& ’å¤£Š9Û‰¯ĞkŸª_é½<’Òz¹/ğÔ¦²
+÷
+%Fköõ7ğX ÀœçqÜ¹  î“•Ë™ë”Ü¥ÊŒS 7+(‚öœ:´ùßÏÆÅfD“Î,~ˆsu0èºæ4gó…êóÉÔƒ»BoÊP‘xŠ+üæûâÅ 8%Uµ=pàÂpfµ^g€ãœ)FbÀ–Ù.MÁ¢*S|‘Â;JA™²9ğ\û#2¯µ´’kßd°ÌkÕ‚¶ŸrôvØõì©tœ2Öµ”şvÔjZBĞ9g+Ÿ{ó¯tı|sÚd' ™iî³±¯2ÁØÊ`B]õú#Z•ˆ½÷¦] ºªi€~r.âªz&»ò¾•Lp)êåíõÑp%Ö?Œ“5«Ùëµ&šyİ7=U³j’Ş²R·®¥>^0W*p}~”OÔWMİ·pLÍ4%kL®Èùù§/	Ñ0>Ö,Ñç—6z'‹;5Âf÷•$Ú›«éä|¡œHC"·»m@â£ÂÁ€B‹²s~Ü3%Ö]Ç¯_ÈCü £€d²øK‘Ã¤¥ ®.qŠ²Lò²ÈChÚ$ê.<%Ø?ˆ“‘{¤$Ç˜Æ`¢tA2eÏ"ÉĞ8Ç‡x±²±#Â‚_‚ëd(I•·˜wNG®—ğeø/¯˜ù]…éMuZv·7†¶+»I¯!G¢X‘Ë Úñù×ªœOÄ²a<¦rá/?Nrßœ3¯í¹`ZŞän „Nhi3KM¦ºÙÌoS†‡õ	úÓ–'±qŸÀÒ~­Ì‰s•r|çWÃKuøÙK–ˆ$Åë‡’¹e¤&‘óÄ¸{ßÚF‚àãÅóÉÃ9"}Z›¶È	,æ—Xóı¥öØö+¹#«	}?I	¢t´„Qq½du@:5ÿÄ4/‚0£)ki8®ê=QËœÛ6ù2£êGßRñ£¢Şs"æó8Ÿ‰2q§zåõxóV5½*±Q¥ ¬tK8¹©Ÿ•ğ/h¬uo:ÚÎ’}ØÚÍ+MRş‚’ZOúô8sÚ5Y	[ÿA ¡jB^ë&¤ò­‡Ešß,5Š¯½Œâ~©íls
+ŠNÔ·0Öj1ê]AÛ3å›_TJ?ª¯Ÿ‚Ø¯¿…•Y½Õ‚ãø ÿ`·,°½¤Ÿ•PtöÊQ{[ıÉëƒiHxgy0â/î
+[†hOtÕ£˜–åŞ%pnYrÌ=ûNè…ÏüàĞ3è
+Y—k\”Ì©å!3AÉZ+:Zl6¯~M’•/æ]Š`Â‰Ì­ˆ‚Ù­äÑéàË^+t–€îé_1?Å	¨'£¸a¹riÔ*æC)ç‹)–ŒfùLız°#8Óx²Ê–s…ğÚFLò1[`M™ŒU>K4ôvºÄ‰í¼—ªIä+â:³‹½éä}V‰Û®Ägmk$ÕAfÿˆ™äòxğüÎÈã§	ı¾$iUØ4`Ío„?şÃÛÁ4¡FS0ã<aïBø?€ÑØA5Îõ
+KÄ|8“mù×Ù3¢öxÍ™µI>ğ8eğjÆ”é­³÷ğëÆ¨‰0àÒ~ÂVáø7;‚r3ê…0Hšíó0éÊÆ5T–ÜtQ>À™×„İÕ…o8íÚræK“ã’œkdôFåc£·/Œß^£ìn(ñ¼ˆ8¨FÃîz7:¢6ÂÓ´¨‰ßqh~=8?Zúë˜S%_vâ8YÀ}êGÁÒÜŠáÜÇ~` úOo]4î'ué3Û9Şf^½(ıãDâBõ‘ò¨]Ò§‹Æ™:6ƒÔÑšÃÑ”7æ¿ò“ş!‰w²á-µÇğÊò!üw¶½ÍÿÊşĞÚìECÑı4¯z«‚_š¨5…ÒÙ;;…£ltƒæiÆèÚ\A¾DRN€¥Ë±&¥LÂHBÌe— _e¾Kz¢h›h`—Gª¡U&ÇÅµB]_X1¼µÑ’ª¤¯èàUñs Ñ²{V€ş·Òn”À±qøq&Ğ(ÿ£¸Šq”nÃA½ß7Ëš#Ì/m,Ë• CEà™ÂÖi¼'ÙÍ*€Ò9œ|Èôu„>!@}FØôšÒ¯!ı·A÷YSOYÌ#ŒêµøÿÄqÿoÄ
+XZ}ÆñìqçıBÚ¥Q h@¿ˆ¬}ˆ†øºS ^×ÈØ˜yı×¥M°“7ó$?ÓêÖHi¡âŒZ!}/:™JğA3îé½Qâsü™w…ŸGŞ©®€j_àr´9nXä‘œCQh j,âë(ÈxX=I‚#Ÿpƒö¢VâŞ
+‡AÔA ıéî>kE	hƒ ¤OóÁéíåc%ûÀè°KAÛG¦*¥ÑLâN‡*ßblÆG·À‘Û’jjÃã—üÌO2âš$
+/3¾J/~fÅ£µéÈ„78İ&Êûµ.YŠQv¨Yû6*­¹7ú’uÖ3 ò_R]j£œÔáúÇä–-x-+?ŞJ)læøÃ´àAwSwµ'Zÿc¼¥“ÂUêÖú³SrîÓ©gÔ iSÙ.³ivqùI.=ÖdÃşŞ•J#™—ûµ¤ĞæÇ½í4Ú‹]¾ÍV±†Bš^×_’ìHX©ºr£ãr*Å™\‚ÄaõœøÅu²qµ˜½•ı¤ñ<	œ{Ä>ÿƒ»Î”·‚²Å6÷§œª}ĞUa^N*saíªÆVÖWVV×Ö7=ÿ	ìöã‹µüêÒıU¾á9GdóI¡Ä6Gu‡Ò,ø¹x¡°»ˆêÉˆ§ÆÛÉ»·®ïPE˜·Õä€ïÌ ·åö¨F²Fœ2d)«p¥öŒ G4ìPb¸öø+qİø"{£'dqšvnõøÉÔ¨*O‹ÀÂÀ´¯ßØ÷ã./#Ëó•ÂN¶Ì,İlX:üˆVp£òİÑeöµ×¼a'}1ZEûİ/ZŞ‰!œd{aÈã<x
+èÆ	VÂ.qFã¸W«Õ<Ö±˜&œ¥jË8¿îÁV1™¢q÷+Ö.ò™ö?‡e´)e¼ªÏÁ3…Ìw¥dïtÁU˜¾–3+”dïy!TšÃÊÓù¸8Œ˜bş«ÃAhi?=W".g–÷o„^èDmM9ç»ˆR—¥Ÿ„"¿Xx²Ö×R;~÷Ã¼n*Š™%Ñƒ'}*FÈ	_	W~˜¼ÕÂ¸(4¬´¶h×"?§,’W]+h«²“…ëlEôU|œ1d{ìIÚ€¾>ü½Ï/J•¼ëV{D[ú®ÃÜ²·İL1şé{ôUŒuBL°}Ô@¨ÆfÒö­ĞåšÄö8~ ÀÇüòúênîùôå{İ<Ol.öíÚNöˆr|<ş[ı-{r´wrZ?°Ãvá¿'ìô}ıì¨¾óyŞõ”»G?H~ÍŸµºÂí uƒ„ÅAk‘½’v„¶G‹ì0hÇIè|˜cóQüã#a„áƒÀÆ^Z_]EÿÖÊó•MË-Aƒô‘gıíÍ–`Ø®!{ûJjìïØA—Õ;«÷~uç‰Ş²¯SĞíÒÚçÁ?”³î&è5XQpšWKx•2@¬åŞ/óœbL`™šT{_Şm›oâŸ…2N«ÓZ(°^DäwôÕÇª ‚È¤PŸY¸­HmïS_mf¼[Û…îöÓ87ë„U˜2˜MššÇ£DT|§¬<òb-©”ƒ-¼Õ]g#°P»NF9¸­Éƒ'6{Î"kw-˜80ä¦¥±~7PHÛó'š¤Dbù0´?ÈO9õã]–šg¿ŸêsÁ f7ñˆ5AÀZšmè7F¬†íPš€i/=ªŸ#6¬©|Ş©£ˆµ•‹¤ùye2;E¥}öôåw·ßı  ÿÿ ‘i­

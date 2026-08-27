@@ -118,15 +118,9 @@ export interface WhatsAppPurchaseOrderPayload {
   totalAmount?: number;
   paymentMethod?: string;
   paymentTerms?: string;
-  status?: string;
-  isPartialDelivery?: boolean;
-  totalReceivedQty?: number;
-  totalRemainingQty?: number;
   items: Array<{
     ItemName: string;
     Qty: number | string;
-    ReceivedQty?: number | string;
-    RemainingQty?: number | string;
     UnitPrice?: number | string;
     Category?: string;
     BatchNo?: string;
@@ -143,19 +137,11 @@ export function generateWhatsAppPurchaseOrderText(data: WhatsAppPurchaseOrderPay
   const address = data.clinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
   const clinicPhone = data.clinicPhone || '+92-311-4000608';
   const isCash = String(data.paymentMethod || data.paymentTerms || '').trim().toLowerCase() === 'cash';
-  const isPartial = data.isPartialDelivery || data.status === 'Partially Received' || (data.totalRemainingQty !== undefined && data.totalRemainingQty > 0 && (data.totalReceivedQty || 0) > 0);
 
   let msg = `🏥 *${clinic}*\n`;
-  if (isPartial) {
-    msg += `⚠️ *PARTIAL DELIVERY REMINDER & PENDING ITEMS AUDIT*\n`;
-  } else {
-    msg += `📋 *${isCash ? 'CASH ORDER PO' : 'CREDIT ORDER PO'} & REQUISITION*\n`;
-  }
+  msg += `📋 *${isCash ? 'CASH ORDER PO' : 'CREDIT ORDER PO'} & REQUISITION*\n`;
   msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `🔖 *PO Number:* ${data.poId}\n`;
-  if (isPartial) {
-    msg += `⚡ *Status:* PARTIALLY RECEIVED (Pending Balance Delivery)\n`;
-  }
   msg += `💳 *Order Type:* ${isCash ? '💵 Cash Order PO (Spot Paid)' : '💳 Credit Order PO (Vendor Payable)'}\n`;
   msg += `🏢 *Vendor / Supplier:* ${data.vendorName}\n`;
   msg += `📅 *Order Date:* ${data.orderDate || new Date().toISOString().split('T')[0]}\n`;
@@ -166,34 +152,19 @@ export function generateWhatsAppPurchaseOrderText(data: WhatsAppPurchaseOrderPay
     msg += `👤 *Authorized By:* ${data.preparedBy}\n`;
   }
   msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
+  msg += `📦 *ORDER ITEMS (${data.items.length} Medicines):*\n`;
 
-  if (isPartial) {
-    const pendingItems = data.items.filter(i => (Number(i.RemainingQty ?? i.Qty) || 0) > 0);
-    msg += `⏳ *PENDING / REMAINING ITEMS TO DELIVER (${pendingItems.length} items):*\n`;
-    pendingItems.forEach((item, idx) => {
-      const ord = Number(item.Qty) || 0;
-      const rec = Number(item.ReceivedQty) || 0;
-      const rem = Number(item.RemainingQty ?? (ord - rec)) || 0;
-      const catStr = item.Category ? ` [${item.Category}]` : '';
-      msg += `${idx + 1}. *${item.ItemName}*${catStr}\n   ▫️ Ordered: *${ord}* | Received: *${rec}* | *REMAINING: ${rem} pcs*\n`;
-    });
-    if (data.totalRemainingQty && data.totalRemainingQty > 0) {
-      msg += `\n⚠️ *Total Balance Remaining:* *${data.totalRemainingQty} units*\n`;
-    }
-  } else {
-    msg += `📦 *ORDER ITEMS (${data.items.length} Medicines):*\n`;
-    data.items.forEach((item, idx) => {
-      const qty = Number(item.Qty) || 1;
-      const rate = Number(item.UnitPrice) || 0;
-      const catStr = item.Category ? ` [${item.Category}]` : '';
-      const rateStr = rate > 0 ? ` @ Rs. ${rate.toLocaleString()}` : '';
-      msg += `${idx + 1}. *${item.ItemName}*${catStr}\n   ▫️ Qty: *${qty}*${rateStr}\n`;
-    });
-  }
+  data.items.forEach((item, idx) => {
+    const qty = Number(item.Qty) || 1;
+    const rate = Number(item.UnitPrice) || 0;
+    const catStr = item.Category ? ` [${item.Category}]` : '';
+    const rateStr = rate > 0 ? ` @ Rs. ${rate.toLocaleString()}` : '';
+    msg += `${idx + 1}. *${item.ItemName}*${catStr}\n   ▫️ Qty: *${qty}*${rateStr}\n`;
+  });
 
   if (data.totalAmount && Number(data.totalAmount) > 0) {
     msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
-    msg += `💰 *Est. Total PO Value:* Rs. ${Number(data.totalAmount).toLocaleString()}\n`;
+    msg += `💰 *Est. Total Value:* Rs. ${Number(data.totalAmount).toLocaleString()}\n`;
   }
 
   if (data.notes && data.notes.trim()) {
@@ -203,11 +174,7 @@ export function generateWhatsAppPurchaseOrderText(data: WhatsAppPurchaseOrderPay
   msg += `━━━━━━━━━━━━━━━━━━━━━━━━━━\n`;
   msg += `📍 *Delivery Address:* ${address}\n`;
   msg += `📞 *Clinic Contact:* ${clinicPhone}\n`;
-  if (isPartial) {
-    msg += `📄 _Please expedite dispatch of the remaining pending items. Thank you._`;
-  } else {
-    msg += `📄 _Please process this Purchase Order. Official PDF copy attached._`;
-  }
+  msg += `📄 _Please process this Purchase Order. Official PDF copy attached._`;
 
   return msg;
 }

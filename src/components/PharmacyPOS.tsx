@@ -3654,10 +3654,6 @@ export default function PharmacyPOS({
   const [storeBasket, setStoreBasket] = useState<{ ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[]>([]);
   const [storeRowItemId, setStoreRowItemId] = useState('');
   const [storeRowQty, setStoreRowQty] = useState<number>(1);
-  const [storeRowPrice, setStoreRowPrice] = useState<number | string>('');
-  const [itemToDeleteConfirm, setItemToDeleteConfirm] = useState<Item | null>(null);
-  const [isDuplicateManagerModalOpen, setIsDuplicateManagerModalOpen] = useState(false);
-  const [duplicateSearchFilter, setDuplicateSearchFilter] = useState('');
   const [storeSearchQuery, setStoreSearchQuery] = useState('');
   const [storeSearchDropdownOpen, setStoreSearchDropdownOpen] = useState(false);
   const [storeValidationError, setStoreValidationError] = useState('');
@@ -3824,7 +3820,6 @@ export default function PharmacyPOS({
         if (activeSubTab === 'store_sales') {
           setStoreRowItemId(matched.ItemID);
           setStoreSearchQuery(matched.ItemName);
-          setStoreRowPrice(matched.Price || 0);
         } else if (activeSubTab === 'checkout') {
           setRowItemId(matched.ItemID);
           setPosSearchQuery(matched.ItemName);
@@ -4382,17 +4377,6 @@ export default function PharmacyPOS({
       MedicineType: b.MedicineType || 'S'
     }));
 
-    // Ensure all basket item price updates are persisted in inventory for next time
-    for (const basketItem of storeBasket) {
-      const dbItem = items.find((itm) => itm.ItemID === basketItem.ItemID);
-      if (dbItem && Number(dbItem.Price) !== Number(basketItem.Price)) {
-        if (setItems) {
-          setItems(prev => prev.map(itm => itm.ItemID === basketItem.ItemID ? { ...itm, Price: basketItem.Price } : itm));
-        }
-        syncItemToBackend('UPDATE', { ...dbItem, Price: basketItem.Price });
-      }
-    }
-
     // Trigger state change
     onAddInvoice(newHeader, newDetails);
     
@@ -4419,89 +4403,6 @@ export default function PharmacyPOS({
     setSelectedPatientId('');
 
     setTimeout(() => setBillingSuccess(''), 6000);
-  };
-
-  // Group duplicate medicines across the inventory by normalized name
-  const allDuplicateGroups = useMemo(() => {
-    const map = new Map<string, Item[]>();
-    items.forEach(itm => {
-      if (itm.MedicineType === 'C') return; // Focus on patent/store medicines
-      const key = (itm.ItemName || '').trim().toLowerCase();
-      if (!key) return;
-      if (!map.has(key)) map.set(key, []);
-      map.get(key)!.push(itm);
-    });
-    const dupes: { name: string; items: Item[] }[] = [];
-    map.forEach((itemList) => {
-      if (itemList.length > 1) {
-        dupes.push({ name: itemList[0].ItemName, items: itemList });
-      }
-    });
-    return dupes;
-  }, [items]);
-
-  // Update line item price in store basket and automatically sync to Stock Manager database
-  const handleUpdateStoreBasketPrice = (itemId: string, newPrice: number) => {
-    const safePrice = Math.max(0, isNaN(newPrice) ? 0 : newPrice);
-    // 1. Update line item in cart
-    setStoreBasket(prev => prev.map(b => b.ItemID === itemId ? { ...b, Price: safePrice } : b));
-    // 2. Automatically update in React state items list (Stock Manager)
-    if (setItems) {
-      setItems(prev => prev.map(itm => itm.ItemID === itemId ? { ...itm, Price: safePrice } : itm));
-    }
-    // 3. Immediately persist updated price to backend database
-    const dbItem = items.find(i => i.ItemID === itemId);
-    if (dbItem) {
-      syncItemToBackend('UPDATE', { ...dbItem, Price: safePrice });
-    } else {
-      syncItemToBackend('UPDATE', { ItemID: itemId, Price: safePrice });
-    }
-  };
-
-  // Update line item qty in store basket
-  const handleUpdateStoreBasketQty = (itemId: string, newQty: number) => {
-    const safeQty = Math.max(1, isNaN(newQty) ? 1 : newQty);
-    const dbItem = items.find(i => i.ItemID === itemId);
-    if (dbItem && safeQty > dbItem.CStock) {
-      setStoreValidationError(`Cannot exceed available stock of ${dbItem.CStock} ${dbItem.Unit || 'units'} for ${dbItem.ItemName}.`);
-      return;
-    }
-    setStoreValidationError('');
-    setStoreBasket(prev => prev.map(b => b.ItemID === itemId ? { ...b, Qty: safeQty } : b));
-  };
-
-  // Delete duplicate item from database and catalog
-  const handleDeleteDuplicateItem = (itemToDelete: Item) => {
-    setItemToDeleteConfirm(itemToDelete);
-  };
-
-  const executeDeleteDuplicateItem = async () => {
-    if (!itemToDeleteConfirm) return;
-    const itemId = itemToDeleteConfirm.ItemID;
-    const itemName = itemToDeleteConfirm.ItemName;
-    try {
-      // 1. Delete from backend database
-      await syncItemToBackend('DELETE', { ItemID: itemId });
-      // 2. Delete from React state
-      if (setItems) {
-        setItems(prev => prev.filter(itm => itm.ItemID !== itemId));
-      }
-      // 3. Clean up scratchpad if selected
-      if (storeRowItemId === itemId) {
-        setStoreRowItemId('');
-        setStoreSearchQuery('');
-        setStoreRowPrice('');
-      }
-      // 4. Remove from basket if present
-      setStoreBasket(prev => prev.filter(b => b.ItemID !== itemId));
-      setStoreSuccessMsg(`Duplicate medicine "${itemName}" (ID: ${itemId}) permanently removed from Stock Manager!`);
-      setTimeout(() => setStoreSuccessMsg(''), 6000);
-    } catch (err) {
-      console.error('Failed to delete duplicate item:', err);
-      alert(`Failed to delete item ${itemName}: ${err}`);
-    } finally {
-      setItemToDeleteConfirm(null);
-    }
   };
 
   // Store Patent Medicine Sales (Store Sales) Helpers & Actions
@@ -4554,34 +4455,21 @@ export default function PharmacyPOS({
 
     setStoreValidationError('');
 
-    const effectivePrice = storeRowPrice === '' ? Number(selectedItem.Price || 0) : Number(storeRowPrice);
-
-    // Auto-update price in stock grid manager if user entered a different price
-    if (effectivePrice !== selectedItem.Price) {
-      const updatedItem = { ...selectedItem, Price: effectivePrice };
-      if (setItems) {
-        setItems(prev => prev.map(itm => itm.ItemID === selectedItem.ItemID ? updatedItem : itm));
-      }
-      syncItemToBackend('UPDATE', updatedItem);
-    }
-
     const existsIndex = storeBasket.findIndex((b) => b.ItemID === storeRowItemId);
     if (existsIndex >= 0) {
       const updated = [...storeBasket];
       updated[existsIndex].Qty += storeRowQty;
-      updated[existsIndex].Price = effectivePrice;
       setStoreBasket(updated);
     } else {
       setStoreBasket([
         ...storeBasket,
-        { ItemID: storeRowItemId, Qty: storeRowQty, Price: effectivePrice, MedicineType: 'P' }
+        { ItemID: storeRowItemId, Qty: storeRowQty, Price: selectedItem.Price, MedicineType: 'P' }
       ]);
     }
 
     // Reset scratchpad
     setStoreRowItemId('');
     setStoreRowQty(1);
-    setStoreRowPrice('');
     setStoreSearchQuery('');
     setStoreSearchDropdownOpen(false);
   };
@@ -5899,29 +5787,10 @@ export default function PharmacyPOS({
           
           {/* POS Bill Builder */}
           <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-3">
-              <h3 className="text-sm font-bold text-slate-950 flex items-center">
-                <ShoppingCart className="w-4 h-4 text-emerald-500 mr-2" />
-                Store Medicine (Patent Pharmacy POS)
-              </h3>
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setIsDuplicateManagerModalOpen(true)}
-                  className={`px-2.5 py-1 text-xs font-bold rounded-lg border flex items-center space-x-1.5 transition cursor-pointer ${
-                    allDuplicateGroups.length > 0
-                      ? 'bg-amber-50 hover:bg-amber-100 text-amber-900 border-amber-300 shadow-xs ring-1 ring-amber-200 animate-pulse'
-                      : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                  }`}
-                  title="Check and clean duplicate medicine names from database"
-                >
-                  <AlertTriangle className={`w-3.5 h-3.5 ${allDuplicateGroups.length > 0 ? 'text-amber-600' : 'text-slate-400'}`} />
-                  <span>
-                    Duplicate Manager {allDuplicateGroups.length > 0 ? `(${allDuplicateGroups.length} Duplicates Found)` : '(Clean)'}
-                  </span>
-                </button>
-              </div>
-            </div>
+            <h3 className="text-sm font-bold text-slate-950 flex items-center border-b border-slate-100 pb-3">
+              <ShoppingCart className="w-4 h-4 text-emerald-500 mr-2" />
+              Store Medicine
+            </h3>
 
             {storeSuccessMsg && (
               <div className="p-4 bg-emerald-50 text-emerald-800 text-xs rounded-xl font-medium border border-emerald-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 animate-fadeIn">
@@ -5997,20 +5866,14 @@ export default function PharmacyPOS({
               </select>
             </div>
 
-            {/* In-Grid Item selector with Price Textbox & Instant Duplicate Deletion */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3.5">
-              <div className="flex items-center justify-between">
-                <span className="text-xxs font-bold text-slate-500 uppercase tracking-wider">Select Patent Medicine & Enter Price / Qty</span>
-                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                  ‚ö° Entered price auto-saves to Stock Master for next time
-                </span>
-              </div>
+            {/* In-Grid Item selector */}
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-3.5">
+              <span className="text-xxs font-bold text-slate-400 uppercase">Select Patent Medicine</span>
               
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 items-end">
-                {/* Search Medicine with Dropdown & Duplicate Badges */}
-                <div className="lg:col-span-6">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
+                <div className="sm:col-span-2">
                   <div className="flex justify-between items-center">
-                    <label className="block text-xxs font-bold text-slate-600 uppercase">Search Patent Medicine</label>
+                    <label className="block text-xxs font-bold text-slate-500 uppercase">Search Patent Medicine</label>
                     <button
                       type="button"
                       onClick={() => setIsQRScannerOpen(true)}
@@ -6023,7 +5886,7 @@ export default function PharmacyPOS({
                   <div className="relative mt-1">
                     <input
                       type="text"
-                      placeholder="Type medicine name or code..."
+                      placeholder=""
                       value={storeSearchQuery}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -6032,17 +5895,15 @@ export default function PharmacyPOS({
                         const exact = items.find(i => i.MedicineType !== 'C' && i.ItemName.toLowerCase() === val.toLowerCase());
                         if (exact) {
                           setStoreRowItemId(exact.ItemID);
-                          setStoreRowPrice(exact.Price || 0);
                         } else {
                           setStoreRowItemId('');
-                          setStoreRowPrice('');
                         }
                       }}
                       onFocus={() => setStoreSearchDropdownOpen(true)}
                       onBlur={() => {
-                        setTimeout(() => setStoreSearchDropdownOpen(false), 250);
+                        setTimeout(() => setStoreSearchDropdownOpen(false), 200);
                       }}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2.5 pr-8 focus:outline-none focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 font-medium"
+                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2 pr-8 focus:outline-none focus:border-blue-500 font-medium"
                     />
                     
                     {storeSearchQuery && (
@@ -6051,16 +5912,15 @@ export default function PharmacyPOS({
                         onClick={() => {
                           setStoreSearchQuery('');
                           setStoreRowItemId('');
-                          setStoreRowPrice('');
                         }}
-                        className="absolute right-2.5 top-[13px] text-slate-400 hover:text-slate-600 cursor-pointer"
+                        className="absolute right-2 top-[12px] text-slate-400 hover:text-slate-600"
                       >
                         <span className="text-xs font-bold font-mono">‚úï</span>
                       </button>
                     )}
 
                     {storeSearchDropdownOpen && (
-                      <div className="absolute z-50 mt-1 w-full max-h-72 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl divide-y divide-slate-100">
+                      <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg divide-y divide-slate-100">
                         {(() => {
                           const query = storeSearchQuery.toLowerCase().trim();
                           const list = items.filter(itm => 
@@ -6071,72 +5931,29 @@ export default function PharmacyPOS({
                           );
                           
                           if (list.length === 0) {
-                            return <div className="p-4 text-xs text-slate-400 text-center font-medium">No matching patent medicines found in stock catalog</div>;
+                            return <div className="p-3 text-xs text-slate-400 text-center">No matching patent medicines found</div>;
                           }
                           
-                          return list.slice(0, 20).map((itm, idx) => {
-                            const trimmedName = itm.ItemName.trim().toLowerCase();
-                            const duplicateCount = items.filter(i => i.MedicineType !== 'C' && i.ItemName.trim().toLowerCase() === trimmedName).length;
-                            const isDuplicate = duplicateCount > 1;
-
-                            return (
-                              <div
-                                key={`${itm.ItemID}-${idx}`}
-                                onMouseDown={() => {
-                                  setStoreRowItemId(itm.ItemID);
-                                  setStoreSearchQuery(itm.ItemName);
-                                  setStoreRowPrice(itm.Price || 0);
-                                  setStoreSearchDropdownOpen(false);
-                                }}
-                                className={`p-2.5 hover:bg-emerald-50/70 cursor-pointer text-left transition flex justify-between items-center gap-2 ${
-                                  isDuplicate ? 'bg-amber-50/30' : ''
-                                }`}
-                              >
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex items-center space-x-1.5 flex-wrap">
-                                    <span className="font-bold text-xs text-slate-900">{itm.ItemName}</span>
-                                    <span className="text-[10px] text-slate-400 font-mono">({itm.ItemID})</span>
-                                    {isDuplicate && (
-                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-amber-100 text-amber-900 border border-amber-300">
-                                        ‚ö†Ô∏è DUPLICATE ENTRY ({duplicateCount})
-                                      </span>
-                                    )}
-                                  </div>
-                                  <div className="text-[10px] text-slate-500 mt-0.5 flex items-center space-x-2">
-                                    <span>Category: {itm.Category || 'Patent'}</span>
-                                    <span>‚Ä¢</span>
-                                    <span>Unit: {itm.Unit || 'Unit'}</span>
-                                    {itm.BatchNo && <span>‚Ä¢ Batch: {itm.BatchNo}</span>}
-                                  </div>
-                                </div>
-
-                                <div className="flex items-center space-x-2.5 shrink-0">
-                                  <div className="text-right text-xxs font-mono">
-                                    <div className="text-emerald-700 font-extrabold text-xs">Rs. {itm.Price || 0}</div>
-                                    <div className="text-[10px] text-slate-500 font-bold">Stock: {itm.CStock}</div>
-                                  </div>
-
-                                  {/* Immediate Delete Button for Duplicate / Unwanted Medicine */}
-                                  <button
-                                    type="button"
-                                    onMouseDown={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteDuplicateItem(itm);
-                                    }}
-                                    className={`px-2 py-1 rounded text-[10px] font-bold flex items-center space-x-1 transition cursor-pointer ${
-                                      isDuplicate
-                                        ? 'bg-rose-100 hover:bg-rose-200 text-rose-800 border border-rose-300'
-                                        : 'bg-slate-100 hover:bg-rose-50 text-slate-500 hover:text-rose-700 border border-slate-200'
-                                    }`}
-                                    title={isDuplicate ? "Delete this duplicate medicine copy from Stock Manager" : "Delete this medicine from inventory"}
-                                  >
-                                    <Trash2 className="w-3 h-3 text-rose-600" />
-                                    <span>{isDuplicate ? 'Delete Duplicate' : 'Delete'}</span>
-                                  </button>
-                                </div>
+                          return list.slice(0, 15).map((itm, idx) => (
+                            <div
+                              key={`${itm.ItemID}-${idx}`}
+                              onMouseDown={() => {
+                                setStoreRowItemId(itm.ItemID);
+                                setStoreSearchQuery(itm.ItemName);
+                                setStoreSearchDropdownOpen(false);
+                              }}
+                              className="p-2.5 hover:bg-emerald-50 cursor-pointer text-left transition flex justify-between items-center"
+                            >
+                              <div>
+                                <span className="font-semibold text-xs text-slate-800">{itm.ItemName}</span>
+                                <span className="ml-1.5 text-[10px] text-slate-400 font-mono">({itm.ItemID})</span>
                               </div>
-                            );
-                          });
+                              <div className="text-right text-xxs font-mono">
+                                <span className="text-slate-600 font-bold">Rs. {itm.Price}</span>
+                                <span className="ml-2 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">Stock: {itm.CStock}</span>
+                              </div>
+                            </div>
+                          ));
                         })()}
                       </div>
                     )}
@@ -6145,174 +5962,75 @@ export default function PharmacyPOS({
                   {storeRowItemId && (() => {
                     const sel = items.find(i => i.ItemID === storeRowItemId);
                     if (!sel) return null;
-                    const duplicates = items.filter(i => i.MedicineType !== 'C' && i.ItemName.trim().toLowerCase() === sel.ItemName.trim().toLowerCase() && i.ItemID !== sel.ItemID);
                     return (
-                      <div className="mt-1.5 space-y-1">
-                        <div className="flex items-center justify-between text-xxs bg-emerald-50 border border-emerald-200 text-emerald-900 p-2 rounded-lg font-medium">
-                          <div className="flex items-center space-x-1.5">
-                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                            <span>Selected: <strong>{sel.ItemName}</strong> <span className="font-mono text-slate-500">({sel.ItemID})</span></span>
-                          </div>
-                          <div className="flex items-center space-x-3">
-                            <span>Catalog Rate: <strong>Rs. {sel.Price || 0}</strong></span>
-                            <span>| Stock: <strong>{sel.CStock} {sel.Unit || 'Units'}</strong></span>
-                          </div>
-                        </div>
-
-                        {duplicates.length > 0 && (
-                          <div className="flex items-center justify-between text-[11px] bg-amber-50 border border-amber-200 text-amber-900 p-2 rounded-lg">
-                            <div className="flex items-center space-x-1.5">
-                              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                              <span>Found {duplicates.length} duplicate copy in stock manager: {duplicates.map(d => `${d.ItemName} (${d.ItemID})`).join(', ')}</span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleDeleteDuplicateItem(duplicates[0])}
-                              className="px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white rounded text-[10px] font-bold transition cursor-pointer shadow-2xs flex items-center space-x-1"
-                            >
-                              <Trash2 className="w-3 h-3" />
-                              <span>Delete Duplicate ({duplicates[0].ItemID})</span>
-                            </button>
-                          </div>
-                        )}
+                      <div className="mt-1.5 flex items-center justify-between text-xxs bg-emerald-50 border border-emerald-100 text-emerald-800 p-1.5 rounded-md font-medium">
+                        <span>Selected Patent Medicine: <strong>{sel.ItemName}</strong> ({sel.ItemID})</span>
+                        <span>
+                          <span>Price: <strong>Rs. {sel.Price}</strong></span>
+                          <span className="ml-2">| Stock: <strong>{sel.CStock} {sel.Unit}s</strong></span>
+                        </span>
                       </div>
                     );
                   })()}
                 </div>
 
-                {/* Editable Qty Textbox */}
-                <div className="lg:col-span-2">
-                  <label className="block text-xxs font-bold text-slate-600 uppercase">Quantity (Qty)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    value={storeRowQty}
-                    onChange={(e) => setStoreRowQty(parseInt(e.target.value) || 1)}
-                    className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none font-mono font-bold text-center text-slate-900"
-                  />
-                </div>
-
-                {/* Editable Price Textbox with Auto-Sync Indication */}
-                <div className="lg:col-span-2">
-                  <label className="block text-xxs font-bold text-slate-600 uppercase flex items-center justify-between">
-                    <span>Unit Price (Rs.)</span>
-                    <span className="text-[9px] text-emerald-600 font-extrabold">AUTO-SYNC</span>
-                  </label>
-                  <div className="relative mt-1">
-                    <span className="absolute left-2.5 top-[10px] text-xs font-bold font-mono text-slate-400 pointer-events-none">Rs.</span>
+                <div className="flex space-x-2">
+                  <div className="w-1/2">
+                    <label className="block text-xxs font-bold text-slate-500 uppercase">Qty</label>
                     <input
                       type="number"
-                      min="0"
-                      step="any"
-                      placeholder="0"
-                      value={storeRowPrice}
-                      onChange={(e) => setStoreRowPrice(e.target.value === '' ? '' : parseFloat(e.target.value))}
-                      className="w-full text-xs border border-emerald-300 bg-white rounded-lg p-2.5 pl-8 focus:ring-1 focus:ring-emerald-500 focus:border-emerald-500 focus:outline-none font-mono font-black text-right text-emerald-950 shadow-xs"
-                      title="Enter selling price. This price will be saved automatically to Stock Manager for next time."
+                      min="1"
+                      value={storeRowQty}
+                      onChange={(e) => setStoreRowQty(parseInt(e.target.value) || 1)}
+                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2 focus:outline-none font-mono"
                     />
                   </div>
-                </div>
-
-                {/* Add to Basket Button */}
-                <div className="lg:col-span-2">
                   <button
                     type="button"
                     onClick={handleAddToStoreBasket}
-                    disabled={!storeRowItemId}
-                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg flex items-center justify-center transition shadow-sm cursor-pointer"
+                    className="w-1/2 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center transition self-end"
                   >
                     <Plus className="w-4 h-4 mr-1" />
-                    Add Item
+                    Add
                   </button>
                 </div>
               </div>
             </div>
 
-            {/* Checkout basket list with IN-LINE EDITABLE PRICE TEXTBOX */}
-            <div className="overflow-x-auto border border-slate-200 rounded-xl bg-white">
-              <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <span className="text-xs font-bold text-slate-800">Store Sales Cart Items ({storeBasket.length})</span>
-                  <span className="text-[10px] text-slate-500 font-medium">(Edit price directly in textbox to auto-update Stock Master)</span>
-                </div>
-                {storeBasket.length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setStoreBasket([])}
-                    className="text-[11px] font-bold text-rose-600 hover:text-rose-700 flex items-center space-x-1 cursor-pointer"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                    <span>Clear Cart</span>
-                  </button>
-                )}
-              </div>
-
+            {/* Checkout basket list */}
+            <div className="overflow-x-auto">
               <table className="w-full text-left text-xs">
                 <thead>
-                  <tr className="border-b border-slate-200 bg-slate-100/70 text-slate-600 uppercase text-xxs font-extrabold">
-                    <th className="py-2.5 px-3">Item ID</th>
-                    <th className="py-2.5 px-3">Product Name</th>
-                    <th className="py-2.5 px-3 text-center w-24">Qty</th>
-                    <th className="py-2.5 px-3 text-right w-36">Unit Price (Rs.)</th>
-                    <th className="py-2.5 px-3 text-right">Line Total</th>
-                    <th className="py-2.5 px-3 text-center w-16">Action</th>
+                  <tr className="border-b border-slate-200 text-slate-400 uppercase text-xxs font-bold">
+                    <th className="py-2.5 font-bold">Item ID</th>
+                    <th className="py-2.5 font-bold">Product Name</th>
+                    <th className="py-2.5 text-center font-bold">Qty</th>
+                    <th className="py-2.5 text-right font-bold">Retail Rate</th>
+                    <th className="py-2.5 text-right font-bold">Line Total</th>
+                    <th className="py-2.5 text-right font-bold">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {storeBasket.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-8 text-center text-slate-400 font-medium">
-                        Store sales cart is empty. Select a patent medicine above to add.
-                      </td>
+                      <td colSpan={6} className="py-6 text-center text-slate-400 font-semibold">Store sales ticket basket is currently empty.</td>
                     </tr>
                   ) : (
                     storeBasket.map((b, idx) => {
                       const item = items.find((i) => i.ItemID === b.ItemID);
                       const total = b.Qty * b.Price;
                       return (
-                        <tr key={`${b.ItemID}-${idx}`} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="py-2.5 px-3 font-mono text-xxs font-bold text-slate-500">{b.ItemID}</td>
-                          <td className="py-2.5 px-3">
-                            <div className="font-bold text-slate-900">{item ? item.ItemName : 'Unknown'}</div>
-                            {item?.Category && (
-                              <div className="text-[10px] text-slate-400">{item.Category} ‚Ä¢ {item.Unit || 'Unit'}</div>
-                            )}
-                          </td>
-                          <td className="py-2.5 px-3 text-center font-bold font-mono">
-                            <input
-                              type="number"
-                              min="1"
-                              value={b.Qty}
-                              onChange={(e) => handleUpdateStoreBasketQty(b.ItemID, parseInt(e.target.value) || 1)}
-                              className="w-16 text-xs font-mono font-bold text-center border border-slate-200 hover:border-slate-300 focus:border-emerald-500 rounded-lg px-1.5 py-1 bg-white focus:outline-none shadow-2xs"
-                            />
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono">
-                            <div className="flex items-center justify-end space-x-1">
-                              <span className="text-[11px] font-bold text-slate-400">Rs.</span>
-                              <input
-                                type="number"
-                                min="0"
-                                step="any"
-                                value={b.Price}
-                                onChange={(e) => {
-                                  const val = e.target.value === '' ? 0 : parseFloat(e.target.value) || 0;
-                                  handleUpdateStoreBasketPrice(b.ItemID, val);
-                                }}
-                                className="w-28 text-xs font-mono font-black text-right border border-emerald-300 focus:border-emerald-600 rounded-lg px-2 py-1 bg-emerald-50/30 focus:bg-white transition focus:outline-none text-emerald-950 shadow-2xs"
-                                title="Edit rate - automatically saves to Stock Master for next time"
-                              />
-                            </div>
-                          </td>
-                          <td className="py-2.5 px-3 text-right font-mono font-black text-slate-900 text-sm">
-                            Rs. {total.toLocaleString()}
-                          </td>
-                          <td className="py-2.5 px-3 text-center">
+                        <tr key={`${b.ItemID}-${idx}`} className="hover:bg-slate-50/50">
+                          <td className="py-2 font-mono text-xxs font-bold text-slate-400">{b.ItemID}</td>
+                          <td className="py-2 font-bold text-slate-800">{item ? item.ItemName : 'Unknown'}</td>
+                          <td className="py-2 text-center font-bold font-mono">{b.Qty}</td>
+                          <td className="py-2 text-right font-mono text-slate-600">Rs. {b.Price}</td>
+                          <td className="py-2 text-right font-mono font-bold text-slate-900">Rs. {total.toLocaleString()}</td>
+                          <td className="py-2 text-right">
                             <button
                               type="button"
                               onClick={() => handleRemoveFromStoreBasket(b.ItemID)}
-                              className="text-red-500 hover:text-red-700 p-1.5 hover:bg-red-50 rounded-lg transition cursor-pointer"
-                              title="Remove item from cart"
+                              className="text-red-500 hover:text-red-700 p-1"
                             >
                               <Trash2 className="w-4 h-4" />
                             </button>
@@ -10564,25 +10282,383 @@ export default function PharmacyPOS({
                     </h4>
                   </div>
                   <span className="text-[11px] font-bold text-slate-500 font-mono">
-                    {Array.isArray(selectedBatchItem.Batches) ? selectedBatchItem.Batches.lengthxúÏ=Ìr€Hrˇ˜)Ê¥[&y1HÍÀZI[2-9™≤eY≤sórπbëàA á,1:UÂ!Ú+˜y¢<¡=B∫g >fÄ>ºŒ&¨≤%ÉûAOwOãÏê>£>uÍæ∞g~ú–≈*zi'î¸B÷…n»u¬ÿ•.y&ÏR˚ÏéXd˚µ;ª#◊˚∫ˇCÌ˙ıËèÑœGyoO}J˛8∫©?«∑;±tom:≥.Á,,” Vc]˘däÎäÂã˘∞nkc<&·W_¯·•5˜\óÑÕmæ]±µ˙*a=˝˛ÄÏÌìk≈=Bú0`	ôäıæˆX≤CO¸>~"{‰ éÌÂ–c¸ß°ÚU‰—#¢Ω;Ùi0KÊdüåï´ ∞⁄á5O(∑wrûÑŒúá¸ıØ:ê'°˙¶§Õ|bï’h\}∏ó;‰ÛO◊ı)ø„ó7÷Àºƒ≥˝œè‡â'vÀw⁄<è$¶ÉÄ˜ö`H¨©@⁄{Ò#è◊{M–ﬁ\ÃÕ*hÚá÷Gnó
-N∆Â≠‡ú¶±3∑=ç=G	≠4†	⁄πÌ µÅ.Y™û§›∏›Ç¨Ó„<±ìîÈü'{{{¿`øêﬁ·üˇÒ‡√˘˚√ó=`GèÒÅÄ{/¶Æ^ˆƒìß«g‚πﬁ¡‰˝Ò?6Ó”$¶¥{ "*†óAı√$<>{ûƒ^0Îån>nÔêèü?◊•9~º“/H»Lòq,4rïêò&iêæv“™
-à¨g$°WâÂ– πœR§>h!áZKkC)Âs†/¬+P<∞ó vˇWñù&aÏÊxºFFFpQÙäëã0H¨iËªE`O ÿ>H∆ID‚∞ µÎí&º’‹cdA]œÒ:‹Eßˇ∏æ]}™ gmˇ£ ö‚¸˜ÿõÕØÏóvÏõ”çXü&‰“É]ÙF(íÏí∏ Õº"©Û’7Å|Tóo‘D5ëÛ0’ª$ábz.±˙GáGo’t,T5Éá$Sz˜»«·pX ŒOC–Ô€è…î´˝æ]íÜœ·”˝–95	ë”˛T1D«d]%Í‹Vë‘∑∞Ø¨πıqÛ…w1øª‰wîΩõpS™D◊©ÔBÈEíŸINË˚vÑ‰ ®’Ã.@'∂[1ƒY≠œ®Ï)|Âtób{E¸◊˘õ§QDc«∆ic€˘“»∫Ù
-÷€¥n∆±ƒsæ,Å>#kl\$.36‡oR&W÷&â∏¥‡¥B~‹%ÛÓ@6Ü€LÅJÔJ‡ç3Á⁄˛¡W€Û˘÷Ç ∫G∏ìx•∆˜S‰µ}°Ô‚Åìx¿÷Õ aÑëP≤ô÷ß°ª,.xh‘…'~Q˛≥qu^ód“paG˝˛Ù1Ò‹+É„±˙πÊ1 0êg+"MÈZsBÌ∏J^ ‚]A{Lûè[C<óñÃQ∫^êA}%¿‚¬¥qπ%0JÀ_#7WüF√ ˚ ◊7é!‰]Ó]Á≥£ƒ◊N≈ÎÂÑp˝ÑV¿<§E2G°ºìã¡Ì1˘©i≈ßÜ®VO°S’ÉŸº¿ıf!L7z6&hÕYÎ‚áºZæ◊‡é ¶N”«!√wmwöEíVßôÏ≈‘ Lµ’a™^hÛ»ÕÁÊÌo`¯…#‰GÚàú—e$£˛ŸM\•*˙s°⁄Ç|ﬁ(iÚfXm,ﬂd"]’ì—AÔFŸQ ¬´≥‡∞GèZnq•uˆ9ö¯N‚ÑJ∫®∂≠g"∏C;˘2€lî\¢…®≠~Ì‡∂Ü	zÀU—Í$∆¢°|[R\4≠)≠·¬ßWˇC;≥ıÓp,Å1sB≥Œ-~ÆÀˆ˚	∏6å&Ω∂–ô≤(M7F®¢†¿	O7GN'ÍáUÌV◊Ö˛ªºˇo  `#ﬂôfrU W\õŒRπ≤≈∞∏‡<ZTﬁf˙·óËÇ∆∂Ô¢ã’ªÈ@á ºÌf¥›·Nªë≈	Î=–∆î]–ñ;»)-…`0Øp·‘ÖΩ8I—
-ÈWÜa4Ì»ª≥{cÄªcµí!ùp&\(0+‹Ÿ}a,Û•⁄b¶HìmÂWMz¡*÷≈*∆C4x_eBáT5?ÚYwx5∑S∆ıHıAf2ﬂ+F∏Iù#Ñ{f¬áo;_Vqî®˘˚ØˇÒ_D:åÜùÃ≠ºO	W Gë¯˙¸˛hÊÔø˛˙ü‰ëü¸¸|F”RóI´-º#rÓ!ô&»Qí]0Ng§¸ç`‹Â´)”WZw|‹ªƒî!¢ﬂBX*ç_pB,ÀQ¸+à$Ôbô}9
-ÿ’ˆñÒ4Mí0hΩ{…2¬ -h≠ıSa0Ò=ÁÀﬁµHÖœÌ¿ı)®¢8¡8w˚”ññ~JYõı¢ƒﬂB~Q/û‰WãëéEØ¢/N≥0∂¢–„˚‘/^‚√jx|J¯Ïßv ¨-îˆ<¥ÀÁ)„7ÅÃÊ¯CF©f$6Ú±º§>‡RRJlªäŸ*S◊ì%zë°©†ÒRí^^á… ˚ÿfÛçoM*ΩØ£Û/—‰#≠¿õ7%y˛K7¿æ u›˙äıò*ö0-I^z,¢@{¡åúÑöL=´ΩIJ·›ß„Jaìºµ1°ﬂU˝SA›0î’πzï¶T0ıπ◊Ö]Q√ú… •V˛å∞yÏ_¨1Y$hãh‘◊ÓdNù//v|⁄ë¶µ;§í‹rÌœA¯‘v1$Sﬂ/≠7‘≠ò%q€Uù ä%ﬂ⁄˛ë≥ƒíVÙc"ææMì9HìpÅï‰0òÅˇ∏ˆá∫O˛4ßôzæè$≈î9±	s%å±~Ñﬂ∞r˙ˆ¸±Ãº_¬pbòûc˚˛íL)œµ§|ß8\Ï=ÿ€æGY"≤ÛÁ´Ì{.œ‹_‡ÍÜôÕøJÈ3b«ÚÌ	lJÒaW–.uáÌwGyYÕ%»#g‹uüÑ~∫v»±(:ëÇN>¬ÍÑ˛6º≠œ
-ˆ©É?€Å°öü'dA∏ëµEÿb'Çk- ÛÚ@R
-^Ê∂€î&óî
+                    {Array.isArray(selectedBatchItem.Batches) ? selectedBatchItem.Batches.length : (selectedBatchItem.ExpDate ? 1 : 0)} Recorded Lots
+                  </span>
+                </div>
 
-“ÖŸ€€Ö∂!MA@,¶÷ñéÇÁ •Ç÷Ë¨¿∏˛,CÅˇ∫Æ§ÙäπöäÉˆL∆ÆVr% ø„àõœÜP÷Ó©ü2!G bdÑ»ñA-€Ó|´cÆÑÙÄ¥ï
-≠c~
-\qœ“+ÉÇ„Èå:ú-‡Ñ◊%'Ùíà*2>Ja⁄Õ∑4°«AueÜuì-ŸŒv¨ÿä¶D)£‹ŸX≠Æ§æo4‡>≈∆IÿÔıZèñ˘Ä.èºKñÊ·7zF£ø*πçö3ÑÏB>†-Y=I˛ß+˛.Zz2êJÎLg¡^fÊπ{kÃ˛J-^e·µ5†àÛt∫íΩkÈe¬ æÆõ"ñ≤bæMÉ‘”≤πoO©_™YÚëüäÂH˙p>b_+@õ\˜,‹÷ñ!d–bZÑÛujﬂ¬¢T_" ÿ◊≠gæò˛%5∆¸"∞<–xoçgCÚtŒ∆k<ﬁ–É3#≈‰≈äÛÙÑ¸€<É·} %@ÖeÈ◊MÜ®¡®∂E÷ÜR•oÆBa®πJ5ô∆‹:‹pR∂√ã*6ä_r€<¶	r•Ñ’·I£¢Ù<SWÂ≥Ã9¸ÕköŸë÷∂œ îÍo∆<˘Håg∏°ë2é¿Uìõ^%ﬁŸP#ÀÁ€Ú˝ìrΩ0‚Ÿmâ97°ı(l2Ωæ)iÊ¡†€Sf©f‚7'œFë]ß`i ‹öÇ3SËû)òoMWYÃBO^GΩ2÷ß£›¨Jms|{6‹˙ø&µﬂ•vêx…íxÅ¥mûCn6ôxd·{kÜn≈Eu”g€≤ uµFéCO¢Ãm<ﬂﬁÎ°ßà.°¨>®p‰7U*"€\À1Í¯2”ÕF˙Œ¥…}∞Ãá¿√ó(ÆÍ\};va	çÄ_Ü„ıª1Uâc¯Úöò.LÉO›ök·Ôûm]xäb≈˚u-˛_áu`»3öÿû/K–~◊<â'kªÛd~˜÷åôC¯ÓπÛ¡ù˛ﬂ°B;}KF‰’Ÿ	?ﬂ–%œ?Ê®ñ vÉıYÎ„≠.tæäxß[ì}‡˚r˝ü~W Fu√¿ÌªÖ‘R÷âµïa*©gÀx[ün£Å€êkù!1ÁG⁄dGZÁF:gF∫‰E:gE:‰D¥ÂÈßRëpÂî›ÜÊ∞q)sW»ıv¨“Q¯ƒº⁄√z¶§â:eb†A3ågG‘ÀD÷©ßTîCÀﬁ 1l(∏C§⁄ºÓ≥pÒYπ$Dì3mÉ˘,œæpöFÇç©xçêπ]ñXx´'i?DûìyWÃÃbnJ>y˜çÕp¡<Ek:"ß'ç÷U™kXGÒ&tmüÖ!.§Z$°©/Zqñ^xÚm©V&î∂	H©Ó4VË¨*?Õ9od◊Ç˝|nu$LﬂQHn˘Ôˇy&Ä?y˚∂3µÓ˚dË‹îuJi◊âKMkjj“à≥Zj°ê@¯3πzNÜo#Ù/lü©†√¯ÛÍõÈµWkEßP,:Å∑Ú¡+*ÂπB≤›Z®]’äàÎ‰=ÒCÜÚ#∞g¥zp]--j{[πP˙:»©†å@Dìwgd∫îú;v¿bÖ‡XIå]ıÓLﬁÊwsÿ√≠›ªˆX> /¨è‘/îQßå“PI≈'ÓyÍ8î±,ˇ/9£,ıÛÿ–h_˚*Ø(@∑ì0â¸ö{E‡zâÓ’Ú·˙óÀá¥yΩ“‡⁄rY	PÒ«Í™6∂Áà *Ò˚9Mê»Ÿ/Cº •û/∞Äs¬oì”π/lgŸS#Dñ%øL#`W#Å£I\x1ñùV¬Wı>œ ëeÎ∂VIÜ'›à¿´[cÚoXb]dû—¯æ§áë5ı”8Ø†3ùÄ¿“<;∞^“∫∞]z\Æ´kl˚∑‹(yn√P”ámt∏©!›¨jK¿l	€¸|à* ®ÆC∑ÚÏR•F∂±¥ØQ]v+ÿ€=iúºè=K´fVÿnß¥ÄvÁõ5]W–p†óU‰`¡h/9°ÌéÊõﬂN!Á’IWh£(ÏRı¸ /¨¥÷|Ú˛‹Œ–4äÛR€Œ;ômÂ™®·ê´¬Ê+1‹ÆîÁ((h∏lN¨˚,•b5eØ4§í6y;≈]9±
-ÓÍêoÜáÏ§‰⁄>óz¬X◊⁄iÖ(µú]ÃYöÙif$+Ÿ‹ÿDL.«$çcxD¯ãùoîb{»ìL®5÷+æö÷·7¿˙m"{3fã;cCıD@1nûæCù∏¢£›*äYåyUj˝h?à)YÜ)a©¸Â“xªªàÇí`'¸%qÖ∞+u›#p+^˛≤N„ÛÚ˚EÑ·âò.@ö
-Ò3Tâ™›Wò:ëFﬁÍ  ò:ÿ>œû⁄åVÏyGΩŒJB“B
-Tjmÿ°)Pu'a‹dï€@èäÊEÄGA∞ZÁ˝Óò§W‘Iyb.◊≤à÷.‘úÉ{⁄¡´ëv[¸õé°•\πÕ7)å
-ú*ÕaÄË‰åz€ÚÁÆ’ 0 ,cxÖ’ÕÚ·rLÓ6ˇﬁ≠ÔM!ÕoŸ’ÚŸˆ◊˘ß )õ{±Ã’˝CöÊ \∏ˆ|]÷”l<⁄(ïŸ*gy ¯Ãá`9õíGö|µ†7îì®¸ÖUqwÙ°r8‘÷çkï!‹#¥ÍTÃÄÄ∏˘¯f…∆µ@M¸ ›JØ0√b∂∫™VFpùnM¶LÂ‚}9?z	R@dµ	U9Iùùïªª§#∂ª∏AæŒ’˘∏Ê≥uXªR?GRùÌHÃ}…§2„wœ©;sç´Y∑ß,ÙAÕÏΩæ∂±›–®;m^‹ú/Â¡è<_~≈
-ãúßKN˘√·PE&∆Û≈[
-p*ÉDï©z∏Mb\ë˜≠g$äERPäOA©:m£MìGAQ)\»âØk™ÎòRP∑äÎï^§¶%¯S~˙Tú¨V‹µÌ˚9f_¡kFY∆‡¶`Ñ¢∏Ké≠çüF¨¥ü.&4L¢_±°£îBkñö±®€ﬂÈOuN°ØÉ ƒˇJu≠òò öø/¶‡?i,R’Œ≤Övgy≥˜:;J%tÅ;ıánßﬁÀÅ†mQÓ õœa*íπ
-S⁄~8#ì*ïÂ‹f$ºø§r√.«∫’çåÍ˚≠xô·Öê≥8By?Ü\%·Îí∆â˚É°8~ÍR÷WJ¢Ú‡Å™I4VËè…ÏXˆV÷‘n vy_`xS1y+JßléU¬f"“ñˇÈÅÜ
-…Ng¬MÕﬁÔ·Ã7á£Ã|¨ª2≈ÒSœ◊Ÿˆµh´jhµëµ≥ ∞∏ÍR_¨dã0ı SÌŒfs/n\>GïBîN¬»”˛=˛BØl>~ﬁXh˙√ Z7a•Û√[Ü6ˇôÄˆ¿åÈ›$nÛwûî"<z;/«∂ÔÄWm2è‹ C∆∑ÈQèèO`9≥0æU'˛z∑|êÿw$[˘À
-Á≥[˛·Å
-¥ºiÁ]·ï[¯w¸õ{√düÇ»‡∆K›R\M,î<ê%!äk´5ío—Æ⁄æŒ‘4|UÍ≈Û1ÖDH´ûNıô \+Åf¡Ûß%HzwúBÍ0CÒüxï!QeDÓ≤ÄBèŸ’¸Ö.ºkYZ§íπ˚úUØÊ)µ´Ωá˘:4:Ï“VÆ{K9C;πRpúÛ]ªÜr èÎ≈Ñh9h^n¬˙¥f\T¶+eT†ë€Ñ–3ø£¶ ]Èx  	£eõá€l≥.RèÒç÷ùËD‹æZB–•¡t€>vm»øπ1ù˘  ˆù”ﬁ™˘6ï∂sﬁoWÙIÉz"ı;âc~√¢æÔ¨îÔÙO‰M8ı¿n?à"r0Ì˝z≈€È•-ÔÈä›`Déss•[q§¢éÔµùŒpLa≠ÙçMßÔÌÈ˘•áΩ@{˝≥} zèIè?ìÁ	zÉjÖ[éá¡œ?‹¸?   ˇˇ ºk$Ω
+                {/* Batches Table */}
+                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
+                  {(() => {
+                    const batchesList: ItemBatch[] = Array.isArray(selectedBatchItem.Batches) && selectedBatchItem.Batches.length > 0
+                      ? selectedBatchItem.Batches
+                      : (selectedBatchItem.CStock > 0 || selectedBatchItem.BatchNo || selectedBatchItem.ExpDate
+                          ? [{
+                              BatchID: `${selectedBatchItem.ItemID}-B-initial`,
+                              ItemID: selectedBatchItem.ItemID,
+                              ItemName: selectedBatchItem.ItemName,
+                              BatchNo: selectedBatchItem.BatchNo || 'B# 001',
+                              MfgDate: selectedBatchItem.MfgDate || '',
+                              ExpDate: selectedBatchItem.ExpDate || '',
+                              PurchasePrice: selectedBatchItem.PurchasePrice,
+                              SalePrice: selectedBatchItem.Price,
+                              Qty: selectedBatchItem.CStock,
+                              InitialQty: selectedBatchItem.CStock,
+                              Status: selectedBatchItem.CStock === 0 ? 'EXHAUSTED' : isBatchExpired(selectedBatchItem.ExpDate) ? 'EXPIRED' : 'ACTIVE',
+                              CreatedAt: new Date().toISOString()
+                            }]
+                          : []);
+
+                    if (batchesList.length === 0) {
+                      return (
+                        <div className="p-8 text-center text-slate-400 space-y-2">
+                          <Boxes className="w-8 h-8 mx-auto text-slate-300" />
+                          <p className="text-xs font-bold text-slate-600">No stock batches recorded yet for this medicine.</p>
+                          <p className="text-[11px] text-slate-400">Use the form on the right to inward a new stock lot with its expiry date.</p>
+                        </div>
+                      );
+                    }
+
+                    // Sort by Expiry Date (FEFO)
+                    const sortedBatches = [...batchesList].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'));
+
+                    return (
+                      <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead className="bg-slate-100 text-slate-700 font-extrabold text-[10px] uppercase tracking-wider border-b border-slate-200 sticky top-0">
+                            <tr>
+                              <th className="px-3 py-2">Batch #</th>
+                              <th className="px-2.5 py-2">Expiry Date</th>
+                              <th className="px-2.5 py-2 text-right">Available Qty</th>
+                              <th className="px-2.5 py-2 text-right">Cost (Rs)</th>
+                              <th className="px-2.5 py-2 text-center">Status</th>
+                              <th className="px-2.5 py-2 text-center">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 text-slate-800">
+                            {sortedBatches.map((b, idx) => {
+                              const isExp = isBatchExpired(b.ExpDate);
+                              const isNearExp = isBatchNearExpiry(b.ExpDate, 90);
+                              const isSelectedForEdit = editingBatchId === b.BatchID;
+
+                              return (
+                                <tr
+                                  key={b.BatchID || idx}
+                                  className={`transition hover:bg-slate-50 ${
+                                    isSelectedForEdit
+                                      ? 'bg-indigo-50/80 ring-1 ring-indigo-400'
+                                      : isExp
+                                      ? 'bg-rose-50/50'
+                                      : isNearExp
+                                      ? 'bg-amber-50/40'
+                                      : 'bg-white'
+                                  }`}
+                                >
+                                  {/* Batch # & Ref */}
+                                  <td className="px-3 py-2 font-mono font-bold text-slate-900">
+                                    <div>
+                                      <span>{b.BatchNo || 'N/A'}</span>
+                                      {b.GRNID && (
+                                        <div className="text-[9px] font-sans font-medium text-slate-400">
+                                          Ref: {b.GRNID}
+                                        </div>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Expiry Date */}
+                                  <td className="px-2.5 py-2">
+                                    <div className="flex flex-col">
+                                      <span className="font-mono font-bold text-slate-800">
+                                        {b.ExpDate || 'Not set'}
+                                      </span>
+                                      {b.MfgDate && (
+                                        <span className="text-[9px] text-slate-400 font-mono">
+                                          Mfg: {b.MfgDate}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+
+                                  {/* Qty */}
+                                  <td className="px-2.5 py-2 text-right font-mono font-extrabold text-slate-900">
+                                    <span className={b.Qty === 0 ? 'text-slate-400' : 'text-emerald-700'}>
+                                      {b.Qty}
+                                    </span>
+                                  </td>
+
+                                  {/* Purchase Price */}
+                                  <td className="px-2.5 py-2 text-right font-mono text-slate-700">
+                                    {b.PurchasePrice !== undefined ? Number(b.PurchasePrice).toFixed(2) : '-'}
+                                  </td>
+
+                                  {/* Status Badge */}
+                                  <td className="px-2.5 py-2 text-center">
+                                    {b.Qty === 0 ? (
+                                      <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-bold">
+                                        Exhausted
+                                      </span>
+                                    ) : isExp ? (
+                                      <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 rounded text-[9px] font-black uppercase">
+                                        üî¥ Expired
+                                      </span>
+                                    ) : isNearExp ? (
+                                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 rounded text-[9px] font-bold">
+                                        üü° &lt;90 Days
+                                      </span>
+                                    ) : (
+                                      <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[9px] font-bold">
+                                        üü¢ Active
+                                      </span>
+                                    )}
+                                  </td>
+
+                                  {/* Actions */}
+                                  <td className="px-2.5 py-2 text-center">
+                                    <div className="flex items-center justify-center space-x-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => handleStartEditBatch(b)}
+                                        className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition cursor-pointer"
+                                        title="Edit Batch Parameters"
+                                      >
+                                        <Edit className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteBatch(b.BatchID)}
+                                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                                        title="Delete Batch Lot"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* FEFO Dispensing Note */}
+                <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-xl flex items-start space-x-2.5">
+                  <div className="p-1.5 bg-indigo-600 text-white rounded-lg shrink-0 mt-0.5">
+                    <CheckCircle2 className="w-3.5 h-3.5" />
+                  </div>
+                  <div className="text-[11px] text-indigo-950 leading-relaxed font-medium">
+                    <strong className="text-indigo-900">FEFO (First-Expired, First-Out) Automated Engine:</strong> When billing prescriptions or selling at POS, stock will automatically be consumed from the earliest expiring valid lot first. Expired stock lots are prevented from being dispensed.
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: Inward / Edit Batch Form (5 cols) */}
+              <div className="lg:col-span-5 bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
+                <div>
+                  <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
+                    <div className="flex items-center space-x-2">
+                      <div className={`p-1.5 rounded-lg ${editingBatchId ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
+                        <PlusCircle className="w-4 h-4" />
+                      </div>
+                      <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-900">
+                        {editingBatchId ? 'Edit Selected Batch Lot' : 'Receive / Add New Stock Batch'}
+                      </h4>
+                    </div>
+                    {editingBatchId && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditingBatchId(null);
+                          setBatchFormNo('');
+                          setBatchFormExpDate('');
+                          setBatchFormQty('');
+                        }}
+                        className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
+                      >
+                        + New Batch
+                      </button>
+                    )}
+                  </div>
+
+                  <form id="save-batch-form" onSubmit={handleSaveBatch} className="space-y-3">
+                    <div>
+                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                        Batch # (Lot Number) *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="e.g. B-2026-002"
+                        value={batchFormNo}
+                        onChange={(e) => setBatchFormNo(e.target.value)}
+                        className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                          Mfg Date
+                        </label>
+                        <input
+                          type="date"
+                          value={batchFormMfgDate}
+                          onChange={(e) => setBatchFormMfgDate(e.target.value)}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-rose-600 uppercase tracking-wider mb-1">
+                          Expiry Date *
+                        </label>
+                        <input
+                          type="date"
+                          required
+                          value={batchFormExpDate}
+                          onChange={(e) => setBatchFormExpDate(e.target.value)}
+                          className="w-full p-2 border border-rose-300 rounded-lg text-xs font-mono font-bold text-rose-950 focus:ring-2 focus:ring-rose-500 focus:outline-none bg-rose-50/30"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                          Quantity in Batch *
+                        </label>
+                        <input
+                          type="number"
+                          min="0"
+                          required
+                          placeholder="e.g. 50"
+                          value={batchFormQty}
+                          onChange={(e) => setBatchFormQty(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-black text-emerald-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                          Unit Cost (Rs.)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="Cost Price"
+                          value={batchFormCost}
+                          onChange={(e) => setBatchFormCost(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2.5">
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                          Retail Price (Rs.)
+                        </label>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          placeholder="Sale Price"
+                          value={batchFormSalePrice}
+                          onChange={(e) => setBatchFormSalePrice(e.target.value === '' ? '' : Number(e.target.value))}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
+                          PO / GRN Ref (Opt)
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="e.g. GRN-104"
+                          value={batchFormPoGrnRef}
+                          onChange={(e) => setBatchFormPoGrnRef(e.target.value)}
+                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                        />
+                      </div>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="pt-4 border-t border-slate-200 mt-4 flex items-center justify-end space-x-2">
+                  {editingBatchId && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setEditingBatchId(null);
+                        setBatchFormNo('');
+                        setBatchFormExpDate('');
+                        setBatchFormQty('');
+                      }}
+                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
+                    >
+                      Cancel Edit
+                    </button>
+                  )}
+                  <button
+                    type="submit"
+                    form="save-batch-form"
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-extrabold text-xs rounded-xl transition cursor-pointer shadow-md flex items-center space-x-1.5"
+                  >
+                    <PlusCircle className="w-4 h-4" />
+                    <span>{editingBatchId ? 'Update Batch' : 'Save Batch & Update Master Stock'}</span>
+                  </button>
+                </div>
+              </div>
+
+            </div>
+
+            {/* Modal Footer */}
+            <div className="p-3 bg-slate-100 border-t border-slate-200 flex justify-between items-center px-5">
+              <div className="text-[11px] text-slate-500 font-medium">
+                Medicine ID: <span className="font-mono font-bold text-slate-800">{selectedBatchItem.ItemID}</span> ‚Ä¢ Total Batches: <span className="font-mono font-bold text-slate-800">{Array.isArray(selectedBatchItem.Batches) ? selectedBatchItem.Batches.length : (selectedBatchItem.ExpDate ? 1 : 0)}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsBatchesModalOpen(false);
+                  setSelectedBatchItem(null);
+                  setEditingBatchId(null);
+                }}
+                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs"
+              >
+                Close Manager
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Item QR Code Scanner Modal */}
+      <ItemQRScannerModal
+        isOpen={isQRScannerOpen}
+        onClose={() => setIsQRScannerOpen(false)}
+        onScanSuccess={handleQRScanResult}
+      />
+
+      {/* Item QR Code Generator & Label Print Modal */}
+      <ItemQRGeneratorModal
+        isOpen={isQRGeneratorOpen}
+        onClose={() => setIsQRGeneratorOpen(false)}
+        items={items}
+        clinicName={clinicSettings?.Name || 'Smart Clinic Pharmacy'}
+      />
+
+      {/* PWA Mobile App Install Modal */}
+      <PwaInstallModal
+        isOpen={isPwaModalOpen}
+        onClose={() => setIsPwaModalOpen(false)}
+        onLaunchStoreMode={() => handleSubTabSwitch('store_sales', 'Store Medicine')}
+      />
+
+    </div>
+  );
+}
