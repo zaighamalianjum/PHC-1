@@ -32,7 +32,8 @@ import {
   ArrowRightLeft,
   CheckCheck,
   FileSpreadsheet,
-  Phone
+  Phone,
+  CreditCard
 } from 'lucide-react';
 
 import {
@@ -672,25 +673,61 @@ export default function ReportingDesk({
     }
   };
 
-  // Report 1: Pending Vendor Payments
+  // Report 1: Pending Vendor Payments & Procurements
   const pendingPaymentsData = useMemo(() => {
     return effectiveVendors
       .map(v => {
+        const vId = (v.VendorID || v._id || '').trim().toLowerCase();
+        const vName = (v.VendorName || '').trim().toLowerCase();
+
         // Calculate GRNs for this vendor
-        const vGrns = effectiveGrns.filter(g => g.VendorID === v.VendorID || g.VendorName === v.VendorName);
+        const vGrns = effectiveGrns.filter(g => {
+          const gId = (g.VendorID || g.SupplierID || '').trim().toLowerCase();
+          const gName = (g.VendorName || g.SupplierName || '').trim().toLowerCase();
+          return (vId && gId === vId) || (vName && gName === vName) || (gName && vName.includes(gName));
+        });
         const totalGrnBills = vGrns.reduce((sum, g) => sum + (Number(g.TotalAmount) || 0), 0);
 
-        // Payments made to vendor
-        const vPayments = effectiveTransactions.filter(
-          t => (t.VendorID === v.VendorID || t.VendorName === v.VendorName) && t.Type === 'VendorPayment'
-        );
-        const totalPaid = vPayments.reduce((sum, t) => sum + (Number(t.Amount) || 0), 0);
+        // Payments made to vendor from transactions (VendorPayment, Spot Cash Payment, Pay Vendor Bill)
+        const vPayments = effectiveTransactions.filter(t => {
+          const tId = (t.VendorID || '').trim().toLowerCase();
+          const tName = (t.VendorName || '').trim().toLowerCase();
+          const matchesVendor = (vId && tId === vId) || (vName && tName === vName) || (tName && vName.includes(tName));
+          const isVendorPay = t.Type === 'VendorPayment' || t.Category === 'Vendor Payment' || (t.Type === 'Expense' && (t.VendorID || t.VendorName));
+          return matchesVendor && isVendorPay && t.PaymentStatus !== 'Unpaid';
+        });
 
+        let vendorCashPaid = 0;
+        let vendorCreditPaid = 0;
+
+        vPayments.forEach(t => {
+          const amt = Number(t.Amount) || 0;
+          if (amt <= 0) return;
+          const cat = (t.Category || '').toLowerCase();
+          const desc = (t.Description || '').toLowerCase();
+          const isCash = (
+            cat.includes('spot') ||
+            cat.includes('cash spot') ||
+            desc.includes('spot cash') ||
+            desc.includes('cash spot') ||
+            desc.includes('spot cash payment on delivery') ||
+            (t.PaymentMethod === 'Cash' && (desc.includes('spot') || cat.includes('spot') || desc.includes('delivery')))
+          );
+          if (isCash) {
+            vendorCashPaid += amt;
+          } else {
+            vendorCreditPaid += amt;
+          }
+        });
+
+        const totalPaid = vendorCashPaid + vendorCreditPaid;
         const currentBalance = v.Balance !== undefined ? Number(v.Balance) : Math.max(0, totalGrnBills - totalPaid);
 
         return {
           ...v,
           totalGrnBills,
+          vendorCashPaid,
+          vendorCreditPaid,
           totalPaid,
           pendingBalance: currentBalance,
           lastGrnDate: vGrns.length > 0 ? vGrns[0].ReceivedDate : 'N/A'
@@ -698,16 +735,19 @@ export default function ReportingDesk({
       })
       .filter(v => {
         const matchesSearch = v.VendorName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          v.ContactPerson.toLowerCase().includes(searchQuery.toLowerCase()) ||
-          v.Phone.includes(searchQuery);
+          (v.ContactPerson || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+          (v.Phone || '').includes(searchQuery);
         return matchesSearch;
       });
   }, [effectiveVendors, effectiveGrns, effectiveTransactions, searchQuery]);
 
   const pendingPaymentsSummary = useMemo(() => {
     const totalOwed = pendingPaymentsData.reduce((sum, v) => sum + (v.pendingBalance > 0 ? v.pendingBalance : 0), 0);
+    const totalCashPaid = pendingPaymentsData.reduce((sum, v) => sum + (v.vendorCashPaid || 0), 0);
+    const totalCreditPaid = pendingPaymentsData.reduce((sum, v) => sum + (v.vendorCreditPaid || 0), 0);
+    const totalPaid = totalCashPaid + totalCreditPaid;
     const vendorsWithDues = pendingPaymentsData.filter(v => v.pendingBalance > 0).length;
-    return { totalOwed, vendorsWithDues, totalVendors: pendingPaymentsData.length };
+    return { totalOwed, totalCashPaid, totalCreditPaid, totalPaid, vendorsWithDues, totalVendors: pendingPaymentsData.length };
   }, [pendingPaymentsData]);
 
   // Report 2: Salary Disbursement
@@ -733,11 +773,20 @@ export default function ReportingDesk({
     return { totalDisbursed, totalBasic, totalAllowances, totalDeductions, recordCount: payrollData.length };
   }, [payrollData]);
 
-  // Report 3: Expense Analysis
+  // Report 3: Operational, Clinic & Building Expense Analysis (Strictly excluding vendor purchases)
   const expenseData = useMemo(() => {
     return effectiveExpenses
       .filter(e => isWithinDateRange(e.ExpenseDate))
       .filter(e => {
+        const desc = (e.Description || '').toLowerCase();
+        const cat = (e.Category || '').toLowerCase();
+        // Strict exclusion: Vendor payments, supplier bills, medicine purchases, and credit GRNs belong to Vendor Payments & Procurements
+        const isVendorProcurement = Boolean(e.VendorID || e.VendorName) ||
+          cat.includes('vendor') || cat.includes('supplier') || cat.includes('medicine purchase') ||
+          cat.includes('stock purchase') || desc.includes('vendor invoice') || desc.includes('payment against vendor') ||
+          desc.includes('spot cash payment on delivery') || desc.includes('grn') || desc.includes('paid to vendor');
+        if (isVendorProcurement) return false;
+
         const matchesSearch = e.Description.toLowerCase().includes(searchQuery.toLowerCase()) ||
           e.Category.toLowerCase().includes(searchQuery.toLowerCase()) ||
           e.ExpenseID.toLowerCase().includes(searchQuery.toLowerCase());
@@ -1058,11 +1107,25 @@ export default function ReportingDesk({
     const countedExpenseKeys = new Set<string>();
 
     // 4A. Primary: Direct Operational & Clinic Expense Records (from erp_expenses / Expense Analysis)
+    // Strictly operational (Rent, Utilities, Maintenance, Refreshments, Stationery, Fuel, Repairs, etc.)
     effectiveExpenses.forEach((exp: any, idx: number) => {
       const d = parseCleanDate(exp.ExpenseDate || exp.Date || exp.CreatedAt);
       if (isWithinDateRange(d)) {
         const amt = Number(exp.Amount || exp.ExpenseAmount || exp.TotalAmount || 0);
         if (amt > 0) {
+          const desc = (exp.Description || '').toLowerCase();
+          const cat = (exp.Category || '').toLowerCase();
+          // Exclude vendor payments, supplier bills, medicine purchases, and credit GRNs from operational expenses
+          const isVendor = Boolean(exp.VendorID || exp.VendorName) ||
+            cat.includes('vendor') || cat.includes('supplier') || cat.includes('medicine purchase') ||
+            cat.includes('stock purchase') || desc.includes('vendor invoice') || desc.includes('payment against vendor') ||
+            desc.includes('spot cash payment on delivery') || desc.includes('grn') || desc.includes('paid to vendor');
+          
+          if (isVendor) {
+            // Do not include under operational expenses
+            return;
+          }
+
           totalOperatingExpenses += amt;
           const idKey = String(exp.ExpenseID || exp._id || `exp_${idx}`).trim();
           if (idKey) countedExpenseKeys.add(idKey);
@@ -1094,10 +1157,11 @@ export default function ReportingDesk({
       }
     });
 
-    // 4C. Vendor Payments & Supplier Settlements (Cash & Settled Credit Bills ONLY)
+    // 4C. Vendor Payments & Supplier Settlements (Cash Spot Purchases & Settled Credit Bills via Vendor Directory)
     // Note: Items purchased on credit create Accounts Payable liabilities and are ONLY counted in Cash Outflows
     // when the vendor bill is actually paid (Vendor Payment voucher / cash settlement).
-    let vendorOutflows = 0;
+    let vendorCashPayments = 0;
+    let vendorCreditPayments = 0;
     const countedVendorKeys = new Set<string>();
 
     // 4D. Evaluate Transactions for uncounted expenses, salaries, or actual vendor disbursements
@@ -1111,18 +1175,18 @@ export default function ReportingDesk({
         const cat = (t.Category || '').toLowerCase();
         const desc = (t.Description || '').toLowerCase();
         const refNo = String(t.ReferenceNo || t.TransactionID || t.LinkedExpenseID || t.ExpenseID || t.LinkedPayrollID || t.PayrollID || '').trim();
-        const dateAmtKey = `${d}_${amt}`;
+        const dateAmtKey = `${d}_${amt}_${t.VendorID || t.VendorName || ''}`;
 
         // Strict Check: Only actual paid vendor disbursements (VendorPayment, Paid Cash Purchase) count as cash outflows
         const isPaidVendorPayment = (
           type === 'vendorpayment' || 
           type === 'vendor_payment' || 
-          (type === 'expense' && (cat.includes('vendor') || cat.includes('supplier'))) ||
-          (desc.includes('vendor payment') || desc.includes('paid to vendor') || desc.includes('spot cash payment on delivery'))
+          (type === 'expense' && (cat.includes('vendor') || cat.includes('supplier') || Boolean(t.VendorID || t.VendorName))) ||
+          (desc.includes('vendor payment') || desc.includes('paid to vendor') || desc.includes('payment against vendor') || desc.includes('spot cash payment on delivery'))
         ) && t.PaymentStatus !== 'Unpaid';
 
         const isSalary = type === 'payroll' || type === 'salary' || cat.includes('salary') || cat.includes('payroll');
-        const isExpense = !isPaidVendorPayment && !isSalary && (
+        const isExpense = !isPaidVendorPayment && !isSalary && !Boolean(t.VendorID || t.VendorName) && (
           type === 'expense' || type === 'debit' || type === 'outflow' ||
           cat.includes('expense') || cat.includes('utility') || cat.includes('rent') ||
           cat.includes('maintenance') || cat.includes('tea') || cat.includes('stationery') ||
@@ -1133,7 +1197,21 @@ export default function ReportingDesk({
 
         if (isPaidVendorPayment) {
           if (!countedVendorKeys.has(refNo) && !countedVendorKeys.has(dateAmtKey)) {
-            vendorOutflows += amt;
+            const isCash = (
+              cat.includes('spot') || 
+              cat.includes('cash spot') || 
+              desc.includes('spot cash') || 
+              desc.includes('cash spot') ||
+              desc.includes('spot cash payment on delivery') ||
+              (t.PaymentMethod === 'Cash' && (desc.includes('spot') || cat.includes('spot') || desc.includes('delivery')))
+            );
+
+            if (isCash) {
+              vendorCashPayments += amt;
+            } else {
+              vendorCreditPayments += amt;
+            }
+
             if (refNo) countedVendorKeys.add(refNo);
             countedVendorKeys.add(dateAmtKey);
           }
@@ -1173,7 +1251,12 @@ export default function ReportingDesk({
 
           if (isVendor) {
             if (!countedVendorKeys.has(vKey) && !countedVendorKeys.has(ref) && !countedVendorKeys.has(dateAmtKey)) {
-              vendorOutflows += amt;
+              const isCash = vType === 'CPV' || vType === 'CP' || remarks.includes('cash spot') || remarks.includes('spot cash');
+              if (isCash) {
+                vendorCashPayments += amt;
+              } else {
+                vendorCreditPayments += amt;
+              }
               countedVendorKeys.add(vKey);
               countedVendorKeys.add(dateAmtKey);
             }
@@ -1195,6 +1278,7 @@ export default function ReportingDesk({
       }
     });
 
+    const vendorOutflows = vendorCashPayments + vendorCreditPayments;
     const totalExpenses = vendorOutflows + salaryOutflows + totalOperatingExpenses;
     const netProfit = totalIncome - totalExpenses;
     const netMarginPct = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
@@ -1214,6 +1298,8 @@ export default function ReportingDesk({
       pharmacyMarginPct,
       otherIncome,
       totalIncome,
+      vendorCashPayments,
+      vendorCreditPayments,
       vendorOutflows,
       salaryOutflows,
       expenseOutflows: totalOperatingExpenses,
@@ -2236,9 +2322,9 @@ export default function ReportingDesk({
     let rows: (string | number)[][] = [];
 
     if (activeReport === 'pending_payments') {
-      headers = ['Vendor ID', 'Vendor Name', 'Contact Person', 'Phone', 'Total Bills', 'Total Paid', 'Pending Balance (Rs.)'];
+      headers = ['Vendor ID', 'Vendor Name', 'Contact Person', 'Phone', 'Total GRN Purchases', 'Vendor Cash Paid', 'Vendor Credit Paid', 'Total Paid (Rs.)', 'Pending Balance (Rs.)', 'Status'];
       rows = pendingPaymentsData.map(v => [
-        v.VendorID, v.VendorName, v.ContactPerson, v.Phone, v.totalGrnBills, v.totalPaid, v.pendingBalance
+        v.VendorID, v.VendorName, v.ContactPerson, v.Phone, v.totalGrnBills, v.vendorCashPaid, v.vendorCreditPaid, v.totalPaid, v.pendingBalance, v.pendingBalance > 0 ? 'Payable Due' : 'Clear'
       ]);
     } else if (activeReport === 'payroll_disbursement') {
       headers = ['Payroll ID', 'Employee Name', 'Month / Year', 'Basic Salary', 'Allowances', 'Deductions', 'Net Salary', 'Payment Date', 'Payment Method'];
@@ -2311,9 +2397,11 @@ export default function ReportingDesk({
         ['REVENUE & INFLOWS', 'Net POS Pharmacy Realized Revenue', pnlSummaryData.netPosIncome || 0],
         ['REVENUE & INFLOWS', 'Other Direct Income Receipts', pnlSummaryData.otherIncome || 0],
         ['REVENUE & INFLOWS', 'TOTAL GROSS INFLOWS', pnlSummaryData.totalIncome || 0],
-        ['EXPENSES & OUTFLOWS', 'Vendor Payments (Inventory Purchases)', pnlSummaryData.vendorOutflows || 0],
+        ['EXPENSES & OUTFLOWS', 'Vendor Payments & Inventory Procurements (Total)', pnlSummaryData.vendorOutflows || 0],
+        ['EXPENSES & OUTFLOWS', '— Vendor Cash Payments (Spot Delivery)', pnlSummaryData.vendorCashPayments || 0],
+        ['EXPENSES & OUTFLOWS', '— Vendor Credit Payments (Settled via Vendor Directory)', pnlSummaryData.vendorCreditPayments || 0],
         ['EXPENSES & OUTFLOWS', 'Staff Salaries & Payroll Disbursements', pnlSummaryData.salaryOutflows || 0],
-        ['EXPENSES & OUTFLOWS', 'Operational & Clinic Expenses', pnlSummaryData.totalOperatingExpenses || 0],
+        ['EXPENSES & OUTFLOWS', 'Operational, Clinic & Building Expenses', pnlSummaryData.totalOperatingExpenses || 0],
         ['EXPENSES & OUTFLOWS', 'TOTAL GROSS OUTFLOWS', pnlSummaryData.totalExpenses || 0],
         ['ANALYSIS & METRICS', 'Est. Cost of Goods Sold (COGS)', pnlSummaryData.pharmacyCogs || 0],
         ['ANALYSIS & METRICS', 'Pharmacy Gross Margin (%)', (pnlSummaryData.pharmacyMarginPct || 0).toFixed(1) + '%'],
@@ -2570,7 +2658,9 @@ export default function ReportingDesk({
               <th>Vendor Name</th>
               <th>Contact Person</th>
               <th>Phone</th>
-              <th style="text-align: right">Total Bills</th>
+              <th style="text-align: right">Total GRN Purchases</th>
+              <th style="text-align: right">Vendor Cash Paid</th>
+              <th style="text-align: right">Vendor Credit Paid</th>
               <th style="text-align: right">Total Paid</th>
               <th style="text-align: right">Pending Payable Balance</th>
             </tr>
@@ -2583,7 +2673,9 @@ export default function ReportingDesk({
                 <td>${v.ContactPerson}</td>
                 <td>${v.Phone}</td>
                 <td style="text-align: right">Rs. ${v.totalGrnBills.toLocaleString()}</td>
-                <td style="text-align: right; color: #047857; font-weight: 700;">Rs. ${v.totalPaid.toLocaleString()}</td>
+                <td style="text-align: right; color: #047857; font-weight: 700;">Rs. ${(v.vendorCashPaid || 0).toLocaleString()}</td>
+                <td style="text-align: right; color: #4338ca; font-weight: 700;">Rs. ${(v.vendorCreditPaid || 0).toLocaleString()}</td>
+                <td style="text-align: right; font-weight: bold; color: #0f172a;">Rs. ${v.totalPaid.toLocaleString()}</td>
                 <td style="text-align: right; font-weight: 800; color: ${v.pendingBalance > 0 ? '#b91c1c' : '#15803d'};">
                   Rs. ${v.pendingBalance.toLocaleString()}
                 </td>
@@ -2592,7 +2684,10 @@ export default function ReportingDesk({
           </tbody>
           <tfoot>
             <tr style="background: #f1f5f9; font-weight: bold;">
-              <td colspan="6" style="text-align: right">TOTAL OUTSTANDING PAYABLE BALANCE:</td>
+              <td colspan="5" style="text-align: right">TOTALS:</td>
+              <td style="text-align: right; color: #047857;">Rs. ${pendingPaymentsSummary.totalCashPaid.toLocaleString()}</td>
+              <td style="text-align: right; color: #4338ca;">Rs. ${pendingPaymentsSummary.totalCreditPaid.toLocaleString()}</td>
+              <td style="text-align: right; color: #0f172a;">Rs. ${pendingPaymentsSummary.totalPaid.toLocaleString()}</td>
               <td style="text-align: right; color: #b91c1c; font-size: 13px; font-weight: 900;">Rs. ${pendingPaymentsSummary.totalOwed.toLocaleString()}</td>
             </tr>
           </tfoot>
@@ -2832,7 +2927,18 @@ export default function ReportingDesk({
           <div>
             <h3 style="color: #b91c1c; border-bottom: 2px solid #b91c1c; padding-bottom: 4px; margin-bottom: 8px; font-size: 12px; text-transform: uppercase;">EXPENSES & OUTFLOWS</h3>
             <table class="report-table">
-              <tr><td>Vendor Payments (Stock & Purchases)</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.vendorOutflows.toLocaleString()}</td></tr>
+              <tr>
+                <td><strong>Vendor Payments & Inventory Procurements (Total)</strong></td>
+                <td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.vendorOutflows.toLocaleString()}</td>
+              </tr>
+              <tr style="font-size: 10.5px; color: #475569;">
+                <td style="padding-left: 16px;">— Vendor Cash Payments (Spot Delivery)</td>
+                <td style="text-align: right; color: #047857; font-weight: 600;">Rs. ${pnlSummaryData.vendorCashPayments.toLocaleString()}</td>
+              </tr>
+              <tr style="font-size: 10.5px; color: #475569;">
+                <td style="padding-left: 16px;">— Vendor Credit Payments (Settled via Vendor Directory)</td>
+                <td style="text-align: right; color: #4338ca; font-weight: 600;">Rs. ${pnlSummaryData.vendorCreditPayments.toLocaleString()}</td>
+              </tr>
               <tr><td>Staff Salaries & Payroll Disbursements</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.salaryOutflows.toLocaleString()}</td></tr>
               <tr><td>Operational, Clinic & Building Expenses</td><td style="text-align: right; font-weight: bold;">Rs. ${pnlSummaryData.totalOperatingExpenses.toLocaleString()}</td></tr>
               <tr style="background: #fee2e2; font-weight: 900; border-top: 2px solid #dc2626;">
@@ -4012,32 +4118,41 @@ export default function ReportingDesk({
 
       {/* SUMMARY KPI METRIC CARDS FOR ACTIVE REPORT */}
       {activeReport === 'pending_payments' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 flex items-center justify-between">
             <div>
               <div className="text-xs font-bold text-rose-600 uppercase tracking-wider">Total Outstanding Payables</div>
               <div className="text-2xl font-black text-rose-900 mt-1">Rs. {pendingPaymentsSummary.totalOwed.toLocaleString()}</div>
-              <div className="text-[11px] font-medium text-rose-700 mt-0.5">Owed across vendors for received inventory</div>
+              <div className="text-[11px] font-medium text-rose-700 mt-0.5">{pendingPaymentsSummary.vendorsWithDues} Vendors with pending dues</div>
             </div>
             <Building2 className="w-8 h-8 text-rose-500 opacity-80" />
           </div>
 
-          <div className="bg-amber-50 border border-amber-200 rounded-2xl p-4 flex items-center justify-between">
+          <div className="bg-indigo-50 border border-indigo-200 rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs font-bold text-amber-700 uppercase tracking-wider">Vendors With Pending Dues</div>
-              <div className="text-2xl font-black text-amber-900 mt-1">{pendingPaymentsSummary.vendorsWithDues} Vendors</div>
-              <div className="text-[11px] font-medium text-amber-700 mt-0.5">Out of {pendingPaymentsSummary.totalVendors} total registered vendors</div>
+              <div className="text-xs font-bold text-indigo-700 uppercase tracking-wider">Vendor Credit Payments</div>
+              <div className="text-2xl font-black text-indigo-950 mt-1">Rs. {pendingPaymentsSummary.totalCreditPaid.toLocaleString()}</div>
+              <div className="text-[11px] font-medium text-indigo-700 mt-0.5">Paid via Vendor Directory</div>
             </div>
-            <Clock className="w-8 h-8 text-amber-500 opacity-80" />
+            <CreditCard className="w-8 h-8 text-indigo-500 opacity-80" />
+          </div>
+
+          <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 flex items-center justify-between">
+            <div>
+              <div className="text-xs font-bold text-emerald-700 uppercase tracking-wider">Vendor Cash Payments</div>
+              <div className="text-2xl font-black text-emerald-950 mt-1">Rs. {pendingPaymentsSummary.totalCashPaid.toLocaleString()}</div>
+              <div className="text-[11px] font-medium text-emerald-700 mt-0.5">Spot Cash on Delivery</div>
+            </div>
+            <DollarSign className="w-8 h-8 text-emerald-500 opacity-80" />
           </div>
 
           <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 flex items-center justify-between">
             <div>
-              <div className="text-xs font-bold text-slate-600 uppercase tracking-wider">Filtered Vendor Records</div>
-              <div className="text-2xl font-black text-slate-900 mt-1">{pendingPaymentsData.length} Vendors</div>
-              <div className="text-[11px] font-medium text-slate-500 mt-0.5">Matches current search filter</div>
+              <div className="text-xs font-bold text-slate-600 uppercase tracking-wider">Total Vendor Paid</div>
+              <div className="text-2xl font-black text-slate-900 mt-1">Rs. {pendingPaymentsSummary.totalPaid.toLocaleString()}</div>
+              <div className="text-[11px] font-medium text-slate-500 mt-0.5">{pendingPaymentsData.length} Total registered vendors</div>
             </div>
-            <Filter className="w-8 h-8 text-slate-400 opacity-80" />
+            <Receipt className="w-8 h-8 text-slate-400 opacity-80" />
           </div>
         </div>
       )}
@@ -4251,7 +4366,9 @@ export default function ReportingDesk({
                   <th className="p-3">Vendor / Supplier Name</th>
                   <th className="p-3">Contact Person</th>
                   <th className="p-3">Phone</th>
-                  <th className="p-3 text-right">Total GRN Bills</th>
+                  <th className="p-3 text-right">Total GRN Purchases</th>
+                  <th className="p-3 text-right">Vendor Cash Paid</th>
+                  <th className="p-3 text-right">Vendor Credit Paid</th>
                   <th className="p-3 text-right">Total Paid</th>
                   <th className="p-3 text-right">Pending Balance</th>
                   <th className="p-3 text-center">Status</th>
@@ -4260,7 +4377,7 @@ export default function ReportingDesk({
               <tbody className="divide-y divide-slate-100 font-medium">
                 {pendingPaymentsData.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="p-6 text-center text-slate-400 font-medium">
+                    <td colSpan={10} className="p-6 text-center text-slate-400 font-medium">
                       No vendor payments or dues found for the selected search filter.
                     </td>
                   </tr>
@@ -4272,7 +4389,9 @@ export default function ReportingDesk({
                       <td className="p-3 text-slate-600">{v.ContactPerson || 'N/A'}</td>
                       <td className="p-3 text-slate-500 font-mono">{v.Phone}</td>
                       <td className="p-3 text-right text-slate-700">Rs. {v.totalGrnBills.toLocaleString()}</td>
-                      <td className="p-3 text-right text-emerald-600">Rs. {v.totalPaid.toLocaleString()}</td>
+                      <td className="p-3 text-right font-bold text-emerald-600">Rs. {(v.vendorCashPaid || 0).toLocaleString()}</td>
+                      <td className="p-3 text-right font-bold text-indigo-600">Rs. {(v.vendorCreditPaid || 0).toLocaleString()}</td>
+                      <td className="p-3 text-right font-black text-slate-900">Rs. {v.totalPaid.toLocaleString()}</td>
                       <td className={`p-3 text-right font-black ${v.pendingBalance > 0 ? 'text-rose-600' : 'text-emerald-600'}`}>
                         Rs. {v.pendingBalance.toLocaleString()}
                       </td>
@@ -4287,6 +4406,31 @@ export default function ReportingDesk({
                   ))
                 )}
               </tbody>
+              {pendingPaymentsData.length > 0 && (
+                <tfoot>
+                  <tr className="bg-slate-900 text-white font-bold text-xs">
+                    <td colSpan={4} className="p-3 uppercase tracking-wider">
+                      Grand Totals ({pendingPaymentsData.length} Vendors)
+                    </td>
+                    <td className="p-3 text-right font-mono">
+                      Rs. {pendingPaymentsData.reduce((sum, v) => sum + (v.totalGrnBills || 0), 0).toLocaleString()}
+                    </td>
+                    <td className="p-3 text-right font-mono text-emerald-300">
+                      Rs. {pendingPaymentsSummary.totalCashPaid.toLocaleString()}
+                    </td>
+                    <td className="p-3 text-right font-mono text-indigo-300">
+                      Rs. {pendingPaymentsSummary.totalCreditPaid.toLocaleString()}
+                    </td>
+                    <td className="p-3 text-right font-mono text-white">
+                      Rs. {pendingPaymentsSummary.totalPaid.toLocaleString()}
+                    </td>
+                    <td className="p-3 text-right font-mono text-rose-300 font-black">
+                      Rs. {pendingPaymentsSummary.totalOwed.toLocaleString()}
+                    </td>
+                    <td></td>
+                  </tr>
+                </tfoot>
+              )}
             </table>
           </div>
         )}
@@ -4758,16 +4902,37 @@ export default function ReportingDesk({
                   <span className="text-[11px] font-bold text-rose-700 bg-rose-100/80 px-2 py-0.5 rounded-md">Total Disbursements</span>
                 </div>
                 <div className="space-y-2 text-xs">
-                  <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100 hover:border-rose-200 transition">
-                    <span className="font-medium text-slate-700">Vendor Payments & Inventory Procurements</span>
-                    <span className="font-bold text-slate-900">Rs. {pnlSummaryData.vendorOutflows.toLocaleString()}</span>
+                  <div className="p-3 bg-white rounded-xl border border-rose-100 hover:border-rose-200 transition space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="font-bold text-slate-800">Vendor Payments & Inventory Procurements</span>
+                      <span className="font-black text-slate-900 text-sm">Rs. {pnlSummaryData.vendorOutflows.toLocaleString()}</span>
+                    </div>
+                    <div className="pl-3 border-l-2 border-indigo-200 space-y-1.5 text-[11px] text-slate-600">
+                      <div className="flex justify-between items-center bg-slate-50/80 px-2.5 py-1 rounded-lg">
+                        <span className="flex items-center space-x-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                          <span>Vendor Cash Payment (Spot Delivery):</span>
+                        </span>
+                        <span className="font-bold text-emerald-700">Rs. {pnlSummaryData.vendorCashPayments.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between items-center bg-slate-50/80 px-2.5 py-1 rounded-lg">
+                        <span className="flex items-center space-x-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-indigo-500"></span>
+                          <span>Vendor Credit Payment (Paid via Vendor Directory):</span>
+                        </span>
+                        <span className="font-bold text-indigo-700">Rs. {pnlSummaryData.vendorCreditPayments.toLocaleString()}</span>
+                      </div>
+                    </div>
                   </div>
                   <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100 hover:border-rose-200 transition">
                     <span className="font-medium text-slate-700">Staff Salaries & Payroll Disbursements</span>
                     <span className="font-bold text-slate-900">Rs. {pnlSummaryData.salaryOutflows.toLocaleString()}</span>
                   </div>
                   <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100 hover:border-rose-200 transition">
-                    <span className="font-medium text-slate-700">Operational, Clinic & Building Expenses</span>
+                    <div>
+                      <span className="font-medium text-slate-700">Operational, Clinic & Building Expenses</span>
+                      <div className="text-[10px] text-slate-400 font-normal">Rent, Utilities, Maintenance, Tea, Clinic Supplies</div>
+                    </div>
                     <span className="font-bold text-slate-900">Rs. {pnlSummaryData.totalOperatingExpenses.toLocaleString()}</span>
                   </div>
 

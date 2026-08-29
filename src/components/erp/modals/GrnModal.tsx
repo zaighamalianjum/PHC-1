@@ -1,5 +1,22 @@
 import React from 'react';
-import { PackageCheck, X, Plus, Trash2, RotateCcw, CheckCircle2, FileSpreadsheet, Coins, CreditCard, XCircle, Eye } from 'lucide-react';
+import {
+  PackageCheck,
+  X,
+  Plus,
+  Trash2,
+  RotateCcw,
+  CheckCircle2,
+  FileSpreadsheet,
+  Coins,
+  CreditCard,
+  XCircle,
+  Eye,
+  ShoppingCart,
+  ArrowRightLeft,
+  AlertCircle,
+  PlusCircle,
+  ArrowRight
+} from 'lucide-react';
 import { ErpVendor, ErpPurchaseOrder, ErpGrnItem } from '../../../types';
 
 interface GrnModalProps {
@@ -14,6 +31,10 @@ interface GrnModalProps {
   handleSelectPoForGrn: (poid: string) => void;
   handleRemoveGrnItem: (index: number) => void;
   handleResetGrnItems: () => void;
+  handleIncludeGrnItem?: (item: any) => void;
+  handleTransferGrnItemToNewPo?: (item: any, oldPoId: string) => void;
+  handleTransferAllUnreceivedToNewPo?: (oldPoId: string) => void;
+  handleDeleteGrnItemFromPo?: (item: any, oldPoId: string) => void;
   getPoItemsReceiptInfo: (po: ErpPurchaseOrder) => any[];
   handlePreviewCurrentGrnForm: () => void;
   setShowUploadBulkGrnModal: (show: boolean) => void;
@@ -35,6 +56,10 @@ export const GrnModal: React.FC<GrnModalProps> = ({
   handleSelectPoForGrn,
   handleRemoveGrnItem,
   handleResetGrnItems,
+  handleIncludeGrnItem,
+  handleTransferGrnItemToNewPo,
+  handleTransferAllUnreceivedToNewPo,
+  handleDeleteGrnItemFromPo,
   getPoItemsReceiptInfo,
   handlePreviewCurrentGrnForm,
   setShowUploadBulkGrnModal,
@@ -44,6 +69,17 @@ export const GrnModal: React.FC<GrnModalProps> = ({
   setBulkGrnFileError,
 }) => {
   if (!showGrnModal) return null;
+
+  const selectedPo = purchaseOrders.find(p => p.POID === grnForm.POID);
+  const allPendingPoItems = selectedPo ? getPoItemsReceiptInfo(selectedPo) : [];
+
+  // Identify items that belong to this PO's pending list but were excluded from current grnForm.Items
+  const excludedItems = allPendingPoItems.filter(pItem =>
+    !grnForm.Items.some((gi: any) =>
+      (gi.ItemID && pItem.ItemID && String(gi.ItemID).toLowerCase() === String(pItem.ItemID).toLowerCase()) ||
+      (gi.ItemName && pItem.ItemName && String(gi.ItemName).toLowerCase().trim() === String(pItem.ItemName).toLowerCase().trim())
+    )
+  );
 
   return (
     <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
@@ -207,39 +243,47 @@ export const GrnModal: React.FC<GrnModalProps> = ({
             </div>
           </div>
 
-          {/* RECEIVED MEDICINES TABLE WITH PARTIAL DELIVERY COLUMNS */}
+          {/* RECEIVED MEDICINES TABLE WITH PARTIAL DELIVERY & QUICK PO ACTIONS */}
           <div className="space-y-2">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-              <label className="text-xs font-bold text-slate-800 uppercase tracking-wider">
-                PO Order Items & Partial Batch Receiving ({grnForm.Items.length} Line Items)
-              </label>
-              <div className="flex items-center space-x-2">
-                {(() => {
-                  const selectedPo = purchaseOrders.find(p => p.POID === grnForm.POID);
-                  const pendingPoItems = selectedPo ? getPoItemsReceiptInfo(selectedPo) : [];
-                  const fullCount = pendingPoItems.length;
-                  if (fullCount > grnForm.Items.length) {
-                    return (
-                      <button
-                        type="button"
-                        onClick={handleResetGrnItems}
-                        className="text-[11px] text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md font-bold border border-indigo-200 transition flex items-center space-x-1 cursor-pointer"
-                      >
-                        <RotateCcw className="w-3 h-3" />
-                        <span>Restore Excluded Items ({fullCount - grnForm.Items.length} excluded)</span>
-                      </button>
-                    );
-                  }
-                  return null;
-                })()}
-                <span className="text-[11px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
-                  Partial receiving supported: Excluded items remain pending in PO for next batch
-                </span>
+              <div>
+                <label className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center space-x-1.5">
+                  <PackageCheck className="w-4 h-4 text-emerald-600" />
+                  <span>PO Order Items & Batch Inward ({grnForm.Items.length} Line Items)</span>
+                </label>
+                <p className="text-[11px] text-slate-500">
+                  Verify inward quantity. Items can be excluded, deleted, or transferred directly into a New Purchase Order.
+                </p>
+              </div>
+
+              <div className="flex items-center flex-wrap gap-2">
+                {grnForm.POID && allPendingPoItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => handleTransferAllUnreceivedToNewPo?.(grnForm.POID)}
+                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition flex items-center space-x-1.5 cursor-pointer shadow-xs"
+                    title="Transfer all unreceived items in this PO to a New Purchase Order and mark this old PO complete"
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5" />
+                    <span>⚡ Create New PO for Remaining Items</span>
+                  </button>
+                )}
+
+                {excludedItems.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={handleResetGrnItems}
+                    className="text-[11px] text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-lg font-bold border border-indigo-200 transition flex items-center space-x-1 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Restore Excluded ({excludedItems.length})</span>
+                  </button>
+                )}
               </div>
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-x-auto w-full grn-summary-card">
-              <table className="w-full text-left text-xs min-w-[920px] grn-summary-table">
+              <table className="w-full text-left text-xs min-w-[960px] grn-summary-table">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                     <th className="p-2.5 w-24">Item ID</th>
@@ -251,22 +295,30 @@ export const GrnModal: React.FC<GrnModalProps> = ({
                     <th className="p-2.5 text-center w-24">Now Receiving</th>
                     <th className="p-2.5 text-right w-28 grn-unit-price">Unit Price</th>
                     <th className="p-2.5 text-right w-24 grn-subtotal">Subtotal</th>
-                    <th className="p-2.5 text-center w-28 shrink-0 exclude-col">Exclude</th>
+                    <th className="p-2.5 text-center min-w-[200px] shrink-0 exclude-col">Item Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {grnForm.Items.length === 0 ? (
                     <tr>
                       <td colSpan={10} className="p-6 text-center text-slate-400 font-medium">
-                        No items in current GRN batch. {grnForm.POID ? 'All items were excluded from this delivery.' : 'Please select a Purchase Order from above!'}
+                        No items in current GRN batch. {grnForm.POID ? 'All items were excluded from this inward delivery.' : 'Please select a Purchase Order from above!'}
                         {grnForm.POID && (
-                          <div className="mt-2">
+                          <div className="mt-2 flex items-center justify-center gap-3">
                             <button
                               type="button"
                               onClick={handleResetGrnItems}
-                              className="text-xs text-indigo-600 underline font-bold"
+                              className="text-xs text-indigo-600 underline font-bold cursor-pointer"
                             >
-                              Click here to restore all PO items
+                              Restore all PO items to GRN
+                            </button>
+                            <span className="text-slate-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => handleTransferAllUnreceivedToNewPo?.(grnForm.POID)}
+                              className="text-xs text-emerald-600 underline font-bold cursor-pointer"
+                            >
+                              Create New PO with all unreceived items
                             </button>
                           </div>
                         )}
@@ -283,7 +335,7 @@ export const GrnModal: React.FC<GrnModalProps> = ({
                       const subtotal = numRecv * numPrice;
 
                       return (
-                        <tr key={idx} className="hover:bg-slate-50">
+                        <tr key={idx} className="hover:bg-slate-50 transition-colors">
                           <td className="p-2.5 font-mono text-slate-500 font-bold">{item.ItemID}</td>
                           <td className="p-2.5 font-bold text-slate-900">{item.ItemName}</td>
                           <td className="p-2.5 text-center">
@@ -358,16 +410,41 @@ export const GrnModal: React.FC<GrnModalProps> = ({
                             </div>
                           </td>
                           <td className="p-2.5 text-right font-bold text-slate-900 grn-subtotal">Rs. {subtotal.toLocaleString()}</td>
-                          <td className="p-2.5 text-center w-28 shrink-0 exclude-col">
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveGrnItem(idx)}
-                              title="Exclude medicine item from this GRN batch (will remain pending in PO for next batch)"
-                              className="px-2.5 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-xs font-bold transition inline-flex items-center space-x-1 cursor-pointer whitespace-nowrap shrink-0 shadow-2xs"
-                            >
-                              <XCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
-                              <span>Exclude</span>
-                            </button>
+                          <td className="p-2.5 text-center min-w-[200px] shrink-0 exclude-col">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {/* EXCLUDE BUTTON */}
+                              <button
+                                type="button"
+                                onClick={() => handleRemoveGrnItem(idx)}
+                                title="Exclude medicine from this GRN batch (moves to Excluded Items list below)"
+                                className="px-2 py-1 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg text-[11px] font-bold transition inline-flex items-center space-x-1 cursor-pointer whitespace-nowrap shadow-2xs"
+                              >
+                                <XCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                <span>Exclude</span>
+                              </button>
+
+                              {/* ADD TO NEW PO BUTTON */}
+                              <button
+                                type="button"
+                                onClick={() => handleTransferGrnItemToNewPo?.(item, grnForm.POID)}
+                                title="Transfer this unreceived item to a New Purchase Order and complete old PO"
+                                className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-lg text-[11px] font-bold transition inline-flex items-center space-x-1 cursor-pointer whitespace-nowrap shadow-2xs"
+                              >
+                                <ShoppingCart className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                <span>+ New PO</span>
+                              </button>
+
+                              {/* DELETE ITEM BUTTON */}
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteGrnItemFromPo?.(item, grnForm.POID)}
+                                title="Cancel & delete this item from Purchase Order so it won't be expected anymore"
+                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-lg text-[11px] font-bold transition inline-flex items-center space-x-1 cursor-pointer whitespace-nowrap shadow-2xs"
+                              >
+                                <Trash2 className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                                <span>Delete</span>
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -377,6 +454,110 @@ export const GrnModal: React.FC<GrnModalProps> = ({
               </table>
             </div>
           </div>
+
+          {/* EXCLUDED & UNRECEIVED ITEMS SECTION */}
+          {excludedItems.length > 0 && (
+            <div className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center space-x-2">
+                  <div className="w-8 h-8 rounded-xl bg-amber-100 border border-amber-300 flex items-center justify-center text-amber-800 shrink-0">
+                    <AlertCircle className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-extrabold text-amber-950 uppercase tracking-wider flex items-center space-x-1.5">
+                      <span>Excluded / Unreceived Medicines from this PO ({excludedItems.length} Items)</span>
+                      <span className="px-2 py-0.5 bg-amber-200 text-amber-900 rounded text-[10px] font-black">PO: {grnForm.POID}</span>
+                    </h4>
+                    <p className="text-[11px] text-amber-800">
+                      These medicines were excluded from this inward batch. Transfer them to a New PO (old PO status will mark Complete), re-include them, or delete them.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="flex items-center space-x-2">
+                  <button
+                    type="button"
+                    onClick={() => handleTransferAllUnreceivedToNewPo?.(grnForm.POID)}
+                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs transition shadow-xs flex items-center space-x-1.5 cursor-pointer"
+                    title="Transfer all excluded & unreceived items to a New Purchase Order and complete old PO"
+                  >
+                    <ShoppingCart className="w-3.5 h-3.5" />
+                    <span>🚀 Transfer All Excluded to New PO</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetGrnItems}
+                    className="px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-100 text-slate-700 font-bold text-xs border border-slate-200 transition flex items-center space-x-1 cursor-pointer"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Include All</span>
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-2.5 pt-1">
+                {excludedItems.map((exItem: any, exIdx: number) => {
+                  const pQty = Number(exItem.PendingQty) || Number(exItem.OrderedQty) || 1;
+                  const uPrice = Number(exItem.UnitPrice) || Number(exItem.OriginalUnitPrice) || 0;
+                  const estimatedVal = pQty * uPrice;
+
+                  return (
+                    <div
+                      key={exIdx}
+                      className="bg-white border border-amber-200/90 rounded-xl p-3 shadow-2xs hover:shadow-xs transition space-y-2 flex flex-col justify-between"
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-start justify-between gap-1">
+                          <span className="font-bold text-slate-900 text-xs leading-tight line-clamp-1">{exItem.ItemName}</span>
+                          <span className="font-mono text-[10px] font-bold text-slate-500 shrink-0">{exItem.ItemID}</span>
+                        </div>
+                        <div className="flex items-center justify-between text-[11px] text-slate-600">
+                          <span>Pending Qty: <strong className="text-amber-800 font-black">{pQty}</strong></span>
+                          <span>Unit Price: <strong className="text-slate-900">Rs. {uPrice > 0 ? uPrice.toLocaleString() : 'N/A'}</strong></span>
+                        </div>
+                        {estimatedVal > 0 && (
+                          <div className="text-[10px] text-slate-500">
+                            Est. Valuation: <strong className="text-emerald-700 font-bold">Rs. {estimatedVal.toLocaleString()}</strong>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleIncludeGrnItem?.(exItem)}
+                          className="px-2 py-1 rounded-lg bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-[10px] border border-emerald-200 transition flex items-center space-x-1 cursor-pointer"
+                          title="Include this item back to current GRN inward batch"
+                        >
+                          <PlusCircle className="w-3 h-3 text-emerald-600" />
+                          <span>Include</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleTransferGrnItemToNewPo?.(exItem, grnForm.POID)}
+                          className="px-2 py-1 rounded-lg bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] transition flex items-center space-x-1 cursor-pointer shadow-2xs"
+                          title="Transfer this medicine to a New Purchase Order & complete old PO"
+                        >
+                          <ShoppingCart className="w-3 h-3" />
+                          <span>Add to New PO</span>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteGrnItemFromPo?.(exItem, grnForm.POID)}
+                          className="p-1 rounded-lg bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-[10px] border border-rose-200 transition cursor-pointer"
+                          title="Delete / cancel this unreceived item from PO"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           <div>
             <label className="text-xs font-bold text-slate-600 block mb-1">Verification / Quality Remarks</label>
@@ -433,3 +614,4 @@ export const GrnModal: React.FC<GrnModalProps> = ({
 };
 
 export default GrnModal;
+

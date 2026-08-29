@@ -3738,6 +3738,291 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     }
   };
 
+  const handleIncludeGrnItem = (itemToInclude: any) => {
+    setGrnForm((prev: any) => {
+      const exists = prev.Items.some((i: any) =>
+        (itemToInclude.ItemID && i.ItemID && String(i.ItemID).toLowerCase() === String(itemToInclude.ItemID).toLowerCase()) ||
+        (itemToInclude.ItemName && i.ItemName && String(i.ItemName).toLowerCase().trim() === String(itemToInclude.ItemName).toLowerCase().trim())
+      );
+      if (exists) return prev;
+      return {
+        ...prev,
+        Items: [...prev.Items, itemToInclude]
+      };
+    });
+  };
+
+  // Transfer a single unreceived/pending medicine item to a brand new Purchase Order & update old PO status to complete
+  const handleTransferGrnItemToNewPo = async (itemToTransfer: any, oldPoId: string) => {
+    if (!oldPoId) {
+      alert('No Purchase Order selected.');
+      return;
+    }
+    const oldPo = purchaseOrders.find(p => p.POID === oldPoId);
+    if (!oldPo) {
+      alert(`Purchase Order ${oldPoId} not found.`);
+      return;
+    }
+
+    const pendingQty = Number(itemToTransfer.PendingQty ?? (itemToTransfer.OrderedQty - (itemToTransfer.AlreadyReceivedQty || 0))) || Number(itemToTransfer.Qty || 1);
+    const unitPrice = Number(itemToTransfer.UnitPrice) || Number(itemToTransfer.OriginalUnitPrice) || 0;
+    const itemName = itemToTransfer.ItemName || 'Medicine Item';
+    const itemId = itemToTransfer.ItemID || '';
+    const category = itemToTransfer.Category || getMedicineItemCategory({ ItemID: itemId, ItemName: itemName }) || 'General Medicine';
+
+    // 1. Update Old PO: settle this item (set quantity to what was already received, or remove if 0 received)
+    const approvedGrns = grns.filter(g => g.POID === oldPo.POID && (g.Status === 'Approved' || !g.Status));
+    
+    const updatedOldPoItems = oldPo.Items.map(i => {
+      const isMatch = (itemId && i.ItemID && String(itemId).toLowerCase() === String(i.ItemID).toLowerCase()) ||
+                      (itemName && i.ItemName && String(itemName).toLowerCase().trim() === String(i.ItemName).toLowerCase().trim());
+      if (isMatch) {
+        let rec = 0;
+        approvedGrns.forEach(g => {
+          if (Array.isArray(g.Items)) {
+            const gi = g.Items.find(gi => (itemId && gi.ItemID && String(gi.ItemID).toLowerCase() === String(itemId).toLowerCase()) ||
+                                          (itemName && gi.ItemName && String(gi.ItemName).toLowerCase().trim() === String(itemName).toLowerCase().trim()));
+            if (gi) rec += Number(gi.ReceivedQty || gi.Qty || 0);
+          }
+        });
+        return {
+          ...i,
+          Qty: rec,
+          LineTotal: rec * Number(i.UnitPrice || 0)
+        };
+      }
+      return i;
+    }).filter(i => (Number(i.Qty) || 0) > 0);
+
+    const newOldPoTotal = updatedOldPoItems.reduce((sum, i) => sum + ((Number(i.Qty) || 0) * (Number(i.UnitPrice) || 0)), 0);
+    
+    // Check if any other items remain unreceived in old PO
+    const tempOldPo = { ...oldPo, Items: updatedOldPoItems, TotalAmount: newOldPoTotal };
+    const remainingPendingInOldPo = getPoItemsReceiptInfo(tempOldPo);
+    const updatedStatus = remainingPendingInOldPo.length === 0 ? 'Received' : 'Partially Received';
+
+    const updatedOldPo: ErpPurchaseOrder = {
+      ...tempOldPo,
+      Status: updatedStatus
+    };
+
+    try {
+      await saveToDatabase('erp_purchase_orders', updatedOldPo, 'PUT');
+      setPurchaseOrders(prev => prev.map(p => p.POID === oldPoId ? updatedOldPo : p));
+    } catch (e) {
+      console.error('Error updating old PO in DB:', e);
+    }
+
+    // 2. Remove item from current GRN form items
+    setGrnForm((prev: any) => ({
+      ...prev,
+      Items: prev.Items.filter((i: any) => {
+        const isMatch = (itemId && i.ItemID && String(itemId).toLowerCase() === String(i.ItemID).toLowerCase()) ||
+                        (itemName && i.ItemName && String(itemName).toLowerCase().trim() === String(i.ItemName).toLowerCase().trim());
+        return !isMatch;
+      })
+    }));
+
+    // 3. Prepare New Purchase Order in poForm
+    const newPoId = generateNextPoNumber();
+    const selectedVendor = vendors.find(v => v.VendorName === oldPo.VendorName || v.VendorID === oldPo.VendorID);
+
+    setEditingPurchaseOrder(null);
+    setPoForm({
+      POID: newPoId,
+      VendorID: oldPo.VendorID || selectedVendor?.VendorID || '',
+      VendorName: oldPo.VendorName || selectedVendor?.VendorName || '',
+      ExpectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      PaymentMethod: oldPo.PaymentMethod || 'Credit',
+      Notes: `Transferred unreceived item "${itemName}" from PO ${oldPoId}`,
+      Items: [
+        {
+          ItemID: itemId || `ITM-${Date.now().toString().slice(-4)}`,
+          ItemName: itemName,
+          Category: category,
+          Qty: pendingQty > 0 ? pendingQty : 1,
+          UnitPrice: unitPrice,
+          LineTotal: (pendingQty > 0 ? pendingQty : 1) * unitPrice,
+          BatchNo: itemToTransfer.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
+        }
+      ]
+    });
+
+    // Close GRN Modal & Open PO Modal
+    setShowGrnModal(false);
+    setShowPoModal(true);
+    setMedicineSearchTerm('');
+    setPoGridPage(1);
+
+    setSyncMessage(`Medicine "${itemName}" (Qty: ${pendingQty}) transferred to New Purchase Order (${newPoId})! Old PO ${oldPoId} status updated.`);
+    setTimeout(() => setSyncMessage(null), 5000);
+  };
+
+  // Transfer ALL unreceived/pending medicine items to a brand new Purchase Order & mark old PO Complete
+  const handleTransferAllUnreceivedToNewPo = async (oldPoId: string) => {
+    if (!oldPoId) {
+      alert('No Purchase Order selected.');
+      return;
+    }
+    const oldPo = purchaseOrders.find(p => p.POID === oldPoId);
+    if (!oldPo) {
+      alert(`Purchase Order ${oldPoId} not found.`);
+      return;
+    }
+
+    const pendingItemsInfo = getPoItemsReceiptInfo(oldPo);
+    if (pendingItemsInfo.length === 0) {
+      alert('No unreceived or pending items found for this Purchase Order.');
+      return;
+    }
+
+    const approvedGrns = grns.filter(g => g.POID === oldPo.POID && (g.Status === 'Approved' || !g.Status));
+
+    // 1. Update Old PO: keep only the already-received quantities and mark status Complete
+    const updatedOldPoItems = oldPo.Items.map(i => {
+      let rec = 0;
+      approvedGrns.forEach(g => {
+        if (Array.isArray(g.Items)) {
+          const gi = g.Items.find(gi => (i.ItemID && gi.ItemID && String(gi.ItemID).toLowerCase() === String(i.ItemID).toLowerCase()) ||
+                                        (i.ItemName && gi.ItemName && String(gi.ItemName).toLowerCase().trim() === String(i.ItemName).toLowerCase().trim()));
+          if (gi) rec += Number(gi.ReceivedQty || gi.Qty || 0);
+        }
+      });
+      return {
+        ...i,
+        Qty: rec,
+        LineTotal: rec * Number(i.UnitPrice || 0)
+      };
+    }).filter(i => (Number(i.Qty) || 0) > 0);
+
+    const newOldPoTotal = updatedOldPoItems.reduce((sum, i) => sum + ((Number(i.Qty) || 0) * (Number(i.UnitPrice) || 0)), 0);
+
+    const updatedOldPo: ErpPurchaseOrder = {
+      ...oldPo,
+      Items: updatedOldPoItems,
+      TotalAmount: newOldPoTotal,
+      Status: 'Received' // Mark old PO Complete
+    };
+
+    try {
+      await saveToDatabase('erp_purchase_orders', updatedOldPo, 'PUT');
+      setPurchaseOrders(prev => prev.map(p => p.POID === oldPoId ? updatedOldPo : p));
+    } catch (e) {
+      console.error('Error updating old PO in DB:', e);
+    }
+
+    // 2. Prepare items for New PO
+    const newPoId = generateNextPoNumber();
+    const selectedVendor = vendors.find(v => v.VendorName === oldPo.VendorName || v.VendorID === oldPo.VendorID);
+
+    const transferredItems = pendingItemsInfo.map(item => {
+      const pQty = Number(item.PendingQty) || 1;
+      const uPrice = Number(item.UnitPrice) || Number((item as any).OriginalUnitPrice) || 0;
+      return {
+        ItemID: item.ItemID || `ITM-${Date.now().toString().slice(-4)}`,
+        ItemName: item.ItemName || 'Medicine Item',
+        Category: (item as any).Category || getMedicineItemCategory({ ItemID: item.ItemID, ItemName: item.ItemName }) || 'General Medicine',
+        Qty: pQty,
+        UnitPrice: uPrice,
+        LineTotal: pQty * uPrice,
+        BatchNo: item.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`
+      };
+    });
+
+    setEditingPurchaseOrder(null);
+    setPoForm({
+      POID: newPoId,
+      VendorID: oldPo.VendorID || selectedVendor?.VendorID || '',
+      VendorName: oldPo.VendorName || selectedVendor?.VendorName || '',
+      ExpectedDeliveryDate: new Date(Date.now() + 7 * 86400000).toISOString().split('T')[0],
+      PaymentMethod: oldPo.PaymentMethod || 'Credit',
+      Notes: `Transferred unreceived items from PO ${oldPoId}`,
+      Items: transferredItems
+    });
+
+    setShowGrnModal(false);
+    setShowPoModal(true);
+    setMedicineSearchTerm('');
+    setPoGridPage(1);
+
+    setSyncMessage(`${transferredItems.length} unreceived medicines transferred to New Purchase Order (${newPoId})! Old PO ${oldPoId} marked complete.`);
+    setTimeout(() => setSyncMessage(null), 5000);
+  };
+
+  // Delete/cancel unreceived medicine item from Purchase Order & update PO status
+  const handleDeleteGrnItemFromPo = async (itemToDelete: any, oldPoId: string) => {
+    if (!oldPoId) {
+      alert('No Purchase Order selected.');
+      return;
+    }
+    const itemName = itemToDelete.ItemName || 'Medicine Item';
+    const itemId = itemToDelete.ItemID || '';
+
+    const confirmDelete = window.confirm(
+      `Are you sure you want to cancel / delete "${itemName}" from Purchase Order ${oldPoId}?\n\nThis unreceived item will be removed from the PO and old PO status will update.`
+    );
+    if (!confirmDelete) return;
+
+    const oldPo = purchaseOrders.find(p => p.POID === oldPoId);
+    if (!oldPo) return;
+
+    const approvedGrns = grns.filter(g => g.POID === oldPo.POID && (g.Status === 'Approved' || !g.Status));
+
+    // Update old PO by dropping unreceived portion of this item
+    const updatedOldPoItems = oldPo.Items.map(i => {
+      const isMatch = (itemId && i.ItemID && String(itemId).toLowerCase() === String(i.ItemID).toLowerCase()) ||
+                      (itemName && i.ItemName && String(itemName).toLowerCase().trim() === String(i.ItemName).toLowerCase().trim());
+      if (isMatch) {
+        let rec = 0;
+        approvedGrns.forEach(g => {
+          if (Array.isArray(g.Items)) {
+            const gi = g.Items.find(gi => (itemId && gi.ItemID && String(gi.ItemID).toLowerCase() === String(itemId).toLowerCase()) ||
+                                          (itemName && gi.ItemName && String(gi.ItemName).toLowerCase().trim() === String(itemName).toLowerCase().trim()));
+            if (gi) rec += Number(gi.ReceivedQty || gi.Qty || 0);
+          }
+        });
+        return {
+          ...i,
+          Qty: rec,
+          LineTotal: rec * Number(i.UnitPrice || 0)
+        };
+      }
+      return i;
+    }).filter(i => (Number(i.Qty) || 0) > 0);
+
+    const newOldPoTotal = updatedOldPoItems.reduce((sum, i) => sum + ((Number(i.Qty) || 0) * (Number(i.UnitPrice) || 0)), 0);
+
+    // Recalculate if any items remain pending in old PO
+    const tempOldPo = { ...oldPo, Items: updatedOldPoItems, TotalAmount: newOldPoTotal };
+    const remainingPending = getPoItemsReceiptInfo(tempOldPo);
+    const newStatus = remainingPending.length === 0 ? 'Received' : 'Partially Received';
+
+    const updatedOldPo: ErpPurchaseOrder = {
+      ...tempOldPo,
+      Status: newStatus
+    };
+
+    try {
+      await saveToDatabase('erp_purchase_orders', updatedOldPo, 'PUT');
+      setPurchaseOrders(prev => prev.map(p => p.POID === oldPoId ? updatedOldPo : p));
+    } catch (e) {
+      console.error('Error updating old PO in DB:', e);
+    }
+
+    // Remove from current GRN form items
+    setGrnForm((prev: any) => ({
+      ...prev,
+      Items: prev.Items.filter((i: any) => {
+        const isMatch = (itemId && i.ItemID && String(itemId).toLowerCase() === String(i.ItemID).toLowerCase()) ||
+                        (itemName && i.ItemName && String(itemName).toLowerCase().trim() === String(i.ItemName).toLowerCase().trim());
+        return !isMatch;
+      })
+    }));
+
+    setSyncMessage(`Medicine "${itemName}" deleted/cancelled from PO ${oldPoId}. Status: ${newStatus === 'Received' ? 'Complete (All Received)' : 'Partially Received'}.`);
+    setTimeout(() => setSyncMessage(null), 4000);
+  };
+
   const handleApproveGrn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (isSubmitting) return;
@@ -6581,6 +6866,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         handleSelectPoForGrn={handleSelectPoForGrn}
         handleRemoveGrnItem={handleRemoveGrnItem}
         handleResetGrnItems={handleResetGrnItems}
+        handleIncludeGrnItem={handleIncludeGrnItem}
+        handleTransferGrnItemToNewPo={handleTransferGrnItemToNewPo}
+        handleTransferAllUnreceivedToNewPo={handleTransferAllUnreceivedToNewPo}
+        handleDeleteGrnItemFromPo={handleDeleteGrnItemFromPo}
         getPoItemsReceiptInfo={getPoItemsReceiptInfo}
         handlePreviewCurrentGrnForm={handlePreviewCurrentGrnForm}
         setShowUploadBulkGrnModal={setShowUploadBulkGrnModal}

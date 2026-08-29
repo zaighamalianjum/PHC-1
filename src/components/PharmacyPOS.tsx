@@ -1840,15 +1840,6 @@ export default function PharmacyPOS({
       // Matched Item handling
       if (autoAddOnScan) {
         if (activeSubTab === 'store_sales') {
-          if (matched.MedicineType === 'C') {
-            playBeepSound('error');
-            setScanToastMsg({
-              text: `"${matched.ItemName}" is a Clinical Compounding item. Dispense via Clinical Checkout.`,
-              type: 'error'
-            });
-            return;
-          }
-
           const existingBasketQty = storeBasket.find((b) => b.ItemID === matched.ItemID)?.Qty || 0;
           if (existingBasketQty + 1 > matched.CStock) {
             playBeepSound('error');
@@ -1868,7 +1859,7 @@ export default function PharmacyPOS({
           } else {
             setStoreBasket([
               ...storeBasket,
-              { ItemID: matched.ItemID, Qty: 1, Price: matched.Price, MedicineType: 'P' }
+              { ItemID: matched.ItemID, Qty: 1, Price: matched.Price, MedicineType: matched.MedicineType || 'P' }
             ]);
           }
 
@@ -2532,21 +2523,13 @@ export default function PharmacyPOS({
     const selectedItem = items.find((i) => i.ItemID === storeRowItemId);
     if (!selectedItem) return;
 
-    // Strict Restriction: ONLY allow Patent Medicines
-    if (selectedItem.MedicineType === 'C') {
-      setStoreValidationError(
-        `Safety Restriction: "${selectedItem.ItemName}" is a Clinical Compounding medicine. These can only be dispensed via a doctor's prescription.`
-      );
-      return;
-    }
-
     // Verify Stock
     const existingBasketQty = storeBasket.find((b) => b.ItemID === storeRowItemId)?.Qty || 0;
     const totalRequired = existingBasketQty + storeRowQty;
 
     if (totalRequired > selectedItem.CStock) {
       setStoreValidationError(
-        `Critical Alert: Insufficient stock for ${selectedItem.ItemName}. Current stock is only ${selectedItem.CStock} ${selectedItem.Unit}s.`
+        `Critical Alert: Insufficient stock for ${selectedItem.ItemName}. Current stock is only ${selectedItem.CStock} ${selectedItem.Unit || 'Units'}.`
       );
       return;
     }
@@ -2564,7 +2547,7 @@ export default function PharmacyPOS({
         : (selectedItem.Price || 0);
       setStoreBasket([
         ...storeBasket,
-        { ItemID: storeRowItemId, Qty: storeRowQty, Price: effectivePrice, MedicineType: 'P' }
+        { ItemID: storeRowItemId, Qty: storeRowQty, Price: effectivePrice, MedicineType: selectedItem.MedicineType || 'P' }
       ]);
     }
 
@@ -2592,7 +2575,7 @@ export default function PharmacyPOS({
 
     const nextInvoiceNo = `INV-PH-${String(invoices.length + 1).padStart(4, '0')}`;
     
-    // Validate stock and medicine type one final time before database entry
+    // Validate stock one final time before database entry
     for (const basketItem of storeBasket) {
       const dbItem = items.find((itm) => itm.ItemID === basketItem.ItemID);
       if (!dbItem) {
@@ -2601,10 +2584,6 @@ export default function PharmacyPOS({
       }
       if (dbItem.CStock < basketItem.Qty) {
         alert(`Stock validation failed for ${dbItem.ItemName}. Aborting checkout.`);
-        return;
-      }
-      if (dbItem.MedicineType === 'C') {
-        alert(`Safety violation: "${dbItem.ItemName}" is a clinical compounding medicine and cannot be sold directly. Aborting.`);
         return;
       }
     }
@@ -2620,14 +2599,17 @@ export default function PharmacyPOS({
       Status: postRecord ? 2 : 1 // 1=Draft, 2=Posted
     };
 
-    const newDetails: InvoiceDetail[] = storeBasket.map((b) => ({
-      InvoiceNo: nextInvoiceNo,
-      ItemID: b.ItemID,
-      Qty: b.Qty,
-      Price: b.Price,
-      LineTotal: b.Qty * b.Price,
-      MedicineType: 'P'
-    }));
+    const newDetails: InvoiceDetail[] = storeBasket.map((b) => {
+      const matched = items.find(i => i.ItemID === b.ItemID);
+      return {
+        InvoiceNo: nextInvoiceNo,
+        ItemID: b.ItemID,
+        Qty: b.Qty,
+        Price: b.Price,
+        LineTotal: b.Qty * b.Price,
+        MedicineType: b.MedicineType || matched?.MedicineType || 'P'
+      };
+    });
 
     // Trigger state change
     onAddInvoice(newHeader, newDetails);
@@ -3667,13 +3649,13 @@ export default function PharmacyPOS({
                   <div className="relative mt-1">
                     <input
                       type="text"
-                      placeholder="Type medicine name or item code..."
+                      placeholder="Search medicine name, item ID, batch #, barcode..."
                       value={storeSearchQuery}
                       onChange={(e) => {
                         const val = e.target.value;
                         setStoreSearchQuery(val);
                         setStoreSearchDropdownOpen(true);
-                        const exact = items.find(i => i.MedicineType !== 'C' && i.ItemName.toLowerCase() === val.toLowerCase());
+                        const exact = items.find(i => (i.ItemName || '').toLowerCase() === val.toLowerCase() || (i.ItemID || '').toLowerCase() === val.toLowerCase());
                         if (exact) {
                           setStoreRowItemId(exact.ItemID);
                           setStoreRowPrice(exact.Price);
@@ -3705,40 +3687,36 @@ export default function PharmacyPOS({
                     )}
 
                     {storeSearchDropdownOpen && (
-                      <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl divide-y divide-slate-100">
+                      <div className="absolute z-50 mt-1 w-full max-h-72 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl divide-y divide-slate-100">
                         {(() => {
                           const query = storeSearchQuery.toLowerCase().trim();
-                          const list = items.filter(itm => 
-                            itm.MedicineType !== 'C' && (
-                              itm.ItemName.toLowerCase().includes(query) || 
-                              itm.ItemID.toLowerCase().includes(query)
-                            )
-                          );
+                          const list = items.filter(itm => {
+                            if (!query) return true;
+                            const nameMatch = (itm.ItemName || '').toLowerCase().includes(query);
+                            const idMatch = (itm.ItemID || '').toLowerCase().includes(query);
+                            const barcodeMatch = (itm.VendorBarcode || '').toLowerCase().includes(query);
+                            const batchMatch = (itm.BatchNo || '').toLowerCase().includes(query) ||
+                              (Array.isArray(itm.Batches) && itm.Batches.some(b => (b.BatchNo || '').toLowerCase().includes(query)));
+                            const categoryMatch = (itm.Category || '').toLowerCase().includes(query);
+                            return nameMatch || idMatch || barcodeMatch || batchMatch || categoryMatch;
+                          });
                           
                           if (list.length === 0) {
-                            return <div className="p-3 text-xs text-slate-400 text-center">No matching patent medicines found</div>;
+                            return <div className="p-3 text-xs text-slate-400 text-center">No matching medicines found in inventory</div>;
                           }
                           
-                          return list.slice(0, 20).map((itm, idx) => (
-                            <div
-                              key={`${itm.ItemID}-${idx}`}
-                              className="p-2.5 hover:bg-emerald-50 cursor-pointer text-left transition flex justify-between items-center group"
-                            >
+                          return list.slice(0, 30).map((itm, idx) => {
+                            const expStatus = getItemExpirySummary(itm);
+                            const activeBatch = itm.BatchNo || (itm.Batches && itm.Batches[0]?.BatchNo) || '';
+                            const expFormatted = formatMonthYearDisplay(itm.ExpDate || (itm.Batches && itm.Batches[0]?.ExpDate) || '');
+                            
+                            return (
                               <div
-                                className="flex-1 pr-2"
-                                onMouseDown={() => {
-                                  setStoreRowItemId(itm.ItemID);
-                                  setStoreSearchQuery(itm.ItemName);
-                                  setStoreRowPrice(itm.Price);
-                                  setStoreSearchDropdownOpen(false);
-                                }}
+                                key={`${itm.ItemID}-${idx}`}
+                                className="p-2.5 hover:bg-emerald-50 cursor-pointer text-left transition flex justify-between items-center group"
                               >
-                                <span className="font-semibold text-xs text-slate-800">{itm.ItemName}</span>
-                                <span className="ml-1.5 text-[10px] text-slate-400 font-mono">({itm.ItemID})</span>
-                              </div>
-                              <div className="flex items-center space-x-2 shrink-0">
                                 <div
-                                  className="text-right text-xxs font-mono"
+                                  className="flex-1 pr-2"
                                   onMouseDown={() => {
                                     setStoreRowItemId(itm.ItemID);
                                     setStoreSearchQuery(itm.ItemName);
@@ -3746,23 +3724,66 @@ export default function PharmacyPOS({
                                     setStoreSearchDropdownOpen(false);
                                   }}
                                 >
-                                  <span className="text-slate-700 font-bold">Rs. {itm.Price}</span>
-                                  <span className="ml-1.5 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">Stock: {itm.CStock}</span>
+                                  <div className="flex items-center space-x-1.5 flex-wrap">
+                                    <span className="font-semibold text-xs text-slate-800">{itm.ItemName}</span>
+                                    <span className="text-[10px] text-slate-400 font-mono">({itm.ItemID})</span>
+                                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${itm.MedicineType === 'C' ? 'bg-indigo-50 text-indigo-700 border border-indigo-200' : 'bg-emerald-50 text-emerald-700 border border-emerald-200'}`}>
+                                      {itm.MedicineType === 'C' ? 'Clinical' : 'Patent'}
+                                    </span>
+                                  </div>
+                                  {(activeBatch || expFormatted) && (
+                                    <div className="text-[10px] text-slate-500 mt-0.5 flex items-center space-x-2">
+                                      {activeBatch && <span className="font-mono">Batch: <strong>{activeBatch}</strong></span>}
+                                      {expFormatted && (
+                                        <span className="font-mono">
+                                          Exp: <strong>{expFormatted}</strong>
+                                        </span>
+                                      )}
+                                      {expStatus.status === 'EXPIRED' && (
+                                        <span className="text-[9px] font-bold bg-rose-100 text-rose-700 px-1 rounded">Expired</span>
+                                      )}
+                                      {expStatus.status === 'NEAR_EXPIRY' && (
+                                        <span className="text-[9px] font-bold bg-amber-100 text-amber-800 px-1 rounded">Expiring Soon</span>
+                                      )}
+                                    </div>
+                                  )}
                                 </div>
-                                <button
-                                  type="button"
-                                  onMouseDown={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteStoreItem(itm.ItemID, itm.ItemName);
-                                  }}
-                                  className="p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                                  title="Delete item / duplicate from Stock Grid Manager"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
+                                <div className="flex items-center space-x-2 shrink-0">
+                                  <div
+                                    className="text-right text-xxs font-mono"
+                                    onMouseDown={() => {
+                                      setStoreRowItemId(itm.ItemID);
+                                      setStoreSearchQuery(itm.ItemName);
+                                      setStoreRowPrice(itm.Price);
+                                      setStoreSearchDropdownOpen(false);
+                                    }}
+                                  >
+                                    <span className="text-slate-800 font-bold">Rs. {itm.Price}</span>
+                                    <span className={`ml-1.5 px-1.5 py-0.5 rounded font-bold ${
+                                      itm.CStock <= 0 
+                                        ? 'bg-rose-100 text-rose-700' 
+                                        : itm.CStock <= 5 
+                                          ? 'bg-amber-100 text-amber-800' 
+                                          : 'bg-slate-100 text-slate-700'
+                                    }`}>
+                                      Stock: {itm.CStock} {itm.Unit || ''}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onMouseDown={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteStoreItem(itm.ItemID, itm.ItemName);
+                                    }}
+                                    className="p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                                    title="Delete item / duplicate from Stock Grid Manager"
+                                  >
+                                    <Trash2 className="w-3.5 h-3.5" />
+                                  </button>
+                                </div>
                               </div>
-                            </div>
-                          ));
+                            );
+                          });
                         })()}
                       </div>
                     )}
@@ -3831,22 +3852,44 @@ export default function PharmacyPOS({
               {storeRowItemId && (() => {
                 const sel = items.find(i => i.ItemID === storeRowItemId);
                 if (!sel) return null;
+                const activeBatch = sel.BatchNo || (sel.Batches && sel.Batches[0]?.BatchNo) || '';
+                const expFormatted = formatMonthYearDisplay(sel.ExpDate || (sel.Batches && sel.Batches[0]?.ExpDate) || '');
+                const expStatus = getItemExpirySummary(sel);
+
                 return (
                   <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs bg-emerald-50/80 border border-emerald-200 text-emerald-950 p-2.5 rounded-xl font-medium gap-2 shadow-2xs">
-                    <div className="flex items-center space-x-2">
+                    <div className="flex items-center space-x-2 flex-wrap">
                       <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
                       <span>
-                        Selected Patent: <strong>{sel.ItemName}</strong> <span className="text-slate-500 font-mono text-xxs">({sel.ItemID})</span>
+                        Selected Medicine: <strong>{sel.ItemName}</strong> <span className="text-slate-500 font-mono text-xxs">({sel.ItemID})</span>
+                      </span>
+                      <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded ${sel.MedicineType === 'C' ? 'bg-indigo-100 text-indigo-800' : 'bg-emerald-100 text-emerald-800'}`}>
+                        {sel.MedicineType === 'C' ? 'Clinical' : 'Patent'}
                       </span>
                       <span className="text-slate-400">|</span>
-                      <span>Stock: <strong>{sel.CStock} {sel.Unit}s</strong></span>
+                      {activeBatch && (
+                        <>
+                          <span className="font-mono text-slate-700">Batch: <strong>{activeBatch}</strong></span>
+                          <span className="text-slate-400">|</span>
+                        </>
+                      )}
+                      {expFormatted && (
+                        <>
+                          <span className="font-mono text-slate-700">Exp: <strong>{expFormatted}</strong></span>
+                          {expStatus.status === 'EXPIRED' && (
+                            <span className="text-[9px] font-bold bg-rose-100 text-rose-700 px-1.5 py-0.2 rounded">EXPIRED</span>
+                          )}
+                          <span className="text-slate-400">|</span>
+                        </>
+                      )}
+                      <span>Stock: <strong>{sel.CStock} {sel.Unit || 'Units'}</strong></span>
                       <span className="text-slate-400">|</span>
-                      <span>Live Price: <strong className="text-emerald-700">Rs. {sel.Price}</strong></span>
+                      <span>Live Price: <strong className="text-emerald-700 font-mono font-bold">Rs. {sel.Price}</strong></span>
                     </div>
 
                     <div className="flex items-center space-x-2 shrink-0">
                       <span className="text-[10px] text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded font-bold">
-                        ✓ Updating price updates Stock Grid Manager
+                        ✓ Price auto-syncs with inventory
                       </span>
                       <button
                         type="button"
