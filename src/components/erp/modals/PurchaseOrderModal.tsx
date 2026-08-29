@@ -534,26 +534,24 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                                   </span>
                                   {isSelected ? (
                                     <div className="flex items-center space-x-1">
-                                      <span className="text-[10px] text-slate-400 font-bold">Rs.</span>
                                       <input
-                                        type="number"
-                                        min="0"
-                                        step="any"
-                                        placeholder="0"
-                                        value={currentPoItem?.UnitPrice ?? (unitPrice || 0)}
+                                        type="text"
+                                        placeholder="PKR"
+                                        value={currentPoItem?.UnitPrice ? currentPoItem.UnitPrice : ''}
                                         onClick={e => e.stopPropagation()}
                                         onChange={e => {
-                                          const val = Math.max(0, Number(e.target.value));
+                                          const val = e.target.value;
+                                          const numVal = val === '' ? '' : (isNaN(Number(val)) ? val : Number(val));
                                           setPoForm((prev: any) => ({
                                             ...prev,
                                             Items: prev.Items.map((i: any) =>
                                               (i.ItemID === med.ItemID || i.ItemName === med.ItemName)
-                                                ? { ...i, UnitPrice: val }
+                                                ? { ...i, UnitPrice: numVal }
                                                 : i
                                             )
                                           }));
                                         }}
-                                        className="w-20 p-1 text-right text-xs border border-emerald-300 rounded-md font-bold font-mono bg-white text-emerald-950 focus:ring-1 focus:ring-emerald-500"
+                                        className="w-20 p-1 text-center text-xs border border-slate-300 focus:border-indigo-500 rounded-md font-bold font-mono bg-white text-slate-900 focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-400"
                                       />
                                     </div>
                                   ) : (
@@ -896,18 +894,17 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                               </td>
                               <td className="p-2 text-center">
                                 <div className="space-y-1">
-                                  <div className="relative">
-                                    <span className="absolute left-1.5 top-1.5 text-[10px] text-slate-400 font-bold">Rs.</span>
-                                    <input
-                                      type="number"
-                                      min="0"
-                                      step="any"
-                                      placeholder="0"
-                                      value={item.UnitPrice ?? 0}
-                                      onChange={e => handlePoItemChange(originalIndex, 'UnitPrice', Math.max(0, Number(e.target.value)))}
-                                      className="w-28 mx-auto pl-6 pr-1.5 py-1 border border-emerald-300 rounded-lg text-xs text-right font-black font-mono bg-emerald-50/50 text-emerald-950"
-                                    />
-                                  </div>
+                                  <input
+                                    type="text"
+                                    placeholder="PKR"
+                                    value={item.UnitPrice ? item.UnitPrice : ''}
+                                    onChange={e => {
+                                      const val = e.target.value;
+                                      const numVal = val === '' ? '' : (isNaN(Number(val)) ? val : Number(val));
+                                      handlePoItemChange(originalIndex, 'UnitPrice', numVal);
+                                    }}
+                                    className="w-24 mx-auto px-2 py-1 border border-slate-300 focus:border-indigo-500 rounded-lg text-xs text-center font-bold font-mono bg-white text-slate-900 focus:ring-1 focus:ring-indigo-500 placeholder:text-slate-400"
+                                  />
                                   {rowPriceInfo.hasPrice && rowPriceInfo.priceSource === 'grn' && (
                                     <span
                                       className="inline-block text-[9.5px] font-extrabold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300 max-w-[130px] truncate cursor-help"
