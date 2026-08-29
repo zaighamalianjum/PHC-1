@@ -1094,11 +1094,13 @@ export default function ReportingDesk({
       }
     });
 
-    // 4C. Vendor Payments & Supplier Settlements
+    // 4C. Vendor Payments & Supplier Settlements (Cash & Settled Credit Bills ONLY)
+    // Note: Items purchased on credit create Accounts Payable liabilities and are ONLY counted in Cash Outflows
+    // when the vendor bill is actually paid (Vendor Payment voucher / cash settlement).
     let vendorOutflows = 0;
     const countedVendorKeys = new Set<string>();
 
-    // 4D. Evaluate Transactions for uncounted expenses, salaries, or vendor disbursements
+    // 4D. Evaluate Transactions for uncounted expenses, salaries, or actual vendor disbursements
     effectiveTransactions.forEach((t: any, idx: number) => {
       const d = parseCleanDate(t.Date || t.TransactionDate || t.CreatedAt);
       if (isWithinDateRange(d)) {
@@ -1107,14 +1109,29 @@ export default function ReportingDesk({
 
         const type = (t.Type || '').toLowerCase();
         const cat = (t.Category || '').toLowerCase();
+        const desc = (t.Description || '').toLowerCase();
         const refNo = String(t.ReferenceNo || t.TransactionID || t.LinkedExpenseID || t.ExpenseID || t.LinkedPayrollID || t.PayrollID || '').trim();
         const dateAmtKey = `${d}_${amt}`;
 
-        const isVendor = type === 'vendorpayment' || type === 'vendor_payment' || Boolean(t.VendorID) || cat.includes('vendor') || cat.includes('supplier') || cat.includes('purchase');
-        const isSalary = type === 'payroll' || type === 'salary' || cat.includes('salary') || cat.includes('payroll');
-        const isExpense = type === 'expense' || type === 'debit' || type === 'outflow' || cat.includes('expense') || cat.includes('utility') || cat.includes('rent') || cat.includes('maintenance') || cat.includes('tea') || cat.includes('stationery') || cat.includes('fuel') || cat.includes('cleaning') || cat.includes('supplies') || cat.includes('office') || cat.includes('repair') || (!isVendor && !isSalary && type !== 'income' && type !== 'deposit' && type !== 'receipt' && type !== 'credit');
+        // Strict Check: Only actual paid vendor disbursements (VendorPayment, Paid Cash Purchase) count as cash outflows
+        const isPaidVendorPayment = (
+          type === 'vendorpayment' || 
+          type === 'vendor_payment' || 
+          (type === 'expense' && (cat.includes('vendor') || cat.includes('supplier'))) ||
+          (desc.includes('vendor payment') || desc.includes('paid to vendor') || desc.includes('spot cash payment on delivery'))
+        ) && t.PaymentStatus !== 'Unpaid';
 
-        if (isVendor) {
+        const isSalary = type === 'payroll' || type === 'salary' || cat.includes('salary') || cat.includes('payroll');
+        const isExpense = !isPaidVendorPayment && !isSalary && (
+          type === 'expense' || type === 'debit' || type === 'outflow' ||
+          cat.includes('expense') || cat.includes('utility') || cat.includes('rent') ||
+          cat.includes('maintenance') || cat.includes('tea') || cat.includes('stationery') ||
+          cat.includes('fuel') || cat.includes('cleaning') || cat.includes('supplies') ||
+          cat.includes('office') || cat.includes('repair') ||
+          (type !== 'income' && type !== 'deposit' && type !== 'receipt' && type !== 'credit' && type !== 'grn_credit' && type !== 'purchase')
+        );
+
+        if (isPaidVendorPayment) {
           if (!countedVendorKeys.has(refNo) && !countedVendorKeys.has(dateAmtKey)) {
             vendorOutflows += amt;
             if (refNo) countedVendorKeys.add(refNo);
@@ -1150,7 +1167,8 @@ export default function ReportingDesk({
           const ref = String(v.RefNo || '').trim();
           const dateAmtKey = `${d}_${amt}`;
 
-          const isVendor = remarks.includes('supplier') || remarks.includes('vendor') || remarks.includes('purchase') || remarks.includes('grn') || Boolean(v.VendorID || v.SupplierID);
+          // Cash payment vouchers to suppliers / vendors
+          const isVendor = (remarks.includes('supplier') || remarks.includes('vendor payment') || remarks.includes('pay vendor') || Boolean(v.VendorID || v.SupplierID)) && !remarks.includes('stock received on credit');
           const isSalary = remarks.includes('salary') || remarks.includes('payroll') || remarks.includes('staff pay') || remarks.includes('wages');
 
           if (isVendor) {

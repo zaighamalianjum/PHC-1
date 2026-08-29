@@ -75,6 +75,7 @@ import {
   UserRight,
   ClinicSettings
 } from '../types';
+import { toMonthYearInput } from '../utils/pharmacyUtils';
 
 
 // Modular ERP Tabs
@@ -1129,12 +1130,17 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       marginPercent,
       opdInflow,
       clinicalInflow,
+      dispensaryInflow: clinicalInflow + storeInflow,
       storeInflow,
       regInflow,
+      otherInflow: regInflow,
       salariesOutflow,
+      payrollOutflow: salariesOutflow,
       rentOutflow,
       billsOutflow,
+      expenseOutflow: rentOutflow + billsOutflow + miscOutflow,
       medicinePurchasesOutflow,
+      grnOutflow: medicinePurchasesOutflow,
       miscOutflow,
       activeDaysCount,
       dailyAvgInflow,
@@ -2658,8 +2664,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         ? Math.max(0, Number(row.price))
         : (matchedInv?.PurchasePrice ?? matchedInv?.Price ?? 0);
 
-      const todayStr = new Date().toISOString().split('T')[0];
-      const twoYearsStr = new Date(Date.now() + 365 * 2 * 86400000).toISOString().split('T')[0];
+      const todayMonthStr = new Date().toISOString().slice(0, 7);
+      const twoYearsMonthStr = new Date(Date.now() + 365 * 2 * 86400000).toISOString().slice(0, 7);
 
       // Auto-match & select Category strictly with mappings and smart detection
       let matchedCategory = '';
@@ -2687,8 +2693,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         PendingQty: Number(pendingQty) || 0,
         ReceivedQty: parsedQty,
         UnitPrice: parsedPrice,
-        MfgDate: row.mfgDate || todayStr,
-        ExpiryDate: row.expiryDate || twoYearsStr,
+        MfgDate: toMonthYearInput(row.mfgDate) || todayMonthStr,
+        ExpiryDate: toMonthYearInput(row.expiryDate) || twoYearsMonthStr,
         BatchNo: row.batchNo || matchedPoItem?.BatchNo || matchedInv?.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
         isMatchedPo: Boolean(matchedPoItem),
         isMatchedInventory: Boolean(matchedInv),
@@ -2987,8 +2993,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       UnitPrice: item.UnitPrice > 0 ? item.UnitPrice : ('' as any),
       LineTotal: (item.ReceivedQty || 0) * (item.UnitPrice || 0),
       BatchNo: item.BatchNo,
-      MfgDate: item.MfgDate,
-      ExpiryDate: item.ExpiryDate
+      MfgDate: toMonthYearInput(item.MfgDate),
+      ExpiryDate: toMonthYearInput(item.ExpiryDate)
     }));
 
     setGrnForm(prev => ({
@@ -3845,8 +3851,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 ItemID: inv.ItemID,
                 ItemName: inv.ItemName,
                 BatchNo: matched.BatchNo || `B-${new Date().getFullYear()}-${Math.floor(100 + Math.random() * 900)}`,
-                MfgDate: matched.MfgDate || '',
-                ExpDate: matched.ExpiryDate || '',
+                MfgDate: toMonthYearInput(matched.MfgDate) || '',
+                ExpDate: toMonthYearInput(matched.ExpiryDate || matched.ExpDate) || '',
                 PurchasePrice: uPrice > 0 ? uPrice : inv.PurchasePrice,
                 SalePrice: inv.Price,
                 Qty: qtyRec,
@@ -3864,8 +3870,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 CStock: (Number(inv.CStock) || 0) + qtyRec,
                 PurchasePrice: uPrice > 0 ? uPrice : inv.PurchasePrice,
                 BatchNo: matched.BatchNo || inv.BatchNo,
-                MfgDate: matched.MfgDate || inv.MfgDate,
-                ExpDate: matched.ExpiryDate || inv.ExpDate,
+                MfgDate: toMonthYearInput(matched.MfgDate) || inv.MfgDate,
+                ExpDate: toMonthYearInput(matched.ExpiryDate || matched.ExpDate) || inv.ExpDate,
                 Batches: [newBatch, ...existingBatches]
               };
             }
@@ -5502,59 +5508,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       `;
     }
 
-    // Build Received Goods Summary HTML if GRNs exist
-    let grnSummaryHtml = '';
-    if (hasGrns) {
-      const grnBatchesHtml = poGrns.map((g, gIdx) => {
-        const itemRows = (g.Items || []).filter(i => Number(i.ReceivedQty || 0) > 0).map((i, iIdx) => `
-          <tr style="border-bottom: 1px solid #e2e8f0;">
-            <td style="padding: 4px; border: 1px solid #cbd5e1; text-align: center; font-weight: bold; color: #64748b; width: 24px;">${iIdx + 1}</td>
-            <td style="padding: 4px; border: 1px solid #cbd5e1; font-weight: bold; color: #0f172a;">
-              ${i.ItemName}
-              ${i.BatchNo ? `<span style="font-size: 8.5px; color: #047857; font-weight: 700; margin-left: 6px;">[Batch: ${i.BatchNo} ${i.ExpiryDate ? `| Exp: ${i.ExpiryDate}` : ''}]</span>` : ''}
-            </td>
-            <td style="padding: 4px; border: 1px solid #cbd5e1; text-align: center; font-weight: 800; color: #047857; background: #ecfdf5; width: 80px;">${i.ReceivedQty}</td>
-            <td style="padding: 4px; border: 1px solid #cbd5e1; text-align: right; font-weight: 700; color: #0f172a; width: 85px;">Rs. ${Number(i.UnitPrice || 0).toLocaleString()}</td>
-            <td style="padding: 4px; border: 1px solid #cbd5e1; text-align: right; font-weight: 800; color: #0f172a; width: 95px;">Rs. ${Number(i.LineTotal || (i.ReceivedQty * i.UnitPrice) || 0).toLocaleString()}</td>
-          </tr>
-        `).join('');
-
-        return `
-          <div style="margin: 8px 0; border: 1px solid #cbd5e1; border-radius: 6px; overflow: hidden; background: #ffffff;">
-            <div style="background: #1e293b; color: #ffffff; padding: 5px 10px; font-size: 10px; font-weight: 800; display: flex; justify-content: space-between; align-items: center;">
-              <span>GRN #${gIdx + 1}: <u style="color: #6ee7b7; text-decoration: none;">${g.GRNID}</u> &nbsp;|&nbsp; Date: ${g.ReceivedDate}</span>
-              <span>Inv / Challan #: <u style="color: #fde047; text-decoration: none;">${g.SupplierInvoiceNo || g.ChallanNo || 'N/A'}</u> &nbsp;|&nbsp; GRN Amount: Rs. ${(g.TotalAmount || 0).toLocaleString()}</span>
-            </div>
-            <table style="width: 100%; border-collapse: collapse; font-size: 10px;">
-              <thead>
-                <tr style="background: #f1f5f9; color: #334155; font-size: 8.5px; text-transform: uppercase;">
-                  <th style="padding: 4px; border: 1px solid #cbd5e1; width: 24px;">#</th>
-                  <th style="padding: 4px; border: 1px solid #cbd5e1; text-align: left;">Received Item Name & Batch Info</th>
-                  <th style="padding: 4px; border: 1px solid #cbd5e1; text-align: center; width: 80px;">Received Qty</th>
-                  <th style="padding: 4px; border: 1px solid #cbd5e1; text-align: right; width: 85px;">Unit Price</th>
-                  <th style="padding: 4px; border: 1px solid #cbd5e1; text-align: right; width: 95px;">Sub Total</th>
-                </tr>
-              </thead>
-              <tbody>
-                ${itemRows || `<tr><td colspan="5" style="text-align: center; padding: 6px; color: #64748b;">No items recorded in this GRN batch.</td></tr>`}
-              </tbody>
-            </table>
-          </div>
-        `;
-      }).join('');
-
-      grnSummaryHtml = `
-        <div style="margin-top: 14px; border: 1.5px solid #047857; border-radius: 8px; overflow: hidden; background: #f0fdf4;">
-          <div style="background: #047857; color: #ffffff; padding: 6px 12px; font-weight: 900; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; justify-content: space-between; align-items: center;">
-            <span>⚡ ITEMS RECEIVED IN GRN (GOODS RECEIVING SUMMARY)</span>
-            <span>Total ${poGrns.length} GRN Batch(es) Received</span>
-          </div>
-          <div style="padding: 8px;">
-            ${grnBatchesHtml}
-          </div>
-        </div>
-      `;
-    }
+    // Note: GRN Received Goods Summary section removed per user request to keep PO printout focused on PO Order Items
 
     printWin.document.write(`
       <!DOCTYPE html>
@@ -5938,8 +5892,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
           ${po.Notes ? `<div style="margin-top: 10px; padding: 8px 12px; background: #fffbeb; border: 1px solid #fde68a; border-radius: 6px; font-size: 10.5px;"><strong>Special Instructions / Vendor Notes:</strong> ${po.Notes}</div>` : ''}
 
-          <!-- Items Received via GRN Breakdown Section -->
-          ${grnSummaryHtml}
+
 
           <!-- Bill Payments Settlement Section -->
           ${paymentHistoryHtml}

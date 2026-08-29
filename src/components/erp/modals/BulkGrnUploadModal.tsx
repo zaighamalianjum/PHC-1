@@ -1,6 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { FileSpreadsheet, PackageCheck, X, AlertTriangle, Plus, FileText, CheckCircle2 } from 'lucide-react';
 import { ErpPurchaseOrder } from '../../../types';
+import { toMonthYearInput } from '../../../utils/pharmacyUtils';
 
 interface BulkGrnUploadModalProps {
   showUploadBulkGrnModal: boolean;
@@ -283,8 +284,8 @@ export const BulkGrnUploadModal: React.FC<BulkGrnUploadModalProps> = ({
                           </td>
                           <td className="p-2 text-center">
                             <input
-                              type="date"
-                              value={item.MfgDate || ''}
+                              type="month"
+                              value={toMonthYearInput(item.MfgDate) || ''}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, MfgDate: val } : it));
@@ -294,8 +295,8 @@ export const BulkGrnUploadModal: React.FC<BulkGrnUploadModalProps> = ({
                           </td>
                           <td className="p-2 text-center">
                             <input
-                              type="date"
-                              value={item.ExpiryDate || ''}
+                              type="month"
+                              value={toMonthYearInput(item.ExpiryDate) || ''}
                               onChange={(e) => {
                                 const val = e.target.value;
                                 setBulkGrnParsedItems(prev => prev.map((it, i) => i === idx ? { ...it, ExpiryDate: val } : it));

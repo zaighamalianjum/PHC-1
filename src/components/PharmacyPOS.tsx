@@ -77,101 +77,31 @@ import {
   Appointment,
   Token
 } from '../types';
+import {
+  isBatchExpired,
+  isBatchNearExpiry,
+  getItemExpirySummary,
+  MEDICINE_CATEGORIES,
+  numToWords,
+  toMonthYearInput,
+  formatMonthYearDisplay
+} from '../utils/pharmacyUtils';
+import {
+  createPharmacyPrintHelpers
+} from '../utils/pharmacyPrintHelpers';
+import PharmacyBatchesModal from './pharmacy/PharmacyBatchesModal';
+import PharmacyCategoryModal from './pharmacy/PharmacyCategoryModal';
+import PharmacyPoPrintPreviewModal from './pharmacy/PharmacyPoPrintPreviewModal';
+import PharmacyAddMedicineModal from './pharmacy/PharmacyAddMedicineModal';
+import PharmacyPatentSourcingModal from './pharmacy/PharmacyPatentSourcingModal';
+import PharmacyVendorModal from './pharmacy/PharmacyVendorModal';
+import PharmacyPrintInvoiceModal from './pharmacy/PharmacyPrintInvoiceModal';
+import PharmacyLabelPrintModal from './pharmacy/PharmacyLabelPrintModal';
+import PharmacyInvoiceLogsTab from './pharmacy/PharmacyInvoiceLogsTab';
+import PharmacyReturnsTab from './pharmacy/PharmacyReturnsTab';
+import PharmacyClinicalLabelsTab from './pharmacy/PharmacyClinicalLabelsTab';
 
-export const isBatchExpired = (expDate?: string) => {
-  if (!expDate || !expDate.trim()) return false;
-  try {
-    const clean = expDate.trim();
-    const parts = clean.split('-');
-    let expTimestamp = 0;
-    if (parts.length === 3) {
-      expTimestamp = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59).getTime();
-    } else if (parts.length === 2) {
-      // YYYY-MM
-      expTimestamp = new Date(Number(parts[0]), Number(parts[1]), 0, 23, 59, 59).getTime();
-    } else {
-      expTimestamp = new Date(clean).getTime();
-    }
-    return !isNaN(expTimestamp) && expTimestamp < Date.now();
-  } catch {
-    return false;
-  }
-};
-
-export const isBatchNearExpiry = (expDate?: string, days = 90) => {
-  if (!expDate || !expDate.trim()) return false;
-  try {
-    const clean = expDate.trim();
-    const parts = clean.split('-');
-    let expTimestamp = 0;
-    if (parts.length === 3) {
-      expTimestamp = new Date(Number(parts[0]), Number(parts[1]) - 1, Number(parts[2]), 23, 59, 59).getTime();
-    } else if (parts.length === 2) {
-      expTimestamp = new Date(Number(parts[0]), Number(parts[1]), 0, 23, 59, 59).getTime();
-    } else {
-      expTimestamp = new Date(clean).getTime();
-    }
-    if (isNaN(expTimestamp)) return false;
-    const diffDays = (expTimestamp - Date.now()) / (1000 * 60 * 60 * 24);
-    return diffDays >= 0 && diffDays <= days;
-  } catch {
-    return false;
-  }
-};
-
-export const getItemExpirySummary = (item: Item) => {
-  const batches = Array.isArray(item.Batches) && item.Batches.length > 0
-    ? item.Batches
-    : (item.ExpDate ? [{
-        BatchID: `${item.ItemID}-legacy`,
-        ItemID: item.ItemID,
-        ItemName: item.ItemName,
-        BatchNo: item.BatchNo || 'B#1',
-        ExpDate: item.ExpDate,
-        MfgDate: item.MfgDate || '',
-        Qty: item.CStock,
-        InitialQty: item.CStock,
-        PurchasePrice: item.PurchasePrice,
-        SalePrice: item.Price,
-        Status: 'ACTIVE' as const,
-        CreatedAt: ''
-      }] : []);
-
-  if (batches.length === 0) {
-    return { status: 'NO_EXPIRY', label: 'No Expiry', count: 0, expiredQty: 0, nearExpiryQty: 0, activeQty: item.CStock, earliestExpDate: '' };
-  }
-
-  let expiredQty = 0;
-  let nearExpiryQty = 0;
-  let activeQty = 0;
-  let earliestExpDate = '';
-
-  batches.forEach(b => {
-    const q = Number(b.Qty) || 0;
-    if (isBatchExpired(b.ExpDate)) {
-      expiredQty += q;
-    } else if (isBatchNearExpiry(b.ExpDate)) {
-      nearExpiryQty += q;
-    } else {
-      activeQty += q;
-    }
-    if (b.ExpDate && (!earliestExpDate || b.ExpDate < earliestExpDate)) {
-      earliestExpDate = b.ExpDate;
-    }
-  });
-
-  if (expiredQty > 0 && activeQty === 0 && nearExpiryQty === 0) {
-    return { status: 'EXPIRED', label: 'Expired Lot', count: batches.length, expiredQty, nearExpiryQty, activeQty, earliestExpDate };
-  }
-  if (expiredQty > 0) {
-    return { status: 'PARTIAL_EXPIRED', label: `${expiredQty} Expired`, count: batches.length, expiredQty, nearExpiryQty, activeQty, earliestExpDate };
-  }
-  if (nearExpiryQty > 0) {
-    return { status: 'NEAR_EXPIRY', label: 'Expiring Soon', count: batches.length, expiredQty, nearExpiryQty, activeQty, earliestExpDate };
-  }
-  return { status: 'ACTIVE', label: 'Active', count: batches.length, expiredQty, nearExpiryQty, activeQty, earliestExpDate };
-};
-
+export { isBatchExpired, isBatchNearExpiry, getItemExpirySummary };
 
 interface PharmacyPOSProps {
   patients: Patient[];
@@ -198,29 +128,6 @@ interface PharmacyPOSProps {
   currentUser?: User;
   onUnauthorized?: (msg?: string) => void;
 }
-
-const MEDICINE_CATEGORIES = [
-  'BM Drops',
-  'Q D DROPS',
-  'Potency 30',
-  'Potency 200',
-  'Syrup',
-  'Drops',
-  'Tab',
-  'Cap',
-  'Injection',
-  'Ointment',
-  'Cream',
-  'Solution',
-  'Powder',
-  'Suspension',
-  'Gel',
-  'Sachet',
-  'Amp',
-  'Bottle',
-  'Gram',
-  'ML'
-];
 
 export default function PharmacyPOS({
   patients,
@@ -403,6 +310,31 @@ export default function PharmacyPOS({
   const [supplierFormAddress, setSupplierFormAddress] = useState('');
   const [vendorSuccessMsg, setVendorSuccessMsg] = useState('');
   const [vendorErrorMsg, setVendorErrorMsg] = useState('');
+
+  // Clinical labels state
+  const [labelPatientId, setLabelPatientId] = useState('');
+  const [labelVisitId, setLabelVisitId] = useState('');
+  const [labelSearchQuery, setLabelSearchQuery] = useState('');
+  const [customLabelStates, setCustomLabelStates] = useState<Record<string, any>>({});
+  const [isLabelPrintModalOpen, setIsLabelPrintModalOpen] = useState(false);
+  const [labelPrintData, setLabelPrintData] = useState<any>(null);
+
+  // Sales return state
+  const [salesReturns, setSalesReturns] = useState<any[]>([]);
+  const [returnDetails, setReturnDetails] = useState<any[]>([]);
+  const [returnSearchTerm, setReturnSearchTerm] = useState('');
+  const [returnDateFilter, setReturnDateFilter] = useState('');
+  const [isReturnSubmitting, setIsReturnSubmitting] = useState(false);
+
+  // Patent sourcing quick modal state
+  const [showPatentSourcingModal, setShowPatentSourcingModal] = useState(false);
+  const [selectedPatientId, setSelectedPatientId] = useState('');
+  const [selectedPatientName, setSelectedPatientName] = useState('');
+  const [patentSourcingNote, setPatentSourcingNote] = useState('');
+  const handleConfirmPatentSourcing = (_opt?: string) => {
+    setShowPatentSourcingModal(false);
+  };
+  const onVoidInvoice = (_invoiceNo: string) => {};
 
   const resetSupplierForm = () => {
     setEditingSupplier(null);
@@ -595,8 +527,8 @@ export default function PharmacyPOS({
     setItemFormMedicineType(itm.MedicineType || 'P');
     setItemFormVendorBarcode(itm.VendorBarcode || '');
     setItemFormBatchNo(itm.BatchNo || '');
-    setItemFormMfgDate(itm.MfgDate || '');
-    setItemFormExpDate(itm.ExpDate || '');
+    setItemFormMfgDate(toMonthYearInput(itm.MfgDate));
+    setItemFormExpDate(toMonthYearInput(itm.ExpDate));
     setInvErrorMsg('');
     setIsAddMedicineModalOpen(true);
   };
@@ -657,8 +589,8 @@ export default function PharmacyPOS({
     const reorderQ = itemFormReorderQty === '' ? undefined : Number(itemFormReorderQty);
     const vendorBarcodeVal = itemFormVendorBarcode.trim() || undefined;
     const batchNoVal = itemFormBatchNo.trim() || undefined;
-    const mfgDateVal = itemFormMfgDate.trim() || undefined;
-    const expDateVal = itemFormExpDate.trim() || undefined;
+    const mfgDateVal = itemFormMfgDate.trim() ? toMonthYearInput(itemFormMfgDate.trim()) : undefined;
+    const expDateVal = itemFormExpDate.trim() ? toMonthYearInput(itemFormExpDate.trim()) : undefined;
 
     if (editingItem) {
       const updatedItem: Item = {
@@ -700,7 +632,7 @@ export default function PharmacyPOS({
           ItemID: finalItemId,
           ItemName: itemFormName.trim(),
           BatchNo: batchNoVal || `B-${new Date().getFullYear()}-001`,
-          MfgDate: mfgDateVal || new Date().toISOString().split('T')[0],
+          MfgDate: mfgDateVal || new Date().toISOString().slice(0, 7),
           ExpDate: expDateVal || '',
           PurchasePrice: pPrice,
           SalePrice: rPrice,
@@ -743,7 +675,7 @@ export default function PharmacyPOS({
     setSelectedBatchItem(itm);
     setEditingBatchId(null);
     setBatchFormNo('');
-    setBatchFormMfgDate(new Date().toISOString().split('T')[0]);
+    setBatchFormMfgDate(new Date().toISOString().slice(0, 7));
     setBatchFormExpDate('');
     setBatchFormQty('');
     setBatchFormCost(itm.PurchasePrice || '');
@@ -757,8 +689,8 @@ export default function PharmacyPOS({
   const handleStartEditBatch = (batch: ItemBatch) => {
     setEditingBatchId(batch.BatchID);
     setBatchFormNo(batch.BatchNo || '');
-    setBatchFormMfgDate(batch.MfgDate || '');
-    setBatchFormExpDate(batch.ExpDate || '');
+    setBatchFormMfgDate(toMonthYearInput(batch.MfgDate));
+    setBatchFormExpDate(toMonthYearInput(batch.ExpDate));
     setBatchFormQty(batch.Qty !== undefined ? batch.Qty : '');
     setBatchFormCost(batch.PurchasePrice !== undefined ? batch.PurchasePrice : '');
     setBatchFormSalePrice(batch.SalePrice !== undefined ? batch.SalePrice : '');
@@ -785,6 +717,9 @@ export default function PharmacyPOS({
       return;
     }
 
+    const mfgVal = toMonthYearInput(batchFormMfgDate.trim()) || new Date().toISOString().slice(0, 7);
+    const expVal = toMonthYearInput(batchFormExpDate.trim());
+
     // Existing batches array or migrate legacy item batch
     const existingBatches: ItemBatch[] = Array.isArray(selectedBatchItem.Batches) && selectedBatchItem.Batches.length > 0
       ? [...selectedBatchItem.Batches]
@@ -794,8 +729,8 @@ export default function PharmacyPOS({
               ItemID: selectedBatchItem.ItemID,
               ItemName: selectedBatchItem.ItemName,
               BatchNo: selectedBatchItem.BatchNo || 'B# 001',
-              MfgDate: selectedBatchItem.MfgDate || '',
-              ExpDate: selectedBatchItem.ExpDate || '',
+              MfgDate: toMonthYearInput(selectedBatchItem.MfgDate) || '',
+              ExpDate: toMonthYearInput(selectedBatchItem.ExpDate) || '',
               PurchasePrice: selectedBatchItem.PurchasePrice,
               SalePrice: selectedBatchItem.Price,
               Qty: selectedBatchItem.CStock,
@@ -812,13 +747,13 @@ export default function PharmacyPOS({
           return {
             ...b,
             BatchNo: batchFormNo.trim(),
-            MfgDate: batchFormMfgDate.trim(),
-            ExpDate: batchFormExpDate.trim(),
+            MfgDate: mfgVal,
+            ExpDate: expVal,
             Qty: qty,
             PurchasePrice: batchFormCost === '' ? b.PurchasePrice : Number(batchFormCost),
             SalePrice: batchFormSalePrice === '' ? b.SalePrice : Number(batchFormSalePrice),
             GRNID: batchFormPoGrnRef.trim() || b.GRNID,
-            Status: qty === 0 ? 'EXHAUSTED' : isBatchExpired(batchFormExpDate.trim()) ? 'EXPIRED' : 'ACTIVE'
+            Status: qty === 0 ? 'EXHAUSTED' : isBatchExpired(expVal) ? 'EXPIRED' : 'ACTIVE'
           };
         }
         return b;
@@ -830,14 +765,14 @@ export default function PharmacyPOS({
         ItemID: selectedBatchItem.ItemID,
         ItemName: selectedBatchItem.ItemName,
         BatchNo: batchFormNo.trim(),
-        MfgDate: batchFormMfgDate.trim(),
-        ExpDate: batchFormExpDate.trim(),
+        MfgDate: mfgVal,
+        ExpDate: expVal,
         PurchasePrice: batchFormCost === '' ? selectedBatchItem.PurchasePrice : Number(batchFormCost),
         SalePrice: batchFormSalePrice === '' ? selectedBatchItem.Price : Number(batchFormSalePrice),
         Qty: qty,
         InitialQty: qty,
         GRNID: batchFormPoGrnRef.trim() || undefined,
-        Status: qty === 0 ? 'EXHAUSTED' : isBatchExpired(batchFormExpDate.trim()) ? 'EXPIRED' : 'ACTIVE',
+        Status: qty === 0 ? 'EXHAUSTED' : isBatchExpired(expVal) ? 'EXPIRED' : 'ACTIVE',
         CreatedAt: new Date().toISOString()
       };
       updatedBatches = [newBatch, ...existingBatches];
@@ -866,7 +801,7 @@ export default function PharmacyPOS({
     setSelectedBatchItem(updatedItem);
     setEditingBatchId(null);
     setBatchFormNo('');
-    setBatchFormMfgDate(new Date().toISOString().split('T')[0]);
+    setBatchFormMfgDate(new Date().toISOString().slice(0, 7));
     setBatchFormExpDate('');
     setBatchFormQty('');
     setBatchFormPoGrnRef('');
@@ -1713,1947 +1648,119 @@ export default function PharmacyPOS({
     return 'Rupees ' + words.trim() + ' Only';
   };
 
-  // 1. Official A4 Size Invoice Print Handler
-  const handlePrintA4Invoice = (billData: {
-    patient: Patient | null;
-    basket: { ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[];
-    discount: number;
-    netAmount: number;
-    shift: 1 | 2;
-    invoiceNo: string;
-    invoiceDate: string;
-  }) => {
-    if (currentUser?.Role !== 'Administrator' && (currentUser?.Permissions?.canPrintPOSInvoice === false || userRights.find(r => r.MenuID === 'pharmacy')?.PrintRec === false)) {
-      alert("Printing Pharmacy POS Bills is restricted by administrator permissions.");
-      return;
-    }
+  // Rights verification & permissions
+  const currentRight = userRights.find((r) => r.MenuID === 'pharmacy') || userRights.find((r) => r.MenuID === 'pos') || userRights[0];
+  const canAdd = currentRight ? currentRight.AddRec : true;
+  const canEdit = currentRight ? currentRight.AddRec : true;
+  const canDelete = currentRight ? currentRight.CancelPosted : true;
+  const canPost = currentRight ? currentRight.PostRec : true;
+  const canAddStock = canAdd;
+  const canEditStock = canEdit && (currentUser?.Permissions?.canEditStockLevel !== false);
+  const canCancelStock = canDelete;
+  const canViewStock = currentRight ? currentRight.Status : true;
 
-    const win = window.open('', '_blank', 'width=1050,height=900');
-    if (!win) {
-      alert("Pop-up blocker prevented opening print window. Please allow pop-ups for this site.");
-      return;
-    }
-
-    const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
-    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "10 Shalimar Road, Garhi Shahu, Lahore";
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-311-4000608";
-    const clinicWebsite = clinicSettings?.Website || "https://punjabhomeopathic.pk";
-    const clinicTagline = clinicSettings?.ClinicLogoText || "Consultation, Clinical Compounding & Retail Pharmacy";
-    const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
-    const printTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-    const grossTotal = billData.basket.reduce((sum, item) => sum + item.Qty * item.Price, 0);
-    const amountInWords = convertNumberToWords(billData.netAmount);
-
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>A4 Invoice - ${billData.invoiceNo} - ${clinicName}</title>
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 10mm 12mm 12mm 12mm;
-            }
-            * {
-              box-sizing: border-box;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-              margin: 0;
-              padding: 0;
-              color: #0f172a;
-              font-size: 11px;
-              line-height: 1.4;
-              background: #fff;
-            }
-            .invoice-wrapper {
-              border: 2px solid #0f172a;
-              border-radius: 8px;
-              padding: 16px;
-              min-height: 270mm;
-              display: flex;
-              flex-direction: column;
-              justify-content: space-between;
-            }
-            .header-container {
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              border-bottom: 2px solid #0f172a;
-              padding-bottom: 12px;
-              margin-bottom: 12px;
-            }
-            .brand-box {
-              display: flex;
-              align-items: center;
-              gap: 12px;
-            }
-            .brand-logo {
-              width: 55px;
-              height: 55px;
-              object-fit: contain;
-            }
-            .clinic-title {
-              font-size: 20px;
-              font-weight: 900;
-              color: #1e1b4b;
-              text-transform: uppercase;
-              margin: 0;
-              letter-spacing: -0.3px;
-            }
-            .clinic-subtitle {
-              font-size: 10px;
-              color: #475569;
-              font-weight: 600;
-              margin-top: 2px;
-            }
-            .clinic-contact {
-              font-size: 9.5px;
-              color: #334155;
-              margin-top: 2px;
-            }
-            .badge-box {
-              text-align: right;
-            }
-            .invoice-badge {
-              display: inline-block;
-              background: #1e1b4b;
-              color: #fff;
-              font-size: 12px;
-              font-weight: 900;
-              padding: 5px 12px;
-              border-radius: 6px;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .badge-sub {
-              font-size: 9.5px;
-              color: #64748b;
-              font-weight: 700;
-              margin-top: 4px;
-            }
-            
-            /* Meta Grid */
-            .meta-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr;
-              gap: 12px;
-              margin-bottom: 14px;
-            }
-            .meta-card {
-              background: #f8fafc;
-              border: 1px solid #cbd5e1;
-              border-radius: 6px;
-              padding: 8px 12px;
-            }
-            .meta-card-title {
-              font-size: 10px;
-              font-weight: 900;
-              text-transform: uppercase;
-              color: #1e1b4b;
-              border-bottom: 1px solid #e2e8f0;
-              padding-bottom: 3px;
-              margin-bottom: 6px;
-              letter-spacing: 0.5px;
-            }
-            .meta-row {
-              display: flex;
-              justify-content: space-between;
-              font-size: 10.5px;
-              margin-bottom: 3px;
-            }
-            .meta-label {
-              color: #64748b;
-              font-weight: 600;
-            }
-            .meta-val {
-              color: #0f172a;
-              font-weight: 800;
-            }
-
-            /* Table */
-            .table-container {
-              margin-bottom: 14px;
-            }
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              font-size: 10.5px;
-            }
-            th {
-              background: #0f172a;
-              color: #fff;
-              padding: 7px 8px;
-              text-align: left;
-              font-weight: 800;
-              text-transform: uppercase;
-              font-size: 9.5px;
-              letter-spacing: 0.3px;
-            }
-            td {
-              padding: 6px 8px;
-              border-bottom: 1px solid #e2e8f0;
-              color: #1e293b;
-            }
-            tr:nth-child(even) td {
-              background: #f8fafc;
-            }
-            .col-center { text-align: center; }
-            .col-right { text-align: right; }
-            .col-bold { font-weight: 800; font-family: monospace; }
-            
-            /* Summary & Notes Section */
-            .bottom-section {
-              display: grid;
-              grid-template-columns: 1.3fr 1fr;
-              gap: 16px;
-              margin-top: 10px;
-            }
-            .terms-box {
-              border: 1px solid #e2e8f0;
-              background: #fafafa;
-              border-radius: 6px;
-              padding: 10px;
-              font-size: 9.5px;
-            }
-            .terms-title {
-              font-weight: 900;
-              text-transform: uppercase;
-              color: #0f172a;
-              margin-bottom: 4px;
-            }
-            .terms-list {
-              margin: 0;
-              padding-left: 14px;
-              color: #475569;
-              line-height: 1.35;
-            }
-            .summary-card {
-              background: #f8fafc;
-              border: 1.5px solid #0f172a;
-              border-radius: 6px;
-              padding: 10px;
-            }
-            .summary-row {
-              display: flex;
-              justify-content: space-between;
-              font-size: 11px;
-              margin-bottom: 4px;
-              color: #334155;
-            }
-            .summary-total {
-              border-top: 2px solid #0f172a;
-              padding-top: 6px;
-              margin-top: 6px;
-              display: flex;
-              justify-content: space-between;
-              font-size: 14px;
-              font-weight: 900;
-              color: #0f172a;
-            }
-            .words-box {
-              margin-top: 6px;
-              padding: 5px 8px;
-              background: #f1f5f9;
-              border-radius: 4px;
-              font-size: 9.5px;
-              font-weight: 700;
-              color: #1e1b4b;
-              font-style: italic;
-            }
-
-            /* Signatures */
-            .signatures-box {
-              display: flex;
-              justify-content: space-between;
-              margin-top: 30px;
-              padding-top: 10px;
-            }
-            .sig-line {
-              width: 180px;
-              text-align: center;
-              border-top: 1.5px solid #0f172a;
-              padding-top: 4px;
-              font-size: 10px;
-              font-weight: 800;
-              color: #1e293b;
-              text-transform: uppercase;
-            }
-
-            .footer-info {
-              text-align: center;
-              font-size: 8.5px;
-              color: #64748b;
-              margin-top: 12px;
-              border-top: 1px dashed #cbd5e1;
-              padding-top: 6px;
-            }
-          </style>
-        </head>
-        <body>
-          <div class="invoice-wrapper">
-            <div>
-              <!-- Header -->
-              <div class="header-container">
-                <div class="brand-box">
-                  <img src="${logoSrc}" class="brand-logo" alt="Logo" onerror="this.style.display='none'" />
-                  <div>
-                    <h1 class="clinic-title">${clinicName}</h1>
-                    <div class="clinic-subtitle">${clinicTagline}</div>
-                    <div class="clinic-contact">📍 ${clinicAddress} • 📞 ${clinicPhone} • 🌐 ${clinicWebsite.replace(/^https?:\/\//, '')}</div>
-                  </div>
-                </div>
-                <div class="badge-box">
-                  <div class="invoice-badge">PHARMACY INVOICE</div>
-                  <div class="badge-sub">Computerized Tax & Cash Dispense Bill</div>
-                </div>
-              </div>
-
-              <!-- Meta Grid -->
-              <div class="meta-grid">
-                <div class="meta-card">
-                  <div class="meta-card-title">🧾 Invoice & Shift Information</div>
-                  <div class="meta-row">
-                    <span class="meta-label">Invoice Ref #:</span>
-                    <span class="meta-val" style="font-family: monospace; font-size: 12px; color: #1e1b4b;">${billData.invoiceNo}</span>
-                  </div>
-                  <div class="meta-row">
-                    <span class="meta-label">Date & Time:</span>
-                    <span class="meta-val">${billData.invoiceDate} ${printTimeStr}</span>
-                  </div>
-                  <div class="meta-row">
-                    <span class="meta-label">Operational Shift:</span>
-                    <span class="meta-val">${billData.shift === 1 ? '☀️ Morning Shift (1)' : '🌙 Evening Shift (2)'}</span>
-                  </div>
-                  <div class="meta-row">
-                    <span class="meta-label">Payment Status:</span>
-                    <span class="meta-val" style="color: #047857;">PAID IN CASH (POSTED)</span>
-                  </div>
-                </div>
-
-                <div class="meta-card">
-                  <div class="meta-card-title">👤 Patient / Customer Details</div>
-                  <div class="meta-row">
-                    <span class="meta-label">Patient / Customer:</span>
-                    <span class="meta-val" style="font-size: 11.5px;">${billData.patient ? billData.patient.PatientName : 'Walk-in Customer / Guest'}</span>
-                  </div>
-                  <div class="meta-row">
-                    <span class="meta-label">Patient MR # / ID:</span>
-                    <span class="meta-val" style="font-family: monospace;">${billData.patient ? billData.patient.PatientID : 'WALK-IN'}</span>
-                  </div>
-                  <div class="meta-row">
-                    <span class="meta-label">Contact Mobile:</span>
-                    <span class="meta-val">${billData.patient?.PhoneMobile || billData.patient?.PhoneRes || billData.patient?.PhoneOff || 'N/A'}</span>
-                  </div>
-                  <div class="meta-row">
-                    <span class="meta-label">Billed By:</span>
-                    <span class="meta-val">${currentUser?.FullName || currentUser?.LoginName || 'Duty Pharmacist'}</span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Items Table -->
-              <div class="table-container">
-                <table>
-                  <thead>
-                    <tr>
-                      <th class="col-center" style="width: 32px;">#</th>
-                      <th style="width: 80px;">Item Code</th>
-                      <th>Medicine Description & Form</th>
-                      <th style="width: 80px;">Category</th>
-                      <th class="col-center" style="width: 70px;">Batch #</th>
-                      <th class="col-center" style="width: 50px;">Qty</th>
-                      <th class="col-right" style="width: 85px;">Unit Rate</th>
-                      <th class="col-right" style="width: 95px;">Net Amount</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    ${billData.basket.map((b, idx) => {
-                      const item = items.find(i => i.ItemID === b.ItemID);
-                      const isClinical = b.MedicineType === 'C' || item?.MedicineType === 'C';
-                      const lineTotal = b.Qty * b.Price;
-                      const medCategory = item?.Category || (isClinical ? 'Clinical Compounded' : (item?.Unit || 'Patent'));
-                      const batchNo = item?.BatchNo || '-';
-
-                      return `
-                        <tr>
-                          <td class="col-center" style="font-weight: bold; color: #64748b;">${idx + 1}</td>
-                          <td style="font-family: monospace; font-weight: 700;">${b.ItemID}</td>
-                          <td>
-                            <strong style="color: #0f172a; font-size: 11px;">${item ? item.ItemName : b.ItemID}</strong>
-                            ${isClinical ? '<span style="font-size: 9px; color: #047857; font-weight: bold; display: block;">* Doctor Prescribed Clinical Compounding</span>' : ''}
-                          </td>
-                          <td><span style="font-size: 9.5px; font-weight: 700; color: #4338ca;">${medCategory}</span></td>
-                          <td class="col-center" style="font-family: monospace; font-size: 9.5px;">${batchNo}</td>
-                          <td class="col-center col-bold" style="font-size: 11px;">${b.Qty}</td>
-                          <td class="col-right col-bold">Rs. ${b.Price.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}</td>
-                          <td class="col-right col-bold" style="color: #0f172a;">Rs. ${lineTotal.toLocaleString()}</td>
-                        </tr>
-                      `;
-                    }).join('')}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-
-            <!-- Bottom Section -->
-            <div>
-              <div class="bottom-section">
-                <div class="terms-box">
-                  <div class="terms-title">📌 Pharmacy Return & Exchange Terms</div>
-                  <ol class="terms-list">
-                    <li>Medicines once dispensed can only be exchanged within <strong>3 days</strong> with this original computerized bill.</li>
-                    <li>Clinical compounded mixtures, opened drops/syrups, vaccines & cut blister packs are <strong>strictly non-returnable</strong>.</li>
-                    <li>Store homeopathic remedies in a cool, dry place away from direct sunlight, camphor & strong aromatics.</li>
-                    <li>Please verify your cash change and medicine count before departing the dispensing counter.</li>
-                  </ol>
-                  <div class="words-box">
-                    <strong>In Words:</strong> ${amountInWords}
-                  </div>
-                </div>
-
-                <div class="summary-card">
-                  <div class="summary-row">
-                    <span>Gross Subtotal:</span>
-                    <strong style="font-family: monospace;">Rs. ${grossTotal.toLocaleString()}</strong>
-                  </div>
-                  ${billData.discount > 0 ? `
-                    <div class="summary-row" style="color: #dc2626;">
-                      <span>Discount / Concession:</span>
-                      <strong style="font-family: monospace;">- Rs. ${billData.discount.toLocaleString()}</strong>
-                    </div>
-                  ` : ''}
-                  <div class="summary-total">
-                    <span>NET PAYABLE:</span>
-                    <span style="font-family: monospace; color: #047857;">Rs. ${billData.netAmount.toLocaleString()}</span>
-                  </div>
-                  <div class="summary-row" style="margin-top: 6px; font-size: 10px; color: #64748b;">
-                    <span>Payment Method:</span>
-                    <strong style="color: #0f172a;">Cash Handover</strong>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Signatures & Footer -->
-              <div class="signatures-box">
-                <div class="sig-line">Pharmacist / Dispenser Signature</div>
-                <div style="text-align: center;">
-                  <div style="font-family: monospace; font-size: 14px; font-weight: 900; letter-spacing: 2px;">*${billData.invoiceNo}*</div>
-                  <div style="font-size: 8.5px; color: #64748b;">Verification Barcode</div>
-                </div>
-                <div class="sig-line">Customer / Receiver Signature</div>
-              </div>
-
-              <div class="footer-info">
-                Thank you for choosing Punjab Homeopathic Clinic & Pharmacy. We wish you a speedy and complete recovery! • System Printed: ${billData.invoiceDate} ${printTimeStr}
-              </div>
-            </div>
-          </div>
-
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-              }, 300);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    win.document.close();
-  };
-
-  // 2. Thermal Slip Customer Receipt Print Handler (80mm POS Slip)
-  const handlePrintThermalReceipt = (billData: {
-    patient: Patient | null;
-    basket: { ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[];
-    discount: number;
-    netAmount: number;
-    shift: 1 | 2;
-    invoiceNo: string;
-    invoiceDate: string;
-  }) => {
-    if (currentUser?.Role !== 'Administrator' && (currentUser?.Permissions?.canPrintPOSInvoice === false || userRights.find(r => r.MenuID === 'pharmacy')?.PrintRec === false)) {
-      alert("Printing Pharmacy POS Bills is restricted by administrator permissions.");
-      return;
-    }
-
-    const printWin = window.open('', '_blank', 'width=420,height=600');
-    if (!printWin) {
-      alert("Popup blocked! Please allow popups to print thermal customer receipts.");
-      return;
-    }
-
-    const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || '+92-311-4000608';
-    const cAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || '10 Shalimar Road, Garhi Shahu, Lahore';
-    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
-    const shiftText = billData.shift === 1 ? 'MORNING SHIFT (1)' : 'EVENING SHIFT (2)';
-    const dateStr = billData.invoiceDate || new Date().toISOString().split('T')[0];
-    const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-    const grossTotal = billData.basket.reduce((sum, item) => sum + item.Qty * item.Price, 0);
-    const cashierName = currentUser?.FullName || currentUser?.LoginName || 'Pharmacist on Duty';
-    const patientDisplay = billData.patient ? billData.patient.PatientName : 'Walk-in Customer';
-    const patientIdDisplay = billData.patient ? ` (ID: ${billData.patient.PatientID})` : '';
-
-    printWin.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>Thermal Receipt - ${billData.invoiceNo}</title>
-          <meta charset="utf-8" />
-          <style>
-            * {
-              box-sizing: border-box !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            @media print {
-              @page {
-                size: 80mm auto;
-                margin: 0;
-              }
-              html, body {
-                width: 100% !important;
-                max-width: 100% !important;
-                min-width: 100% !important;
-                margin: 0 !important;
-                padding: 1.5mm 1mm !important;
-              }
-              .no-print {
-                display: none !important;
-              }
-            }
-            html, body {
-              width: 100%;
-              max-width: 76mm;
-              min-width: 72mm;
-              margin: 0 auto;
-              padding: 4px 2mm;
-              color: #000000;
-              background: #ffffff;
-              font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace;
-              font-size: 11.5px;
-              line-height: 1.25;
-              word-wrap: break-word;
-              overflow-wrap: break-word;
-            }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .text-bold { font-weight: 900; }
-            .full-width { width: 100%; box-sizing: border-box; }
-            
-            .clinic-header { text-align: center; margin-bottom: 3px; width: 100%; }
-            .clinic-name { font-size: 13.5px; font-weight: 900; text-transform: uppercase; margin: 0; line-height: 1.15; font-family: 'Arial Black', Arial, sans-serif; word-break: break-word; }
-            .clinic-sub { font-size: 9.5px; font-weight: bold; color: #111; margin-top: 1.5px; word-break: break-word; }
-            
-            .divider-solid { border-top: 1.5px solid #000000; margin: 4px 0; width: 100%; }
-            .divider-dashed { border-top: 1.5px dashed #000000; margin: 4px 0; width: 100%; }
-            .receipt-title { font-size: 11.5px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; text-align: center; margin: 3px 0; font-family: sans-serif; }
-            
-            .meta-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; margin: 2px 0; width: 100%; }
-            .meta-label { font-weight: bold; width: 34%; flex-shrink: 0; }
-            .meta-val { font-weight: bold; width: 66%; text-align: right; word-break: break-word; }
-            
-            /* Table (Utilizes full 100% 80mm printable width, 48-column CPL equivalent) */
-            .items-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; margin: 4px 0; box-sizing: border-box; }
-            .items-table th { text-align: left; border-bottom: 1.5px dashed #000000; padding: 3px 1px; font-size: 10px; font-weight: 900; }
-            .items-table td { padding: 2px 1px; vertical-align: top; word-break: break-word; }
-            
-            .total-box { font-size: 13.5px; font-weight: 900; text-align: right; padding: 4px 0; width: 100%; }
-            .footer-msg { font-size: 9px; text-align: center; margin-top: 6px; font-weight: bold; line-height: 1.35; width: 100%; word-break: break-word; }
-            .barcode-box { text-align: center; font-family: monospace; font-size: 13px; letter-spacing: 2px; font-weight: 900; margin: 4px 0; width: 100%; }
-          </style>
-        </head>
-        <body>
-          <div class="clinic-header">
-            <h2 class="clinic-name">${clinicName}</h2>
-            <div class="clinic-sub">${cAddress}</div>
-            <div class="clinic-sub">📞 ${cPhone} | 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
-          </div>
-          
-          <div class="divider-solid"></div>
-          <div class="receipt-title">*** CUSTOMER RECEIPT ***</div>
-          <div class="divider-solid"></div>
-
-          <div class="meta-row">
-            <span class="meta-label">Invoice No:</span>
-            <span class="meta-val text-bold" style="font-size: 11.5px;">${billData.invoiceNo}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">Date/Time :</span>
-            <span class="meta-val">${dateStr} ${timeStr}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">Customer  :</span>
-            <span class="meta-val">${patientDisplay}${patientIdDisplay}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">Shift     :</span>
-            <span class="meta-val">${shiftText}</span>
-          </div>
-          <div class="meta-row">
-            <span class="meta-label">Cashier   :</span>
-            <span class="meta-val">${cashierName}</span>
-          </div>
-
-          <div class="divider-dashed"></div>
-
-          <table class="items-table">
-            <thead>
-              <tr>
-                <th style="width: 54%;">ITEM</th>
-                <th style="width: 16%; text-align: center;">QTY</th>
-                <th style="width: 30%; text-align: right;">TOTAL</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${billData.basket.map(b => {
-                const itm = items.find(i => i.ItemID === b.ItemID);
-                const lineTotal = b.Qty * b.Price;
-                return `
-                  <tr>
-                    <td colspan="3" style="font-weight: 900; padding-top: 3px; font-size: 11px;">${itm ? itm.ItemName : b.ItemID}</td>
-                  </tr>
-                  <tr>
-                    <td style="font-size: 10px; color: #222; padding-left: 4px;">@ Rs. ${b.Price.toFixed(0)}</td>
-                    <td style="text-align: center; font-weight: bold;">${b.Qty}</td>
-                    <td style="text-align: right; font-weight: 900;">Rs. ${lineTotal.toLocaleString()}</td>
-                  </tr>
-                `;
-              }).join('')}
-            </tbody>
-          </table>
-
-          <div class="divider-dashed"></div>
-
-          <div class="meta-row">
-            <span class="meta-label">Subtotal  :</span>
-            <span class="meta-val">Rs. ${grossTotal.toLocaleString()}</span>
-          </div>
-          ${billData.discount > 0 ? `
-            <div class="meta-row">
-              <span class="meta-label">Discount  :</span>
-              <span class="meta-val">- Rs. ${billData.discount.toLocaleString()}</span>
-            </div>
-          ` : ''}
-
-          <div class="divider-solid"></div>
-          <div class="total-box">
-            NET TOTAL: Rs. ${billData.netAmount.toLocaleString()}
-          </div>
-          <div class="divider-solid"></div>
-
-          <div class="meta-row" style="font-size: 10px;">
-            <span class="meta-label">Payment   :</span>
-            <span class="meta-val text-bold">CASH RECEIVED (POSTED)</span>
-          </div>
-
-          <div class="barcode-box">||| ${billData.invoiceNo} |||</div>
-
-          <div class="divider-dashed"></div>
-          <div class="footer-msg">
-            Return/Exchange within 3 days with receipt.<br/>
-            Opened syrups/clinical items not returnable.<br/>
-            <strong>* THANK YOU & GET WELL SOON *</strong>
-          </div>
-
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-              }, 250);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    printWin.document.close();
-  };
-
-  // 3. Medicine Store Sales & Periodic Audit Report Print Handler (A4 Closing / Audit Report)
-  const handlePrintDailySalesReport = (targetDateOrStart?: string, customEnd?: string) => {
-    let reportTitle = "DAILY MEDICINE STORE SALES & DISPENSE CLOSING AUDIT REPORT";
-    let periodSubtitle = "";
-    let reportBadgeText = "DAILY SALES SUMMARY";
-    let reportInvoices: InvoiceHeader[] = [];
-
-    if (customEnd || salesReportPeriodMode === 'range') {
-      const start = targetDateOrStart || salesReportStartDate || todayStr;
-      const end = customEnd || salesReportEndDate || todayStr;
-      const isSingleDay = start === end;
-      reportTitle = isSingleDay 
-        ? "DAILY MEDICINE STORE SALES & DISPENSE CLOSING AUDIT REPORT" 
-        : "PERIODIC MEDICINE STORE SALES & REVENUE AUDIT REPORT";
-      reportBadgeText = isSingleDay ? "DAILY SALES SUMMARY" : "CUSTOM PERIOD AUDIT";
-      periodSubtitle = isSingleDay ? `📅 Date: ${start}` : `📅 Period: ${start} to ${end}`;
-
-      reportInvoices = invoices.filter(inv => {
-        const d = String(inv.InvoiceDate || '').trim().slice(0, 10);
-        const inDate = d >= start && d <= end;
-        const inShift = selectedShiftFilter === 'all' ? true : String(inv.shift) === selectedShiftFilter;
-        return inDate && inShift;
-      });
-    } else if (salesReportPeriodMode === 'all') {
-      reportTitle = "ALL-TIME MEDICINE STORE SALES & REVENUE AUDIT REPORT";
-      reportBadgeText = "ALL-TIME AUDIT";
-      periodSubtitle = "📅 Scope: Complete History (All Recorded Dates)";
-
-      reportInvoices = invoices.filter(inv => {
-        return selectedShiftFilter === 'all' ? true : String(inv.shift) === selectedShiftFilter;
-      });
-    } else {
-      const reportDate = targetDateOrStart || selectedDailyReportDate || todayStr;
-      reportTitle = "DAILY MEDICINE STORE SALES & DISPENSE CLOSING AUDIT REPORT";
-      reportBadgeText = "DAILY SALES SUMMARY";
-      periodSubtitle = `📅 Closing Date: ${reportDate}`;
-
-      reportInvoices = invoices.filter(inv => {
-        const d = String(inv.InvoiceDate || '').trim().slice(0, 10);
-        const inDate = d === reportDate;
-        const inShift = selectedShiftFilter === 'all' ? true : String(inv.shift) === selectedShiftFilter;
-        return inDate && inShift;
-      });
-    }
-
-    if (reportInvoices.length === 0) {
-      alert("No store medicine invoices found for the selected period or filters.");
-      return;
-    }
-
-    // Collect all details
-    const reportDetails = invoiceDetails.filter(d => reportInvoices.some(inv => inv.InvoiceNo === d.InvoiceNo));
-
-    // Totals
-    const totalInvoicesCount = reportInvoices.length;
-    const totalUnitsSold = reportDetails.reduce((sum, d) => sum + (Number(d.Qty) || 0), 0);
-    const grossSalesSum = reportInvoices.reduce((sum, inv) => sum + (Number(inv.GAmount) || 0), 0);
-    const totalDiscountSum = reportInvoices.reduce((sum, inv) => sum + (Number(inv.Discount) || 0), 0);
-    const netSalesSum = reportInvoices.reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
-
-    // Shifts
-    const shift1Invoices = reportInvoices.filter(i => i.shift === 1);
-    const shift2Invoices = reportInvoices.filter(i => i.shift === 2);
-    const shift1NetSum = shift1Invoices.reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
-    const shift2NetSum = shift2Invoices.reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
-
-    // Grouping by category
-    const categoryMap = new Map<string, { category: string; count: number; qty: number; revenue: number }>();
-    reportDetails.forEach(d => {
-      const itm = items.find(i => i.ItemID === d.ItemID);
-      const cat = itm?.Category || (d.MedicineType === 'C' || itm?.MedicineType === 'C' ? 'Clinical Compounding' : (itm?.Unit || 'Patent / Other'));
-      const lineTotal = (Number(d.Qty) || 0) * (Number(d.Price) || 0);
-
-      const existing = categoryMap.get(cat) || { category: cat, count: 0, qty: 0, revenue: 0 };
-      existing.count += 1;
-      existing.qty += (Number(d.Qty) || 0);
-      existing.revenue += lineTotal;
-      categoryMap.set(cat, existing);
+  // Patient directory with visit archives included
+  const allKnownPatients = useMemo(() => {
+    const map = new Map<string, Patient>();
+    (patients || []).forEach(p => {
+      if (p && p.PatientID) map.set(p.PatientID, p);
     });
-
-    const categorySummaryList = Array.from(categoryMap.values()).sort((a, b) => b.revenue - a.revenue);
-
-    // Grouping by item (Top Selling Medicines)
-    const itemMap = new Map<string, { itemId: string; itemName: string; category: string; qty: number; unitPrice: number; revenue: number }>();
-    reportDetails.forEach(d => {
-      const itm = items.find(i => i.ItemID === d.ItemID);
-      const name = itm?.ItemName || d.ItemID;
-      const cat = itm?.Category || (d.MedicineType === 'C' ? 'Clinical' : (itm?.Unit || 'Patent'));
-      const lineTotal = (Number(d.Qty) || 0) * (Number(d.Price) || 0);
-
-      const existing = itemMap.get(d.ItemID) || {
-        itemId: d.ItemID,
-        itemName: name,
-        category: cat,
-        qty: 0,
-        unitPrice: Number(d.Price) || 0,
-        revenue: 0
-      };
-      existing.qty += (Number(d.Qty) || 0);
-      existing.revenue += lineTotal;
-      itemMap.set(d.ItemID, existing);
-    });
-
-    const topItemsList = Array.from(itemMap.values()).sort((a, b) => b.qty - a.qty);
-
-    const win = window.open('', '_blank', 'width=1100,height=900');
-    if (!win) {
-      alert("Pop-up blocker prevented opening print window. Please allow pop-ups for this site.");
-      return;
-    }
-
-    const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
-    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "10 Shalimar Road, Garhi Shahu, Lahore";
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-311-4000608";
-    const clinicWebsite = clinicSettings?.Website || "https://punjabhomeopathic.pk";
-    const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
-    const printedBy = currentUser?.FullName || currentUser?.LoginName || 'Duty Pharmacist';
-    const printTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${reportTitle} - ${periodSubtitle.replace(/[^a-zA-Z0-9 -]/g, '')}</title>
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 10mm 12mm 12mm 12mm;
-            }
-            * {
-              box-sizing: border-box;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
-              margin: 0;
-              padding: 0;
-              color: #0f172a;
-              font-size: 10px;
-              line-height: 1.35;
-              background: #fff;
-            }
-            .header-container {
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              border-bottom: 2.5px solid #0f172a;
-              padding-bottom: 10px;
-              margin-bottom: 12px;
-            }
-            .brand-box {
-              display: flex;
-              align-items: center;
-              gap: 12px;
-            }
-            .brand-logo {
-              width: 48px;
-              height: 48px;
-              object-fit: contain;
-            }
-            .clinic-title {
-              font-size: 18px;
-              font-weight: 900;
-              color: #1e1b4b;
-              text-transform: uppercase;
-              margin: 0;
-            }
-            .clinic-subtitle {
-              font-size: 10px;
-              color: #475569;
-              font-weight: 700;
-              margin-top: 2px;
-            }
-            .report-badge-box {
-              text-align: right;
-            }
-            .report-badge {
-              display: inline-block;
-              background: #047857;
-              color: #fff;
-              font-size: 11px;
-              font-weight: 900;
-              padding: 4px 10px;
-              border-radius: 6px;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .report-date {
-              font-size: 10.5px;
-              font-weight: 800;
-              color: #0f172a;
-              margin-top: 4px;
-            }
-
-            /* Metric Cards */
-            .kpi-grid {
-              display: grid;
-              grid-template-columns: repeat(5, 1fr);
-              gap: 8px;
-              margin-bottom: 12px;
-            }
-            .kpi-card {
-              border: 1.5px solid #cbd5e1;
-              border-radius: 6px;
-              padding: 7px;
-              text-align: center;
-              background: #f8fafc;
-            }
-            .kpi-title {
-              font-size: 8.5px;
-              font-weight: 800;
-              text-transform: uppercase;
-              color: #64748b;
-              margin-bottom: 2px;
-            }
-            .kpi-val {
-              font-size: 14px;
-              font-weight: 900;
-              color: #0f172a;
-              font-family: monospace;
-            }
-
-            /* Section */
-            .section-header {
-              font-size: 10.5px;
-              font-weight: 900;
-              text-transform: uppercase;
-              color: #1e1b4b;
-              border-bottom: 1.5px solid #cbd5e1;
-              padding-bottom: 3px;
-              margin: 12px 0 5px 0;
-              display: flex;
-              justify-content: space-between;
-            }
-
-            /* Tables */
-            table {
-              width: 100%;
-              border-collapse: collapse;
-              font-size: 9.5px;
-              margin-bottom: 10px;
-            }
-            th {
-              background: #1e293b;
-              color: #fff;
-              padding: 5px 6px;
-              text-align: left;
-              font-weight: 800;
-              font-size: 8.5px;
-              text-transform: uppercase;
-            }
-            td {
-              padding: 4px 6px;
-              border-bottom: 1px solid #e2e8f0;
-              color: #1e293b;
-            }
-            tr:nth-child(even) td {
-              background: #f8fafc;
-            }
-            .col-center { text-align: center; }
-            .col-right { text-align: right; }
-            .col-bold { font-weight: 800; font-family: monospace; }
-            .total-row td {
-              background: #f1f5f9;
-              font-weight: 900;
-              border-top: 2px solid #0f172a;
-              border-bottom: 2px solid #0f172a;
-            }
-
-            /* Drawer reconciliation */
-            .reconciliation-box {
-              border: 1.5px solid #0f172a;
-              border-radius: 6px;
-              padding: 8px 10px;
-              background: #f8fafc;
-              margin-top: 8px;
-            }
-
-            /* Signatures */
-            .sig-grid {
-              display: grid;
-              grid-template-columns: 1fr 1fr 1fr;
-              gap: 20px;
-              margin-top: 20px;
-              padding-top: 10px;
-            }
-            .sig-block {
-              text-align: center;
-              border-top: 1.5px solid #0f172a;
-              padding-top: 4px;
-              font-size: 9px;
-              font-weight: 800;
-              text-transform: uppercase;
-            }
-          </style>
-        </head>
-        <body>
-          <!-- Header -->
-          <div class="header-container">
-            <div class="brand-box">
-              <img src="${logoSrc}" class="brand-logo" alt="Logo" onerror="this.style.display='none'" />
-              <div>
-                <h1 class="clinic-title">${clinicName}</h1>
-                <div class="clinic-subtitle">${reportTitle}</div>
-                <div style="font-size: 9px; color: #475569; margin-top: 2px;">📍 ${clinicAddress} &nbsp;|&nbsp; 📞 ${clinicPhone} &nbsp;|&nbsp; 🌐 ${clinicWebsite.replace(/^https?:\/\//, '')}</div>
-              </div>
-            </div>
-            <div class="report-badge-box">
-              <div class="report-badge">${reportBadgeText}</div>
-              <div class="report-date">${periodSubtitle}</div>
-              <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">Shift Filter: <strong>${selectedShiftFilter === 'all' ? 'All Shifts' : selectedShiftFilter === '1' ? 'Morning Shift 1' : 'Evening Shift 2'}</strong> • Generated: ${printTimeStr} by ${printedBy}</div>
-            </div>
-          </div>
-
-          <!-- KPI Summary Cards -->
-          <div class="kpi-grid">
-            <div class="kpi-card">
-              <div class="kpi-title">Total Invoices</div>
-              <div class="kpi-val" style="color: #4338ca;">${totalInvoicesCount}</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-title">Medicine Units Sold</div>
-              <div class="kpi-val" style="color: #0284c7;">${totalUnitsSold.toLocaleString()}</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-title">Gross Total (Rs.)</div>
-              <div class="kpi-val">Rs. ${grossSalesSum.toLocaleString()}</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-title">Total Discount (Rs.)</div>
-              <div class="kpi-val" style="color: #dc2626;">- Rs. ${totalDiscountSum.toLocaleString()}</div>
-            </div>
-            <div class="kpi-card" style="background: #ecfdf5; border-color: #059669;">
-              <div class="kpi-title" style="color: #065f46;">Net Cash Realized</div>
-              <div class="kpi-val" style="color: #047857;">Rs. ${netSalesSum.toLocaleString()}</div>
-            </div>
-          </div>
-
-          <!-- Category Breakdown Table -->
-          <div class="section-header">
-            <span>🏷️ 1. Category-Wise Medicine Sales Breakdown</span>
-            <span style="font-size: 9px; color: #64748b;">Total Categories: ${categorySummaryList.length}</span>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 25px;" class="col-center">#</th>
-                <th>Medicine Category / Dosage Form</th>
-                <th class="col-center" style="width: 80px;">Distinct Items</th>
-                <th class="col-center" style="width: 80px;">Total Qty Sold</th>
-                <th class="col-right" style="width: 110px;">Category Net Sales</th>
-                <th class="col-right" style="width: 70px;">% Share</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${categorySummaryList.map((cat, idx) => {
-                const sharePercent = netSalesSum > 0 ? ((cat.revenue / netSalesSum) * 100).toFixed(1) : '0.0';
-                return `
-                  <tr>
-                    <td class="col-center" style="font-weight: bold; color: #64748b;">${idx + 1}</td>
-                    <td><strong>${cat.category}</strong></td>
-                    <td class="col-center">${cat.count}</td>
-                    <td class="col-center col-bold">${cat.qty}</td>
-                    <td class="col-right col-bold">Rs. ${cat.revenue.toLocaleString()}</td>
-                    <td class="col-right" style="font-weight: bold; color: #4338ca;">${sharePercent}%</td>
-                  </tr>
-                `;
-              }).join('')}
-              <tr class="total-row">
-                <td colspan="2">TOTAL STORE MEDICINE CATEGORIES</td>
-                <td class="col-center">${topItemsList.length}</td>
-                <td class="col-center">${totalUnitsSold.toLocaleString()}</td>
-                <td class="col-right">Rs. ${netSalesSum.toLocaleString()}</td>
-                <td class="col-right">100.0%</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <!-- Top Selling Medicines Table -->
-          <div class="section-header">
-            <span>💊 2. Itemized Medicine Sales Ranking (Sorted by Quantity)</span>
-            <span style="font-size: 9px; color: #64748b;">${topItemsList.length} Unique Medicines Sold</span>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 25px;" class="col-center">#</th>
-                <th style="width: 70px;">Item Code</th>
-                <th>Medicine Name</th>
-                <th style="width: 85px;">Category</th>
-                <th class="col-center" style="width: 60px;">Qty Sold</th>
-                <th class="col-right" style="width: 80px;">Unit Price</th>
-                <th class="col-right" style="width: 95px;">Total Revenue</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${topItemsList.slice(0, 50).map((itm, idx) => `
-                <tr>
-                  <td class="col-center" style="color: #64748b; font-weight: bold;">${idx + 1}</td>
-                  <td style="font-family: monospace; font-weight: 700;">${itm.itemId}</td>
-                  <td><strong>${itm.itemName}</strong></td>
-                  <td><span style="font-size: 8.5px; color: #4338ca; font-weight: 700;">${itm.category}</span></td>
-                  <td class="col-center col-bold" style="color: #0f172a;">${itm.qty}</td>
-                  <td class="col-right">Rs. ${itm.unitPrice.toLocaleString()}</td>
-                  <td class="col-right col-bold" style="color: #047857;">Rs. ${itm.revenue.toLocaleString()}</td>
-                </tr>
-              `).join('')}
-              ${topItemsList.length > 50 ? `<tr><td colspan="7" class="col-center" style="font-style: italic; color: #64748b;">... and ${topItemsList.length - 50} more items included in the summary calculation.</td></tr>` : ''}
-            </tbody>
-          </table>
-
-          <!-- 3. Invoices Log & Register -->
-          <div class="section-header">
-            <span>📑 3. Invoices Register & Shift Log</span>
-            <span style="font-size: 9px; color: #64748b;">${reportInvoices.length} Recorded Invoices</span>
-          </div>
-          <table>
-            <thead>
-              <tr>
-                <th style="width: 25px;" class="col-center">#</th>
-                <th style="width: 75px;">Invoice Ref</th>
-                <th style="width: 75px;">Date</th>
-                <th style="width: 75px;">Shift</th>
-                <th>Patient / Customer</th>
-                <th class="col-center" style="width: 50px;">Items</th>
-                <th class="col-right" style="width: 75px;">Gross</th>
-                <th class="col-right" style="width: 65px;">Disc.</th>
-                <th class="col-right" style="width: 85px;">Net Paid</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${reportInvoices.slice(0, 100).map((inv, idx) => {
-                const patientName = getPatientName(inv.PatientID);
-                const invItemCount = invoiceDetails.filter(d => d.InvoiceNo === inv.InvoiceNo).length;
-                return `
-                  <tr>
-                    <td class="col-center" style="color: #64748b;">${idx + 1}</td>
-                    <td style="font-family: monospace; font-weight: 700;">${inv.InvoiceNo}</td>
-                    <td>${inv.InvoiceDate}</td>
-                    <td><span style="font-weight: bold; color: ${inv.shift === 1 ? '#c2410c' : '#7e22ce'}">${inv.shift === 1 ? 'Morning (1)' : 'Evening (2)'}</span></td>
-                    <td><strong>${patientName}</strong></td>
-                    <td class="col-center font-bold">${invItemCount}</td>
-                    <td class="col-right">Rs. ${(inv.GAmount || 0).toLocaleString()}</td>
-                    <td class="col-right" style="color: ${inv.Discount ? '#dc2626' : '#64748b'}">${inv.Discount ? `Rs. ${inv.Discount.toLocaleString()}` : '-'}</td>
-                    <td class="col-right col-bold" style="color: #047857;">Rs. ${(inv.NetAmount || 0).toLocaleString()}</td>
-                  </tr>
-                `;
-              }).join('')}
-              ${reportInvoices.length > 100 ? `<tr><td colspan="9" class="col-center" style="font-style: italic; color: #64748b;">... showing first 100 of ${reportInvoices.length} invoices.</td></tr>` : ''}
-              <tr class="total-row">
-                <td colspan="5">GRAND INVOICE TOTALS</td>
-                <td class="col-center">${totalUnitsSold.toLocaleString()}</td>
-                <td class="col-right">Rs. ${grossSalesSum.toLocaleString()}</td>
-                <td class="col-right" style="color: #dc2626;">- Rs. ${totalDiscountSum.toLocaleString()}</td>
-                <td class="col-right" style="color: #047857;">Rs. ${netSalesSum.toLocaleString()}</td>
-              </tr>
-            </tbody>
-          </table>
-
-          <!-- Shift & Drawer Reconciliation -->
-          <div class="reconciliation-box">
-            <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 4px; margin-bottom: 5px;">
-              <strong style="font-size: 10.5px; text-transform: uppercase;">💼 Shift & Cash Drawer Reconciliation</strong>
-              <span style="font-size: 9.5px; font-weight: 800; color: #047857;">ALL INVOICES AUDITED & VERIFIED</span>
-            </div>
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; font-size: 10px;">
-              <div>
-                <span style="color: #64748b;">☀️ Morning Shift (1) Realized:</span><br/>
-                <strong style="font-size: 11.5px; color: #c2410c;">Rs. ${shift1NetSum.toLocaleString()}</strong> (${shift1Invoices.length} Invoices)
-              </div>
-              <div>
-                <span style="color: #64748b;">🌙 Evening Shift (2) Realized:</span><br/>
-                <strong style="font-size: 11.5px; color: #7e22ce;">Rs. ${shift2NetSum.toLocaleString()}</strong> (${shift2Invoices.length} Invoices)
-              </div>
-              <div style="text-align: right;">
-                <span style="color: #64748b;">Total Net Sales Collected:</span><br/>
-                <strong style="font-size: 13.5px; color: #047857; font-family: monospace;">Rs. ${netSalesSum.toLocaleString()}</strong>
-              </div>
-            </div>
-          </div>
-
-          <!-- Signatures -->
-          <div class="sig-grid">
-            <div class="sig-block">
-              Pharmacist / Cashier on Duty<br/>
-              <span style="font-size: 8px; font-weight: normal; color: #64748b;">(${printedBy})</span>
-            </div>
-            <div class="sig-block">
-              Pharmacy Store In-Charge<br/>
-              <span style="font-size: 8px; font-weight: normal; color: #64748b;">(Cash Handover Verified)</span>
-            </div>
-            <div class="sig-block">
-              Dr. Zaigham Ali Anjum<br/>
-              <span style="font-size: 8px; font-weight: normal; color: #64748b;">(Managing Director & Administrator)</span>
-            </div>
-          </div>
-
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-              }, 300);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    win.document.close();
-  };
-
-  const handlePrintStockGrid = (forceLowStockOnly?: boolean) => {
-    const isLowStock = forceLowStockOnly || invLowStockFilter;
-
-    const processedForPrint = items.filter((itm) => {
-      if (isLowStock && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
-      if (invCategoryFilter !== 'ALL') {
-        if (invCategoryFilter === 'C') {
-          if (itm.MedicineType !== 'C') return false;
-        } else if (invCategoryFilter === 'P') {
-          if (itm.MedicineType === 'C') return false;
-        } else {
-          const u = (itm.Unit || '').toLowerCase().trim();
-          const c = invCategoryFilter.toLowerCase().trim();
-          if (u !== c && !u.includes(c)) return false;
-        }
+    (visits || []).forEach(v => {
+      if (v.PatientID && !map.has(v.PatientID)) {
+        map.set(v.PatientID, {
+          PatientID: v.PatientID,
+          PatientName: `Patient (${v.PatientID})`,
+          Father_husband: '',
+          AgeYears: 0,
+          Sex: 'Male',
+          MaritalStatus: 'Single',
+          Occupation: '',
+          Address: '',
+          CityID: 1,
+          Country: 'Pakistan',
+          PhoneMobile: '',
+          RegistrationDate: v.VisitDate || new Date().toISOString().split('T')[0]
+        });
       }
-      if (invSearchQuery.trim()) {
-        const q = invSearchQuery.toLowerCase().trim();
-        return (
-          itm.ItemID.toLowerCase().includes(q) ||
-          itm.ItemName.toLowerCase().includes(q) ||
-          (itm.Unit || '').toLowerCase().includes(q) ||
-          (itm.BatchNo || '').toLowerCase().includes(q) ||
-          (itm.VendorBarcode || '').toLowerCase().includes(q)
-        );
-      }
-      return true;
     });
+    return Array.from(map.values());
+  }, [patients, visits]);
 
-    processedForPrint.sort((a, b) => {
-      let valA: any = a[invSortField];
-      let valB: any = b[invSortField];
-      if (valA === undefined || valA === null) valA = '';
-      if (valB === undefined || valB === null) valB = '';
-      if (typeof valA === 'string') valA = valA.toLowerCase();
-      if (typeof valB === 'string') valB = valB.toLowerCase();
+  // History & Sales Report Period Filter state
+  const todayStr = new Date().toISOString().split('T')[0];
+  const [salesReportPeriodMode, setSalesReportPeriodMode] = useState<'daily' | 'range' | 'all'>('daily');
+  const [salesReportStartDate, setSalesReportStartDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(1);
+    return d.toISOString().split('T')[0];
+  });
+  const [salesReportEndDate, setSalesReportEndDate] = useState<string>(todayStr);
+  const [selectedShiftFilter, setSelectedShiftFilter] = useState<'all' | '1' | '2'>('all');
+  const [showAllInvoicesInHistory, setShowAllInvoicesInHistory] = useState(false);
+  const [searchHistoryQuery, setSearchHistoryQuery] = useState('');
 
-      if (valA < valB) return invSortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return invSortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-
-    if (processedForPrint.length === 0) {
-      alert(isLowStock ? "No low stock medicines found to print!" : "No items match your filter to print!");
-      return;
-    }
-
-    const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic";
-    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore";
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "042-3111222";
-    const clinicTagline = clinicSettings?.ClinicLogoText || clinicSettings?.Tagline || "Advanced Health Care & Clinical Pharmacy";
-    const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
-    
-    const printDate = new Date().toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    }) + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    const totalItemsCount = processedForPrint.length;
-    const totalStockQty = processedForPrint.reduce((acc, itm) => acc + (itm.CStock || 0), 0);
-    const totalReorderQty = processedForPrint.reduce((acc, itm) => acc + (itm.ReorderQty || 0), 0);
-    const totalCostVal = processedForPrint.reduce((acc, itm) => acc + ((itm.PurchasePrice || 0) * (itm.CStock || 0)), 0);
-    const totalRetailVal = processedForPrint.reduce((acc, itm) => acc + ((itm.Price || 0) * (itm.CStock || 0)), 0);
-    const criticalOutCount = processedForPrint.filter(i => (i.CStock || 0) <= 0).length;
-    const lowCount = processedForPrint.filter(i => (i.CStock || 0) > 0 && i.CStock <= ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1)).length;
-
-    const win = window.open('', '_blank', 'width=1100,height=900');
-    if (!win) {
-      alert("Pop-up blocker prevented opening print window. Please allow pop-ups for this site.");
-      return;
-    }
-
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <title>${isLowStock ? 'Low Stock & Shortage Alert Report' : 'Pharmacy Inventory & Stock Report'} - ${clinicName}</title>
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 8mm 10mm 10mm 10mm;
-            }
-            * {
-              box-sizing: border-box;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            body {
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-              margin: 0;
-              padding: 0;
-              color: #0f172a;
-              font-size: 10px;
-              line-height: 1.3;
-              background: #fff;
-            }
-            .header-container {
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              border-bottom: 2px solid #0f172a;
-              padding-bottom: 8px;
-              margin-bottom: 10px;
-              gap: 12px;
-            }
-            .brand-section {
-              display: flex;
-              align-items: center;
-              gap: 10px;
-            }
-            .logo-img {
-              width: 50px;
-              height: 50px;
-              object-fit: contain;
-            }
-            .clinic-title {
-              font-size: 18px;
-              font-weight: 900;
-              color: #4c0519;
-              text-transform: uppercase;
-              margin: 0;
-              letter-spacing: -0.5px;
-            }
-            .clinic-subtitle {
-              font-size: 9.5px;
-              color: #475569;
-              font-weight: 600;
-              margin-top: 2px;
-            }
-            .report-badge-box {
-              text-align: right;
-            }
-            .report-badge {
-              display: inline-block;
-              padding: 4px 10px;
-              background: ${isLowStock ? '#fee2e2' : '#f1f5f9'};
-              color: ${isLowStock ? '#991b1b' : '#0f172a'};
-              border: 1px solid ${isLowStock ? '#fca5a5' : '#cbd5e1'};
-              font-weight: 900;
-              font-size: 11px;
-              text-transform: uppercase;
-              border-radius: 6px;
-              letter-spacing: 0.5px;
-            }
-            .report-meta {
-              font-size: 9px;
-              color: #64748b;
-              font-family: monospace;
-              margin-top: 4px;
-            }
-            .kpi-grid {
-              display: grid;
-              grid-template-columns: repeat(5, 1fr);
-              gap: 6px;
-              margin-bottom: 10px;
-            }
-            .kpi-card {
-              border: 1px solid #e2e8f0;
-              background: #f8fafc;
-              padding: 5px 8px;
-              border-radius: 6px;
-              text-align: center;
-            }
-            .kpi-label {
-              font-size: 8px;
-              font-weight: 800;
-              color: #64748b;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-            }
-            .kpi-value {
-              font-size: 12px;
-              font-weight: 900;
-              color: #0f172a;
-              margin-top: 2px;
-              font-family: monospace;
-            }
-            .filter-info-bar {
-              background: #f1f5f9;
-              border: 1px solid #e2e8f0;
-              padding: 4px 8px;
-              border-radius: 4px;
-              font-size: 9px;
-              font-weight: bold;
-              color: #334155;
-              margin-bottom: 8px;
-              display: flex;
-              justify-content: space-between;
-            }
-            table.stock-table {
-              width: 100%;
-              border-collapse: collapse;
-              margin-top: 4px;
-              font-size: 9.5px;
-            }
-            table.stock-table th, table.stock-table td {
-              border: 1px solid #cbd5e1;
-              padding: 4.5px 5px;
-            }
-            table.stock-table thead tr th {
-              background: #0f172a;
-              color: #ffffff;
-              font-weight: 900;
-              text-transform: uppercase;
-              font-size: 8.5px;
-              letter-spacing: 0.3px;
-              text-align: center;
-            }
-            table.stock-table tbody tr:nth-child(even) {
-              background: #f8fafc;
-            }
-            .row-critical {
-              background: #fef2f2 !important;
-            }
-            .row-low {
-              background: #fffbeb !important;
-            }
-            .badge-status {
-              display: inline-block;
-              padding: 1.5px 5px;
-              border-radius: 3px;
-              font-size: 8px;
-              font-weight: 900;
-              text-transform: uppercase;
-              white-space: nowrap;
-            }
-            .status-out {
-              background: #fee2e2;
-              color: #991b1b;
-              border: 1px solid #f87171;
-            }
-            .status-low {
-              background: #fef3c7;
-              color: #92400e;
-              border: 1px solid #fcd34d;
-            }
-            .status-ok {
-              background: #dcfce7;
-              color: #166534;
-              border: 1px solid #86efac;
-            }
-            .total-row {
-              background: #f1f5f9 !important;
-              font-weight: 900;
-              border-top: 2px solid #0f172a;
-            }
-            .signatures {
-              margin-top: 20px;
-              display: flex;
-              justify-content: space-between;
-              padding-top: 15px;
-              page-break-inside: avoid;
-            }
-            .sig-block {
-              border-top: 1.5px solid #0f172a;
-              width: 180px;
-              text-align: center;
-              padding-top: 4px;
-              font-size: 9.5px;
-              font-weight: 800;
-              color: #334155;
-            }
-            .print-btn-bar {
-              margin-bottom: 12px;
-              display: flex;
-              justify-content: flex-end;
-              gap: 8px;
-            }
-            .btn-print {
-              background: #0f172a;
-              color: #fff;
-              border: none;
-              padding: 6px 16px;
-              font-weight: bold;
-              font-size: 12px;
-              border-radius: 4px;
-              cursor: pointer;
-            }
-            @media print {
-              .no-print {
-                display: none !important;
-              }
-              body {
-                padding: 0;
-              }
-              tr {
-                page-break-inside: avoid;
-              }
-              thead {
-                display: table-header-group;
-              }
-              tfoot {
-                display: table-footer-group;
-              }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="no-print print-btn-bar">
-            <button class="btn-print" onclick="window.print()">🖨️ Print Document (A4)</button>
-            <button class="btn-print" style="background:#64748b;" onclick="window.close()">Close</button>
-          </div>
-
-          <div class="header-container">
-            <div class="brand-section">
-              ${logoSrc ? `<img src="${logoSrc}" class="logo-img" alt="Logo" onerror="this.style.display='none'" />` : ''}
-              <div>
-                <h1 class="clinic-title">${clinicName}</h1>
-                <div class="clinic-subtitle">📍 ${clinicAddress} &nbsp;|&nbsp; 📞 ${clinicPhone}</div>
-                <div style="font-size: 8.5px; color: #94a3b8; font-weight: 700; text-transform: uppercase; margin-top: 1px;">${clinicTagline}</div>
-              </div>
-            </div>
-            <div class="report-badge-box">
-              <div class="report-badge">${isLowStock ? '⚠️ LOW STOCK & SHORTAGE REPORT' : '📦 INVENTORY & STOCK VALUATION REPORT'}</div>
-              <div class="report-meta">Print Date: <strong>${printDate}</strong></div>
-              <div class="report-meta">Doc Ref: <strong>STK-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}</strong></div>
-            </div>
-          </div>
-
-          <div class="kpi-grid">
-            <div class="kpi-card">
-              <div class="kpi-label">Listed Items</div>
-              <div class="kpi-value">${totalItemsCount}</div>
-            </div>
-            <div class="kpi-card" style="background: ${criticalOutCount + lowCount > 0 ? '#fef2f2' : '#f8fafc'};">
-              <div class="kpi-label" style="color: ${criticalOutCount + lowCount > 0 ? '#991b1b' : '#64748b'};">Low / Out Stock</div>
-              <div class="kpi-value" style="color: ${criticalOutCount + lowCount > 0 ? '#b91c1c' : '#0f172a'};">${criticalOutCount + lowCount} Items</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-label">Total Units in Stock</div>
-              <div class="kpi-value">${totalStockQty.toLocaleString()}</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-label">Total Cost Valuation</div>
-              <div class="kpi-value" style="color: #b45309;">Rs. ${totalCostVal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</div>
-            </div>
-            <div class="kpi-card">
-              <div class="kpi-label">Total Retail Valuation</div>
-              <div class="kpi-value" style="color: #047857;">Rs. ${totalRetailVal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</div>
-            </div>
-          </div>
-
-          <div class="filter-info-bar">
-            <span><strong>Scope:</strong> ${isLowStock ? '⚠️ Showing ONLY items below minimum stock threshold' : 'All filtered inventory items'}</span>
-            <span><strong>Category:</strong> ${invCategoryFilter === 'ALL' ? 'All Categories' : invCategoryFilter === 'C' ? 'Clinical' : invCategoryFilter === 'P' ? 'Patent' : invCategoryFilter}</span>
-            ${invSearchQuery ? `<span><strong>Search Query:</strong> "${invSearchQuery}"</span>` : ''}
-          </div>
-
-          <table class="stock-table">
-            <thead>
-              <tr>
-                <th style="width: 4%;">S#</th>
-                <th style="width: 10%;">Item ID</th>
-                <th style="width: 25%; text-align: left;">Medicine / Item Name</th>
-                <th style="width: 9%;">Unit/Cat</th>
-                <th style="width: 7%;">Type</th>
-                <th style="width: 8%;">Stock</th>
-                <th style="width: 7%;">Min Thresh</th>
-                <th style="width: 7%;">Reorder</th>
-                <th style="width: 9%; text-align: right;">Unit Cost</th>
-                <th style="width: 9%; text-align: right;">Retail (Rs)</th>
-                <th style="width: 11%; text-align: right;">Total Cost (Rs)</th>
-                <th style="width: 9%;">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${processedForPrint.map((itm, idx) => {
-                const minThresh = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1;
-                const isOut = itm.CStock <= 0;
-                const isLow = !isOut && itm.CStock <= minThresh;
-                const rowClass = isOut ? 'row-critical' : isLow ? 'row-low' : '';
-                const statusBadge = isOut 
-                  ? '<span class="badge-status status-out">🚨 OUT</span>' 
-                  : isLow 
-                  ? '<span class="badge-status status-low">⚠️ LOW</span>' 
-                  : '<span class="badge-status status-ok">🟢 OK</span>';
-                const lineCost = (itm.PurchasePrice || 0) * (itm.CStock || 0);
-
-                return `
-                  <tr class="${rowClass}">
-                    <td style="text-align: center; font-weight: bold; color: #64748b;">${idx + 1}</td>
-                    <td style="text-align: center; font-family: monospace; font-weight: bold;">${itm.ItemID}</td>
-                    <td style="font-weight: 800; color: #0f172a;">${itm.ItemName}</td>
-                    <td style="text-align: center;">${itm.Unit || 'Tab'}</td>
-                    <td style="text-align: center; font-size: 8px; font-weight: bold;">${itm.MedicineType === 'C' ? 'Clinical' : 'Patent'}</td>
-                    <td style="text-align: center; font-family: monospace; font-weight: 900; color: ${isOut ? '#dc2626' : isLow ? '#b45309' : '#166534'};">
-                      ${itm.CStock}
-                    </td>
-                    <td style="text-align: center; font-family: monospace;">${minThresh}</td>
-                    <td style="text-align: center; font-family: monospace; font-weight: bold; color: #3b82f6;">${itm.ReorderQty || 0}</td>
-                    <td style="text-align: right; font-family: monospace;">${(itm.PurchasePrice || 0).toLocaleString()}</td>
-                    <td style="text-align: right; font-family: monospace;">${(itm.Price || 0).toLocaleString()}</td>
-                    <td style="text-align: right; font-family: monospace; font-weight: bold;">${lineCost.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</td>
-                    <td style="text-align: center;">${statusBadge}</td>
-                  </tr>
-                `;
-              }).join('')}
-              <tr class="total-row">
-                <td colspan="5" style="text-align: right; font-size: 9px;">TOTAL SUMMARY:</td>
-                <td style="text-align: center; font-family: monospace; font-size: 10px;">${totalStockQty.toLocaleString()}</td>
-                <td></td>
-                <td style="text-align: center; font-family: monospace; font-size: 10px;">${totalReorderQty.toLocaleString()}</td>
-                <td colspan="2" style="text-align: right; font-size: 9px;">TOTAL VALUATION:</td>
-                <td style="text-align: right; font-family: monospace; font-size: 10px; color: #991b1b;">Rs. ${totalCostVal.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</td>
-                <td></td>
-              </tr>
-            </tbody>
-          </table>
-
-          <div class="signatures">
-            <div class="sig-block">
-              Prepared by: Pharmacist / Store Incharge
-            </div>
-            <div class="sig-block">
-              Audited by: Store Manager
-            </div>
-            <div class="sig-block">
-              Authorized Signature / Doctor
-            </div>
-          </div>
-
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-              }, 250);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    win.document.close();
-  };
-
-  // Popup Window Print Handler for A4 Purchase Order
-  const handleOpenPoPrintWindow = () => {
-    const filteredItems = getFilteredPoItems(items, poCategoryFilter, poOnlyLowStock);
-    const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic";
-    const printDate = new Date().toLocaleDateString('en-GB', {
-      day: '2-digit',
-      month: 'short',
-      year: 'numeric'
-    }) + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-    let tableHtml = '';
-
-    if (poPrintLayout === '3col') {
-      const poRows = [];
-      for (let i = 0; i < filteredItems.length; i += 3) {
-        poRows.push([
-          filteredItems[i],
-          filteredItems[i + 1] || null,
-          filteredItems[i + 2] || null
-        ]);
-      }
-
-      tableHtml = `
-        <table class="po-table">
-          <thead>
-            <tr>
-              <th colspan="6" class="table-title">
-                PURCHASE ORDER & SHORTAGE REQUISITION
-              </th>
-            </tr>
-            <tr class="header-row">
-              <th style="width: 23%;">MEDICINE NAME</th>
-              <th style="width: 10.33%; text-align: center;">REQ QTY</th>
-              <th style="width: 23%;">MEDICINE NAME</th>
-              <th style="width: 10.33%; text-align: center;">REQ QTY</th>
-              <th style="width: 23%;">MEDICINE NAME</th>
-              <th style="width: 10.33%; text-align: center;">REQ QTY</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${poRows.map((row) => {
-              const getQtyStr = (itm: Item | null) => {
-                if (!itm) return '';
-                return (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
-                  ? itm.ReorderQty
-                  : 0;
-              };
-              return `
-                <tr>
-                  <td class="col-name">${row[0]?.ItemName || ''}</td>
-                  <td class="col-qty">${row[0] ? getQtyStr(row[0]) : ''}</td>
-                  <td class="col-name">${row[1]?.ItemName || ''}</td>
-                  <td class="col-qty">${row[1] ? getQtyStr(row[1]) : ''}</td>
-                  <td class="col-name">${row[2]?.ItemName || ''}</td>
-                  <td class="col-qty">${row[2] ? getQtyStr(row[2]) : ''}</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      `;
-    } else {
-      tableHtml = `
-        <table class="po-table">
-          <thead>
-            <tr class="header-row">
-              <th style="width: 6%; text-align: center;">S.No</th>
-              <th style="width: 12%; text-align: center;">Item ID</th>
-              <th style="width: 42%;">Medicine Name</th>
-              <th style="width: 12%; text-align: center;">Category</th>
-              <th style="width: 14%; text-align: center;">Current Stock</th>
-              <th style="width: 14%; text-align: center;">Reorder Qty</th>
-            </tr>
-          </thead>
-          <tbody>
-            ${filteredItems.map((itm, idx) => {
-              const reorderQty = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
-                ? itm.ReorderQty
-                : 0;
-              return `
-                <tr>
-                  <td style="text-align: center; font-weight: bold; color: #555;">${idx + 1}</td>
-                  <td style="text-align: center; font-family: monospace; font-weight: bold;">${itm.ItemID}</td>
-                  <td class="col-name" style="font-weight: bold;">${itm.ItemName}</td>
-                  <td style="text-align: center;">${itm.Unit || 'Tab'}</td>
-                  <td style="text-align: center; font-family: monospace; font-weight: bold; color: #b91c1c;">${itm.CStock}</td>
-                  <td class="col-qty" style="font-weight: 900;">${reorderQty} ${itm.Unit || 'Tab'}s</td>
-                </tr>
-              `;
-            }).join('')}
-          </tbody>
-        </table>
-      `;
-    }
-
-    const win = window.open('', '_blank', 'width=1000,height=900');
-    if (!win) {
-      alert("Pop-up blocker prevented opening print window. Please allow pop-ups for this site or use Direct Print.");
-      return;
-    }
-
-    win.document.write(`
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <meta charset="utf-8" />
-          <title>A4 Purchase Order - ${clinicName}</title>
-          <style>
-            @page {
-              size: A4 portrait;
-              margin: 12mm 12mm 12mm 12mm;
-            }
-            *, *:before, *:after {
-              box-sizing: border-box;
-            }
-            html, body {
-              margin: 0;
-              padding: 0;
-              background: #ffffff;
-              color: #000000;
-              font-family: Arial, Helvetica, sans-serif;
-              font-size: 11px;
-              line-height: 1.3;
-            }
-            body {
-              padding: 15px;
-            }
-            .header-container {
-              text-align: center;
-              margin-bottom: 12px;
-              border-bottom: 2px solid #000000;
-              padding-bottom: 8px;
-            }
-            .clinic-title {
-              font-size: 20px;
-              font-weight: 900;
-              text-transform: uppercase;
-              letter-spacing: 0.5px;
-              margin: 0 0 3px 0;
-              color: #000000;
-            }
-            .doc-title {
-              font-size: 13px;
-              font-weight: 800;
-              text-transform: uppercase;
-              margin: 0;
-              color: #111111;
-            }
-            .meta-info {
-              display: flex;
-              justify-content: space-between;
-              align-items: center;
-              font-size: 10px;
-              font-weight: bold;
-              margin-top: 8px;
-              color: #333333;
-            }
-            .badge {
-              background-color: #f1f5f9;
-              border: 1px solid #cbd5e1;
-              padding: 2px 6px;
-              border-radius: 4px;
-              text-transform: uppercase;
-            }
-            table.po-table {
-              width: 100%;
-              border-collapse: collapse;
-              border: 2px solid #000000;
-              margin-top: 10px;
-              font-size: 11px;
-              page-break-inside: auto;
-            }
-            table.po-table thead {
-              display: table-header-group;
-            }
-            table.po-table tr {
-              page-break-inside: avoid;
-              break-inside: avoid;
-            }
-            table.po-table th, table.po-table td {
-              border: 1px solid #000000;
-              padding: 5px 6px;
-              box-sizing: border-box;
-              vertical-align: middle;
-            }
-            .table-title {
-              background-color: #f8fafc;
-              text-align: center;
-              font-size: 12px;
-              font-weight: 900;
-              text-transform: uppercase;
-              padding: 6px;
-              letter-spacing: 0.5px;
-            }
-            .header-row th {
-              background-color: #f1f5f9;
-              font-weight: 800;
-              font-size: 10px;
-              text-align: left;
-              text-transform: uppercase;
-            }
-            .col-name {
-              font-weight: 600;
-              text-align: left;
-              color: #000000;
-            }
-            .col-qty {
-              font-weight: 800;
-              text-align: center;
-              color: #000000;
-              background-color: #fafafa;
-            }
-            .footer-signatures {
-              margin-top: 40px;
-              display: flex;
-              justify-content: space-between;
-              padding: 0 20px;
-              page-break-inside: avoid;
-            }
-            .sig-box {
-              text-align: center;
-              width: 200px;
-              border-top: 1px solid #000000;
-              padding-top: 4px;
-              font-weight: bold;
-              font-size: 10px;
-              text-transform: uppercase;
-            }
-            @media print {
-              body { padding: 0; }
-              .no-print { display: none !important; }
-            }
-          </style>
-        </head>
-        <body>
-          <div class="no-print" style="margin-bottom: 15px; padding: 10px; background: #e0e7ff; border: 1px solid #c7d2fe; border-radius: 6px; display: flex; justify-content: space-between; align-items: center;">
-            <span style="font-weight: bold; color: #3730a3;">A4 Purchase Order Printable Document (${filteredItems.length} items)</span>
-            <button onclick="window.print()" style="padding: 6px 16px; background: #4f46e5; color: white; border: none; border-radius: 4px; font-weight: bold; cursor: pointer;">
-              🖨️ Print Document
-            </button>
-          </div>
-
-          <div class="header-container">
-            <h1 class="clinic-title">${clinicName}</h1>
-            <h2 class="doc-title">PURCHASE ORDER & MINIMUM THRESHOLD REQUISITION</h2>
-            <div class="meta-info">
-              <span>Date: ${printDate}</span>
-              <span class="badge">Category: ${poCategoryFilter === 'ALL' ? 'All Categories' : poCategoryFilter}</span>
-              <span class="badge">Scope: ${poOnlyLowStock ? 'Shortage Items Only' : 'Full Category List'}</span>
-              <span>Total Items: ${filteredItems.length}</span>
-            </div>
-          </div>
-
-          ${tableHtml}
-
-          <div class="footer-signatures">
-            <div class="sig-box">Prepared By (Pharmacy Manager)</div>
-            <div class="sig-box">Approved By (Clinic Administrator)</div>
-          </div>
-
-          <script>
-            window.onload = function() {
-              setTimeout(function() {
-                window.print();
-              }, 300);
-            };
-          </script>
-        </body>
-      </html>
-    `);
-    win.document.close();
-  };
-
-  // Clinical Medicine Label Print States
-  const [labelPatientId, setLabelPatientId] = useState('');
-  const [labelVisitId, setLabelVisitId] = useState('');
-  const [labelSearchQuery, setLabelSearchQuery] = useState('');
-  const [customLabelStates, setCustomLabelStates] = useState<{[medId: string]: { instructions: string; notes: string; qty: string; expiry: string }}>({});
-  const [isLabelPrintModalOpen, setIsLabelPrintModalOpen] = useState(false);
-  const [labelPrintData, setLabelPrintData] = useState<{
-    patientName: string;
-    patientAge: string;
-    patientSex: string;
-    visitDate: string;
-    visitId: string;
-    medicines: {
-      name: string;
-      instructions: string;
-      notes: string;
-      qty: string;
-      expiry: string;
-    }[];
-  } | null>(null);
-
-  // Rights verification
-  const currentRight = userRights.find((r) => r.MenuID === 'pharmacy');
-  const inventoryRight = userRights.find((r) => r.MenuID === 'inventory') || currentRight;
-
-  const isAdmin = currentUser?.Role === 'Administrator';
-  const canAdd = isAdmin || (currentRight ? currentRight.AddRec : true);
-  const canPost = isAdmin || (currentRight ? currentRight.PostRec : true);
-
-  // Dedicated Stock Management Permissions
-  const canViewStock = isAdmin || (inventoryRight ? inventoryRight.Status : true);
-  const canAddStock = isAdmin || (inventoryRight ? inventoryRight.AddRec : true);
-  const canEditStock = isAdmin || (
-    currentUser?.Permissions?.canEditStockLevel !== undefined
-      ? currentUser.Permissions.canEditStockLevel
-      : (inventoryRight ? inventoryRight.PostRec : false)
-  );
-  const canCancelStock = isAdmin || (inventoryRight ? inventoryRight.CancelPosted : true);
-
-  // Active Billing Form
-  const [selectedPatientId, setSelectedPatientId] = useState('');
-  const [billingShift, setBillingShift] = useState<1 | 2>(() => currentUser?.AssignedShift === 2 ? 2 : 1);
+  // Checkout billing & discount state
   const [discountInput, setDiscountInput] = useState<number>(0);
-  const [showPatentSourcingModal, setShowPatentSourcingModal] = useState(false);
-  const [patientSourcingOption, setPatientSourcingOption] = useState<'Clinic' | 'Outside'>('Clinic');
-  
-  // Store Medicine State
-  const [storePatientId, setStorePatientId] = useState('');
-  const [storeShift, setStoreShift] = useState<1 | 2>(() => currentUser?.AssignedShift === 2 ? 2 : 1);
+  const [billingShift, setBillingShift] = useState<'1' | '2'>('1');
 
-  // Sync shifts with active logged-in user assigned shift
-  useEffect(() => {
-    const userShift = currentUser?.AssignedShift === 2 ? 2 : 1;
-    setBillingShift(userShift);
-    setStoreShift(userShift);
-  }, [currentUser?.UserID, currentUser?.AssignedShift]);
-  const [storeDiscountPercent, setStoreDiscountPercent] = useState<number | null>(0);
+  // Store sales discount & patient state
+  const [storePatientId, setStorePatientId] = useState<string>('');
   const [storeDiscountInput, setStoreDiscountInput] = useState<number | string>('');
+  const [storeDiscountPercent, setStoreDiscountPercent] = useState<number | null>(0);
+  const [storeShift, setStoreShift] = useState<'1' | '2'>('1');
+
+  const handleOpenInvoicePrintModal = (inv: InvoiceHeader, details: InvoiceDetail[], format: 'a4' | 'thermal' = 'thermal') => {
+    const pat = allKnownPatients.find((p) => p.PatientID === inv.PatientID) || null;
+    const itemsInInv = details.filter(d => d.InvoiceNo === inv.InvoiceNo).map(d => ({
+      ItemID: d.ItemID,
+      Qty: d.Qty,
+      Price: d.Price,
+      MedicineType: d.MedicineType as any
+    }));
+    setPrintBillData({
+      patient: pat,
+      basket: itemsInInv,
+      discount: Number(inv.Discount) || 0,
+      netAmount: Number(inv.NetAmount) || 0,
+      shift: (inv.shift as any) || 1,
+      invoiceNo: inv.InvoiceNo,
+      invoiceDate: inv.InvoiceDate || todayStr
+    });
+    setPrintModalFormat(format);
+    setPrintModalOpen(true);
+  };
+
+  const {
+    handlePrintA4Invoice,
+    handlePrintThermalReceipt,
+    handlePrintDailySalesReport,
+    handlePrintStockGrid,
+    handleOpenPoPrintWindow
+  } = createPharmacyPrintHelpers({
+    currentUser,
+    userRights,
+    clinicSettings,
+    items,
+    invoices,
+    invoiceDetails,
+    patients: allKnownPatients,
+    selectedDailyReportDate,
+    salesReportPeriodMode,
+    salesReportStartDate,
+    salesReportEndDate,
+    todayStr,
+    invLowStockFilter,
+    invCategoryFilter,
+    invSearchQuery,
+    poCategoryFilter,
+    poOnlyLowStock,
+    poPrintLayout,
+    getFilteredPoItems
+  });
   const [storeBasket, setStoreBasket] = useState<{ ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[]>([]);
   const [storeRowItemId, setStoreRowItemId] = useState('');
   const [storeRowQty, setStoreRowQty] = useState<number>(1);
+  const [storeRowPrice, setStoreRowPrice] = useState<number | string>('');
   const [storeSearchQuery, setStoreSearchQuery] = useState('');
   const [storeSearchDropdownOpen, setStoreSearchDropdownOpen] = useState(false);
   const [storeValidationError, setStoreValidationError] = useState('');
@@ -3885,20 +1992,6 @@ export default function PharmacyPOS({
   const [compoundingDays, setCompoundingDays] = useState<number>(30);
   const [compoundingInstructions, setCompoundingInstructions] = useState<string>('Daily 1 after meal');
 
-  // History & Sales Report Period Filter state
-  const [salesReportPeriodMode, setSalesReportPeriodMode] = useState<'daily' | 'range' | 'all'>('daily');
-  const [salesReportStartDate, setSalesReportStartDate] = useState<string>(() => {
-    const d = new Date();
-    d.setDate(1);
-    return d.toISOString().split('T')[0];
-  });
-  const [salesReportEndDate, setSalesReportEndDate] = useState<string>(
-    new Date().toISOString().split('T')[0]
-  );
-  const [selectedShiftFilter, setSelectedShiftFilter] = useState<'all' | '1' | '2'>('all');
-  const [showAllInvoicesInHistory, setShowAllInvoicesInHistory] = useState(false);
-  const [searchHistoryQuery, setSearchHistoryQuery] = useState('');
-
   // Helper to fetch the Token No of a patient
   const getPatientTokenNo = (patientId: string) => {
     // 1. Look for the token associated with this patient's latest visit
@@ -4008,33 +2101,6 @@ export default function PharmacyPOS({
 
     return parsedMeds;
   };
-
-  // Comprehensive patient collection ensuring archive and visit patients are included
-  const allKnownPatients = useMemo(() => {
-    const map = new Map<string, Patient>();
-    (patients || []).forEach(p => {
-      if (p && p.PatientID) map.set(p.PatientID, p);
-    });
-    (visits || []).forEach(v => {
-      if (v.PatientID && !map.has(v.PatientID)) {
-        map.set(v.PatientID, {
-          PatientID: v.PatientID,
-          PatientName: `Patient (${v.PatientID})`,
-          Father_husband: '',
-          AgeYears: 0,
-          Sex: 'Male',
-          MaritalStatus: 'Single',
-          Occupation: '',
-          Address: '',
-          CityID: 1,
-          Country: 'Pakistan',
-          PhoneMobile: '',
-          RegistrationDate: v.VisitDate || new Date().toISOString().split('T')[0]
-        });
-      }
-    });
-    return Array.from(map.values());
-  }, [patients, visits]);
 
   const handleCleanLabelPrint = (presetSize: '4x8' | '8x5' | '4x3' | '2x4' | '2x0.2' = '2x0.2') => {
     if (currentUser?.Role !== 'Administrator' && (currentUser?.Permissions?.canPrintPOSInvoice === false || userRights.find(r => r.MenuID === 'pharmacy')?.PrintRec === false)) {
@@ -4429,6 +2495,38 @@ export default function PharmacyPOS({
     }
   }, [storeGAmount, storeDiscountPercent]);
 
+  const handleStorePriceChange = (val: string) => {
+    setStoreRowPrice(val);
+    const num = parseFloat(val);
+    if (!isNaN(num) && num >= 0 && storeRowItemId) {
+      if (setItems) {
+        setItems((prev) => prev.map((i) => (i.ItemID === storeRowItemId ? { ...i, Price: num } : i)));
+      }
+      syncItemToBackend('UPDATE', { ItemID: storeRowItemId, Price: num });
+    }
+  };
+
+  const handleDeleteStoreItem = (itemId: string, itemName: string) => {
+    if (!itemId) return;
+    const confirmDelete = window.confirm(
+      'Are you sure you want to permanently delete "' + (itemName || 'Item') + '" (Item ID: ' + itemId + ') from Stock Grid Manager / Inventory? This will delete duplicate or obsolete entries.'
+    );
+    if (confirmDelete) {
+      if (setItems) {
+        setItems((prev) => prev.filter((i) => i.ItemID !== itemId));
+      }
+      syncItemToBackend('DELETE', { ItemID: itemId });
+      if (storeRowItemId === itemId) {
+        setStoreRowItemId('');
+        setStoreSearchQuery('');
+        setStoreRowPrice('');
+        setStoreRowQty(1);
+      }
+      setStoreSuccessMsg('Medicine "' + itemName + '" (' + itemId + ') successfully deleted from Stock Grid Manager.');
+      setTimeout(() => setStoreSuccessMsg(''), 4500);
+    }
+  };
+
   const handleAddToStoreBasket = () => {
     if (!storeRowItemId) return;
     const selectedItem = items.find((i) => i.ItemID === storeRowItemId);
@@ -4461,15 +2559,19 @@ export default function PharmacyPOS({
       updated[existsIndex].Qty += storeRowQty;
       setStoreBasket(updated);
     } else {
+      const effectivePrice = (storeRowPrice !== '' && !isNaN(Number(storeRowPrice)) && Number(storeRowPrice) >= 0)
+        ? Number(storeRowPrice)
+        : (selectedItem.Price || 0);
       setStoreBasket([
         ...storeBasket,
-        { ItemID: storeRowItemId, Qty: storeRowQty, Price: selectedItem.Price, MedicineType: 'P' }
+        { ItemID: storeRowItemId, Qty: storeRowQty, Price: effectivePrice, MedicineType: 'P' }
       ]);
     }
 
     // Reset scratchpad
     setStoreRowItemId('');
     setStoreRowQty(1);
+    setStoreRowPrice('');
     setStoreSearchQuery('');
     setStoreSearchDropdownOpen(false);
   };
@@ -4719,7 +2821,6 @@ export default function PharmacyPOS({
   };
 
   // Filter invoices for today, custom period range, or all history
-  const todayStr = new Date().toISOString().split('T')[0];
   const filteredInvoices = useMemo(() => {
     return invoices.filter((inv) => {
       const invDate = String(inv.InvoiceDate || '').trim().slice(0, 10);
@@ -5446,342 +3547,6 @@ export default function PharmacyPOS({
       )}
 
       {/* Invoice logs Tab */}
-      {activeSubTab === 'invoice_logs' && (
-        <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4 animate-fadeIn" id="today-receipts-history">
-          <div className="flex flex-col xl:flex-row xl:items-center justify-between border-b border-slate-100 pb-4 gap-4">
-            <div className="flex items-center space-x-2.5">
-              <div className="p-2.5 bg-blue-50 text-blue-600 rounded-xl">
-                <History className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-slate-950">Invoice logs & Sales Reports</h3>
-                <p className="text-[11px] text-slate-500 font-medium">History of issued medicine bills with A4 invoices, thermal slips, and customizable daily / periodic sales audit reports</p>
-              </div>
-            </div>
-
-            {/* Print & Action Trigger */}
-            <div className="flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  if (salesReportPeriodMode === 'range') {
-                    handlePrintDailySalesReport(salesReportStartDate, salesReportEndDate);
-                  } else if (salesReportPeriodMode === 'all') {
-                    handlePrintDailySalesReport();
-                  } else {
-                    handlePrintDailySalesReport(selectedDailyReportDate);
-                  }
-                }}
-                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center space-x-1.5 transition cursor-pointer whitespace-nowrap"
-                title="Print sales audit report on A4 paper"
-              >
-                <Printer className="w-4 h-4 shrink-0" />
-                <span>Print</span>
-              </button>
-            </div>
-          </div>
-
-          {/* PERIOD SELECTION & ADVANCED FILTER TOOLBAR */}
-          <div className="bg-slate-50 border border-slate-200/80 p-3.5 rounded-xl space-y-3">
-            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-              {/* Presets / Period Mode Tabs */}
-              <div className="flex flex-wrap items-center gap-1.5 bg-white border border-slate-200 p-1 rounded-xl shadow-xs text-xs font-bold">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSalesReportPeriodMode('daily');
-                    setSelectedDailyReportDate(todayStr);
-                    setShowAllInvoicesInHistory(false);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                    salesReportPeriodMode === 'daily' && selectedDailyReportDate === todayStr
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  Today
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSalesReportPeriodMode('daily');
-                    const yesterday = new Date();
-                    yesterday.setDate(yesterday.getDate() - 1);
-                    setSelectedDailyReportDate(yesterday.toISOString().split('T')[0]);
-                    setShowAllInvoicesInHistory(false);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                    salesReportPeriodMode === 'daily' && selectedDailyReportDate !== todayStr
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  Specific Date
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSalesReportPeriodMode('range');
-                    const d = new Date();
-                    d.setDate(1);
-                    setSalesReportStartDate(d.toISOString().split('T')[0]);
-                    setSalesReportEndDate(todayStr);
-                    setShowAllInvoicesInHistory(false);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                    salesReportPeriodMode === 'range'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  📅 Custom Period
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSalesReportPeriodMode('all');
-                    setShowAllInvoicesInHistory(true);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                    salesReportPeriodMode === 'all'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  All History ({invoices.length})
-                </button>
-              </div>
-
-              {/* Shift & Search Filters */}
-              <div className="flex flex-wrap items-center gap-2.5">
-                {/* Shift Selector */}
-                <div className="flex items-center space-x-1.5 bg-white border border-slate-200 px-2.5 py-1.5 rounded-xl shadow-xs">
-                  <span className="text-xxs font-bold text-slate-500 uppercase">Shift:</span>
-                  <select
-                    value={selectedShiftFilter}
-                    onChange={(e) => setSelectedShiftFilter(e.target.value as any)}
-                    className="text-xs bg-transparent border-0 font-bold text-slate-800 focus:outline-none cursor-pointer"
-                  >
-                    <option value="all">All Shifts</option>
-                    <option value="1">☀️ Morning (Shift 1)</option>
-                    <option value="2">🌙 Evening (Shift 2)</option>
-                  </select>
-                </div>
-
-                {/* Search Bar */}
-                <div className="relative">
-                  <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Search invoice or patient..."
-                    value={searchHistoryQuery}
-                    onChange={(e) => setSearchHistoryQuery(e.target.value)}
-                    className="w-full sm:w-48 text-xs border border-slate-200 rounded-xl pl-8 pr-3 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white shadow-xs transition"
-                  />
-                </div>
-              </div>
-            </div>
-
-            {/* Custom Date Pickers (Shown when Daily or Custom Period is Active) */}
-            {salesReportPeriodMode === 'daily' && (
-              <div className="flex items-center space-x-2 pt-1 border-t border-slate-200/60">
-                <span className="text-xs font-bold text-slate-600 flex items-center space-x-1">
-                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Selected Date:</span>
-                </span>
-                <input
-                  type="date"
-                  value={selectedDailyReportDate}
-                  onChange={(e) => setSelectedDailyReportDate(e.target.value)}
-                  className="text-xs bg-white border border-slate-200 px-3 py-1 rounded-lg font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-xs cursor-pointer"
-                />
-                <span className="text-xxs font-semibold text-slate-400">
-                  Showing sales records strictly for {selectedDailyReportDate === todayStr ? "Today" : selectedDailyReportDate}
-                </span>
-              </div>
-            )}
-
-            {salesReportPeriodMode === 'range' && (
-              <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-200/60">
-                <span className="text-xs font-black text-indigo-900 flex items-center space-x-1">
-                  <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>Custom Date Range:</span>
-                </span>
-                <div className="flex items-center space-x-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-xs">
-                  <span className="text-xxs font-bold text-slate-500 uppercase">From:</span>
-                  <input
-                    type="date"
-                    value={salesReportStartDate}
-                    onChange={(e) => setSalesReportStartDate(e.target.value)}
-                    className="text-xs bg-transparent border-0 font-bold text-slate-800 focus:outline-none cursor-pointer"
-                  />
-                </div>
-                <div className="flex items-center space-x-1.5 bg-white border border-slate-200 px-2.5 py-1 rounded-lg shadow-xs">
-                  <span className="text-xxs font-bold text-slate-500 uppercase">To:</span>
-                  <input
-                    type="date"
-                    value={salesReportEndDate}
-                    onChange={(e) => setSalesReportEndDate(e.target.value)}
-                    className="text-xs bg-transparent border-0 font-bold text-slate-800 focus:outline-none cursor-pointer"
-                  />
-                </div>
-                <span className="text-xxs font-bold text-indigo-700 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full">
-                  Filtering {filteredInvoices.length} Invoices between {salesReportStartDate} and {salesReportEndDate}
-                </span>
-              </div>
-            )}
-          </div>
-
-          {/* LIVE SUMMARY KPI METRICS STRIP */}
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
-            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
-              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Invoices Filtered</span>
-              <div className="text-lg font-black text-slate-900 mt-0.5">{periodSalesSummary.totalInvoices} Bills</div>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
-              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Medicine Units Sold</span>
-              <div className="text-lg font-black text-sky-900 mt-0.5">{periodSalesSummary.totalUnits.toLocaleString()} Units</div>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
-              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Gross Sales</span>
-              <div className="text-lg font-black text-slate-700 mt-0.5">Rs. {periodSalesSummary.grossAmount.toLocaleString()}</div>
-            </div>
-            <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
-              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Total Discounts</span>
-              <div className="text-lg font-black text-rose-600 mt-0.5">- Rs. {periodSalesSummary.discount.toLocaleString()}</div>
-            </div>
-            <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl col-span-2 sm:col-span-1">
-              <span className="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider block">Net Realized Cash</span>
-              <div className="text-lg font-black text-emerald-700 mt-0.5 font-mono">Rs. {periodSalesSummary.netAmount.toLocaleString()}</div>
-              <div className="text-[9.5px] font-semibold text-emerald-900/80 mt-0.5">
-                ☀️ Rs. {periodSalesSummary.shift1Net.toLocaleString()} • 🌙 Rs. {periodSalesSummary.shift2Net.toLocaleString()}
-              </div>
-            </div>
-          </div>
-
-          {/* Invoices List Table */}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="border-b border-slate-200 text-slate-400 uppercase text-xxs font-bold">
-                  <th className="py-2.5 font-bold">Invoice Ref</th>
-                  <th className="py-2.5 font-bold">Patient / Customer</th>
-                  <th className="py-2.5 font-bold">Shift & Date</th>
-                  <th className="py-2.5 font-bold">Dispatched Medications (Rx)</th>
-                  <th className="py-2.5 text-right font-bold">Net Total Paid</th>
-                  <th className="py-2.5 text-center font-bold">Print & Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100">
-                {filteredInvoices.length === 0 ? (
-                  <tr>
-                    <td colSpan={6} className="py-8 text-center text-slate-400 font-semibold bg-slate-50/50 rounded-lg">
-                      No medicine dispatch receipts match the selected date or search filter.
-                    </td>
-                  </tr>
-                ) : (
-                  filteredInvoices.map((inv) => {
-                    const patientName = getPatientName(inv.PatientID);
-                    const isToday = inv.InvoiceDate === new Date().toISOString().split('T')[0];
-                    const details = invoiceDetails.filter((d) => d.InvoiceNo === inv.InvoiceNo);
-                    const basket = details.map((d) => ({
-                      ItemID: d.ItemID,
-                      Qty: d.Qty,
-                      Price: d.Price,
-                      MedicineType: d.MedicineType
-                    }));
-                    const billObj = {
-                      patient: patients.find((p) => p.PatientID === inv.PatientID) || null,
-                      basket: basket,
-                      discount: inv.Discount,
-                      netAmount: inv.NetAmount,
-                      shift: inv.shift,
-                      invoiceNo: inv.InvoiceNo,
-                      invoiceDate: inv.InvoiceDate
-                    };
-
-                    return (
-                      <tr key={inv.InvoiceNo} className="hover:bg-slate-50/50 group transition duration-150">
-                        <td className="py-3 font-mono font-bold text-xs text-slate-900">
-                          <span className="block">{inv.InvoiceNo}</span>
-                          <span className={`inline-block px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider mt-1 ${inv.Status === 2 ? 'bg-emerald-100 text-emerald-800 border border-emerald-200' : 'bg-amber-100 text-amber-800 border border-amber-200'}`}>
-                            {inv.Status === 2 ? 'Posted' : 'Draft'}
-                          </span>
-                        </td>
-                        <td className="py-3">
-                          <span className="font-bold text-slate-800 block text-xs">{patientName}</span>
-                          <span className="text-xxs text-slate-400 font-mono block">ID: {inv.PatientID || 'Walk-in'}</span>
-                        </td>
-                        <td className="py-3">
-                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-semibold ${inv.shift === 1 ? 'bg-orange-50 text-orange-700 border border-orange-100' : 'bg-purple-50 text-purple-700 border border-purple-100'}`}>
-                            {inv.shift === 1 ? 'Morning (1)' : 'Evening (2)'}
-                          </span>
-                          <span className="text-xxs text-slate-400 font-mono block mt-1">{inv.InvoiceDate} {isToday && '• Today'}</span>
-                        </td>
-                        <td className="py-3 max-w-xs">
-                          <div className="flex flex-wrap gap-1">
-                            {details.map((d, idx) => {
-                              const item = items.find((itm) => itm.ItemID === d.ItemID);
-                              return (
-                                <span key={`${d.ItemID}-${idx}`} className="inline-flex items-center px-1.5 py-0.5 rounded text-xxs font-semibold bg-slate-100 text-slate-700 border border-slate-200/60 hover:bg-slate-200 transition">
-                                  {item ? item.ItemName : d.ItemID} <span className="text-[10px] text-slate-400 ml-1 font-mono">x{d.Qty}</span>
-                                </span>
-                              );
-                            })}
-                          </div>
-                        </td>
-                        <td className="py-3 text-right font-mono font-bold text-sm text-slate-900">
-                          Rs. {inv.NetAmount.toLocaleString()}
-                        </td>
-                        <td className="py-3 text-center">
-                          <div className="flex items-center justify-center space-x-1">
-                            {/* A4 Print Button */}
-                            <button
-                              type="button"
-                              onClick={() => handlePrintA4Invoice(billObj)}
-                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 text-xxs font-bold rounded border border-slate-300 transition flex items-center cursor-pointer shadow-xs"
-                              title="Print full A4 size invoice"
-                            >
-                              <FileText className="w-3 h-3 mr-1 text-slate-600" />
-                              A4 Print
-                            </button>
-
-                            {/* Thermal Slip Print Button */}
-                            <button
-                              type="button"
-                              onClick={() => handlePrintThermalReceipt(billObj)}
-                              className="px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-xxs font-bold rounded border border-emerald-300 transition flex items-center cursor-pointer shadow-xs"
-                              title="Print 80mm POS customer thermal receipt"
-                            >
-                              <Receipt className="w-3 h-3 mr-1 text-emerald-600" />
-                              Thermal
-                            </button>
-
-                            {/* Preview Modal Button */}
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setPrintBillData(billObj);
-                                setPrintModalOpen(true);
-                              }}
-                              className="p-1 bg-blue-50 border border-blue-200 text-blue-700 hover:bg-blue-100 rounded transition flex items-center justify-center cursor-pointer"
-                              title="Open visual print preview"
-                            >
-                              <Printer className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })
-                )}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
-
-      {/* Store Medicine Tab */}
       {activeSubTab === 'store_sales' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn" id="pos-store-sales-tab">
           
@@ -5824,10 +3589,17 @@ export default function PharmacyPOS({
               </div>
             )}
 
+            {storeSuccessMsg && (
+              <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-xl font-semibold border border-emerald-200 flex items-center shadow-2xs animate-in fade-in">
+                <CheckCircle2 className="w-4 h-4 mr-2 shrink-0 text-emerald-600" />
+                <span>{storeSuccessMsg}</span>
+              </div>
+            )}
+
             {storeValidationError && (
-              <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg font-semibold border border-red-100 flex items-center">
+              <div className="p-3 bg-red-50 text-red-700 text-xs rounded-xl font-semibold border border-red-100 flex items-center shadow-2xs animate-in fade-in">
                 <AlertCircle className="w-4 h-4 mr-2 shrink-0 text-red-500" />
-                {storeValidationError}
+                <span>{storeValidationError}</span>
               </div>
             )}
 
@@ -5867,17 +3639,26 @@ export default function PharmacyPOS({
             </div>
 
             {/* In-Grid Item selector */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-3.5">
-              <span className="text-xxs font-bold text-slate-400 uppercase">Select Patent Medicine</span>
+            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3.5 shadow-2xs">
+              <div className="flex items-center justify-between">
+                <span className="text-xxs font-black text-slate-500 uppercase tracking-wider flex items-center space-x-1.5">
+                  <Pill className="w-3.5 h-3.5 text-emerald-600" />
+                  <span>Select Patent Medicine</span>
+                </span>
+                <span className="text-[11px] text-slate-400 font-medium">
+                  Edit sale price or remove duplicates directly
+                </span>
+              </div>
               
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                <div className="sm:col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-12 gap-3 items-end">
+                {/* Search field */}
+                <div className="sm:col-span-6">
                   <div className="flex justify-between items-center">
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Search Patent Medicine</label>
+                    <label className="block text-xxs font-bold text-slate-600 uppercase">Search Patent Medicine</label>
                     <button
                       type="button"
                       onClick={() => setIsQRScannerOpen(true)}
-                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded cursor-pointer transition border border-emerald-200"
+                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded-md cursor-pointer transition border border-emerald-200"
                     >
                       <QrCode className="w-3 h-3 mr-1" />
                       <span>Scan QR Code</span>
@@ -5886,7 +3667,7 @@ export default function PharmacyPOS({
                   <div className="relative mt-1">
                     <input
                       type="text"
-                      placeholder=""
+                      placeholder="Type medicine name or item code..."
                       value={storeSearchQuery}
                       onChange={(e) => {
                         const val = e.target.value;
@@ -5895,15 +3676,17 @@ export default function PharmacyPOS({
                         const exact = items.find(i => i.MedicineType !== 'C' && i.ItemName.toLowerCase() === val.toLowerCase());
                         if (exact) {
                           setStoreRowItemId(exact.ItemID);
+                          setStoreRowPrice(exact.Price);
                         } else {
                           setStoreRowItemId('');
+                          setStoreRowPrice('');
                         }
                       }}
                       onFocus={() => setStoreSearchDropdownOpen(true)}
                       onBlur={() => {
-                        setTimeout(() => setStoreSearchDropdownOpen(false), 200);
+                        setTimeout(() => setStoreSearchDropdownOpen(false), 250);
                       }}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2 pr-8 focus:outline-none focus:border-blue-500 font-medium"
+                      className="w-full text-xs border border-slate-200 bg-white rounded-lg p-2.5 pr-8 focus:outline-none focus:border-emerald-500 font-medium shadow-2xs"
                     />
                     
                     {storeSearchQuery && (
@@ -5912,15 +3695,17 @@ export default function PharmacyPOS({
                         onClick={() => {
                           setStoreSearchQuery('');
                           setStoreRowItemId('');
+                          setStoreRowPrice('');
                         }}
-                        className="absolute right-2 top-[12px] text-slate-400 hover:text-slate-600"
+                        className="absolute right-2 top-[10px] text-slate-400 hover:text-slate-600 p-1"
+                        title="Clear search"
                       >
                         <span className="text-xs font-bold font-mono">✕</span>
                       </button>
                     )}
 
                     {storeSearchDropdownOpen && (
-                      <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg divide-y divide-slate-100">
+                      <div className="absolute z-50 mt-1 w-full max-h-64 overflow-y-auto bg-white border border-slate-200 rounded-xl shadow-xl divide-y divide-slate-100">
                         {(() => {
                           const query = storeSearchQuery.toLowerCase().trim();
                           const list = items.filter(itm => 
@@ -5934,23 +3719,47 @@ export default function PharmacyPOS({
                             return <div className="p-3 text-xs text-slate-400 text-center">No matching patent medicines found</div>;
                           }
                           
-                          return list.slice(0, 15).map((itm, idx) => (
+                          return list.slice(0, 20).map((itm, idx) => (
                             <div
                               key={`${itm.ItemID}-${idx}`}
-                              onMouseDown={() => {
-                                setStoreRowItemId(itm.ItemID);
-                                setStoreSearchQuery(itm.ItemName);
-                                setStoreSearchDropdownOpen(false);
-                              }}
-                              className="p-2.5 hover:bg-emerald-50 cursor-pointer text-left transition flex justify-between items-center"
+                              className="p-2.5 hover:bg-emerald-50 cursor-pointer text-left transition flex justify-between items-center group"
                             >
-                              <div>
+                              <div
+                                className="flex-1 pr-2"
+                                onMouseDown={() => {
+                                  setStoreRowItemId(itm.ItemID);
+                                  setStoreSearchQuery(itm.ItemName);
+                                  setStoreRowPrice(itm.Price);
+                                  setStoreSearchDropdownOpen(false);
+                                }}
+                              >
                                 <span className="font-semibold text-xs text-slate-800">{itm.ItemName}</span>
                                 <span className="ml-1.5 text-[10px] text-slate-400 font-mono">({itm.ItemID})</span>
                               </div>
-                              <div className="text-right text-xxs font-mono">
-                                <span className="text-slate-600 font-bold">Rs. {itm.Price}</span>
-                                <span className="ml-2 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">Stock: {itm.CStock}</span>
+                              <div className="flex items-center space-x-2 shrink-0">
+                                <div
+                                  className="text-right text-xxs font-mono"
+                                  onMouseDown={() => {
+                                    setStoreRowItemId(itm.ItemID);
+                                    setStoreSearchQuery(itm.ItemName);
+                                    setStoreRowPrice(itm.Price);
+                                    setStoreSearchDropdownOpen(false);
+                                  }}
+                                >
+                                  <span className="text-slate-700 font-bold">Rs. {itm.Price}</span>
+                                  <span className="ml-1.5 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">Stock: {itm.CStock}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onMouseDown={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteStoreItem(itm.ItemID, itm.ItemName);
+                                  }}
+                                  className="p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                                  title="Delete item / duplicate from Stock Grid Manager"
+                                >
+                                  <Trash2 className="w-3.5 h-3.5" />
+                                </button>
                               </div>
                             </div>
                           ));
@@ -5958,43 +3767,100 @@ export default function PharmacyPOS({
                       </div>
                     )}
                   </div>
-
-                  {storeRowItemId && (() => {
-                    const sel = items.find(i => i.ItemID === storeRowItemId);
-                    if (!sel) return null;
-                    return (
-                      <div className="mt-1.5 flex items-center justify-between text-xxs bg-emerald-50 border border-emerald-100 text-emerald-800 p-1.5 rounded-md font-medium">
-                        <span>Selected Patent Medicine: <strong>{sel.ItemName}</strong> ({sel.ItemID})</span>
-                        <span>
-                          <span>Price: <strong>Rs. {sel.Price}</strong></span>
-                          <span className="ml-2">| Stock: <strong>{sel.CStock} {sel.Unit}s</strong></span>
-                        </span>
-                      </div>
-                    );
-                  })()}
                 </div>
 
-                <div className="flex space-x-2">
-                  <div className="w-1/2">
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Qty</label>
+                {/* Sale Price Editable Textbox */}
+                <div className="sm:col-span-3">
+                  <div className="flex justify-between items-center">
+                    <label className="block text-xxs font-bold text-slate-600 uppercase">Sale Price (Rs.)</label>
+                    {storeRowItemId && (
+                      <span className="text-[9px] text-emerald-600 font-bold bg-emerald-50 px-1 py-0.2 rounded border border-emerald-200">
+                        Auto-Syncs Stock
+                      </span>
+                    )}
+                  </div>
+                  <div className="relative mt-1">
                     <input
                       type="number"
-                      min="1"
-                      value={storeRowQty}
-                      onChange={(e) => setStoreRowQty(parseInt(e.target.value) || 1)}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2 focus:outline-none font-mono"
+                      min="0"
+                      step="any"
+                      placeholder="0"
+                      value={storeRowPrice}
+                      onChange={(e) => handleStorePriceChange(e.target.value)}
+                      disabled={!storeRowItemId}
+                      className={`w-full text-xs border rounded-lg p-2.5 font-mono font-bold focus:outline-none focus:ring-1 transition shadow-2xs ${
+                        storeRowItemId
+                          ? 'border-emerald-300 bg-white text-slate-900 focus:border-emerald-500 focus:ring-emerald-500'
+                          : 'border-slate-200 bg-slate-100 text-slate-400 cursor-not-allowed'
+                      }`}
                     />
                   </div>
+                </div>
+
+                {/* Qty field */}
+                <div className="sm:col-span-1">
+                  <label className="block text-xxs font-bold text-slate-600 uppercase">Qty</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={storeRowQty}
+                    onChange={(e) => setStoreRowQty(parseInt(e.target.value) || 1)}
+                    className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2.5 focus:outline-none focus:border-emerald-500 font-mono font-bold text-center shadow-2xs"
+                  />
+                </div>
+
+                {/* Add to basket button */}
+                <div className="sm:col-span-2">
                   <button
                     type="button"
                     onClick={handleAddToStoreBasket}
-                    className="w-1/2 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center transition self-end"
+                    disabled={!storeRowItemId}
+                    className={`w-full py-2.5 text-xs font-bold rounded-lg flex items-center justify-center transition shadow-xs ${
+                      storeRowItemId
+                        ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer'
+                        : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                    }`}
                   >
                     <Plus className="w-4 h-4 mr-1" />
-                    Add
+                    <span>Add to POS</span>
                   </button>
                 </div>
               </div>
+
+              {/* Selected Item Status & Direct Delete Button */}
+              {storeRowItemId && (() => {
+                const sel = items.find(i => i.ItemID === storeRowItemId);
+                if (!sel) return null;
+                return (
+                  <div className="mt-2 flex flex-col sm:flex-row sm:items-center sm:justify-between text-xs bg-emerald-50/80 border border-emerald-200 text-emerald-950 p-2.5 rounded-xl font-medium gap-2 shadow-2xs">
+                    <div className="flex items-center space-x-2">
+                      <div className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></div>
+                      <span>
+                        Selected Patent: <strong>{sel.ItemName}</strong> <span className="text-slate-500 font-mono text-xxs">({sel.ItemID})</span>
+                      </span>
+                      <span className="text-slate-400">|</span>
+                      <span>Stock: <strong>{sel.CStock} {sel.Unit}s</strong></span>
+                      <span className="text-slate-400">|</span>
+                      <span>Live Price: <strong className="text-emerald-700">Rs. {sel.Price}</strong></span>
+                    </div>
+
+                    <div className="flex items-center space-x-2 shrink-0">
+                      <span className="text-[10px] text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded font-bold">
+                        ✓ Updating price updates Stock Grid Manager
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteStoreItem(sel.ItemID, sel.ItemName)}
+                        className="inline-flex items-center space-x-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-lg border border-rose-200 hover:border-rose-300 transition cursor-pointer shadow-2xs"
+                        title="Delete this item / duplicate entry from Stock Grid Manager"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                        <span>Delete from Stock Grid</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Checkout basket list */}
@@ -6263,142 +4129,6 @@ export default function PharmacyPOS({
       )}
 
       {/* Sales Returns Tab */}
-      {activeSubTab === 'return' && (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 animate-fadeIn" id="pos-returns-tab">
-          
-          {/* Invoice lookup & return calculator */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-950 flex items-center border-b border-slate-100 pb-3">
-              <Undo2 className="w-4.5 h-4.5 text-emerald-500 mr-2" />
-              Invoice Reversals / Returns Worksheet
-            </h3>
-
-            {returnSuccess && (
-              <div className="p-3 bg-emerald-50 text-emerald-700 text-xs rounded-lg font-semibold border border-emerald-100">
-                {returnSuccess}
-              </div>
-            )}
-
-            <form onSubmit={handleLookupInvoice} className="flex space-x-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                <input
-                  type="text"
-                  required
-                  placeholder=""
-                  value={lookupInvoiceNo}
-                  onChange={(e) => setLookupInvoiceNo(e.target.value)}
-                  className="w-full text-xs border border-slate-200 rounded-lg pl-8 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                />
-              </div>
-              <button
-                type="submit"
-                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition"
-              >
-                Lookup Invoice
-              </button>
-            </form>
-
-            {matchedInvoice && (
-              <form onSubmit={handlePostSalesReturn} className="space-y-4 pt-2 animate-fadeIn">
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 space-y-1.5 text-xxs font-medium text-slate-600">
-                  <div className="flex justify-between font-bold text-slate-900">
-                    <span>Invoice Ref: {matchedInvoice.InvoiceNo}</span>
-                    <span>Date: {matchedInvoice.InvoiceDate}</span>
-                  </div>
-                  <p>Original Customer: <strong className="text-slate-800 font-bold">{getPatientName(matchedInvoice.PatientID)}</strong></p>
-                  <p>Gross: Rs. {matchedInvoice.GAmount} | Net Paid: Rs. {matchedInvoice.NetAmount} (Discount: Rs. {matchedInvoice.Discount})</p>
-                </div>
-
-                {/* Return rows table */}
-                <div className="overflow-x-auto border border-slate-200 rounded-xl p-3 bg-slate-50/20">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-slate-200 text-slate-400 uppercase text-xxs font-bold">
-                        <th className="py-2">Medicine ID</th>
-                        <th className="py-2">Item</th>
-                        <th className="py-2 text-center">Original Qty</th>
-                        <th className="py-2 text-center">Qty to Return</th>
-                        <th className="py-2 text-right">Refund Rate</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100">
-                      {returnBasket.map((row, idx) => {
-                        const originalQty = invoiceDetails.find(
-                          (d) => d.InvoiceNo === matchedInvoice.InvoiceNo && d.ItemID === row.ItemID
-                        )?.Qty || 0;
-                        const name = items.find((i) => i.ItemID === row.ItemID)?.ItemName || row.ItemID;
-
-                        return (
-                          <tr key={idx} className="hover:bg-slate-50/50">
-                            <td className="py-2 font-mono text-xxs font-semibold text-slate-400">{row.ItemID}</td>
-                            <td className="py-2 font-bold text-slate-800 truncate max-w-[150px]">{name}</td>
-                            <td className="py-2 text-center font-bold font-mono">{originalQty}</td>
-                            <td className="py-2 text-center">
-                              <input
-                                type="number"
-                                min="0"
-                                max={originalQty}
-                                value={row.QtyReturned}
-                                onChange={(e) => {
-                                  const updated = [...returnBasket];
-                                  updated[idx].QtyReturned = Math.min(originalQty, parseInt(e.target.value) || 0);
-                                  setReturnBasket(updated);
-                                }}
-                                className="w-12 text-center text-xs font-mono border border-slate-200 rounded bg-white p-1 focus:outline-none"
-                              />
-                            </td>
-                            <td className="py-2 text-right font-mono text-slate-600 font-bold">Rs. {row.PriceRef}</td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div>
-                  <label className="block text-xxs font-bold text-slate-500 uppercase">Return Reason / Internal remarks</label>
-                  <textarea
-                    placeholder=""
-                    required
-                    rows={2}
-                    value={returnRemarks}
-                    onChange={(e) => setReturnRemarks(e.target.value)}
-                    className="mt-1 w-full text-xs border border-slate-200 rounded-lg p-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={!canPost}
-                  className={`w-full py-2.5 rounded-lg text-xs font-bold text-white transition ${
-                    canPost ? 'bg-red-600 hover:bg-red-700 shadow-md shadow-red-600/10' : 'bg-slate-400 cursor-not-allowed'
-                  }`}
-                >
-                  Finalize Sales Return & Credit Refund Cash
-                </button>
-              </form>
-            )}
-          </div>
-
-          {/* Return ledger summary */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col h-[520px]">
-            <h3 className="text-sm font-bold text-slate-900 mb-3">Reversal Transaction Logs</h3>
-            <div className="flex-1 overflow-y-auto space-y-3">
-              {invoices.filter((inv) => inv.Status === 2).length === 0 ? (
-                <p className="text-xs text-slate-400 font-semibold text-center py-16">No posted invoices to reverse.</p>
-              ) : (
-                <p className="text-xxs text-slate-400 font-medium">Lookup returned items, check safety restock levels, or audit active cash box refunds here.</p>
-              )}
-            </div>
-          </div>
-
-        </div>
-      )}
-
-
-
-      {/* Stock Grid & Manager Tab */}
       {activeSubTab === 'inventory_manager' && (
         !canViewStock ? (
           <div className="bg-white p-8 rounded-2xl border border-slate-200 shadow-sm text-center max-w-xl mx-auto my-12 space-y-4 animate-fadeIn">
@@ -7105,7 +4835,8 @@ export default function PharmacyPOS({
                                       {(() => {
                                         const expSummary = getItemExpirySummary(itm);
                                         if (!expSummary.earliestExpDate && !itm.ExpDate) return null;
-                                        const displayExp = expSummary.earliestExpDate || itm.ExpDate;
+                                        const rawExp = expSummary.earliestExpDate || itm.ExpDate;
+                                        const displayExp = formatMonthYearDisplay(rawExp) || rawExp;
                                         
                                         if (expSummary.status === 'EXPIRED') {
                                           return (
@@ -7495,3147 +5226,228 @@ export default function PharmacyPOS({
       )}
 
       {/* Clinic Medicine Label Printer Tab */}
-      {activeSubTab === 'clinical_labels' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn" id="pos-clinical-labels-tab">
-          
-          {/* Left Column: Patients & Visits List */}
-          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-900 flex items-center border-b border-slate-100 pb-2">
-              <Search className="w-4 h-4 text-indigo-600 mr-2" />
-              Patient & Visit Selection
-            </h3>
-            
-            {/* Search Input */}
-            <div className="relative">
-              <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder=""
-                value={labelSearchQuery}
-                onChange={(e) => setLabelSearchQuery(e.target.value)}
-                className="w-full text-xs font-semibold border border-slate-300 rounded-lg pl-9 pr-3 py-2 focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-white"
-              />
-            </div>
+      {/* Invoice logs Tab */}
+      <PharmacyInvoiceLogsTab
+        activeSubTab={activeSubTab}
+        invoices={invoices}
+        invoiceDetails={invoiceDetails}
+        items={items}
+        patients={allKnownPatients}
+        selectedDailyReportDate={selectedDailyReportDate}
+        setSelectedDailyReportDate={setSelectedDailyReportDate}
+        salesReportPeriodMode={salesReportPeriodMode}
+        setSalesReportPeriodMode={setSalesReportPeriodMode}
+        salesReportStartDate={salesReportStartDate}
+        setSalesReportStartDate={setSalesReportStartDate}
+        salesReportEndDate={salesReportEndDate}
+        setSalesReportEndDate={setSalesReportEndDate}
+        handlePrintDailySalesReport={handlePrintDailySalesReport}
+        handlePrintA4Invoice={handlePrintA4Invoice}
+        handlePrintThermalReceipt={handlePrintThermalReceipt}
+        handleOpenInvoicePrintModal={handleOpenInvoicePrintModal}
+        onVoidInvoice={onVoidInvoice}
+        currentUser={currentUser}
+      />
 
-            {/* Patients List with Clinical Prescriptions */}
-            <div className="space-y-1.5 max-h-[300px] overflow-y-auto pr-1">
-              <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">
-                Patients with Clinical compounding prescriptions
-              </span>
-              {(() => {
-                const clinicalPatients = allKnownPatients.filter(p => {
-                  const pVisits = visits.filter(v => v.PatientID === p.PatientID);
-                  const searchLower = labelSearchQuery.toLowerCase();
-                  const matchesSearch = String(p.PatientName || '').toLowerCase().includes(searchLower) || String(p.PatientID || '').toLowerCase().includes(searchLower);
-                  
-                  if (labelSearchQuery.trim()) {
-                    return matchesSearch;
-                  }
-                  
-                  return pVisits.length > 0;
-                });
+      {/* Sales Returns Tab */}
+      <PharmacyReturnsTab
+        activeSubTab={activeSubTab}
+        salesReturns={salesReturns}
+        returnDetails={returnDetails}
+        returnSearchTerm={returnSearchTerm}
+        setReturnSearchTerm={setReturnSearchTerm}
+        returnDateFilter={returnDateFilter}
+        setReturnDateFilter={setReturnDateFilter}
+        isReturnSubmitting={isReturnSubmitting}
+        setIsReturnSubmitting={setIsReturnSubmitting}
+        items={items}
+        invoices={invoices}
+        invoiceDetails={invoiceDetails}
+        onAddSalesReturn={onAddSalesReturn}
+        currentUser={currentUser}
+      />
 
-                if (clinicalPatients.length === 0) {
-                  return (
-                    <div className="p-4 text-center text-xs text-slate-400 bg-slate-50 border border-dashed rounded-lg italic">
-                      No matching patients found.
-                    </div>
-                  );
-                }
-
-                return clinicalPatients.map((p, idx) => {
-                  const hasMeds = visits.filter(v => v.PatientID === p.PatientID).some(v => 
-                    getVisitMedicinesList(v).length > 0
-                  );
-
-                  return (
-                    <button
-                      key={`lbl-pt-${p.PatientID}-${idx}`}
-                      onClick={() => {
-                        setLabelPatientId(p.PatientID);
-                        // Auto-select latest visit if available
-                        const pVisits = visits
-                          .filter(v => v.PatientID === p.PatientID)
-                          .sort((a, b) => b.VisitDate.localeCompare(a.VisitDate));
-                        if (pVisits.length > 0) {
-                          setLabelVisitId(pVisits[0].VisitID);
-                        } else {
-                          setLabelVisitId('');
-                        }
-                      }}
-                      className={`w-full text-left p-3 rounded-xl border text-xs font-semibold transition cursor-pointer flex justify-between items-center ${
-                        labelPatientId === p.PatientID
-                          ? 'bg-indigo-50/80 border-indigo-300 text-indigo-900 shadow-xs'
-                          : 'bg-white border-slate-200 hover:bg-slate-50 text-slate-700'
-                      }`}
-                    >
-                      <div className="min-w-0 pr-2">
-                        <p className="font-extrabold uppercase truncate">{p.PatientName}</p>
-                        <p className="text-[10px] text-slate-400 font-mono truncate">ID: {p.PatientID} • {p.AgeYears || 0}Y • {p.Sex || 'N/A'}</p>
-                      </div>
-                      {hasMeds && (
-                        <span className="text-[9px] font-black uppercase tracking-wider px-1.5 py-0.5 rounded bg-indigo-100 text-indigo-800 shrink-0 font-mono">
-                          Rx Meds
-                        </span>
-                      )}
-                    </button>
-                  );
-                });
-              })()}
-            </div>
-
-            {/* Visits List */}
-            {labelPatientId && (
-              <div className="space-y-2 pt-2 border-t border-slate-100">
-                <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  Select Consultation Visit Date:
-                </span>
-                {(() => {
-                  const pVisits = visits
-                    .filter((v) => v.PatientID === labelPatientId)
-                    .sort((a, b) => b.VisitDate.localeCompare(a.VisitDate));
-
-                  if (pVisits.length === 0) {
-                    return (
-                      <p className="text-xs text-slate-400 italic">No visit history found.</p>
-                    );
-                  }
-
-                  return (
-                    <div className="space-y-1 max-h-[220px] overflow-y-auto pr-1">
-                      {pVisits.map((v) => {
-                        const hasMeds = getVisitMedicinesList(v).length > 0;
-                        return (
-                          <button
-                            key={v.VisitID}
-                            onClick={() => setLabelVisitId(v.VisitID)}
-                            className={`w-full text-left p-2.5 rounded-lg border text-xs transition cursor-pointer flex justify-between items-center ${
-                              labelVisitId === v.VisitID
-                                ? 'bg-indigo-600 text-white border-indigo-600 shadow-md shadow-indigo-600/10 font-bold'
-                                : 'bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700'
-                            }`}
-                          >
-                            <div className="min-w-0 pr-2">
-                              <p className="font-bold">{v.VisitDate}</p>
-                              <p className="text-[9px] opacity-70 font-mono leading-none mt-0.5 truncate">Visit ID: {v.VisitID}</p>
-                            </div>
-                            {hasMeds && (
-                              <span className={`text-[8px] font-black uppercase tracking-wider px-1 py-0.5 rounded shrink-0 font-mono ${
-                                labelVisitId === v.VisitID
-                                  ? 'bg-indigo-800 text-indigo-100'
-                                  : 'bg-indigo-50 border border-indigo-100 text-indigo-700'
-                              }`}>
-                                🧪 Prescribed
-                              </span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
-              </div>
-            )}
-
-          </div>
-
-          {/* Right Column: Prescribed Clinical Medicines Label Configuration & Live Sticker Preview */}
-          <div className="lg:col-span-2 bg-white p-5 rounded-xl border border-slate-200 shadow-sm space-y-4">
-            
-            {/* Header with Print-All option */}
-            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between border-b border-slate-100 pb-3 gap-2">
-              <h3 className="text-sm font-bold text-slate-900 flex items-center">
-                <Tag className="w-4 h-4 text-indigo-600 mr-2" />
-                Prescribed Medicines for Patient Label Printer
-              </h3>
-              {(() => {
-                const pat = allKnownPatients.find(p => p.PatientID === labelPatientId);
-                const vis = visits.find(v => v.VisitID === labelVisitId);
-                const cMeds = getVisitMedicinesList(vis || null);
-                
-                if (pat && vis && cMeds.length > 0) {
-                  return (
-                    <button
-                      onClick={() => {
-                        const labelsToPrint = cMeds.map(m => {
-                          const matchedItem = items.find(i => i.ItemID === m.ItemID);
-                          const name = matchedItem ? matchedItem.ItemName : m.MedicineDetail;
-                          const instructions = customLabelStates[m.ItemID]?.instructions ?? m.Dosage;
-                          const notes = customLabelStates[m.ItemID]?.notes ?? "Take as directed by the physician.";
-                          const qty = customLabelStates[m.ItemID]?.qty ?? String(m.Qty || 30);
-                          const expiry = customLabelStates[m.ItemID]?.expiry ?? (m.ExpireDate || "No Expiry Specified");
-                          
-                          return { name, instructions, notes, qty, expiry };
-                        });
-
-                        setLabelPrintData({
-                          patientName: pat.PatientName,
-                          patientAge: String(pat.AgeYears),
-                          patientSex: pat.Sex,
-                          visitDate: vis.VisitDate,
-                          visitId: vis.VisitID,
-                          medicines: labelsToPrint
-                        });
-                        setIsLabelPrintModalOpen(true);
-                      }}
-                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-lg flex items-center shadow-md shadow-indigo-600/10 self-start cursor-pointer transition"
-                    >
-                      <Printer className="w-3.5 h-3.5 mr-1.5" />
-                      Print All ({cMeds.length}) Labels for This Visit
-                    </button>
-                  );
-                }
-                return null;
-              })()}
-            </div>
-
-            {/* Medicines List */}
-            {(() => {
-              if (!labelPatientId || !labelVisitId) {
-                return (
-                  <div className="p-12 text-center text-slate-400 italic text-xs">
-                    Please select a Patient and a Visit Date from the left panel to load prescribed medicines.
-                  </div>
-                );
-              }
-
-              const pat = allKnownPatients.find(p => p.PatientID === labelPatientId);
-              const vis = visits.find(v => v.VisitID === labelVisitId);
-              const clinicalMeds = getVisitMedicinesList(vis || null);
-
-              if (clinicalMeds.length === 0) {
-                return (
-                  <div className="p-12 text-center text-slate-400 italic text-xs bg-slate-50 border border-dashed rounded-xl">
-                    No prescribed medicines found in this visit.
-                  </div>
-                );
-              }
-
-              return (
-                <div className="space-y-6">
-                  
-                  {/* Selected Patient Mini Header */}
-                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl flex flex-wrap justify-between gap-3 text-xs">
-                    <div className="space-y-0.5">
-                      <span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">Patient Name</span>
-                      <span className="font-extrabold text-slate-900 uppercase">{pat?.PatientName}</span>
-                      <span className="text-slate-500 block text-[10px]">ID: {pat?.PatientID} • {pat?.AgeYears} Years • {pat?.Sex}</span>
-                    </div>
-                    <div className="space-y-0.5 text-right">
-                      <span className="block text-[8px] font-black text-slate-400 uppercase tracking-wider">Prescribed Date</span>
-                      <span className="font-mono text-slate-800 font-bold">{vis?.VisitDate}</span>
-                      <span className="text-[10px] text-indigo-600 font-bold block">Visit ID: {vis?.VisitID}</span>
-                    </div>
-                  </div>
-
-                  {/* Individual Med Label Customizer & Preview Grid */}
-                  <div className="space-y-6">
-                    {clinicalMeds.map((m, idx) => {
-                      const matchedItem = items.find((i) => i.ItemID === m.ItemID);
-                      const medicineName = matchedItem ? matchedItem.ItemName : m.MedicineDetail;
-                      
-                      // Fallback-safe customized label state
-                      const instructionsValue = customLabelStates[m.ItemID]?.instructions ?? m.Dosage;
-                      const notesValue = customLabelStates[m.ItemID]?.notes ?? "Take as directed by the physician.";
-                      const qtyValue = customLabelStates[m.ItemID]?.qty ?? String(m.Qty || 30);
-                      const expiryValue = customLabelStates[m.ItemID]?.expiry ?? (m.ExpireDate || "No Expiry Specified");
-
-                      const updateLabelState = (key: 'instructions' | 'notes' | 'qty' | 'expiry', val: string) => {
-                        setCustomLabelStates(prev => {
-                          const existing = prev[m.ItemID] || {
-                            instructions: m.Dosage,
-                            notes: "Take as directed by the physician.",
-                            qty: String(m.Qty || 30),
-                            expiry: m.ExpireDate || ""
-                          };
-                          return {
-                            ...prev,
-                            [m.ItemID]: {
-                              ...existing,
-                              [key]: val
-                            }
-                          };
-                        });
-                      };
-
-                      return (
-                        <div key={`${m.ItemID}-${idx}`} className="p-4 bg-slate-50/60 border border-slate-200 rounded-2xl flex flex-col xl:flex-row gap-5">
-                          
-                          {/* Label Settings/Configuration Panel */}
-                          <div className="flex-1 space-y-3.5">
-                            <div className="flex items-center justify-between border-b border-slate-200/60 pb-2">
-                              <span className="font-extrabold text-slate-900 uppercase text-xs truncate max-w-[200px]">
-                                {medicineName}
-                              </span>
-                              <span className="text-[8px] font-black bg-indigo-50 border border-indigo-150 px-1.5 py-0.5 rounded text-indigo-700 uppercase tracking-wider">
-                                Clinical Compounded
-                              </span>
-                            </div>
-
-                            {/* Inputs */}
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
-                              <div className="space-y-1 sm:col-span-2">
-                                <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider">
-                                  Usage Instructions (Dosage)
-                                </label>
-                                <textarea
-                                  rows={2}
-                                  value={instructionsValue}
-                                  onChange={(e) => updateLabelState('instructions', e.target.value)}
-                                  placeholder=""
-                                  className="w-full text-xs font-semibold border border-slate-200 rounded-lg p-2 focus:outline-none focus:border-indigo-500 bg-white"
-                                />
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider">
-                                  Prescribed Quantity
-                                </label>
-                                <input
-                                  type="text"
-                                  value={qtyValue}
-                                  onChange={(e) => updateLabelState('qty', e.target.value)}
-                                  placeholder=""
-                                  className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 bg-white"
-                                />
-                              </div>
-
-                              <div className="space-y-1">
-                                <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider">
-                                  Sticker Expiry Date
-                                </label>
-                                <input
-                                  type="text"
-                                  value={expiryValue}
-                                  onChange={(e) => updateLabelState('expiry', e.target.value)}
-                                  placeholder=""
-                                  className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 bg-white font-mono"
-                                />
-                              </div>
-
-                              <div className="space-y-1 sm:col-span-2">
-                                <label className="block text-[9px] font-black text-slate-500 uppercase tracking-wider">
-                                  Special Warnings / Notes
-                                </label>
-                                <input
-                                  type="text"
-                                  value={notesValue}
-                                  onChange={(e) => updateLabelState('notes', e.target.value)}
-                                  placeholder=""
-                                  className="w-full text-xs font-semibold border border-slate-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-500 bg-white"
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Live Sticker Preview Panel - 3-Line Simple Label Format */}
-                          <div className="w-full xl:w-[280px] shrink-0 flex flex-col justify-between bg-white border border-slate-300 rounded-xl p-4 text-slate-900 min-h-[180px]">
-                            <div className="space-y-2 text-xs font-sans">
-                              <div className="border-b border-slate-100 pb-1.5 mb-2">
-                                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">3-Line Label Preview</span>
-                              </div>
-                              <div className="font-bold text-slate-900 text-xs">
-                                <span>Patient Name: </span>
-                                <span className="font-extrabold text-slate-900">{pat?.PatientName}</span>
-                              </div>
-                              <div className="font-bold text-slate-900 text-xs">
-                                <span>Medicine Usage: </span>
-                                <span className="font-extrabold text-indigo-700">{instructionsValue || "Take as directed"}</span>
-                              </div>
-                              <div className="font-bold text-slate-900 text-xs">
-                                <span>Expire Date: </span>
-                                <span className="font-extrabold text-slate-800 font-mono">{expiryValue || "N/A"}</span>
-                              </div>
-                            </div>
-
-                            {/* Print Trigger Button */}
-                            <div className="mt-4 pt-2 border-t border-slate-100">
-                              <button
-                                onClick={() => {
-                                  setLabelPrintData({
-                                    patientName: pat?.PatientName || "Unknown",
-                                    patientAge: String(pat?.AgeYears || ""),
-                                    patientSex: pat?.Sex || "Male",
-                                    visitDate: vis?.VisitDate || "",
-                                    visitId: vis?.VisitID || "",
-                                    medicines: [{
-                                      name: medicineName,
-                                      instructions: instructionsValue,
-                                      notes: notesValue,
-                                      qty: qtyValue,
-                                      expiry: expiryValue
-                                    }]
-                                  });
-                                  setIsLabelPrintModalOpen(true);
-                                }}
-                                className="w-full py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center justify-center transition shadow-xs cursor-pointer"
-                              >
-                                <Printer className="w-3.5 h-3.5 mr-1.5" />
-                                Print Label (3 Lines)
-                              </button>
-                            </div>
-
-                          </div>
-
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                </div>
-              );
-            })()}
-
-          </div>
-
-        </div>
-      )}
+      {/* Clinical Medicine Sticker Labels Tab */}
+      <PharmacyClinicalLabelsTab
+        activeSubTab={activeSubTab}
+        labelPatientId={labelPatientId}
+        setLabelPatientId={setLabelPatientId}
+        labelVisitId={labelVisitId}
+        setLabelVisitId={setLabelVisitId}
+        labelSearchQuery={labelSearchQuery}
+        setLabelSearchQuery={setLabelSearchQuery}
+        customLabelStates={customLabelStates}
+        setCustomLabelStates={setCustomLabelStates}
+        allKnownPatients={allKnownPatients}
+        visits={visits}
+        visitMedicines={visitMedicines}
+        items={items}
+        getVisitMedicinesList={getVisitMedicinesList}
+        setIsLabelPrintModalOpen={setIsLabelPrintModalOpen}
+        setLabelPrintData={setLabelPrintData}
+      />
 
       {/* Clinical Medicine Sticker Label Print-Preview Modal Overlay */}
-      {isLabelPrintModalOpen && labelPrintData && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-[9999] overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[90vh] flex flex-col print:shadow-none print:border-0 print:max-h-full print:w-full print:rounded-none">
-            
-            {/* Dynamic Sticker Print Style Injector */}
-            <style dangerouslySetInnerHTML={{ __html: `
-              @media print {
-                @page {
-                  size: A4;
-                  margin: 10mm;
-                }
-                body * {
-                  visibility: hidden !important;
-                }
-                #sticker-print-container, #sticker-print-container * {
-                  visibility: visible !important;
-                }
-                #sticker-print-container {
-                  position: absolute !important;
-                  left: 10mm !important;
-                  top: 10mm !important;
-                  width: 100% !important;
-                  padding: 0 !important;
-                  box-shadow: none !important;
-                  border: none !important;
-                }
-                .label-grid-page {
-                  display: grid !important;
-                  grid-template-columns: 2in 2in !important;
-                  column-gap: 2in !important;
-                  row-gap: 0.25in !important;
-                  page-break-inside: avoid !important;
-                  page-break-after: always !important;
-                  margin-bottom: 10mm !important;
-                }
-                .label-grid-page:last-child {
-                  page-break-after: avoid !important;
-                }
-                .label-sticker-page {
-                  width: 2in !important;
-                  min-height: 0.2in !important;
-                  max-width: 2in !important;
-                  box-sizing: border-box !important;
-                  margin: 0 !important;
-                  box-shadow: none !important;
-                  border: 1px dashed #475569 !important;
-                  border-radius: 3px !important;
-                  padding: 2px 4px !important;
-                  color: #000000 !important;
-                }
-              }
-            ` }} />
-
-            {/* Modal Controls (Hidden in Print) */}
-            <div className="p-4 border-b border-slate-150 flex flex-wrap items-center justify-between gap-2 bg-slate-50 rounded-t-2xl print:hidden shrink-0">
-              <div className="flex items-center space-x-2">
-                <Tag className="w-5 h-5 text-indigo-600 shrink-0" />
-                <div>
-                  <span className="text-sm font-bold text-slate-900 block">Medicine Label Printer (2" x 0.2" - 2x2 Grid Layout on A4)</span>
-                  <span className="text-xxs text-slate-500 font-semibold">2 Columns x 2 Rows Layout (2" Space Between Columns, Max 4 Labels Per Page)</span>
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => handleCleanLabelPrint('2x0.2')}
-                  className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center shadow-md transition cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5 mr-1" />
-                  Print 2x2 Grid Labels (A4)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsLabelPrintModalOpen(false);
-                    setLabelPrintData(null);
-                  }}
-                  className="px-3 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-[10px] rounded-lg transition"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            {/* Print Area */}
-            <div className="flex-1 overflow-y-auto p-6 bg-slate-100 print:bg-white flex flex-col items-center" id="sticker-print-container">
-              {Array.from({ length: Math.ceil(labelPrintData.medicines.length / 4) }).map((_, pageIdx) => {
-                const pageMeds = labelPrintData.medicines.slice(pageIdx * 4, pageIdx * 4 + 4);
-                return (
-                  <div key={pageIdx} className="label-grid-page grid grid-cols-2 gap-x-[2in] gap-y-4 p-4 bg-white border border-dashed border-slate-300 rounded-xl mb-6 print:mb-0 print:border-none print:p-0 print:page-break-after-always">
-                    {pageMeds.map((med, idx) => (
-                      <div key={idx} className="label-sticker-page bg-white border border-slate-300 rounded shadow-xs w-[2in] max-w-[2in] min-h-[0.2in] p-1 font-sans text-slate-900 flex flex-col justify-start text-[9px] leading-tight box-border space-y-0">
-                        <div className="font-bold text-[9px] m-0 p-0 truncate">
-                          <span className="text-slate-500">Patient: </span>
-                          <strong className="text-slate-900 font-black">{labelPrintData.patientName}</strong>
-                        </div>
-                        <div className="font-bold text-[9px] m-0 p-0 truncate">
-                          <span className="text-slate-500">Usage: </span>
-                          <strong className="text-slate-900 font-black">{med.instructions || "As directed"}</strong>
-                        </div>
-                        <div className="font-bold text-[9px] m-0 p-0 truncate flex justify-between items-center">
-                          <span>Exp: <strong className="font-black text-slate-900">{med.expiry || "N/A"}</strong></span>
-                          <span className="text-[7px] text-slate-400 font-mono">2"x0.2"</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                );
-              })}
-            </div>
-
-          </div>
-        </div>
-      )}
+      <PharmacyLabelPrintModal
+        isLabelPrintModalOpen={isLabelPrintModalOpen}
+        setIsLabelPrintModalOpen={setIsLabelPrintModalOpen}
+        labelPrintData={labelPrintData}
+        clinicSettings={clinicSettings}
+      />
 
       {/* Pharmacy Invoice Print-Preview Modal Overlay (Supports A4 & Thermal POS Receipt) */}
-      {printModalOpen && printBillData && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-[9999] overflow-y-auto animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-2xl w-full max-h-[92vh] flex flex-col overflow-hidden">
-            
-            {/* Modal Controls Header */}
-            <div className="p-4 border-b border-slate-150 flex flex-col sm:flex-row sm:items-center justify-between bg-slate-50 gap-3 shrink-0">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg shrink-0">
-                  <Printer className="w-5 h-5" />
-                </div>
-                <div>
-                  <div className="flex items-center space-x-2">
-                    <span className="text-sm font-bold text-slate-900 block">Print Invoice / Receipt</span>
-                    <span className="px-1.5 py-0.5 bg-blue-100 text-blue-800 font-mono font-bold text-[10px] rounded">
-                      {printBillData.invoiceNo}
-                    </span>
-                  </div>
-                  <span className="text-xxs text-slate-500 font-medium">Select output format: Standard A4 printer vs 80mm Thermal Receipt</span>
-                </div>
-              </div>
-
-              {/* Format Toggle & Action Buttons */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex rounded-lg border border-slate-200 p-0.5 bg-white text-[11px] font-bold">
-                  <button
-                    type="button"
-                    onClick={() => setPrintModalFormat('a4')}
-                    className={`px-2.5 py-1 rounded-md transition flex items-center space-x-1 cursor-pointer ${printModalFormat === 'a4' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                  >
-                    <FileText className="w-3 h-3" />
-                    <span>A4 Size</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPrintModalFormat('thermal')}
-                    className={`px-2.5 py-1 rounded-md transition flex items-center space-x-1 cursor-pointer ${printModalFormat === 'thermal' ? 'bg-emerald-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'}`}
-                  >
-                    <Receipt className="w-3 h-3" />
-                    <span>80mm Thermal</span>
-                  </button>
-                </div>
-
-                {printModalFormat === 'a4' ? (
-                  <button
-                    type="button"
-                    onClick={() => handlePrintA4Invoice(printBillData)}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    <span>🖨️ Print A4 Invoice</span>
-                  </button>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => handlePrintThermalReceipt(printBillData)}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
-                  >
-                    <Receipt className="w-3.5 h-3.5" />
-                    <span>🧾 Print Customer Receipt (Thermal)</span>
-                  </button>
-                )}
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPrintModalOpen(false);
-                    setPrintBillData(null);
-                  }}
-                  className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-lg transition cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            {/* Live Interactive Preview Container */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-100 flex justify-center">
-              {printModalFormat === 'a4' ? (
-                /* A4 Sheet Preview */
-                <div className="bg-white border-2 border-slate-900 rounded-lg shadow-md w-full max-w-xl p-5 text-slate-800 text-xs font-sans space-y-4">
-                  {/* A4 Header */}
-                  <div className="flex items-center justify-between border-b-2 border-slate-900 pb-3">
-                    <div>
-                      <h2 className="text-base font-black text-indigo-950 uppercase tracking-tight">
-                        {clinicSettings?.ClinicName || "PUNJAB HOMEOPATHIC CLINIC & PHARMACY"}
-                      </h2>
-                      <p className="text-[10px] text-slate-500 font-medium">
-                        {clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore"} • Ph: {clinicSettings?.PhoneNo || "042-3111222"}
-                      </p>
-                    </div>
-                    <div className="text-right">
-                      <span className="inline-block bg-slate-900 text-white text-[10px] font-black px-2.5 py-1 rounded uppercase tracking-wider">
-                        A4 OFFICIAL INVOICE
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Metadata Boxes */}
-                  <div className="grid grid-cols-2 gap-3 text-xxs">
-                    <div className="bg-slate-50 p-2.5 rounded border border-slate-200 space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-semibold">Invoice No:</span>
-                        <strong className="text-slate-950 font-mono">{printBillData.invoiceNo}</strong>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-semibold">Date:</span>
-                        <strong className="text-slate-900">{printBillData.invoiceDate}</strong>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-semibold">Operational Shift:</span>
-                        <strong className="text-slate-900">{printBillData.shift === 1 ? 'Morning Shift (1)' : 'Evening Shift (2)'}</strong>
-                      </div>
-                    </div>
-
-                    <div className="bg-slate-50 p-2.5 rounded border border-slate-200 space-y-1">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-semibold">Patient/Customer:</span>
-                        <strong className="text-slate-950 truncate max-w-[130px]">{printBillData.patient ? printBillData.patient.PatientName : "Walk-in Guest"}</strong>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-semibold">Patient ID:</span>
-                        <strong className="text-slate-900 font-mono">{printBillData.patient ? printBillData.patient.PatientID : "WALK-IN"}</strong>
-                      </div>
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-semibold">Status:</span>
-                        <strong className="text-emerald-700">PAID IN CASH</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Table */}
-                  <div className="border border-slate-200 rounded overflow-hidden">
-                    <table className="w-full text-left text-xxs">
-                      <thead className="bg-slate-900 text-white font-bold uppercase">
-                        <tr>
-                          <th className="p-2 w-8 text-center">#</th>
-                          <th className="p-2">Item Description</th>
-                          <th className="p-2 w-12 text-center">Qty</th>
-                          <th className="p-2 w-20 text-right">Rate</th>
-                          <th className="p-2 w-24 text-right">Net Amount</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {printBillData.basket.map((b, idx) => {
-                          const item = items.find(i => i.ItemID === b.ItemID);
-                          const lineTotal = b.Qty * b.Price;
-                          return (
-                            <tr key={idx} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'}>
-                              <td className="p-2 text-center font-bold text-slate-400">{idx + 1}</td>
-                              <td className="p-2">
-                                <strong className="text-slate-900 block text-xs">{item ? item.ItemName : b.ItemID}</strong>
-                                <span className="text-[10px] text-indigo-600 font-semibold">{item?.Category || (b.MedicineType === 'C' ? 'Clinical' : (item?.Unit || 'Patent'))}</span>
-                              </td>
-                              <td className="p-2 text-center font-bold font-mono">{b.Qty}</td>
-                              <td className="p-2 text-right font-mono">Rs. {b.Price.toFixed(0)}</td>
-                              <td className="p-2 text-right font-bold font-mono text-slate-950">Rs. {lineTotal.toLocaleString()}</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  {/* Bottom Financial Summary & Notes */}
-                  <div className="grid grid-cols-2 gap-3 pt-2">
-                    <div className="text-xxs text-slate-500 space-y-1">
-                      <strong className="text-slate-800 uppercase block font-bold">Policy & Instructions:</strong>
-                      <p>• Returns accepted within 3 days with this invoice.</p>
-                      <p>• Clinical & opened medicines non-returnable.</p>
-                      <p className="italic text-indigo-900 font-semibold mt-1">In Words: {convertNumberToWords(printBillData.netAmount)}</p>
-                    </div>
-
-                    <div className="bg-slate-50 p-2.5 rounded border border-slate-900 space-y-1 text-xxs">
-                      <div className="flex justify-between">
-                        <span className="text-slate-500 font-semibold">Subtotal:</span>
-                        <strong className="font-mono">Rs. {printBillData.basket.reduce((sum, item) => sum + item.Qty * item.Price, 0).toLocaleString()}</strong>
-                      </div>
-                      {printBillData.discount > 0 && (
-                        <div className="flex justify-between text-red-600">
-                          <span className="font-semibold">Discount:</span>
-                          <strong className="font-mono">- Rs. {printBillData.discount.toLocaleString()}</strong>
-                        </div>
-                      )}
-                      <div className="flex justify-between border-t-2 border-slate-900 pt-1.5 text-xs font-black text-emerald-800">
-                        <span>NET PAYABLE:</span>
-                        <span className="font-mono text-sm">Rs. {printBillData.netAmount.toLocaleString()}</span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Signature block */}
-                  <div className="flex justify-between pt-6 border-t border-slate-200 text-xxs font-bold text-slate-600">
-                    <div className="text-center w-32 border-t border-slate-800 pt-1">
-                      Duty Pharmacist
-                    </div>
-                    <div className="text-center font-mono text-xs font-black tracking-widest text-slate-400">
-                      * {printBillData.invoiceNo} *
-                    </div>
-                    <div className="text-center w-32 border-t border-slate-800 pt-1">
-                      Customer Signature
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                /* Thermal 80mm Receipt Preview */
-                <div className="bg-white border border-slate-300 rounded shadow-md max-w-xs w-full p-4 font-mono text-xs text-black space-y-3">
-                  <div className="text-center space-y-1">
-                    <h3 className="font-bold text-xs uppercase">{clinicSettings?.ClinicName || "PUNJAB CLINIC & PHARMACY"}</h3>
-                    <p className="text-[10px]">{clinicSettings?.Address || "Mall Road, Lahore"}</p>
-                    <p className="text-[10px]">Ph: {clinicSettings?.PhoneNo || "042-3111222"}</p>
-                    <div className="border-t border-b border-black py-0.5 my-1 font-bold text-[11px]">
-                      *** CUSTOMER RECEIPT ***
-                    </div>
-                  </div>
-
-                  <div className="space-y-0.5 text-xxs">
-                    <div className="flex justify-between">
-                      <span>Inv #:</span>
-                      <strong className="font-bold">{printBillData.invoiceNo}</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Date:</span>
-                      <span>{printBillData.invoiceDate}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Customer:</span>
-                      <strong className="truncate max-w-[130px]">{printBillData.patient ? printBillData.patient.PatientName : "Walk-in Customer"}</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span>Shift:</span>
-                      <span>{printBillData.shift === 1 ? 'Morning (1)' : 'Evening (2)'}</span>
-                    </div>
-                  </div>
-
-                  <div className="border-t border-dashed border-black pt-1 space-y-1 text-xxs">
-                    <div className="flex justify-between font-bold border-b border-dashed border-black pb-1">
-                      <span>ITEM</span>
-                      <span className="w-10 text-center">QTY</span>
-                      <span className="w-16 text-right">TOTAL</span>
-                    </div>
-                    {printBillData.basket.map((b, idx) => {
-                      const itm = items.find(i => i.ItemID === b.ItemID);
-                      const lineTotal = b.Qty * b.Price;
-                      return (
-                        <div key={idx} className="space-y-0.5">
-                          <div className="font-bold truncate">{itm ? itm.ItemName : b.ItemID}</div>
-                          <div className="flex justify-between text-slate-600">
-                            <span>@ Rs. {b.Price.toFixed(0)}</span>
-                            <span className="w-10 text-center font-bold text-black">{b.Qty}</span>
-                            <span className="w-16 text-right font-bold text-black">Rs. {lineTotal.toLocaleString()}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-
-                  <div className="border-t border-dashed border-black pt-1 space-y-0.5 text-xxs">
-                    <div className="flex justify-between">
-                      <span>Subtotal:</span>
-                      <span>Rs. {printBillData.basket.reduce((sum, item) => sum + item.Qty * item.Price, 0).toLocaleString()}</span>
-                    </div>
-                    {printBillData.discount > 0 && (
-                      <div className="flex justify-between text-red-600">
-                        <span>Discount:</span>
-                        <span>- Rs. {printBillData.discount.toLocaleString()}</span>
-                      </div>
-                    )}
-                    <div className="flex justify-between font-bold text-sm border-t border-b border-black py-1 my-1">
-                      <span>TOTAL:</span>
-                      <span>Rs. {printBillData.netAmount.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-[10px]">
-                      <span>Paid:</span>
-                      <strong>CASH (POSTED)</strong>
-                    </div>
-                  </div>
-
-                  <div className="text-center pt-2 space-y-1 text-xxs">
-                    <div className="tracking-widest font-bold">||| {printBillData.invoiceNo} |||</div>
-                    <div className="border-t border-dashed border-black pt-1 text-[9px] text-slate-700">
-                      Returns accepted within 3 days with receipt.<br/>
-                      <strong>* THANK YOU & GET WELL SOON *</strong>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-
-          </div>
-        </div>
-      )}
+      <PharmacyPrintInvoiceModal
+        printModalOpen={printModalOpen}
+        setPrintModalOpen={setPrintModalOpen}
+        printBillData={printBillData}
+        printModalFormat={printModalFormat}
+        setPrintModalFormat={setPrintModalFormat}
+        handlePrintA4Invoice={handlePrintA4Invoice}
+        handlePrintThermalReceipt={handlePrintThermalReceipt}
+        items={items}
+        clinicSettings={clinicSettings}
+      />
 
       {/* Dynamic Vendor Directory & Grid-View Modal */}
-      {isVendorModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-fadeIn font-sans" id="vendor-directory-modal">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
-            
-            {/* Modal Header */}
-            <div className="p-5 border-b border-slate-150 flex items-center justify-between bg-slate-50 shrink-0">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                  <Database className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-950">Supplier & Vendor Registry</h3>
-                  <p className="text-[11px] text-slate-500 font-medium">Manage and register active pharmaceutical supply partners</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsVendorModalOpen(false);
-                  resetSupplierForm();
-                }}
-                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-full transition cursor-pointer font-bold"
-              >
-                ✕
-              </button>
-            </div>
-
-            {/* Modal Content - Split layout */}
-            <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-12 gap-6">
-              
-              {/* Left Column: Form to Add/Edit (5 cols) */}
-              <div className="md:col-span-5 bg-slate-50 p-5 rounded-2xl border border-slate-200 h-fit space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-150 pb-2">
-                  <h4 className="text-xs font-bold text-slate-900 uppercase">
-                    {editingSupplier ? '✏️ Modify Vendor Specifications' : '➕ Register New Vendor'}
-                  </h4>
-                  {editingSupplier && (
-                    <button
-                      type="button"
-                      onClick={resetSupplierForm}
-                      className="text-[10px] font-bold text-blue-600 hover:text-blue-800 transition uppercase"
-                    >
-                      New Vendor
-                    </button>
-                  )}
-                </div>
-
-                {vendorSuccessMsg && (
-                  <div className="p-2.5 bg-emerald-50 border border-emerald-100 text-emerald-700 text-xxs font-bold rounded-lg">
-                    ✅ {vendorSuccessMsg}
-                  </div>
-                )}
-
-                {vendorErrorMsg && (
-                  <div className="p-2.5 bg-rose-50 border border-rose-100 text-rose-700 text-xxs font-bold rounded-lg">
-                    ⚠️ {vendorErrorMsg}
-                  </div>
-                )}
-
-                <form onSubmit={handleSaveSupplier} className="space-y-3 text-xs">
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Vendor/Supplier ID</label>
-                    <input
-                      type="text"
-                      placeholder=""
-                      disabled={!!editingSupplier}
-                      value={supplierFormId}
-                      onChange={(e) => setSupplierFormId(e.target.value)}
-                      className={`mt-1 w-full text-xs border rounded-lg p-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none font-mono ${
-                        editingSupplier ? 'bg-slate-100 border-slate-200 text-slate-500 cursor-not-allowed font-bold' : 'bg-white border-slate-200'
-                      }`}
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Vendor Name *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder=""
-                      value={supplierFormName}
-                      onChange={(e) => setSupplierFormName(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none font-semibold"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Contact Phone</label>
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={supplierFormPhone}
-                      onChange={(e) => setSupplierFormPhone(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none font-mono"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Corporate Address</label>
-                    <textarea
-                      rows={2}
-                      placeholder=""
-                      value={supplierFormAddress}
-                      onChange={(e) => setSupplierFormAddress(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <button
-                    type="submit"
-                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg shadow-md hover:shadow-emerald-600/10 transition text-xs cursor-pointer"
-                  >
-                    {editingSupplier ? 'Update Supplier' : 'Save Supplier'}
-                  </button>
-
-                  {editingSupplier && (
-                    <button
-                      type="button"
-                      onClick={resetSupplierForm}
-                      className="w-full py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold rounded-lg transition text-xs cursor-pointer"
-                    >
-                      Cancel Editing
-                    </button>
-                  )}
-                </form>
-              </div>
-
-              {/* Right Column: Interactive Grid View (7 cols) */}
-              <div className="md:col-span-7 flex flex-col h-[420px]">
-                <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-2.5">
-                  Supplier Directory Grid-View ({suppliers.length})
-                </h4>
-                
-                <div className="flex-1 overflow-y-auto border border-slate-150 rounded-2xl bg-white">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="sticky top-0 bg-slate-50 border-b border-slate-150 z-10">
-                      <tr className="text-slate-400 uppercase text-xxs font-bold">
-                        <th className="p-3">ID</th>
-                        <th className="p-3">Vendor Name</th>
-                        <th className="p-3">Phone</th>
-                        <th className="p-3 text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                      {suppliers.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="p-8 text-center text-slate-400 font-semibold">
-                            No vendors registered in directory.
-                          </td>
-                        </tr>
-                      ) : (
-                        suppliers.map((sup) => (
-                          <tr key={sup.SID} className="hover:bg-slate-50/50">
-                            <td className="p-3 font-mono text-xxs font-bold text-slate-400">{sup.SID}</td>
-                            <td className="p-3">
-                              <span className="font-bold text-slate-900 block text-xs">{sup.SupplierName}</span>
-                              <span className="text-[10px] text-slate-400 block max-w-xs truncate font-normal" title={sup.Address}>
-                                {sup.Address || 'No Address'}
-                              </span>
-                            </td>
-                            <td className="p-3 font-mono text-slate-600 text-[11px]">{sup.Phone || 'N/A'}</td>
-                            <td className="p-3 text-right space-x-1 whitespace-nowrap">
-                              <button
-                                type="button"
-                                onClick={() => handleSelectEditSupplier(sup)}
-                                className="px-2.5 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 hover:text-blue-800 text-[10px] font-bold rounded transition cursor-pointer"
-                              >
-                                Edit
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteSupplier(sup.SID)}
-                                className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-700 text-[10px] font-bold rounded transition cursor-pointer"
-                              >
-                                Delete
-                              </button>
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 border-t border-slate-150 bg-slate-50 flex justify-end shrink-0">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsVendorModalOpen(false);
-                  resetSupplierForm();
-                }}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-lg transition cursor-pointer"
-              >
-                Close Directory
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* Pop-up modal for Patent Sourcing Decision */}
-      {showPatentSourcingModal && selectedPatientId && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[10000] p-4 animate-fadeIn font-sans">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full p-6 space-y-5 animate-scaleIn">
-            <div className="flex items-start space-x-3.5">
-              <div className="p-2.5 bg-emerald-50 text-emerald-600 rounded-xl shrink-0">
-                <FileText className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide">Patent Sourcing Selection</h3>
-                <p className="text-xxs text-slate-500 font-semibold mt-0.5 uppercase tracking-wide">
-                  Patient ID: {selectedPatientId} • {patients.find(p => p.PatientID === selectedPatientId)?.PatientName}
-                </p>
-              </div>
-            </div>
-
-            <div className="space-y-3 pt-1">
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Please decide the sourcing logistics for any prescribed <strong className="text-slate-900">patent (brand-name) medicines</strong> for this patient.
-              </p>
-
-              <div className="grid grid-cols-1 gap-3 pt-1">
-                {/* Option A: Clinic Stock */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPatientSourcingOption('Clinic');
-                    // Modify the visit object directly in-place so all downstream modules update dynamically
-                    if (latestVisit) {
-                      latestVisit.PatentPaymentOption = 'Clinic';
-                    }
-                    setShowPatentSourcingModal(false);
-                  }}
-                  className={`p-3.5 rounded-xl border text-left flex items-start space-x-3 transition duration-150 cursor-pointer ${
-                    patientSourcingOption === 'Clinic'
-                      ? 'border-emerald-500 bg-emerald-50/50 hover:bg-emerald-50'
-                      : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                    patientSourcingOption === 'Clinic' ? 'border-emerald-600 bg-emerald-600 text-white' : 'border-slate-300'
-                  }`}>
-                    {patientSourcingOption === 'Clinic' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </div>
-                  <div>
-                    <span className="block text-xs font-bold text-slate-900">Clinic Stock (Clinic Sourced)</span>
-                    <span className="block text-xxs text-slate-500 mt-0.5">Sourced and billed directly inside Punjab Health Clinic terminal.</span>
-                  </div>
-                </button>
-
-                {/* Option B: Outside Rx */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    setPatientSourcingOption('Outside');
-                    // Modify the visit object directly in-place so all downstream modules update dynamically
-                    if (latestVisit) {
-                      latestVisit.PatentPaymentOption = 'Outside';
-                    }
-                    setShowPatentSourcingModal(false);
-                  }}
-                  className={`p-3.5 rounded-xl border text-left flex items-start space-x-3 transition duration-150 cursor-pointer ${
-                    patientSourcingOption === 'Outside'
-                      ? 'border-indigo-500 bg-indigo-50/50 hover:bg-indigo-50'
-                      : 'border-slate-200 hover:border-slate-300 bg-slate-50/50 hover:bg-slate-50'
-                  }`}
-                >
-                  <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 ${
-                    patientSourcingOption === 'Outside' ? 'border-indigo-600 bg-indigo-600 text-white' : 'border-slate-300'
-                  }`}>
-                    {patientSourcingOption === 'Outside' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                  </div>
-                  <div>
-                    <span className="block text-xs font-bold text-slate-900">Outside Rx (External Sourced)</span>
-                    <span className="block text-xxs text-slate-500 mt-0.5">Patent medicines are bought externally. Do not bill them here.</span>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between border-t border-slate-100 pt-4 text-xxs font-bold text-slate-400 uppercase tracking-widest">
-              <span>Selected: {patientSourcingOption === 'Clinic' ? 'Clinic Stock' : 'Outside Rx'}</span>
-              <button
-                type="button"
-                onClick={() => setShowPatentSourcingModal(false)}
-                className="px-4 py-2 bg-slate-950 text-white hover:bg-slate-800 text-xxs font-black uppercase rounded-lg transition"
-              >
-                Confirm Decision
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Pop-up modal box for Add / Edit Medicine */}
-      {isAddMedicineModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center z-[9999] p-4 animate-fadeIn font-sans" id="add-medicine-modal">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-lg w-full max-h-[85vh] flex flex-col overflow-hidden">
-            
-            {/* Modal Header */}
-            <div className="p-4 border-b border-slate-150 flex items-center justify-between bg-slate-50 shrink-0">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
-                  <Database className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-950">
-                    {editingItem ? `Edit Medicine: ${editingItem.ItemID}` : 'Add New Medicine to Inventory'}
-                  </h3>
-                  <p className="text-[11px] text-slate-500 font-medium">
-                    {editingItem ? 'Modify unit cost, retail price, minimum threshold, or stock level.' : 'Enter new medicine parameters, category dropdown, and initial stock.'}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={resetItemForm}
-                className="text-slate-400 hover:text-slate-600 p-1.5 hover:bg-slate-100 rounded-full transition cursor-pointer font-bold"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Form Body */}
-            <form onSubmit={handleSaveItem} className="p-5 overflow-y-auto flex-1 space-y-3.5 text-xs">
-              {invErrorMsg && (
-                <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg font-semibold border border-red-100 flex items-center">
-                  <AlertCircle className="w-4 h-4 mr-2 shrink-0 text-red-500" />
-                  {invErrorMsg}
-                </div>
-              )}
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Item ID *</label>
-                  <input
-                    type="text"
-                    required
-                    disabled={!!editingItem}
-                    placeholder=""
-                    value={itemFormId}
-                    onChange={(e) => setItemFormId(e.target.value.toUpperCase())}
-                    className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 font-mono disabled:bg-slate-50 disabled:text-slate-500 border-slate-200 text-slate-900 font-bold"
-                  />
-                  {!editingItem && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setItemFormId(getAutoNextItemId(items));
-                      }}
-                      className="text-[9px] text-indigo-600 font-extrabold mt-1 hover:underline text-left block"
-                    >
-                      + Auto-Generate ID ({getAutoNextItemId(items)})
-                    </button>
-                  )}
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Medicine Type</label>
-                  <select
-                    value={itemFormMedicineType}
-                    onChange={(e) => setItemFormMedicineType(e.target.value as 'C' | 'P')}
-                    className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-200 font-semibold bg-white text-slate-900"
-                  >
-                    <option value="P">Patent Medicine (/P)</option>
-                    <option value="C">Clinical Compounding (/C)</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Medicine / Item Name *</label>
-                <input
-                  type="text"
-                  required
-                  placeholder=""
-                  value={itemFormName}
-                  onChange={(e) => setItemFormName(e.target.value)}
-                  className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-200 font-bold text-slate-900"
-                />
-              </div>
-
-
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">
-                    Medicine Category Dropdown *
-                  </label>
-                  <div className="space-y-1">
-                    <select
-                      value={categories.includes(itemFormUnit) ? itemFormUnit : 'Custom'}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        if (val !== 'Custom') {
-                          setItemFormUnit(val);
-                        } else {
-                          setItemFormUnit('');
-                        }
-                      }}
-                      className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-200 font-semibold text-slate-800 bg-white"
-                    >
-                      {categories.map((c) => (
-                        <option key={c} value={c}>{c}</option>
-                      ))}
-                      <option value="Custom">Custom / Other Category...</option>
-                    </select>
-
-                    {(!categories.includes(itemFormUnit) || itemFormUnit === '') && (
-                      <input
-                        type="text"
-                        required
-                        placeholder=""
-                        value={itemFormUnit}
-                        onChange={(e) => setItemFormUnit(e.target.value)}
-                        className="w-full p-1.5 text-xs border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-200 font-semibold text-slate-800 bg-amber-50/50"
-                      />
-                    )}
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Minimum Threshold</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder=""
-                    value={itemFormMinStock}
-                    onChange={(e) => setItemFormMinStock(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-200 font-mono font-bold text-slate-900"
-                  />
-                </div>
-              </div>
-
-              {/* Multi-Batch Action Banner for existing medicine */}
-              {editingItem && (
-                <div className="p-3 bg-gradient-to-r from-indigo-50 via-slate-50 to-indigo-50/60 border border-indigo-200 rounded-xl flex items-center justify-between gap-3 shadow-xs">
-                  <div className="flex items-center space-x-2.5 min-w-0">
-                    <div className="p-2 bg-indigo-600 text-white rounded-lg shrink-0 shadow-xs">
-                      <Boxes className="w-4 h-4" />
-                    </div>
-                    <div className="min-w-0">
-                      <div className="flex items-center space-x-1.5">
-                        <span className="font-extrabold text-indigo-950 text-xs">Multi-Batch & Expiry Lots</span>
-                        <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-800 rounded font-mono text-[9px] font-bold">
-                          {Array.isArray(editingItem.Batches) && editingItem.Batches.length > 0
-                            ? `${editingItem.Batches.length} Batches`
-                            : '1 Default Lot'}
-                        </span>
-                      </div>
-                      <p className="text-[10px] text-indigo-700/90 font-medium truncate">
-                        View lot-by-lot stock, expiry dates, purchase costs, and receive new stock batches.
-                      </p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsAddMedicineModalOpen(false);
-                      handleOpenBatchManager(editingItem);
-                    }}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] rounded-lg shadow-xs flex items-center space-x-1 cursor-pointer transition shrink-0"
-                  >
-                    <Boxes className="w-3.5 h-3.5 mr-1" />
-                    <span>Manage Batches</span>
-                  </button>
-                </div>
-              )}
-
-              {/* Batch No, Mfg Date, and Exp Date Fields (Extracted from Box QR / Scanner / Master Defaults) */}
-              <div className="grid grid-cols-3 gap-3 p-2.5 bg-slate-50 border border-slate-200 rounded-xl">
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Batch # (B#)</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. B-2026-001"
-                    value={itemFormBatchNo}
-                    onChange={(e) => setItemFormBatchNo(e.target.value)}
-                    className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-300 bg-white font-mono font-bold text-xs text-slate-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Mfg Date</label>
-                  <input
-                    type="date"
-                    value={itemFormMfgDate}
-                    onChange={(e) => setItemFormMfgDate(e.target.value)}
-                    className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-300 bg-white font-mono font-bold text-xs text-slate-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">Exp Date</label>
-                  <input
-                    type="date"
-                    value={itemFormExpDate}
-                    onChange={(e) => setItemFormExpDate(e.target.value)}
-                    className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-300 bg-white font-mono font-bold text-xs text-slate-900"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Purchase Price (Rs.)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder=""
-                    value={itemFormPurchasePrice}
-                    onChange={(e) => setItemFormPurchasePrice(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-200 font-mono font-bold text-slate-900"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Retail Price (Rs.)</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    placeholder=""
-                    value={itemFormRetailPrice}
-                    onChange={(e) => setItemFormRetailPrice(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-slate-200 font-mono font-bold text-slate-900"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
-                    <span>Current Stock Level</span>
-                    {!canEditStock && <span className="text-rose-600 font-bold text-[9px] lowercase">(Edit Restricted)</span>}
-                  </label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder=""
-                    disabled={!canEditStock}
-                    value={itemFormCStock}
-                    onChange={(e) => setItemFormCStock(e.target.value === '' ? '' : Number(e.target.value))}
-                    className={`w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 font-mono font-bold text-slate-900 ${
-                      !canEditStock ? 'bg-slate-100 text-slate-400 cursor-not-allowed border-slate-200' : 'border-slate-200'
-                    }`}
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider mb-1">Buy / Reorder QTY</label>
-                  <input
-                    type="number"
-                    min="0"
-                    placeholder=""
-                    value={itemFormReorderQty}
-                    onChange={(e) => setItemFormReorderQty(e.target.value === '' ? '' : Number(e.target.value))}
-                    className="w-full p-2 border rounded-lg focus:ring-1 focus:ring-indigo-500 border-indigo-200 bg-indigo-50/30 font-mono font-bold text-indigo-950"
-                  />
-                </div>
-              </div>
-
-              {/* Modal Footer Buttons */}
-              <div className="pt-4 border-t border-slate-100 flex justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={resetItemForm}
-                  className="px-4 py-2 border border-slate-200 bg-white hover:bg-slate-50 text-slate-700 font-semibold text-xs rounded-lg transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={!canAdd}
-                  className={`px-5 py-2 rounded-lg text-white font-bold text-xs transition shadow-md ${
-                    canAdd
-                      ? 'bg-indigo-600 hover:bg-indigo-700'
-                      : 'bg-slate-400 cursor-not-allowed'
-                  }`}
-                >
-                  {editingItem ? 'Update Medicine' : 'Add to Inventory'}
-                </button>
-              </div>
-            </form>
-
-          </div>
-        </div>
-      )}
-
-      {/* Interactive Grid-View Purchase Order Builder & Monthly Sales Velocity Analytics Modal - Disabled/Removed */}
-      {false && (() => {
-        // Calculations for PO Builder Tab
-        const filteredGridItems = items.filter(itm => {
-          const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1;
-          if (poStockFilterScope === 'THRESHOLD' && itm.CStock > minStock) return false;
-          if (poStockFilterScope === 'OUT_OF_STOCK' && itm.CStock > 0) return false;
-          if (poStockFilterScope === 'SELECTED_ONLY' && !selectedPoItemIds.has(itm.ItemID)) return false;
-
-          if (poCategoryFilter !== 'ALL') {
-            if (poCategoryFilter === 'C' && itm.MedicineType !== 'C') return false;
-            if (poCategoryFilter === 'P' && itm.MedicineType === 'C') return false;
-            if (poCategoryFilter !== 'C' && poCategoryFilter !== 'P') {
-              const u = (itm.Unit || '').toLowerCase();
-              const c = poCategoryFilter.toLowerCase();
-              if (!u.includes(c) && !(itm.ItemName || '').toLowerCase().includes(c)) return false;
-            }
-          }
-
-          if (poGridSearch.trim()) {
-            const q = poGridSearch.toLowerCase().trim();
-            const name = (itm.ItemName || '').toLowerCase();
-            const id = (itm.ItemID || '').toLowerCase();
-            const unit = (itm.Unit || '').toLowerCase();
-            if (!name.includes(q) && !id.includes(q) && !unit.includes(q)) return false;
-          }
-
-          return true;
-        });
-
-        // Summary calculations for PO Builder
-        const lowStockCount = items.filter(i => i.CStock <= ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1)).length;
-        const selectedItemsList = items.filter(itm => selectedPoItemIds.has(itm.ItemID));
-        const totalSelectedUnits = selectedItemsList.reduce((acc, itm) => {
-          const qty = customOrderQtyMap[itm.ItemID] !== undefined
-            ? customOrderQtyMap[itm.ItemID]
-            : (itm.ReorderQty !== undefined && itm.ReorderQty !== null ? itm.ReorderQty : 0);
-          return acc + qty;
-        }, 0);
-
-        const totalEstCost = selectedItemsList.reduce((acc, itm) => {
-          const qty = customOrderQtyMap[itm.ItemID] !== undefined
-            ? customOrderQtyMap[itm.ItemID]
-            : (itm.ReorderQty !== undefined && itm.ReorderQty !== null ? itm.ReorderQty : 0);
-          return acc + (qty * (itm.PurchasePrice || 0));
-        }, 0);
-
-        // Calculations for Sales Velocity Tab
-        const filteredSalesGridItems = salesVelocityData.filter(entry => {
-          if (salesFilterScope === 'HIGH_DEMAND' && entry.totalQtySold < 5) return false;
-          if (salesFilterScope === 'TOP_20' && entry.rank > 20) return false;
-          if (salesFilterScope === 'LOW_STOCK_ONLY' && !entry.isLowStock) return false;
-
-          if (salesCategoryFilter !== 'ALL') {
-            if (salesCategoryFilter === 'C' && entry.item.MedicineType !== 'C') return false;
-            if (salesCategoryFilter === 'P' && entry.item.MedicineType === 'C') return false;
-            if (salesCategoryFilter !== 'C' && salesCategoryFilter !== 'P') {
-              const u = (entry.item.Unit || '').toLowerCase();
-              const c = salesCategoryFilter.toLowerCase();
-              if (!u.includes(c) && !(entry.item.ItemName || '').toLowerCase().includes(c)) return false;
-            }
-          }
-
-          if (salesGridSearch.trim()) {
-            const q = salesGridSearch.toLowerCase().trim();
-            const name = (entry.item.ItemName || '').toLowerCase();
-            const id = (entry.item.ItemID || '').toLowerCase();
-            if (!name.includes(q) && !id.includes(q)) return false;
-          }
-
-          return true;
-        });
-
-        const totalUnitsSoldSum = salesVelocityData.reduce((acc, c) => acc + c.totalQtySold, 0);
-        const totalRevenueSum = salesVelocityData.reduce((acc, c) => acc + c.totalRevenue, 0);
-        const criticalCount = salesVelocityData.filter(c => c.urgency === 'CRITICAL').length;
-        const fastMoversCount = salesVelocityData.filter(c => c.totalQtySold >= 10).length;
-        const maxSalesQty = salesVelocityData.length > 0 ? Math.max(...salesVelocityData.map(d => d.totalQtySold), 1) : 1;
-
-        return (
-          <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-md z-[9999] flex items-center justify-center p-2 sm:p-4 font-sans animate-fadeIn">
-            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-7xl overflow-hidden flex flex-col h-[94vh] max-h-[95vh]">
-              
-              {/* Header Banner */}
-              <div className="p-4 bg-slate-900 text-white flex flex-col md:flex-row md:items-center justify-between gap-3 shrink-0 border-b border-slate-800">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2.5 bg-indigo-600/30 text-indigo-400 rounded-xl border border-indigo-500/40 shrink-0">
-                    <CheckSquare className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-2">
-                      <span className="px-2 py-0.5 bg-amber-400 text-slate-950 text-[10px] font-black uppercase tracking-wider rounded">
-                        Interactive Grid-View
-                      </span>
-                      <h2 className="font-extrabold text-base tracking-tight text-white">
-                        Purchase Order & Demand Analytics Center
-                      </h2>
-                    </div>
-                    <p className="text-xs text-slate-400 font-medium mt-0.5">
-                      Choose medicines, edit order quantities, build custom POs, and analyze monthly sales demand.
-                    </p>
-                  </div>
-                </div>
-
-                {/* Tab Switcher */}
-                <div className="flex items-center space-x-2 bg-slate-800/90 p-1.5 rounded-xl border border-slate-700/80 shrink-0">
-                  <button
-                    type="button"
-                    onClick={() => setPoModalTab('po_builder')}
-                    className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition flex items-center space-x-2 cursor-pointer ${
-                      poModalTab === 'po_builder'
-                        ? 'bg-indigo-600 text-white shadow-sm ring-1 ring-indigo-400'
-                        : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
-                    }`}
-                  >
-                    <CheckSquare className="w-4 h-4 text-amber-300" />
-                    <span>1. PO Requisition Builder</span>
-                    <span className="px-1.5 py-0.2 text-[10px] bg-indigo-900 text-indigo-200 rounded-full font-black">
-                      {selectedPoItemIds.size}
-                    </span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setPoModalTab('sales_velocity')}
-                    className={`px-3.5 py-2 rounded-lg text-xs font-extrabold transition flex items-center space-x-2 cursor-pointer ${
-                      poModalTab === 'sales_velocity'
-                        ? 'bg-emerald-600 text-white shadow-sm ring-1 ring-emerald-400'
-                        : 'text-slate-300 hover:text-white hover:bg-slate-700/60'
-                    }`}
-                  >
-                    <TrendingUp className="w-4 h-4 text-emerald-300" />
-                    <span>2. Monthly Sales Demand Grid</span>
-                  </button>
-                </div>
-
-                {/* Close Button */}
-                <button
-                  type="button"
-                  onClick={() => setIsPOGridModalOpen(false)}
-                  className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer self-start md:self-auto"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Main Content Area */}
-              {poModalTab === 'po_builder' ? (
-                /* TAB 1: PURCHASE ORDER BUILDER GRID */
-                <div className="flex-1 flex flex-col min-h-0 bg-slate-50 overflow-hidden">
-                  
-                  {/* Metric Summary Cards */}
-                  <div className="p-4 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
-                    <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl flex items-center space-x-3">
-                      <div className="p-2 bg-rose-100 text-rose-700 rounded-lg shrink-0">
-                        <AlertTriangle className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-black uppercase text-rose-600 tracking-wider block">Low Stock Items</span>
-                        <strong className="text-lg font-black font-mono text-rose-950">{lowStockCount} Items</strong>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl flex items-center space-x-3">
-                      <div className="p-2 bg-indigo-100 text-indigo-700 rounded-lg shrink-0">
-                        <PackageCheck className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider block">Checked for PO</span>
-                        <strong className="text-lg font-black font-mono text-indigo-950">{selectedPoItemIds.size} Selected</strong>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center space-x-3">
-                      <div className="p-2 bg-amber-100 text-amber-800 rounded-lg shrink-0">
-                        <Layers className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-black uppercase text-amber-700 tracking-wider block">Total Order Units</span>
-                        <strong className="text-lg font-black font-mono text-amber-950">{totalSelectedUnits.toLocaleString()} Units</strong>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center space-x-3">
-                      <div className="p-2 bg-emerald-100 text-emerald-800 rounded-lg shrink-0">
-                        <Sparkles className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider block">Requisition Status</span>
-                        <strong className="text-lg font-black font-mono text-emerald-950">{selectedPoItemIds.size > 0 ? 'Ready to Order' : 'No Items Selected'}</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Filter & Selection Controls Toolbar */}
-                  <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
-                    <div className="flex flex-wrap items-center gap-2 flex-1 min-w-[300px]">
-                      {/* Search */}
-                      <div className="relative flex-1 min-w-[180px] max-w-xs">
-                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                        <input
-                          type="text"
-                          placeholder=""
-                          value={poGridSearch}
-                          onChange={(e) => setPoGridSearch(e.target.value)}
-                          className="w-full pl-8 pr-3 py-1.5 text-xs font-semibold bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* Stock Scope Filter */}
-                      <select
-                        value={poStockFilterScope}
-                        onChange={(e) => setPoStockFilterScope(e.target.value as any)}
-                        className="py-1.5 px-2.5 text-xs font-bold bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500"
-                      >
-                        <option value="THRESHOLD">⚠️ Below Min Threshold (Shortage PO)</option>
-                        <option value="ALL">📦 All Inventory Medicines</option>
-                        <option value="SELECTED_ONLY">✅ Checked / Selected Items Only</option>
-                        <option value="OUT_OF_STOCK">🚨 Out of Stock Items Only (0 Stock)</option>
-                      </select>
-
-                      {/* Category Filter */}
-                      <select
-                        value={poCategoryFilter}
-                        onChange={(e) => setPoCategoryFilter(e.target.value)}
-                        className="py-1.5 px-2.5 text-xs font-bold bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-indigo-500 max-w-[160px]"
-                      >
-                        <option value="ALL">All Categories</option>
-                        <option value="C">Clinical Compounding (/C)</option>
-                        <option value="P">Patent Medicine (/P)</option>
-                        {categoryDropdownOptions.map(c => (
-                          <option key={c} value={c}>{c}</option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Bulk Selection Buttons & Print Layout */}
-                    <div className="flex items-center space-x-2">
-                      <button
-                        type="button"
-                        onClick={handleSelectAllLowStock}
-                        className="px-2.5 py-1.5 bg-rose-100 hover:bg-rose-200 text-rose-800 font-extrabold text-[11px] rounded-lg border border-rose-300 transition cursor-pointer"
-                        title="Check all medicines below minimum threshold"
-                      >
-                        Select Low Stock
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleSelectAllVisible(filteredGridItems)}
-                        className="px-2.5 py-1.5 bg-indigo-100 hover:bg-indigo-200 text-indigo-900 font-extrabold text-[11px] rounded-lg border border-indigo-300 transition cursor-pointer"
-                        title="Check all currently filtered medicines"
-                      >
-                        Select All Visible
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleDeselectAll}
-                        className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-[11px] rounded-lg transition cursor-pointer"
-                        title="Uncheck all items"
-                      >
-                        Deselect All
-                      </button>
-
-                      <div className="h-4 w-px bg-slate-300 mx-1" />
-
-                      {/* Print Format Selector */}
-                      <select
-                        value={poPrintLayout}
-                        onChange={(e) => setPoPrintLayout(e.target.value as any)}
-                        className="py-1.5 px-2 text-[11px] font-bold bg-white border border-slate-300 rounded-lg text-slate-800"
-                        title="Choose layout style for Purchase Order printing"
-                      >
-                        <option value="detail">A4 Detailed Table Layout</option>
-                        <option value="3col">A4 3-Column Compact Grid</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Interactive PO Builder Grid Table */}
-                  <div className="flex-1 overflow-auto p-4">
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-slate-900 text-white uppercase text-[10px] tracking-wider font-extrabold sticky top-0 z-10">
-                            <th className="p-3 text-center w-10">
-                              <input
-                                type="checkbox"
-                                checked={filteredGridItems.length > 0 && filteredGridItems.every(i => selectedPoItemIds.has(i.ItemID))}
-                                onChange={(e) => {
-                                  if (e.target.checked) {
-                                    handleSelectAllVisible(filteredGridItems);
-                                  } else {
-                                    handleDeselectAll();
-                                  }
-                                }}
-                                className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                title="Toggle select all visible"
-                              />
-                            </th>
-                            <th className="p-3 text-center w-12">S.No</th>
-                            <th className="p-3">Item ID & Medicine Name</th>
-                            <th className="p-3 text-center">Category / Unit</th>
-                            <th className="p-3 text-center">Current Stock</th>
-                            <th className="p-3 text-center">Min Threshold</th>
-                            <th className="p-3 text-center">Stock Deficit</th>
-                            <th className="p-3 text-center w-36 bg-indigo-950 text-indigo-200">Required Order Qty</th>
-                            <th className="p-3 text-center">Include in PO</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-150 font-medium">
-                          {filteredGridItems.length === 0 ? (
-                            <tr>
-                              <td colSpan={9} className="p-8 text-center text-slate-400 font-bold">
-                                No medicines match your current filter scope or search query.
-                              </td>
-                            </tr>
-                          ) : (
-                            filteredGridItems.map((itm, idx) => {
-                              const isChecked = selectedPoItemIds.has(itm.ItemID);
-                              const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1;
-                              const isLowStock = itm.CStock <= minStock;
-                              const deficit = Math.max(0, minStock - itm.CStock);
-                              
-                              const defaultCalcQty = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
-                                ? itm.ReorderQty
-                                : 0;
-                              
-                              const currentOrderQty = customOrderQtyMap[itm.ItemID] !== undefined ? customOrderQtyMap[itm.ItemID] : defaultCalcQty;
-
-                              return (
-                                <tr
-                                  key={itm.ItemID}
-                                  className={`transition hover:bg-slate-50 ${
-                                    isChecked ? 'bg-indigo-50/40' : isLowStock ? 'bg-rose-50/20' : ''
-                                  }`}
-                                >
-                                  <td className="p-3 text-center">
-                                    <input
-                                      type="checkbox"
-                                      checked={isChecked}
-                                      onChange={() => handleTogglePoItem(itm.ItemID)}
-                                      className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                                    />
-                                  </td>
-                                  <td className="p-3 text-center font-bold text-slate-400 font-mono">
-                                    {idx + 1}
-                                  </td>
-                                  <td className="p-3">
-                                    <div className="flex items-center space-x-2">
-                                      <span className="font-extrabold text-slate-900 text-xs">{itm.ItemName}</span>
-                                      <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded ${
-                                        itm.MedicineType === 'C' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-800'
-                                      }`}>
-                                        {itm.MedicineType === 'C' ? 'Clinical' : 'Patent'}
-                                      </span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-400 font-mono block">ID: {itm.ItemID}</span>
-                                  </td>
-                                  <td className="p-3 text-center font-semibold text-slate-600">
-                                    {itm.Unit || 'Tab'}
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    <span className={`font-mono font-bold px-2 py-0.5 rounded text-xs ${
-                                      itm.CStock === 0
-                                        ? 'bg-rose-600 text-white animate-pulse'
-                                        : isLowStock
-                                        ? 'bg-rose-100 text-rose-800 border border-rose-200'
-                                        : 'bg-emerald-50 text-emerald-700'
-                                    }`}>
-                                      {itm.CStock} {itm.Unit || 'Tab'}s
-                                    </span>
-                                  </td>
-                                  <td className="p-3 text-center font-mono text-slate-600 font-bold">
-                                    {minStock}
-                                  </td>
-                                  <td className="p-3 text-center font-mono">
-                                    {deficit > 0 ? (
-                                      <span className="text-rose-600 font-extrabold">-{deficit}</span>
-                                    ) : (
-                                      <span className="text-emerald-600 font-bold">OK</span>
-                                    )}
-                                  </td>
-                                  {/* Editable Order Qty Input */}
-                                  <td className="p-2 text-center bg-indigo-50/50">
-                                    <div className="flex items-center justify-center space-x-1">
-                                      <input
-                                        type="number"
-                                        min="1"
-                                        value={currentOrderQty}
-                                        onChange={(e) => handleOrderQtyChange(itm.ItemID, parseInt(e.target.value))}
-                                        disabled={!isChecked}
-                                        className={`w-20 text-center font-black font-mono border rounded p-1 text-xs focus:ring-2 focus:ring-indigo-500 shadow-xs ${
-                                          isChecked
-                                            ? 'bg-white border-indigo-300 text-indigo-950 font-extrabold'
-                                            : 'bg-slate-100 border-slate-200 text-slate-400'
-                                        }`}
-                                      />
-                                      <span className="text-[10px] text-slate-400 font-bold">{itm.Unit || 'Tab'}</span>
-                                    </div>
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleTogglePoItem(itm.ItemID)}
-                                      className={`px-2.5 py-1 text-[11px] font-extrabold rounded-lg transition cursor-pointer ${
-                                        isChecked
-                                          ? 'bg-emerald-600 text-white hover:bg-emerald-700'
-                                          : 'bg-slate-200 text-slate-700 hover:bg-slate-300'
-                                      }`}
-                                    >
-                                      {isChecked ? 'Included' : '+ Add'}
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Footer Action Bar */}
-                  <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                    <div className="text-xs text-slate-600 font-semibold">
-                      Showing <strong className="text-slate-900">{filteredGridItems.length}</strong> items in grid view. 
-                      <strong className="text-indigo-600 ml-1">{selectedPoItemIds.size} medicines selected</strong> for custom purchase order.
-                    </div>
-
-                    <div className="flex flex-wrap items-center gap-2.5">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenSelectedPoPrintWindow('with_stock')}
-                        disabled={selectedPoItemIds.size === 0}
-                        className={`px-4 py-2.5 rounded-xl font-extrabold text-xs transition flex items-center space-x-1.5 border shadow-sm cursor-pointer ${
-                          selectedPoItemIds.size > 0
-                            ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-300'
-                            : 'bg-slate-50 text-slate-400 border-slate-200 cursor-not-allowed'
-                        }`}
-                        title="Print report including current stock, min thresholds, and estimated cost"
-                      >
-                        <Printer className="w-4 h-4 text-slate-600" />
-                        <span>Print Report with Current Stock</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => handleOpenSelectedPoPrintWindow('clean_po')}
-                        disabled={selectedPoItemIds.size === 0}
-                        className={`px-5 py-2.5 rounded-xl text-white font-extrabold text-xs transition flex items-center space-x-2 shadow-md cursor-pointer ${
-                          selectedPoItemIds.size > 0
-                            ? 'bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800'
-                            : 'bg-slate-400 cursor-not-allowed'
-                        }`}
-                        title="Print clean purchase order containing medicine names and required quantity only"
-                      >
-                        <Printer className="w-4 h-4 text-amber-300" />
-                        <span>Print Report with Purchase Order</span>
-                      </button>
-                    </div>
-                  </div>
-
-                </div>
-              ) : (
-                /* TAB 2: MONTHLY TOP-SELLING MEDICINE SALES VELOCITY GRID */
-                <div className="flex-1 flex flex-col min-h-0 bg-slate-50 overflow-hidden">
-                  
-                  {/* Sales Metrics Summary Banner */}
-                  <div className="p-4 bg-white border-b border-slate-200 grid grid-cols-2 sm:grid-cols-4 gap-3 shrink-0">
-                    <div className="p-3 bg-indigo-50/70 border border-indigo-200 rounded-xl flex items-center space-x-3">
-                      <div className="p-2 bg-indigo-100 text-indigo-700 rounded-lg shrink-0">
-                        <TrendingUp className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider block">Total Monthly Units Sold</span>
-                        <strong className="text-lg font-black font-mono text-indigo-950">{totalUnitsSoldSum.toLocaleString()} Units</strong>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-emerald-50/70 border border-emerald-200 rounded-xl flex items-center space-x-3">
-                      <div className="p-2 bg-emerald-100 text-emerald-800 rounded-lg shrink-0">
-                        <Sparkles className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-black uppercase text-emerald-700 tracking-wider block">Total Revenue (PKR)</span>
-                        <strong className="text-lg font-black font-mono text-emerald-950">Rs. {totalRevenueSum.toLocaleString()}</strong>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-amber-50/70 border border-amber-200 rounded-xl flex items-center space-x-3">
-                      <div className="p-2 bg-amber-100 text-amber-800 rounded-lg shrink-0">
-                        <BarChart3 className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-black uppercase text-amber-700 tracking-wider block">Fast Moving Medicines</span>
-                        <strong className="text-lg font-black font-mono text-amber-950">{fastMoversCount} Medicines</strong>
-                      </div>
-                    </div>
-
-                    <div className="p-3 bg-rose-50/70 border border-rose-200 rounded-xl flex items-center space-x-3">
-                      <div className="p-2 bg-rose-100 text-rose-700 rounded-lg shrink-0">
-                        <AlertTriangle className="w-5 h-5" />
-                      </div>
-                      <div>
-                        <span className="text-[10px] font-black uppercase text-rose-600 tracking-wider block">Critical Reorder Needed</span>
-                        <strong className="text-lg font-black font-mono text-rose-950">{criticalCount} High Demand</strong>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Filter Toolbar for Sales Grid */}
-                  <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2 text-xs shrink-0">
-                    <div className="flex flex-wrap items-center gap-2 flex-1">
-                      {/* Search */}
-                      <div className="relative flex-1 min-w-[180px] max-w-xs">
-                        <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                        <input
-                          type="text"
-                          placeholder=""
-                          value={salesGridSearch}
-                          onChange={(e) => setSalesGridSearch(e.target.value)}
-                          className="w-full pl-8 pr-3 py-1.5 text-xs font-semibold bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                        />
-                      </div>
-
-                      {/* Time Period Selector */}
-                      <select
-                        value={poSalesPeriodDays}
-                        onChange={(e) => setPoSalesPeriodDays(Number(e.target.value))}
-                        className="py-1.5 px-2.5 text-xs font-bold bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-emerald-500"
-                      >
-                        <option value={30}>📅 Past 30 Days (Current Month)</option>
-                        <option value={60}>📅 Past 60 Days (2 Months)</option>
-                        <option value={90}>📅 Past 90 Days (Quarter)</option>
-                        <option value={0}>♾️ All-Time Sales Velocity</option>
-                      </select>
-
-                      {/* Sort Selector */}
-                      <select
-                        value={salesSortBy}
-                        onChange={(e) => setSalesSortBy(e.target.value as any)}
-                        className="py-1.5 px-2.5 text-xs font-bold bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-emerald-500"
-                      >
-                        <option value="units_sold">🔥 Sort by Units Sold (Highest First)</option>
-                        <option value="revenue">💵 Sort by Total Revenue (PKR)</option>
-                        <option value="stock_deficit">🚨 Sort by Stock Shortage Deficit</option>
-                      </select>
-
-                      {/* Scope Filter Scope */}
-                      <select
-                        value={salesFilterScope}
-                        onChange={(e) => setSalesFilterScope(e.target.value as any)}
-                        className="py-1.5 px-2.5 text-xs font-bold bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-2 focus:ring-emerald-500"
-                      >
-                        <option value="ALL">All Medicines</option>
-                        <option value="TOP_20">🏆 Top 20 Best Sellers Only</option>
-                        <option value="HIGH_DEMAND">🔥 High Demand (&gt;5 Units Sold)</option>
-                        <option value="LOW_STOCK_ONLY">⚠️ Low Stock Only</option>
-                      </select>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleOpenSalesReportPrintWindow}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl transition flex items-center space-x-1.5 shadow-sm cursor-pointer"
-                    >
-                      <Printer className="w-4 h-4 text-amber-300" />
-                      <span>Print Monthly Sales Report</span>
-                    </button>
-                  </div>
-
-                  {/* Monthly Sales Velocity Grid Table */}
-                  <div className="flex-1 overflow-auto p-4">
-                    <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                      <table className="w-full text-left border-collapse text-xs">
-                        <thead>
-                          <tr className="bg-slate-900 text-white uppercase text-[10px] tracking-wider font-extrabold sticky top-0 z-10">
-                            <th className="p-3 text-center w-16">Rank</th>
-                            <th className="p-3">Medicine Name & Item ID</th>
-                            <th className="p-3 text-center">Category</th>
-                            <th className="p-3 text-center w-48">Monthly Units Sold</th>
-                            <th className="p-3 text-right">Total Revenue</th>
-                            <th className="p-3 text-center">Current Stock</th>
-                            <th className="p-3 text-center">Min Threshold</th>
-                            <th className="p-3 text-center">Demand Status</th>
-                            <th className="p-3 text-center">Quick Action</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-150 font-medium">
-                          {filteredSalesGridItems.length === 0 ? (
-                            <tr>
-                              <td colSpan={9} className="p-8 text-center text-slate-400 font-bold">
-                                No sales recorded for the selected period or filters.
-                              </td>
-                            </tr>
-                          ) : (
-                            filteredSalesGridItems.map((entry) => {
-                              const percentOfTop = Math.min(100, Math.round((entry.totalQtySold / maxSalesQty) * 100));
-                              const isInPo = selectedPoItemIds.has(entry.item.ItemID);
-
-                              return (
-                                <tr key={entry.item.ItemID} className="hover:bg-slate-50 transition">
-                                  <td className="p-3 text-center">
-                                    <span className={`inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-black font-mono ${
-                                      entry.rank === 1 ? 'bg-amber-400 text-slate-950 shadow-xs ring-2 ring-amber-300' :
-                                      entry.rank === 2 ? 'bg-slate-300 text-slate-900 font-bold' :
-                                      entry.rank === 3 ? 'bg-amber-700 text-white font-bold' :
-                                      'bg-slate-100 text-slate-600'
-                                    }`}>
-                                      {entry.rank === 1 ? '🥇' : entry.rank === 2 ? '🥈' : entry.rank === 3 ? '🥉' : `#${entry.rank}`}
-                                    </span>
-                                  </td>
-                                  <td className="p-3">
-                                    <div className="flex items-center space-x-2">
-                                      <span className="font-extrabold text-slate-900 text-xs">{entry.item.ItemName}</span>
-                                      <span className={`text-[9px] font-black uppercase px-1.5 py-0.2 rounded ${
-                                        entry.item.MedicineType === 'C' ? 'bg-indigo-100 text-indigo-700' : 'bg-emerald-100 text-emerald-800'
-                                      }`}>
-                                        {entry.item.MedicineType === 'C' ? 'Clinical' : 'Patent'}
-                                      </span>
-                                    </div>
-                                    <span className="text-[10px] text-slate-400 font-mono block">ID: {entry.item.ItemID}</span>
-                                  </td>
-                                  <td className="p-3 text-center font-semibold text-slate-600">
-                                    {entry.item.Unit || 'Tab'}
-                                  </td>
-                                  {/* Monthly Units Sold with Visual Velocity Bar */}
-                                  <td className="p-3 text-center">
-                                    <div className="space-y-1">
-                                      <span className="font-mono font-black text-indigo-950 text-xs block">
-                                        {entry.totalQtySold.toLocaleString()} {entry.item.Unit || 'Tab'}s
-                                      </span>
-                                      <div className="w-full bg-slate-150 h-1.5 rounded-full overflow-hidden">
-                                        <div
-                                          className={`h-full rounded-full transition-all duration-500 ${
-                                            entry.rank <= 3 ? 'bg-amber-500' : entry.totalQtySold >= 10 ? 'bg-indigo-600' : 'bg-slate-400'
-                                          }`}
-                                          style={{ width: `${Math.max(4, percentOfTop)}%` }}
-                                        />
-                                      </div>
-                                    </div>
-                                  </td>
-                                  <td className="p-3 text-right font-mono font-bold text-emerald-700">
-                                    Rs. {entry.totalRevenue.toLocaleString()}
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    <span className={`font-mono font-bold px-2 py-0.5 rounded text-xs ${
-                                      entry.isLowStock
-                                        ? 'bg-rose-100 text-rose-800 border border-rose-200 font-extrabold'
-                                        : 'bg-emerald-50 text-emerald-700'
-                                    }`}>
-                                      {entry.item.CStock}
-                                    </span>
-                                  </td>
-                                  <td className="p-3 text-center font-mono text-slate-600 font-bold">
-                                    {entry.minStock}
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    {entry.urgency === 'CRITICAL' ? (
-                                      <span className="px-2 py-1 bg-rose-600 text-white rounded text-[10px] font-black uppercase tracking-wider animate-pulse inline-block">
-                                        🚨 Critical Reorder
-                                      </span>
-                                    ) : entry.urgency === 'HIGH' ? (
-                                      <span className="px-2 py-1 bg-rose-100 text-rose-800 rounded text-[10px] font-extrabold uppercase tracking-wider inline-block">
-                                        ⚠️ Low Stock
-                                      </span>
-                                    ) : entry.totalQtySold >= 10 ? (
-                                      <span className="px-2 py-1 bg-indigo-100 text-indigo-800 rounded text-[10px] font-extrabold uppercase tracking-wider inline-block">
-                                        🔥 Fast Mover
-                                      </span>
-                                    ) : (
-                                      <span className="px-2 py-1 bg-emerald-50 text-emerald-700 rounded text-[10px] font-bold uppercase tracking-wider inline-block">
-                                        🟢 Sufficient
-                                      </span>
-                                    )}
-                                  </td>
-                                  <td className="p-3 text-center">
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        handleTogglePoItem(entry.item.ItemID);
-                                        const calcQty = Math.max(entry.totalQtySold, entry.minStock * 2);
-                                        handleOrderQtyChange(entry.item.ItemID, calcQty);
-                                      }}
-                                      className={`px-3 py-1 rounded-lg font-bold text-xs transition cursor-pointer flex items-center justify-center space-x-1 mx-auto ${
-                                        isInPo
-                                          ? 'bg-emerald-100 text-emerald-800 border border-emerald-300'
-                                          : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-xs'
-                                      }`}
-                                    >
-                                      {isInPo ? (
-                                        <>
-                                          <Check className="w-3.5 h-3.5" />
-                                          <span>In PO</span>
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Plus className="w-3.5 h-3.5" />
-                                          <span>Add to PO</span>
-                                        </>
-                                      )}
-                                    </button>
-                                  </td>
-                                </tr>
-                              );
-                            })
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-
-                  {/* Footer Action Bar */}
-                  <div className="p-4 bg-white border-t border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                    <div className="text-xs text-slate-600 font-semibold">
-                      Analyzed sales history across Pharmacy POS & EMR Prescriptions over past <strong className="text-slate-900">{poSalesPeriodDays > 0 ? `${poSalesPeriodDays} days` : 'all-time'}</strong>.
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={handleOpenSalesReportPrintWindow}
-                      className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-extrabold text-xs rounded-xl transition flex items-center space-x-2 shadow-md cursor-pointer"
-                    >
-                      <Printer className="w-4 h-4 text-amber-300" />
-                      <span>Print Monthly Sales Demand Report</span>
-                    </button>
-                  </div>
-
-                </div>
-              )}
-
-            </div>
-          </div>
-        );
-      })()}
+      <PharmacyVendorModal
+        isVendorModalOpen={isVendorModalOpen}
+        setIsVendorModalOpen={setIsVendorModalOpen}
+        suppliers={suppliers}
+        supplierFormId={supplierFormId}
+        setSupplierFormId={setSupplierFormId}
+        supplierFormName={supplierFormName}
+        setSupplierFormName={setSupplierFormName}
+        supplierFormPhone={supplierFormPhone}
+        setSupplierFormPhone={setSupplierFormPhone}
+        supplierFormCompany={supplierFormPhone}
+        setSupplierFormCompany={setSupplierFormPhone}
+        supplierFormAddress={supplierFormAddress}
+        setSupplierFormAddress={setSupplierFormAddress}
+        isEditingSupplier={Boolean(editingSupplier)}
+        editingSupplierSid={editingSupplier?.SID || null}
+        handleSaveSupplier={handleSaveSupplier}
+        handleDeleteSupplier={handleDeleteSupplier}
+        handleSelectEditSupplier={handleSelectEditSupplier}
+        resetSupplierForm={resetSupplierForm}
+      />
+
+      {/* Patent Medicine Sourcing / Purchase Requisition Quick Modal */}
+      <PharmacyPatentSourcingModal
+        showPatentSourcingModal={showPatentSourcingModal}
+        setShowPatentSourcingModal={setShowPatentSourcingModal}
+        selectedPatientId={selectedPatientId}
+        selectedPatientName={selectedPatientName}
+        patentSourcingNote={patentSourcingNote}
+        setPatentSourcingNote={setPatentSourcingNote}
+        handleConfirmPatentSourcing={handleConfirmPatentSourcing}
+      />
+
+      {/* Add / Edit Medicine Item Modal */}
+      <PharmacyAddMedicineModal
+        isAddMedicineModalOpen={isAddMedicineModalOpen}
+        setIsAddMedicineModalOpen={setIsAddMedicineModalOpen}
+        isEditingMedicine={Boolean(editingItem)}
+        editingMedicineId={editingItem?.ItemID || null}
+        medFormId={itemFormId}
+        setMedFormId={setItemFormId}
+        medFormName={itemFormName}
+        setMedFormName={setItemFormName}
+        medFormUnit={itemFormUnit}
+        setMedFormUnit={setItemFormUnit}
+        medFormType={itemFormMedicineType}
+        setMedFormType={setItemFormMedicineType}
+        medFormFormula={''}
+        setMedFormFormula={() => {}}
+        medFormCost={itemFormPurchasePrice}
+        setMedFormCost={setItemFormPurchasePrice}
+        medFormPrice={itemFormRetailPrice}
+        setMedFormPrice={setItemFormRetailPrice}
+        medFormStock={itemFormCStock}
+        setMedFormStock={setItemFormCStock}
+        medFormMinStock={itemFormMinStock}
+        setMedFormMinStock={setItemFormMinStock}
+        medFormRack={''}
+        setMedFormRack={() => {}}
+        medFormSupplier={''}
+        setMedFormSupplier={() => {}}
+        medFormBarcode={itemFormVendorBarcode}
+        setMedFormBarcode={setItemFormVendorBarcode}
+        medFormExpDate={itemFormExpDate}
+        setMedFormExpDate={setItemFormExpDate}
+        medFormBatchNo={itemFormBatchNo}
+        setMedFormBatchNo={setItemFormBatchNo}
+        medFormReorderQty={itemFormReorderQty}
+        setMedFormReorderQty={setItemFormReorderQty}
+        medFormMaxStock={''}
+        setMedFormMaxStock={() => {}}
+        handleSaveMedicine={handleSaveItem}
+        setIsCategoryModalOpen={setIsCategoryModalOpen}
+        medicineCategories={categories}
+        suppliers={suppliers}
+      />
 
       {/* Master A4 Purchase Order Print Dialog & Preview Modal */}
-      {isPOPrintPreviewOpen && (() => {
-        const filteredPoItems = getFilteredPoItems(items, poCategoryFilter, poOnlyLowStock);
-        
-        const poRows = [];
-        for (let i = 0; i < filteredPoItems.length; i += 3) {
-          poRows.push([
-            filteredPoItems[i],
-            filteredPoItems[i + 1] || null,
-            filteredPoItems[i + 2] || null
-          ]);
-        }
-
-        return (
-          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex flex-col items-center justify-start p-2 sm:p-4 overflow-y-auto po-modal-backdrop print:p-0 print:bg-white print:static print:overflow-visible font-sans">
-            
-            {/* Style Injector for Direct Print Engine (HP LaserJet Compatible, Multi-page) */}
-            <style dangerouslySetInnerHTML={{ __html: `
-              @media print {
-                @page {
-                  size: A4 portrait;
-                  margin: 12mm 12mm 12mm 12mm;
-                }
-                
-                body * {
-                  visibility: hidden !important;
-                }
-
-                html, body {
-                  background: #ffffff !important;
-                  color: #000000 !important;
-                  height: auto !important;
-                  min-height: auto !important;
-                  overflow: visible !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                }
-
-                .po-modal-backdrop {
-                  position: static !important;
-                  inset: auto !important;
-                  overflow: visible !important;
-                  max-height: none !important;
-                  height: auto !important;
-                  background: #ffffff !important;
-                  padding: 0 !important;
-                  margin: 0 !important;
-                  box-shadow: none !important;
-                  backdrop-filter: none !important;
-                }
-
-                .po-modal-container {
-                  position: static !important;
-                  max-height: none !important;
-                  height: auto !important;
-                  width: 100% !important;
-                  max-width: 100% !important;
-                  overflow: visible !important;
-                  box-shadow: none !important;
-                  border: none !important;
-                  background: #ffffff !important;
-                  padding: 0 !important;
-                  margin: 0 !important;
-                  border-radius: 0 !important;
-                }
-
-                #po-master-printable-area,
-                #po-master-printable-area * {
-                  visibility: visible !important;
-                }
-
-                #po-master-printable-area {
-                  position: absolute !important;
-                  left: 0 !important;
-                  top: 0 !important;
-                  width: 100% !important;
-                  max-width: 100% !important;
-                  margin: 0 !important;
-                  padding: 0 !important;
-                  background: #ffffff !important;
-                  color: #000000 !important;
-                  box-shadow: none !important;
-                  border: none !important;
-                  overflow: visible !important;
-                  display: block !important;
-                }
-
-                table.po-print-table {
-                  width: 100% !important;
-                  border-collapse: collapse !important;
-                  page-break-inside: auto !important;
-                  border: 2px solid #000 !important;
-                }
-
-                table.po-print-table thead {
-                  display: table-header-group !important;
-                }
-
-                table.po-print-table tbody tr {
-                  page-break-inside: avoid !important;
-                  break-inside: avoid !important;
-                }
-
-                table.po-print-table th,
-                table.po-print-table td {
-                  border: 1px solid #000 !important;
-                  padding: 4px 6px !important;
-                  color: #000 !important;
-                }
-
-                .no-print {
-                  display: none !important;
-                  visibility: hidden !important;
-                }
-              }
-            ` }} />
-
-            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl overflow-hidden my-auto flex flex-col max-h-[92vh] po-modal-container print:max-h-none print:shadow-none print:border-none print:rounded-none">
-              
-              {/* Modal Header Controls */}
-              <div className="p-4 bg-slate-900 text-white flex flex-wrap items-center justify-between gap-3 shrink-0 print:hidden no-print">
-                <div className="flex items-center space-x-2.5">
-                  <div className="p-2 bg-indigo-500/20 text-indigo-400 rounded-lg border border-indigo-500/30">
-                    <Printer className="w-5 h-5" />
-                  </div>
-                  <div>
-                    <h2 className="font-extrabold text-sm uppercase tracking-wider text-white flex items-center gap-2">
-                      A4 Purchase Order Print Dialog & Preview
-                    </h2>
-                    <p className="text-[11px] text-slate-300">Filter by category, threshold scope, and layout format to generate printable Purchase Orders</p>
-                  </div>
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={handleOpenPoPrintWindow}
-                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-bold text-xs rounded-xl transition flex items-center shadow-md cursor-pointer"
-                    title="Open printable document in a new window to print with full browser print options"
-                  >
-                    <Printer className="w-4 h-4 mr-1.5" />
-                    <span>Open & Print in Pop-up</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => {
-                      window.print();
-                    }}
-                    className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs rounded-xl transition flex items-center shadow-md cursor-pointer"
-                    title="Trigger direct browser printing"
-                  >
-                    <Printer className="w-4 h-4 mr-1.5" />
-                    <span>Trigger Direct Print</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsPOPrintPreviewOpen(false)}
-                    className="p-2 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
-                    title="Close Print Dialog"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-              </div>
-
-              {/* Filter Toolbar (Category, Scope, Layout Selector) */}
-              <div className="bg-slate-100 border-b border-slate-200 p-3.5 grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs shrink-0 print:hidden no-print">
-                {/* Category Selector */}
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                    Filter Medicine Category
-                  </label>
-                  <select
-                    value={poCategoryFilter}
-                    onChange={(e) => setPoCategoryFilter(e.target.value)}
-                    className="w-full text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  >
-                    <option value="ALL">All Categories ({items.length} Medicines)</option>
-                    <option value="C">Clinical Compounding (/C)</option>
-                    <option value="P">Patent Medicine (/P)</option>
-                    {categoryDropdownOptions.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Scope Selector */}
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                    Report Stock Scope
-                  </label>
-                  <select
-                    value={poOnlyLowStock ? 'LOW_STOCK' : 'ALL_ITEMS'}
-                    onChange={(e) => setPoOnlyLowStock(e.target.value === 'LOW_STOCK')}
-                    className="w-full text-xs font-bold text-slate-800 bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                  >
-                    <option value="LOW_STOCK">Below Minimum Stock Threshold (Shortage PO)</option>
-                    <option value="ALL_ITEMS">All Selected Category Medicines (Full Requisition)</option>
-                  </select>
-                </div>
-
-                {/* Layout Format Selector */}
-                <div className="space-y-1">
-                  <label className="block text-[10px] font-black uppercase text-slate-500 tracking-wider">
-                    Print Layout Format
-                  </label>
-                  <div className="flex items-center space-x-1.5 pt-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setPoPrintLayout('3col')}
-                      className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                        poPrintLayout === '3col'
-                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      3-Column Grid
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setPoPrintLayout('detail')}
-                      className={`flex-1 py-1.5 px-2 rounded-lg text-xs font-bold border transition cursor-pointer ${
-                        poPrintLayout === 'detail'
-                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
-                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-50'
-                      }`}
-                    >
-                      Full Detail List
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* Selected Items Status Banner */}
-              <div className="bg-indigo-50 border-b border-indigo-100 px-4 py-2 flex items-center justify-between text-xs font-semibold text-indigo-950 shrink-0 print:hidden no-print">
-                <div className="flex items-center space-x-2">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                  <span>
-                    Category: <strong className="text-indigo-700">{poCategoryFilter === 'ALL' ? 'All Categories' : poCategoryFilter}</strong>
-                  </span>
-                  <span className="text-slate-300">|</span>
-                  <span>
-                    Selected Items: <strong className="text-indigo-700">{filteredPoItems.length} Medicines</strong>
-                  </span>
-                </div>
-                <span className="text-[10px] font-bold text-slate-500 hidden sm:inline">
-                  📄 A4 Standard Letterhead (HP LaserJet Ready)
-                </span>
-              </div>
-
-              {/* Interactive Sheet Preview Container */}
-              <div className="p-4 sm:p-6 overflow-y-auto bg-slate-200/70 flex justify-center flex-1 print:p-0 print:bg-white print:overflow-visible">
-                <div
-                  id="po-master-printable-area"
-                  className="bg-white shadow-2xl border border-slate-300 p-6 sm:p-8 w-full max-w-[210mm] min-h-[297mm] text-black font-sans text-xs shrink-0 print:shadow-none print:border-none print:p-0 print:w-full print:max-w-full print:min-h-0"
-                >
-                  {/* Clinic Letterhead Header */}
-                  <div className="text-center mb-4 pb-3 border-b-2 border-black">
-                    <h1 className="text-xl sm:text-2xl font-black uppercase text-black tracking-wide">
-                      {clinicSettings?.ClinicName || "Punjab Homeopathic Clinic"}
-                    </h1>
-                    <p className="text-xs font-extrabold text-black uppercase tracking-wider mt-0.5">
-                      PURCHASE ORDER & MINIMUM THRESHOLD REQUISITION
-                    </p>
-                    <div className="flex flex-wrap items-center justify-between text-[10px] font-bold text-slate-800 mt-2 pt-2 border-t border-slate-200">
-                      <span>Date: {new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
-                      <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-300 uppercase">
-                        Category: {poCategoryFilter === 'ALL' ? 'All Categories' : poCategoryFilter}
-                      </span>
-                      <span className="bg-slate-100 px-2 py-0.5 rounded border border-slate-300 uppercase">
-                        Scope: {poOnlyLowStock ? 'Shortage Items Only' : 'Full Category List'}
-                      </span>
-                      <span>Total Items: {filteredPoItems.length}</span>
-                    </div>
-                  </div>
-
-                  {/* Printable Items Table */}
-                  {filteredPoItems.length === 0 ? (
-                    <div className="p-12 text-center border-2 border-dashed border-slate-300 rounded-xl my-8">
-                      <p className="text-sm font-bold text-slate-500">
-                        No medicine items found matching category "<strong>{poCategoryFilter}</strong>" with selected stock filter options.
-                      </p>
-                      <p className="text-xs text-slate-400 mt-1">Try selecting "All Categories" or changing the stock scope.</p>
-                    </div>
-                  ) : poPrintLayout === '3col' ? (
-                    /* 3-Column Grid Layout */
-                    <table className="w-full text-left border-collapse border-2 border-black text-xs font-sans po-print-table">
-                      <thead>
-                        <tr>
-                          <th colSpan={6} className="border border-black p-2 text-center font-bold text-xs bg-slate-50 uppercase text-black">
-                            Purchase Order Requisition List ({filteredPoItems.length} Items)
-                          </th>
-                        </tr>
-                        <tr className="bg-slate-100">
-                          <th className="border border-black p-1.5 font-bold text-left w-[23%] text-black text-[10px]">MEDICINE NAME</th>
-                          <th className="border border-black p-1.5 font-bold text-center w-[10.33%] text-black text-[10px]">REQ QTY</th>
-                          <th className="border border-black p-1.5 font-bold text-left w-[23%] text-black text-[10px]">MEDICINE NAME</th>
-                          <th className="border border-black p-1.5 font-bold text-center w-[10.33%] text-black text-[10px]">REQ QTY</th>
-                          <th className="border border-black p-1.5 font-bold text-left w-[23%] text-black text-[10px]">MEDICINE NAME</th>
-                          <th className="border border-black p-1.5 font-bold text-center w-[10.33%] text-black text-[10px]">REQ QTY</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {poRows.map((row, rIdx) => {
-                          const getQtyStr = (itm: Item | null) => {
-                            if (!itm) return '';
-                            return (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
-                              ? itm.ReorderQty
-                              : 0;
-                          };
-                          return (
-                            <tr key={rIdx}>
-                              <td className="border border-black px-2 py-1 font-medium text-left text-black">{row[0]?.ItemName || ''}</td>
-                              <td className="border border-black px-2 py-1 font-bold text-center text-black bg-slate-50/50">
-                                {getQtyStr(row[0])}
-                              </td>
-
-                              <td className="border border-black px-2 py-1 font-medium text-left text-black">{row[1]?.ItemName || ''}</td>
-                              <td className="border border-black px-2 py-1 font-bold text-center text-black bg-slate-50/50">
-                                {getQtyStr(row[1])}
-                              </td>
-
-                              <td className="border border-black px-2 py-1 font-medium text-left text-black">{row[2]?.ItemName || ''}</td>
-                              <td className="border border-black px-2 py-1 font-bold text-center text-black bg-slate-50/50">
-                                {getQtyStr(row[2])}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  ) : (
-                    /* Full Detail List Layout */
-                    <table className="w-full text-left border-collapse border-2 border-black text-xs font-sans po-print-table">
-                      <thead>
-                        <tr className="bg-slate-100">
-                          <th className="border border-black p-1.5 font-bold text-center w-[6%] text-black text-[10px]">S.No</th>
-                          <th className="border border-black p-1.5 font-bold text-center w-[12%] text-black text-[10px]">Item ID</th>
-                          <th className="border border-black p-1.5 font-bold text-left w-[42%] text-black text-[10px]">Medicine Name</th>
-                          <th className="border border-black p-1.5 font-bold text-center w-[12%] text-black text-[10px]">Category</th>
-                          <th className="border border-black p-1.5 font-bold text-center w-[14%] text-black text-[10px]">Current Stock</th>
-                          <th className="border border-black p-1.5 font-bold text-center w-[14%] text-black text-[10px]">Required Qty</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {filteredPoItems.map((itm, idx) => {
-                          const reorderQty = (itm.ReorderQty !== undefined && itm.ReorderQty !== null)
-                            ? itm.ReorderQty
-                            : 0;
-                          return (
-                            <tr key={`${itm.ItemID}-${idx}`}>
-                              <td className="border border-black px-2 py-1 text-center font-bold text-slate-500">{idx + 1}</td>
-                              <td className="border border-black px-2 py-1 text-center font-mono font-bold">{itm.ItemID}</td>
-                              <td className="border border-black px-2 py-1 font-bold text-black">{itm.ItemName}</td>
-                              <td className="border border-black px-2 py-1 text-center font-semibold">{itm.Unit || 'Tab'}</td>
-                              <td className="border border-black px-2 py-1 text-center font-mono font-bold text-rose-700 bg-rose-50/30">{itm.CStock}</td>
-                              <td className="border border-black px-2 py-1 text-center font-mono font-black text-indigo-900 bg-indigo-50/40">{reorderQty} {itm.Unit || 'Tab'}s</td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  )}
-
-                  {/* Footer Signatures */}
-                  <div className="mt-12 flex justify-between items-center px-6 pt-4 border-t border-black text-xs font-bold text-black">
-                    <div className="text-center w-48 border-t border-black pt-1 uppercase">
-                      Prepared By (Pharmacy Manager)
-                    </div>
-                    <div className="text-center w-48 border-t border-black pt-1 uppercase">
-                      Approved By (Clinic Administrator)
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Modal Footer Controls */}
-              <div className="p-3.5 bg-slate-100 border-t border-slate-200 flex flex-wrap justify-between items-center gap-2 text-xs text-slate-600 shrink-0 print:hidden no-print">
-                <span className="text-[11px] font-semibold text-slate-500">
-                  Tip: Click <strong>Open & Print in Pop-up</strong> to launch in a clean browser tab for laser printing.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsPOPrintPreviewOpen(false)}
-                  className="px-5 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-sm"
-                >
-                  Close Print Dialog
-                </button>
-              </div>
-
-            </div>
-          </div>
-        );
-      })()}
+      <PharmacyPoPrintPreviewModal
+        isPOPrintPreviewOpen={isPOPrintPreviewOpen}
+        setIsPOPrintPreviewOpen={setIsPOPrintPreviewOpen}
+        items={items}
+        poCategoryFilter={poCategoryFilter}
+        poOnlyLowStock={poOnlyLowStock}
+        poPrintLayout={poPrintLayout}
+        setPoPrintLayout={setPoPrintLayout}
+        clinicSettings={clinicSettings}
+        handleOpenPoPrintWindow={handleOpenPoPrintWindow}
+        getFilteredPoItems={getFilteredPoItems}
+      />
 
       {/* Category Add & Edit Modal */}
-      {isCategoryModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="p-4 bg-slate-900 text-white flex justify-between items-center">
-              <div className="flex items-center space-x-2">
-                <Tag className="w-5 h-5 text-emerald-400" />
-                <div>
-                  <h3 className="text-base font-bold text-white">Medicine Category Manager</h3>
-                  <p className="text-[11px] text-slate-300 font-medium">Add, Edit, Rename or Remove Medicine Categories</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCategoryModalOpen(false);
-                  setEditingCatIndex(null);
-                  setCatErrorMsg('');
-                  setCatSuccessMsg('');
-                }}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-4 overflow-y-auto flex-1">
-              {/* Feedback messages */}
-              {catSuccessMsg && (
-                <div className="p-2.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-xs rounded-lg font-bold flex items-center">
-                  <CheckCircle className="w-4 h-4 text-emerald-600 mr-2 shrink-0" />
-                  {catSuccessMsg}
-                </div>
-              )}
-              {catErrorMsg && (
-                <div className="p-2.5 bg-red-50 text-red-800 border border-red-200 text-xs rounded-lg font-bold flex items-center">
-                  <AlertCircle className="w-4 h-4 text-red-600 mr-2 shrink-0" />
-                  {catErrorMsg}
-                </div>
-              )}
-
-              {/* Add New Category Form */}
-              <form onSubmit={handleAddCategory} className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
-                <label className="block text-xs font-black text-slate-700 uppercase tracking-wide">
-                  Add New Category
-                </label>
-                <div className="flex space-x-2">
-                  <input
-                    type="text"
-                    value={newCatInput}
-                    onChange={(e) => setNewCatInput(e.target.value)}
-                    placeholder=""
-                    className="flex-1 px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-500 font-semibold bg-white text-slate-900"
-                  />
-                  <button
-                    type="submit"
-                    className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg transition cursor-pointer flex items-center shadow-xs shrink-0"
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    <span>Add Category</span>
-                  </button>
-                </div>
-              </form>
-
-              {/* Categories List */}
-              <div className="space-y-2">
-                <div className="flex justify-between items-center px-1">
-                  <span className="text-xs font-black text-slate-700 uppercase tracking-wider">
-                    Existing Categories ({categories.length})
-                  </span>
-                  <button
-                    type="button"
-                    onClick={handleResetCategories}
-                    className="text-[10px] font-bold text-slate-500 hover:text-indigo-600 underline cursor-pointer"
-                  >
-                    Reset to Defaults
-                  </button>
-                </div>
-
-                <div className="divide-y divide-slate-100 border border-slate-200 rounded-xl overflow-hidden bg-white max-h-[300px] overflow-y-auto">
-                  {categories.map((cat, idx) => {
-                    const itemCount = items.filter(itm => (itm.Unit || '').toLowerCase().trim() === cat.toLowerCase().trim()).length;
-                    const isEditing = editingCatIndex === idx;
-
-                    return (
-                      <div key={idx} className="p-2.5 flex items-center justify-between hover:bg-slate-50/80 transition">
-                        {isEditing ? (
-                          <div className="flex items-center space-x-2 w-full">
-                            <input
-                              type="text"
-                              value={editingCatName}
-                              onChange={(e) => setEditingCatName(e.target.value)}
-                              className="flex-1 px-2 py-1 text-xs border border-indigo-400 rounded focus:outline-none font-bold text-slate-900 bg-indigo-50/50"
-                              autoFocus
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter') handleSaveEditCategory(idx);
-                                if (e.key === 'Escape') setEditingCatIndex(null);
-                              }}
-                            />
-                            <button
-                              type="button"
-                              onClick={() => handleSaveEditCategory(idx)}
-                              className="px-2.5 py-1 bg-indigo-600 text-white font-bold text-xs rounded hover:bg-indigo-700 cursor-pointer"
-                            >
-                              Save
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => setEditingCatIndex(null)}
-                              className="px-2 py-1 bg-slate-200 text-slate-700 font-bold text-xs rounded hover:bg-slate-300 cursor-pointer"
-                            >
-                              Cancel
-                            </button>
-                          </div>
-                        ) : (
-                          <>
-                            <div className="flex items-center space-x-2 truncate">
-                              <span className="text-xs font-extrabold text-slate-800">{cat}</span>
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-mono font-bold bg-slate-100 text-slate-600">
-                                {itemCount} {itemCount === 1 ? 'item' : 'items'}
-                              </span>
-                            </div>
-
-                            <div className="flex items-center space-x-1 shrink-0">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingCatIndex(idx);
-                                  setEditingCatName(cat);
-                                }}
-                                className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition cursor-pointer"
-                                title="Edit / Rename Category"
-                              >
-                                <Edit className="w-3.5 h-3.5" />
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteCategory(idx)}
-                                className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                                title="Delete Category"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            </div>
-                          </>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsCategoryModalOpen(false);
-                  setEditingCatIndex(null);
-                  setCatErrorMsg('');
-                  setCatSuccessMsg('');
-                }}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs"
-              >
-                Done
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PharmacyCategoryModal
+        isCategoryModalOpen={isCategoryModalOpen}
+        setIsCategoryModalOpen={setIsCategoryModalOpen}
+        setEditingCatIndex={setEditingCatIndex}
+        setCatErrorMsg={setCatErrorMsg}
+        setCatSuccessMsg={setCatSuccessMsg}
+        catSuccessMsg={catSuccessMsg}
+        catErrorMsg={catErrorMsg}
+        handleAddCategory={handleAddCategory}
+        handleEditCategory={handleSaveEditCategory}
+        handleDeleteCategory={handleDeleteCategory}
+        newCategoryName={newCatInput}
+        setNewCategoryName={setNewCatInput}
+        editingCatIndex={editingCatIndex}
+        editingCatName={editingCatName}
+        setEditingCatName={setEditingCatName}
+        medicineCategories={categories}
+        items={items}
+      />
 
       {/* Multi-Batch & Expiry Lots Management Modal */}
-      {isBatchesModalOpen && selectedBatchItem && (
-        <div className="fixed inset-0 bg-slate-950/75 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-5xl overflow-hidden flex flex-col max-h-[92vh] animate-scaleUp">
-            
-            {/* Modal Header */}
-            <div className="p-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between gap-3 shrink-0">
-              <div className="flex items-center space-x-3 min-w-0">
-                <div className="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-500/30 shrink-0">
-                  <Boxes className="w-5 h-5" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center space-x-2 flex-wrap">
-                    <h3 className="text-base font-extrabold text-white truncate">
-                      {selectedBatchItem.ItemName}
-                    </h3>
-                    <span className="px-2 py-0.5 bg-indigo-500/30 text-indigo-200 rounded-full font-mono text-[11px] font-bold border border-indigo-400/30">
-                      ID: {selectedBatchItem.ItemID}
-                    </span>
-                    <span className="px-2 py-0.5 bg-slate-800 text-slate-300 rounded-full text-[10px] font-bold">
-                      {selectedBatchItem.Unit || 'Tab'} • {selectedBatchItem.MedicineType === 'C' ? 'Clinical' : 'Patent'}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-slate-300 font-medium mt-0.5">
-                    Multi-Batch Tracking, Lot-by-Lot Expiry Dates & Automatic FEFO Stock Allocation
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-3 shrink-0">
-                <div className="text-right hidden sm:block bg-slate-800/80 px-3 py-1.5 rounded-xl border border-slate-700">
-                  <div className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Total Live Stock</div>
-                  <div className="text-base font-black font-mono text-emerald-400">
-                    {selectedBatchItem.CStock} {selectedBatchItem.Unit || 'Units'}
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setIsBatchesModalOpen(false);
-                    setSelectedBatchItem(null);
-                    setEditingBatchId(null);
-                  }}
-                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-xl transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            {/* Notification messages */}
-            {batchModalMsg && (
-              <div className={`px-4 py-2 text-xs font-bold shrink-0 flex items-center ${
-                batchModalMsg.type === 'success' ? 'bg-emerald-50 text-emerald-800 border-b border-emerald-200' : 'bg-rose-50 text-rose-800 border-b border-rose-200'
-              }`}>
-                {batchModalMsg.type === 'success' ? (
-                  <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-600 shrink-0" />
-                ) : (
-                  <AlertCircle className="w-4 h-4 mr-2 text-rose-600 shrink-0" />
-                )}
-                <span>{batchModalMsg.text}</span>
-              </div>
-            )}
-
-            {/* Modal Body: 2-Column Grid */}
-            <div className="flex-1 overflow-y-auto p-4 sm:p-5 grid grid-cols-1 lg:grid-cols-12 gap-5 bg-slate-50/50">
-              
-              {/* Left Column: Batches Table (7 cols) */}
-              <div className="lg:col-span-7 flex flex-col space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Boxes className="w-4 h-4 text-indigo-600" />
-                    <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-800">
-                      Active Stock Batches / Lots
-                    </h4>
-                  </div>
-                  <span className="text-[11px] font-bold text-slate-500 font-mono">
-                    {Array.isArray(selectedBatchItem.Batches) ? selectedBatchItem.Batches.length : (selectedBatchItem.ExpDate ? 1 : 0)} Recorded Lots
-                  </span>
-                </div>
-
-                {/* Batches Table */}
-                <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-xs">
-                  {(() => {
-                    const batchesList: ItemBatch[] = Array.isArray(selectedBatchItem.Batches) && selectedBatchItem.Batches.length > 0
-                      ? selectedBatchItem.Batches
-                      : (selectedBatchItem.CStock > 0 || selectedBatchItem.BatchNo || selectedBatchItem.ExpDate
-                          ? [{
-                              BatchID: `${selectedBatchItem.ItemID}-B-initial`,
-                              ItemID: selectedBatchItem.ItemID,
-                              ItemName: selectedBatchItem.ItemName,
-                              BatchNo: selectedBatchItem.BatchNo || 'B# 001',
-                              MfgDate: selectedBatchItem.MfgDate || '',
-                              ExpDate: selectedBatchItem.ExpDate || '',
-                              PurchasePrice: selectedBatchItem.PurchasePrice,
-                              SalePrice: selectedBatchItem.Price,
-                              Qty: selectedBatchItem.CStock,
-                              InitialQty: selectedBatchItem.CStock,
-                              Status: selectedBatchItem.CStock === 0 ? 'EXHAUSTED' : isBatchExpired(selectedBatchItem.ExpDate) ? 'EXPIRED' : 'ACTIVE',
-                              CreatedAt: new Date().toISOString()
-                            }]
-                          : []);
-
-                    if (batchesList.length === 0) {
-                      return (
-                        <div className="p-8 text-center text-slate-400 space-y-2">
-                          <Boxes className="w-8 h-8 mx-auto text-slate-300" />
-                          <p className="text-xs font-bold text-slate-600">No stock batches recorded yet for this medicine.</p>
-                          <p className="text-[11px] text-slate-400">Use the form on the right to inward a new stock lot with its expiry date.</p>
-                        </div>
-                      );
-                    }
-
-                    // Sort by Expiry Date (FEFO)
-                    const sortedBatches = [...batchesList].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'));
-
-                    return (
-                      <div className="overflow-x-auto max-h-[360px] overflow-y-auto">
-                        <table className="w-full text-left border-collapse text-xs">
-                          <thead className="bg-slate-100 text-slate-700 font-extrabold text-[10px] uppercase tracking-wider border-b border-slate-200 sticky top-0">
-                            <tr>
-                              <th className="px-3 py-2">Batch #</th>
-                              <th className="px-2.5 py-2">Expiry Date</th>
-                              <th className="px-2.5 py-2 text-right">Available Qty</th>
-                              <th className="px-2.5 py-2 text-right">Cost (Rs)</th>
-                              <th className="px-2.5 py-2 text-center">Status</th>
-                              <th className="px-2.5 py-2 text-center">Actions</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 text-slate-800">
-                            {sortedBatches.map((b, idx) => {
-                              const isExp = isBatchExpired(b.ExpDate);
-                              const isNearExp = isBatchNearExpiry(b.ExpDate, 90);
-                              const isSelectedForEdit = editingBatchId === b.BatchID;
-
-                              return (
-                                <tr
-                                  key={b.BatchID || idx}
-                                  className={`transition hover:bg-slate-50 ${
-                                    isSelectedForEdit
-                                      ? 'bg-indigo-50/80 ring-1 ring-indigo-400'
-                                      : isExp
-                                      ? 'bg-rose-50/50'
-                                      : isNearExp
-                                      ? 'bg-amber-50/40'
-                                      : 'bg-white'
-                                  }`}
-                                >
-                                  {/* Batch # & Ref */}
-                                  <td className="px-3 py-2 font-mono font-bold text-slate-900">
-                                    <div>
-                                      <span>{b.BatchNo || 'N/A'}</span>
-                                      {b.GRNID && (
-                                        <div className="text-[9px] font-sans font-medium text-slate-400">
-                                          Ref: {b.GRNID}
-                                        </div>
-                                      )}
-                                    </div>
-                                  </td>
-
-                                  {/* Expiry Date */}
-                                  <td className="px-2.5 py-2">
-                                    <div className="flex flex-col">
-                                      <span className="font-mono font-bold text-slate-800">
-                                        {b.ExpDate || 'Not set'}
-                                      </span>
-                                      {b.MfgDate && (
-                                        <span className="text-[9px] text-slate-400 font-mono">
-                                          Mfg: {b.MfgDate}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-
-                                  {/* Qty */}
-                                  <td className="px-2.5 py-2 text-right font-mono font-extrabold text-slate-900">
-                                    <span className={b.Qty === 0 ? 'text-slate-400' : 'text-emerald-700'}>
-                                      {b.Qty}
-                                    </span>
-                                  </td>
-
-                                  {/* Purchase Price */}
-                                  <td className="px-2.5 py-2 text-right font-mono text-slate-700">
-                                    {b.PurchasePrice !== undefined ? Number(b.PurchasePrice).toFixed(2) : '-'}
-                                  </td>
-
-                                  {/* Status Badge */}
-                                  <td className="px-2.5 py-2 text-center">
-                                    {b.Qty === 0 ? (
-                                      <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 rounded text-[9px] font-bold">
-                                        Exhausted
-                                      </span>
-                                    ) : isExp ? (
-                                      <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 rounded text-[9px] font-black uppercase">
-                                        🔴 Expired
-                                      </span>
-                                    ) : isNearExp ? (
-                                      <span className="px-1.5 py-0.5 bg-amber-100 text-amber-900 rounded text-[9px] font-bold">
-                                        🟡 &lt;90 Days
-                                      </span>
-                                    ) : (
-                                      <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded text-[9px] font-bold">
-                                        🟢 Active
-                                      </span>
-                                    )}
-                                  </td>
-
-                                  {/* Actions */}
-                                  <td className="px-2.5 py-2 text-center">
-                                    <div className="flex items-center justify-center space-x-1">
-                                      <button
-                                        type="button"
-                                        onClick={() => handleStartEditBatch(b)}
-                                        className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded transition cursor-pointer"
-                                        title="Edit Batch Parameters"
-                                      >
-                                        <Edit className="w-3.5 h-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        onClick={() => handleDeleteBatch(b.BatchID)}
-                                        className="p-1 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                                        title="Delete Batch Lot"
-                                      >
-                                        <Trash2 className="w-3.5 h-3.5" />
-                                      </button>
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                {/* FEFO Dispensing Note */}
-                <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-xl flex items-start space-x-2.5">
-                  <div className="p-1.5 bg-indigo-600 text-white rounded-lg shrink-0 mt-0.5">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                  </div>
-                  <div className="text-[11px] text-indigo-950 leading-relaxed font-medium">
-                    <strong className="text-indigo-900">FEFO (First-Expired, First-Out) Automated Engine:</strong> When billing prescriptions or selling at POS, stock will automatically be consumed from the earliest expiring valid lot first. Expired stock lots are prevented from being dispensed.
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Column: Inward / Edit Batch Form (5 cols) */}
-              <div className="lg:col-span-5 bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col justify-between">
-                <div>
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-3 mb-4">
-                    <div className="flex items-center space-x-2">
-                      <div className={`p-1.5 rounded-lg ${editingBatchId ? 'bg-amber-100 text-amber-800' : 'bg-indigo-100 text-indigo-800'}`}>
-                        <PlusCircle className="w-4 h-4" />
-                      </div>
-                      <h4 className="font-extrabold text-xs uppercase tracking-wider text-slate-900">
-                        {editingBatchId ? 'Edit Selected Batch Lot' : 'Receive / Add New Stock Batch'}
-                      </h4>
-                    </div>
-                    {editingBatchId && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setEditingBatchId(null);
-                          setBatchFormNo('');
-                          setBatchFormExpDate('');
-                          setBatchFormQty('');
-                        }}
-                        className="text-[11px] font-bold text-indigo-600 hover:underline cursor-pointer"
-                      >
-                        + New Batch
-                      </button>
-                    )}
-                  </div>
-
-                  <form id="save-batch-form" onSubmit={handleSaveBatch} className="space-y-3">
-                    <div>
-                      <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
-                        Batch # (Lot Number) *
-                      </label>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. B-2026-002"
-                        value={batchFormNo}
-                        onChange={(e) => setBatchFormNo(e.target.value)}
-                        className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
-                          Mfg Date
-                        </label>
-                        <input
-                          type="date"
-                          value={batchFormMfgDate}
-                          onChange={(e) => setBatchFormMfgDate(e.target.value)}
-                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-medium text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-rose-600 uppercase tracking-wider mb-1">
-                          Expiry Date *
-                        </label>
-                        <input
-                          type="date"
-                          required
-                          value={batchFormExpDate}
-                          onChange={(e) => setBatchFormExpDate(e.target.value)}
-                          className="w-full p-2 border border-rose-300 rounded-lg text-xs font-mono font-bold text-rose-950 focus:ring-2 focus:ring-rose-500 focus:outline-none bg-rose-50/30"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
-                          Quantity in Batch *
-                        </label>
-                        <input
-                          type="number"
-                          min="0"
-                          required
-                          placeholder="e.g. 50"
-                          value={batchFormQty}
-                          onChange={(e) => setBatchFormQty(e.target.value === '' ? '' : Number(e.target.value))}
-                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-black text-emerald-800 focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
-                          Unit Cost (Rs.)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="Cost Price"
-                          value={batchFormCost}
-                          onChange={(e) => setBatchFormCost(e.target.value === '' ? '' : Number(e.target.value))}
-                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2.5">
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
-                          Retail Price (Rs.)
-                        </label>
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0"
-                          placeholder="Sale Price"
-                          value={batchFormSalePrice}
-                          onChange={(e) => setBatchFormSalePrice(e.target.value === '' ? '' : Number(e.target.value))}
-                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-bold text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-extrabold text-slate-600 uppercase tracking-wider mb-1">
-                          PO / GRN Ref (Opt)
-                        </label>
-                        <input
-                          type="text"
-                          placeholder="e.g. GRN-104"
-                          value={batchFormPoGrnRef}
-                          onChange={(e) => setBatchFormPoGrnRef(e.target.value)}
-                          className="w-full p-2 border border-slate-300 rounded-lg text-xs font-mono font-medium text-slate-700 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                        />
-                      </div>
-                    </div>
-                  </form>
-                </div>
-
-                <div className="pt-4 border-t border-slate-200 mt-4 flex items-center justify-end space-x-2">
-                  {editingBatchId && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setEditingBatchId(null);
-                        setBatchFormNo('');
-                        setBatchFormExpDate('');
-                        setBatchFormQty('');
-                      }}
-                      className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
-                    >
-                      Cancel Edit
-                    </button>
-                  )}
-                  <button
-                    type="submit"
-                    form="save-batch-form"
-                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-extrabold text-xs rounded-xl transition cursor-pointer shadow-md flex items-center space-x-1.5"
-                  >
-                    <PlusCircle className="w-4 h-4" />
-                    <span>{editingBatchId ? 'Update Batch' : 'Save Batch & Update Master Stock'}</span>
-                  </button>
-                </div>
-              </div>
-
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-3 bg-slate-100 border-t border-slate-200 flex justify-between items-center px-5">
-              <div className="text-[11px] text-slate-500 font-medium">
-                Medicine ID: <span className="font-mono font-bold text-slate-800">{selectedBatchItem.ItemID}</span> • Total Batches: <span className="font-mono font-bold text-slate-800">{Array.isArray(selectedBatchItem.Batches) ? selectedBatchItem.Batches.length : (selectedBatchItem.ExpDate ? 1 : 0)}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsBatchesModalOpen(false);
-                  setSelectedBatchItem(null);
-                  setEditingBatchId(null);
-                }}
-                className="px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer shadow-xs"
-              >
-                Close Manager
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PharmacyBatchesModal
+        isBatchesModalOpen={isBatchesModalOpen}
+        selectedBatchItem={selectedBatchItem}
+        setIsBatchesModalOpen={setIsBatchesModalOpen}
+        setSelectedBatchItem={setSelectedBatchItem}
+        setEditingBatchId={setEditingBatchId}
+        batchModalMsg={batchModalMsg}
+        editingBatchId={editingBatchId}
+        batchFormNo={batchFormNo}
+        setBatchFormNo={setBatchFormNo}
+        batchFormMfgDate={batchFormMfgDate}
+        setBatchFormMfgDate={setBatchFormMfgDate}
+        batchFormExpDate={batchFormExpDate}
+        setBatchFormExpDate={setBatchFormExpDate}
+        batchFormQty={batchFormQty}
+        setBatchFormQty={setBatchFormQty}
+        batchFormCost={batchFormCost}
+        setBatchFormCost={setBatchFormCost}
+        batchFormSalePrice={batchFormSalePrice}
+        setBatchFormSalePrice={setBatchFormSalePrice}
+        batchFormPoGrnRef={batchFormPoGrnRef}
+        setBatchFormPoGrnRef={setBatchFormPoGrnRef}
+        handleStartEditBatch={handleStartEditBatch}
+        handleDeleteBatch={handleDeleteBatch}
+        handleSaveBatch={handleSaveBatch}
+      />
 
       {/* Item QR Code Scanner Modal */}
       <ItemQRScannerModal
@@ -10649,16 +5461,15 @@ export default function PharmacyPOS({
         isOpen={isQRGeneratorOpen}
         onClose={() => setIsQRGeneratorOpen(false)}
         items={items}
-        clinicName={clinicSettings?.Name || 'Smart Clinic Pharmacy'}
+        clinicName={clinicSettings?.Name || "Smart Clinic Pharmacy"}
       />
 
       {/* PWA Mobile App Install Modal */}
       <PwaInstallModal
         isOpen={isPwaModalOpen}
         onClose={() => setIsPwaModalOpen(false)}
-        onLaunchStoreMode={() => handleSubTabSwitch('store_sales', 'Store Medicine')}
+        onLaunchStoreMode={() => handleSubTabSwitch("store_sales", "Store Medicine")}
       />
-
     </div>
   );
 }
