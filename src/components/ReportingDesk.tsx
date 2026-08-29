@@ -1102,183 +1102,170 @@ export default function ReportingDesk({
 
     const totalIncome = totalOpdIncome + netPosIncome + otherIncome;
 
-    // 4. OUTFLOWS & EXPENSES (Comprehensive, deduplicated audit across expenses, payroll, vendor payments, vouchers & transactions)
-    let totalOperatingExpenses = 0;
-    const countedExpenseKeys = new Set<string>();
+    // 4. OUTFLOWS & OPERATING EXPENSES (Direct & Synchronized with Clinic Daily Cash Book & P&L Ledger)
+    // All outflows strictly derived from the exact Cash Book ledger (Expenses, Payrolls, and non-duplicate ERP Transaction Outflows)
+    const cashBookOutflowEntries: Array<{
+      id: string;
+      date: string;
+      category: string;
+      particulars: string;
+      amount: number;
+      paymentMode: string;
+      source: string;
+    }> = [];
 
-    // 4A. Primary: Direct Operational & Clinic Expense Records (from erp_expenses / Expense Analysis)
-    // Strictly operational (Rent, Utilities, Maintenance, Refreshments, Stationery, Fuel, Repairs, etc.)
-    effectiveExpenses.forEach((exp: any, idx: number) => {
-      const d = parseCleanDate(exp.ExpenseDate || exp.Date || exp.CreatedAt);
-      if (isWithinDateRange(d)) {
-        const amt = Number(exp.Amount || exp.ExpenseAmount || exp.TotalAmount || 0);
-        if (amt > 0) {
-          const desc = (exp.Description || '').toLowerCase();
-          const cat = (exp.Category || '').toLowerCase();
-          // Exclude vendor payments, supplier bills, medicine purchases, and credit GRNs from operational expenses
-          const isVendor = Boolean(exp.VendorID || exp.VendorName) ||
-            cat.includes('vendor') || cat.includes('supplier') || cat.includes('medicine purchase') ||
-            cat.includes('stock purchase') || desc.includes('vendor invoice') || desc.includes('payment against vendor') ||
-            desc.includes('spot cash payment on delivery') || desc.includes('grn') || desc.includes('paid to vendor');
-          
-          if (isVendor) {
-            // Do not include under operational expenses
-            return;
-          }
-
-          totalOperatingExpenses += amt;
-          const idKey = String(exp.ExpenseID || exp._id || `exp_${idx}`).trim();
-          if (idKey) countedExpenseKeys.add(idKey);
-          if (exp.ReceiptRef) countedExpenseKeys.add(String(exp.ReceiptRef).trim());
-          if (exp.ReferenceNo) countedExpenseKeys.add(String(exp.ReferenceNo).trim());
-          // Also mark date+amount key to prevent double counting from synced transactions
-          countedExpenseKeys.add(`${d}_${amt}`);
+    // 4A. ERP Expenses
+    (effectiveExpenses || []).forEach((exp: any, idx: number) => {
+      const eAmt = Number(exp.Amount || exp.ExpenseAmount || exp.TotalAmount || 0);
+      if (eAmt > 0) {
+        const d = parseCleanDate(exp.ExpenseDate || exp.Date || exp.CreatedAt);
+        if (isWithinDateRange(d)) {
+          const rawId = (exp.ExpenseID || exp._id || `EXP-${idx}`).toString();
+          const cleanId = rawId ? (rawId.startsWith('EXP-') ? rawId : `EXP-${rawId}`) : `EXP-${idx}`;
+          cashBookOutflowEntries.push({
+            id: cleanId,
+            date: d,
+            category: exp.Category || 'General Expense',
+            particulars: `${exp.Category || 'Expense'}: ${exp.Description || 'Clinic Expense Outflow'}`,
+            amount: eAmt,
+            paymentMode: exp.PaymentMethod || 'Cash',
+            source: 'Expenses'
+          });
         }
       }
     });
 
-    // 4B. Staff Salaries & Payroll Disbursements
+    // 4B. ERP Payroll / Salaries Paid
+    (effectivePayrolls || []).forEach((pay: any, idx: number) => {
+      const pAmt = Number(pay.NetSalary || pay.BasicSalary || pay.Amount || 0);
+      if (pAmt > 0 && (pay.PaymentStatus === 'Paid' || pay.Status === 'Paid' || !pay.PaymentStatus)) {
+        const d = parseCleanDate(pay.PaymentDate || pay.Date || (pay.MonthYear ? `${pay.MonthYear}-01` : ''));
+        if (isWithinDateRange(d)) {
+          const empList = (employees && employees.length > 0) ? employees : [];
+          const emp = empList.find((e: any) => e.EmployeeID === pay.EmployeeID);
+          const rawId = (pay.PayrollID || pay._id || `PAY-${idx}`).toString();
+          const cleanId = rawId ? (rawId.startsWith('PAY-') ? rawId : `PAY-${rawId}`) : `PAY-${idx}`;
+          cashBookOutflowEntries.push({
+            id: cleanId,
+            date: d,
+            category: 'Staff Salary & Payroll',
+            particulars: `Staff Salary Disbursement: ${emp?.FullName || pay.EmployeeName || pay.EmployeeID || 'Employee'} (${pay.MonthYear || ''})`,
+            amount: pAmt,
+            paymentMode: pay.PaymentMethod || 'Cash',
+            source: 'Payroll'
+          });
+        }
+      }
+    });
+
+    // 4C. ERP General Ledger Transactions (Deduplicated against Expenses and Payrolls)
+    (effectiveTransactions || []).forEach((tx: any, idx: number) => {
+      const tAmt = Number(tx.Amount || 0);
+      if (tAmt > 0) {
+        const typeUpper = (tx.Type || '').toUpperCase();
+        const isActualOutflow =
+          typeUpper === 'EXPENSE' ||
+          typeUpper === 'VENDORPAYMENT' ||
+          typeUpper === 'VENDOR_PAYMENT' ||
+          typeUpper === 'PAYROLLPAYMENT' ||
+          typeUpper === 'ASSETPURCHASE';
+
+        if (!isActualOutflow) return;
+
+        const d = parseCleanDate(tx.Date || tx.TransactionDate || tx.CreatedAt);
+        if (!isWithinDateRange(d)) return;
+
+        const rawTxId = (tx.TransactionID || tx._id || `TXN-${idx}`).toString();
+        const rawRefNo = (tx.ReferenceNo || '').toString();
+        const cleanRef = rawTxId ? (rawTxId.startsWith('TXN-') ? rawTxId : `TXN-${rawTxId}`) : `TXN-${idx}`;
+
+        // Check if already in cashBookOutflowEntries or covered by Expenses/Payrolls
+        const isAlreadyIn = cashBookOutflowEntries.some(e => {
+          if (rawTxId && (e.id === rawTxId || e.id === `EXP-${rawTxId.replace(/^EXP-/, '')}`)) return true;
+          if (rawRefNo && (e.id === rawRefNo || e.id === `EXP-${rawRefNo.replace(/^EXP-/, '')}` || e.id === `PAY-${rawRefNo.replace(/^PAY-/, '')}`)) return true;
+          if (tx.Type === 'Expense' && (effectiveExpenses || []).some((exp: any) => {
+            const expId = (exp.ExpenseID || exp._id || '').toString();
+            return (expId && (expId === rawRefNo || expId === rawTxId)) ||
+                   (Number(exp.Amount) === tAmt && (parseCleanDate(exp.ExpenseDate || exp.Date) === d));
+          })) return true;
+          if (tx.Type === 'PayrollPayment' && (effectivePayrolls || []).some((pay: any) => {
+            const payId = (pay.PayrollID || pay._id || '').toString();
+            return payId && (payId === rawRefNo || payId === rawTxId);
+          })) return true;
+          return false;
+        });
+
+        if (!isAlreadyIn) {
+          cashBookOutflowEntries.push({
+            id: cleanRef,
+            date: d,
+            category: tx.Category || tx.Type || 'General Outflow',
+            particulars: tx.Description || `${tx.Type} - ${tx.Category}`,
+            amount: tAmt,
+            paymentMode: tx.PaymentMethod || 'Cash',
+            source: 'ERP Transactions'
+          });
+        }
+      }
+    });
+
+    // Categorize cashBookOutflowEntries exactly as in Clinic Daily Cash Book & P&L Ledger
     let salaryOutflows = 0;
-    const countedPayrollKeys = new Set<string>();
-
-    effectivePayrolls.forEach((p: any, idx: number) => {
-      const d = parseCleanDate(p.PaymentDate || p.Date || (p.MonthYear ? `${p.MonthYear}-01` : ''));
-      if (isWithinDateRange(d) || (p.MonthYear && startDate.startsWith(p.MonthYear))) {
-        if (p.PaymentStatus === 'Paid' || p.Status === 'Paid' || !p.PaymentStatus) {
-          const amt = Number(p.NetSalary || p.BasicSalary || p.Amount || 0);
-          if (amt > 0) {
-            salaryOutflows += amt;
-            const pKey = String(p.PayrollID || p._id || `pay_${idx}`).trim();
-            if (pKey) countedPayrollKeys.add(pKey);
-            if (p.ReferenceNo) countedPayrollKeys.add(String(p.ReferenceNo).trim());
-            countedPayrollKeys.add(`${d}_${amt}`);
-          }
-        }
-      }
-    });
-
-    // 4C. Vendor Payments & Supplier Settlements (Cash Spot Purchases & Settled Credit Bills via Vendor Directory)
-    // Note: Items purchased on credit create Accounts Payable liabilities and are ONLY counted in Cash Outflows
-    // when the vendor bill is actually paid (Vendor Payment voucher / cash settlement).
     let vendorCashPayments = 0;
     let vendorCreditPayments = 0;
-    const countedVendorKeys = new Set<string>();
+    let vendorOutflows = 0;
+    let totalOperatingExpenses = 0;
 
-    // 4D. Evaluate Transactions for uncounted expenses, salaries, or actual vendor disbursements
-    effectiveTransactions.forEach((t: any, idx: number) => {
-      const d = parseCleanDate(t.Date || t.TransactionDate || t.CreatedAt);
-      if (isWithinDateRange(d)) {
-        const amt = Number(t.Amount || 0);
-        if (amt <= 0) return;
+    cashBookOutflowEntries.forEach((e) => {
+      const amt = Number(e.amount) || 0;
+      if (amt <= 0) return;
 
-        const type = (t.Type || '').toLowerCase();
-        const cat = (t.Category || '').toLowerCase();
-        const desc = (t.Description || '').toLowerCase();
-        const refNo = String(t.ReferenceNo || t.TransactionID || t.LinkedExpenseID || t.ExpenseID || t.LinkedPayrollID || t.PayrollID || '').trim();
-        const dateAmtKey = `${d}_${amt}_${t.VendorID || t.VendorName || ''}`;
+      const catLower = (e.category || '').toLowerCase();
+      const partLower = (e.particulars || '').toLowerCase();
 
-        // Strict Check: Only actual paid vendor disbursements (VendorPayment, Paid Cash Purchase) count as cash outflows
-        const isPaidVendorPayment = (
-          type === 'vendorpayment' || 
-          type === 'vendor_payment' || 
-          (type === 'expense' && (cat.includes('vendor') || cat.includes('supplier') || Boolean(t.VendorID || t.VendorName))) ||
-          (desc.includes('vendor payment') || desc.includes('paid to vendor') || desc.includes('payment against vendor') || desc.includes('spot cash payment on delivery'))
-        ) && t.PaymentStatus !== 'Unpaid';
+      // 1. Staff Salary & Payroll Disbursements
+      if (catLower.includes('salary') || catLower.includes('payroll') || partLower.includes('salary') || partLower.includes('payroll')) {
+        salaryOutflows += amt;
+      }
+      // 2. Vendor Payments & Inventory Procurements
+      else if (
+        catLower.includes('medicine') ||
+        catLower.includes('purchase') ||
+        catLower.includes('vendor') ||
+        catLower.includes('supplier') ||
+        catLower.includes('grn') ||
+        partLower.includes('vendor') ||
+        partLower.includes('supplier') ||
+        partLower.includes('purchase') ||
+        partLower.includes('grn') ||
+        partLower.includes('medicine stock')
+      ) {
+        vendorOutflows += amt;
+        const isSpot =
+          catLower.includes('spot') ||
+          partLower.includes('spot') ||
+          partLower.includes('delivery') ||
+          (e.paymentMode && e.paymentMode.toLowerCase() === 'cash');
 
-        const isSalary = type === 'payroll' || type === 'salary' || cat.includes('salary') || cat.includes('payroll');
-        const isExpense = !isPaidVendorPayment && !isSalary && !Boolean(t.VendorID || t.VendorName) && (
-          type === 'expense' || type === 'debit' || type === 'outflow' ||
-          cat.includes('expense') || cat.includes('utility') || cat.includes('rent') ||
-          cat.includes('maintenance') || cat.includes('tea') || cat.includes('stationery') ||
-          cat.includes('fuel') || cat.includes('cleaning') || cat.includes('supplies') ||
-          cat.includes('office') || cat.includes('repair') ||
-          (type !== 'income' && type !== 'deposit' && type !== 'receipt' && type !== 'credit' && type !== 'grn_credit' && type !== 'purchase')
-        );
-
-        if (isPaidVendorPayment) {
-          if (!countedVendorKeys.has(refNo) && !countedVendorKeys.has(dateAmtKey)) {
-            const isCash = (
-              cat.includes('spot') || 
-              cat.includes('cash spot') || 
-              desc.includes('spot cash') || 
-              desc.includes('cash spot') ||
-              desc.includes('spot cash payment on delivery') ||
-              (t.PaymentMethod === 'Cash' && (desc.includes('spot') || cat.includes('spot') || desc.includes('delivery')))
-            );
-
-            if (isCash) {
-              vendorCashPayments += amt;
-            } else {
-              vendorCreditPayments += amt;
-            }
-
-            if (refNo) countedVendorKeys.add(refNo);
-            countedVendorKeys.add(dateAmtKey);
-          }
-        } else if (isSalary) {
-          if (!countedPayrollKeys.has(refNo) && !countedPayrollKeys.has(dateAmtKey)) {
-            salaryOutflows += amt;
-            if (refNo) countedPayrollKeys.add(refNo);
-            countedPayrollKeys.add(dateAmtKey);
-          }
-        } else if (isExpense) {
-          if (!countedExpenseKeys.has(refNo) && !countedExpenseKeys.has(dateAmtKey)) {
-            totalOperatingExpenses += amt;
-            if (refNo) countedExpenseKeys.add(refNo);
-            countedExpenseKeys.add(dateAmtKey);
-          }
+        if (isSpot) {
+          vendorCashPayments += amt;
+        } else {
+          vendorCreditPayments += amt;
         }
+      }
+      // 3. Operational, Clinic & Building Expenses (Rent, Utilities, Maintenance, Refreshments, Supplies, etc.)
+      else {
+        totalOperatingExpenses += amt;
       }
     });
 
-    // 4E. Accounting Vouchers (Cash/Bank Payment Vouchers: CPV, BPV, CP, BP, PV)
-    effectiveVouchers.forEach((v: any, idx: number) => {
-      const d = parseCleanDate(v.VchDate || v.VDate || v.Date || v.CreatedAt);
-      if (isWithinDateRange(d)) {
-        const vType = (v.VchType || v.Type || '').toUpperCase();
-        if (vType === 'CPV' || vType === 'BPV' || vType === 'CP' || vType === 'BP' || vType === 'PV' || vType === 'PAYMENT') {
-          const amt = Number(v.Amount || v.VAmount || v.TotalAmount || v.NetDebit || 0);
-          if (amt <= 0) return;
+    // Ensure vendorCashPayments + vendorCreditPayments === vendorOutflows
+    if (vendorOutflows > 0 && vendorCashPayments === 0 && vendorCreditPayments === 0) {
+      vendorCashPayments = vendorOutflows;
+    } else if (vendorCashPayments + vendorCreditPayments !== vendorOutflows) {
+      vendorCreditPayments = Math.max(0, vendorOutflows - vendorCashPayments);
+    }
 
-          const remarks = (v.Remarks || v.Description || '').toLowerCase();
-          const vKey = String(v.VchNo || v._id || v.VoucherID || `vch_${idx}`).trim();
-          const ref = String(v.RefNo || '').trim();
-          const dateAmtKey = `${d}_${amt}`;
-
-          // Cash payment vouchers to suppliers / vendors
-          const isVendor = (remarks.includes('supplier') || remarks.includes('vendor payment') || remarks.includes('pay vendor') || Boolean(v.VendorID || v.SupplierID)) && !remarks.includes('stock received on credit');
-          const isSalary = remarks.includes('salary') || remarks.includes('payroll') || remarks.includes('staff pay') || remarks.includes('wages');
-
-          if (isVendor) {
-            if (!countedVendorKeys.has(vKey) && !countedVendorKeys.has(ref) && !countedVendorKeys.has(dateAmtKey)) {
-              const isCash = vType === 'CPV' || vType === 'CP' || remarks.includes('cash spot') || remarks.includes('spot cash');
-              if (isCash) {
-                vendorCashPayments += amt;
-              } else {
-                vendorCreditPayments += amt;
-              }
-              countedVendorKeys.add(vKey);
-              countedVendorKeys.add(dateAmtKey);
-            }
-          } else if (isSalary) {
-            if (!countedPayrollKeys.has(vKey) && !countedPayrollKeys.has(ref) && !countedPayrollKeys.has(dateAmtKey)) {
-              salaryOutflows += amt;
-              countedPayrollKeys.add(vKey);
-              countedPayrollKeys.add(dateAmtKey);
-            }
-          } else {
-            // General / Clinic Operational Expense Voucher
-            if (!countedExpenseKeys.has(vKey) && !countedExpenseKeys.has(ref) && !countedExpenseKeys.has(dateAmtKey)) {
-              totalOperatingExpenses += amt;
-              countedExpenseKeys.add(vKey);
-              countedExpenseKeys.add(dateAmtKey);
-            }
-          }
-        }
-      }
-    });
-
-    const vendorOutflows = vendorCashPayments + vendorCreditPayments;
     const totalExpenses = vendorOutflows + salaryOutflows + totalOperatingExpenses;
     const netProfit = totalIncome - totalExpenses;
     const netMarginPct = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;

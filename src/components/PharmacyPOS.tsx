@@ -851,6 +851,12 @@ export default function PharmacyPOS({
       setInvErrorMsg('Access Denied: You do not have "Cancel/Void Record" permission to delete inventory items.');
       return;
     }
+    const targetItem = items.find(i => i.ItemID === itemId);
+    const availableStock = Number(targetItem?.CStock || 0);
+    if (availableStock > 0) {
+      setInvErrorMsg(`Deletion Restricted: "${itemName}" currently has active stock (${availableStock} ${targetItem?.Unit || 'Units'}). Stock must be 0 before deleting from inventory.`);
+      return;
+    }
     if (window.confirm(`Are you sure you want to delete "${itemName}" from the inventory list?`)) {
       setItems(prev => prev.filter(itm => itm.ItemID !== itemId));
       syncItemToBackend('DELETE', { ItemID: itemId });
@@ -2499,6 +2505,16 @@ export default function PharmacyPOS({
 
   const handleDeleteStoreItem = (itemId: string, itemName: string) => {
     if (!itemId) return;
+    const targetItem = items.find((i) => i.ItemID === itemId);
+    const availableStock = Number(targetItem?.CStock || 0);
+
+    if (availableStock > 0) {
+      alert(
+        `🔒 Deletion Restricted:\n\nMedicine "${itemName || 'Item'}" (ID: ${itemId}) has active available stock (${availableStock} ${targetItem?.Unit || 'Units'}).\n\nYou cannot delete a medicine from the Stock Grid while current stock is available. Please adjust or issue the stock to 0 before deleting.`
+      );
+      return;
+    }
+
     const confirmDelete = window.confirm(
       'Are you sure you want to permanently delete "' + (itemName || 'Item') + '" (Item ID: ' + itemId + ') from Stock Grid Manager / Inventory? This will delete duplicate or obsolete entries.'
     );
@@ -3769,17 +3785,30 @@ export default function PharmacyPOS({
                                       Stock: {itm.CStock} {itm.Unit || ''}
                                     </span>
                                   </div>
-                                  <button
-                                    type="button"
-                                    onMouseDown={(e) => {
-                                      e.stopPropagation();
-                                      handleDeleteStoreItem(itm.ItemID, itm.ItemName);
-                                    }}
-                                    className="p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
-                                    title="Delete item / duplicate from Stock Grid Manager"
-                                  >
-                                    <Trash2 className="w-3.5 h-3.5" />
-                                  </button>
+                                  {itm.CStock > 0 ? (
+                                    <div
+                                      onMouseDown={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteStoreItem(itm.ItemID, itm.ItemName);
+                                      }}
+                                      className="p-1 text-slate-400 hover:text-amber-700 hover:bg-amber-50 rounded transition cursor-not-allowed"
+                                      title={`🔒 Stock available (${itm.CStock} ${itm.Unit || 'Units'}). Deletion from Grid is restricted.`}
+                                    >
+                                      <Lock className="w-3.5 h-3.5 text-slate-400" />
+                                    </div>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onMouseDown={(e) => {
+                                        e.stopPropagation();
+                                        handleDeleteStoreItem(itm.ItemID, itm.ItemName);
+                                      }}
+                                      className="p-1 text-slate-300 hover:text-rose-600 hover:bg-rose-50 rounded transition cursor-pointer"
+                                      title="Delete zero-stock item / duplicate from Stock Grid Manager"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                 </div>
                               </div>
                             );
@@ -3891,15 +3920,27 @@ export default function PharmacyPOS({
                       <span className="text-[10px] text-emerald-700 bg-emerald-100/70 px-2 py-0.5 rounded font-bold">
                         ✓ Price auto-syncs with inventory
                       </span>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteStoreItem(sel.ItemID, sel.ItemName)}
-                        className="inline-flex items-center space-x-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-lg border border-rose-200 hover:border-rose-300 transition cursor-pointer shadow-2xs"
-                        title="Delete this item / duplicate entry from Stock Grid Manager"
-                      >
-                        <Trash2 className="w-3.5 h-3.5 text-rose-600" />
-                        <span>Delete from Stock Grid</span>
-                      </button>
+                      {sel.CStock > 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteStoreItem(sel.ItemID, sel.ItemName)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-bold rounded-lg border border-slate-200 transition cursor-pointer shadow-2xs"
+                          title={`🔒 Active stock available (${sel.CStock} ${sel.Unit || 'Units'}). Deletion from Stock Grid is restricted.`}
+                        >
+                          <Lock className="w-3.5 h-3.5 text-slate-400" />
+                          <span>Delete Restricted (Stock: {sel.CStock})</span>
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteStoreItem(sel.ItemID, sel.ItemName)}
+                          className="inline-flex items-center space-x-1 px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-bold rounded-lg border border-rose-200 hover:border-rose-300 transition cursor-pointer shadow-2xs"
+                          title="Delete this zero-stock duplicate/obsolete entry from Stock Grid Manager"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Delete from Stock Grid</span>
+                        </button>
+                      )}
                     </div>
                   </div>
                 );
