@@ -5690,11 +5690,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const vendorTotalOutstandingBalance = targetVendor ? Number(targetVendor.Balance || 0) : pendingPoDues;
 
     const totalItems = po.Items.length;
-    const colSize = Math.max(1, Math.ceil(totalItems / (hasGrns ? 2 : 3)));
+    const colSize = Math.max(1, Math.ceil(totalItems / 3));
 
     const col1Items = po.Items.slice(0, colSize);
     const col2Items = po.Items.slice(colSize, colSize * 2);
-    const col3Items = !hasGrns ? po.Items.slice(colSize * 2) : [];
+    const col3Items = po.Items.slice(colSize * 2);
 
     const renderColumnTable = (items: typeof po.Items, startIdx: number) => {
       if (!items || items.length === 0) return `<div style="flex: 1;"></div>`;
@@ -5703,31 +5703,29 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         const itemKey = (item.ItemID || item.ItemName || '').trim();
         const itemKeyName = (item.ItemName || '').trim();
         const recQty = (receivedQtyMap[itemKey] || receivedQtyMap[itemKeyName] || 0);
-        const balQty = Math.max(0, Number(item.Qty) - recQty);
 
         if (hasGrns) {
           return `
             <tr style="border-bottom: 1px solid #e2e8f0;">
-              <td style="text-align: center; border: 1px solid #cbd5e1; padding: 4px; font-weight: bold; color: #475569; width: 24px;">${startIdx + idx + 1}</td>
+              <td style="text-align: center; border: 1px solid #cbd5e1; padding: 4px; font-weight: bold; color: #475569; width: 22px;">${startIdx + idx + 1}</td>
               <td style="border: 1px solid #cbd5e1; padding: 4px; font-weight: bold; color: #0f172a;">
                 ${item.ItemName}
                 ${item.Category ? `<div style="font-size: 8px; color: #4338ca; font-weight: 600; margin-top: 1px;">Cat: ${item.Category}</div>` : ''}
               </td>
-              <td style="text-align: center; border: 1px solid #cbd5e1; padding: 4px; font-weight: bold; color: #0284c7; width: 42px; background: #f0f9ff;">${item.Qty}</td>
-              <td style="text-align: center; border: 1px solid #cbd5e1; padding: 4px; font-weight: 800; color: ${recQty > 0 ? '#047857' : '#94a3b8'}; width: 42px; background: ${recQty > 0 ? '#ecfdf5' : '#ffffff'};">${recQty}</td>
-              <td style="text-align: center; border: 1px solid #cbd5e1; padding: 4px; font-weight: 800; color: ${balQty > 0 ? '#b45309' : '#047857'}; width: 42px; background: ${balQty > 0 ? '#fffbeb' : '#f0fdf4'};">${balQty}</td>
+              <td style="text-align: center; border: 1px solid #cbd5e1; padding: 4px; font-weight: bold; color: #0284c7; width: 36px; background: #f0f9ff;">${item.Qty}</td>
+              <td style="text-align: center; border: 1px solid #cbd5e1; padding: 4px; font-weight: 800; color: ${recQty > 0 ? '#047857' : '#94a3b8'}; width: 36px; background: ${recQty > 0 ? '#ecfdf5' : '#ffffff'};">${recQty}</td>
             </tr>
           `;
         }
 
         return `
           <tr style="border-bottom: 1px solid #e2e8f0;">
-            <td style="text-align: center; border: 1px solid #cbd5e1; padding: 5px; font-weight: bold; color: #475569; width: 26px;">${startIdx + idx + 1}</td>
+            <td style="text-align: center; border: 1px solid #cbd5e1; padding: 5px; font-weight: bold; color: #475569; width: 24px;">${startIdx + idx + 1}</td>
             <td style="border: 1px solid #cbd5e1; padding: 5px; font-weight: bold; color: #0f172a;">
               ${item.ItemName}
               ${item.Category ? `<div style="font-size: 8.5px; color: #4338ca; font-weight: 600; margin-top: 1px;">Cat: ${item.Category}</div>` : ''}
             </td>
-            <td style="text-align: center; border: 1px solid #cbd5e1; padding: 5px; font-weight: bold; color: #0284c7; width: 60px; background: #f0f9ff;">${item.Qty}</td>
+            <td style="text-align: center; border: 1px solid #cbd5e1; padding: 5px; font-weight: bold; color: #0284c7; width: 50px; background: #f0f9ff;">${item.Qty}</td>
           </tr>
         `;
       }).join('');
@@ -5737,12 +5735,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           <table style="width: 100%; border-collapse: collapse; font-size: 10.5px;">
             <thead>
               <tr style="background: #1e293b; color: #ffffff;">
-                <th style="border: 1px solid #334155; padding: 5px; text-align: center; width: 24px; font-size: 8.5px; text-transform: uppercase;">#</th>
+                <th style="border: 1px solid #334155; padding: 5px; text-align: center; width: 22px; font-size: 8.5px; text-transform: uppercase;">#</th>
                 <th style="border: 1px solid #334155; padding: 5px; text-align: left; font-size: 8.5px; text-transform: uppercase;">Medicine Name</th>
-                <th style="border: 1px solid #334155; padding: 5px; text-align: center; width: ${hasGrns ? '42px' : '60px'}; font-size: 8.5px; text-transform: uppercase;">Ord</th>
+                <th style="border: 1px solid #334155; padding: 5px; text-align: center; width: ${hasGrns ? '36px' : '50px'}; font-size: 8.5px; text-transform: uppercase; background: #0369a1;">ORD</th>
                 ${hasGrns ? `
-                  <th style="border: 1px solid #334155; padding: 5px; text-align: center; width: 42px; font-size: 8.5px; text-transform: uppercase; background: #047857;">Rec</th>
-                  <th style="border: 1px solid #334155; padding: 5px; text-align: center; width: 42px; font-size: 8.5px; text-transform: uppercase; background: #b45309;">Bal</th>
+                  <th style="border: 1px solid #334155; padding: 5px; text-align: center; width: 36px; font-size: 8.5px; text-transform: uppercase; background: #047857;">REC</th>
                 ` : ''}
               </tr>
             </thead>
@@ -5756,7 +5753,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     const col1Html = renderColumnTable(col1Items, 0);
     const col2Html = renderColumnTable(col2Items, colSize);
-    const col3Html = !hasGrns ? renderColumnTable(col3Items, colSize * 2) : '';
+    const col3Html = renderColumnTable(col3Items, colSize * 2);
 
     // Build Payments Settlement Table if any payments recorded against this PO
     let paymentHistoryHtml = '';

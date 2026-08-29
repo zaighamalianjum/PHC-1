@@ -522,7 +522,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                                   </span>
                                 </div>
 
-                                {/* Unit Price (GRN or Last Price) */}
+                                {/* Unit Price (GRN, Rate, or Manual Textbox) */}
                                 <div className="flex justify-between items-center pt-1 border-t border-slate-100">
                                   <span className="text-slate-500 font-medium flex items-center space-x-1">
                                     <span>Unit Price:</span>
@@ -532,14 +532,40 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                                       </span>
                                     )}
                                   </span>
-                                  {priceInfo.hasPrice ? (
-                                    <span className="font-extrabold text-emerald-800 font-mono text-xs">
-                                      Rs. {(unitPrice || 0).toLocaleString()}
-                                    </span>
+                                  {isSelected ? (
+                                    <div className="flex items-center space-x-1">
+                                      <span className="text-[10px] text-slate-400 font-bold">Rs.</span>
+                                      <input
+                                        type="number"
+                                        min="0"
+                                        step="any"
+                                        placeholder="0"
+                                        value={currentPoItem?.UnitPrice ?? (unitPrice || 0)}
+                                        onClick={e => e.stopPropagation()}
+                                        onChange={e => {
+                                          const val = Math.max(0, Number(e.target.value));
+                                          setPoForm((prev: any) => ({
+                                            ...prev,
+                                            Items: prev.Items.map((i: any) =>
+                                              (i.ItemID === med.ItemID || i.ItemName === med.ItemName)
+                                                ? { ...i, UnitPrice: val }
+                                                : i
+                                            )
+                                          }));
+                                        }}
+                                        className="w-20 p-1 text-right text-xs border border-emerald-300 rounded-md font-bold font-mono bg-white text-emerald-950 focus:ring-1 focus:ring-emerald-500"
+                                      />
+                                    </div>
                                   ) : (
-                                    <span className="text-[9.5px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
-                                      ⚠️ Price: Not Mentioned
-                                    </span>
+                                    priceInfo.hasPrice ? (
+                                      <span className="font-extrabold text-emerald-800 font-mono text-xs">
+                                        Rs. {(unitPrice || 0).toLocaleString()}
+                                      </span>
+                                    ) : (
+                                      <span className="text-[9.5px] font-bold text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded border border-amber-200">
+                                        ⚠️ Price: Not Mentioned
+                                      </span>
+                                    )
                                   )}
                                 </div>
 
