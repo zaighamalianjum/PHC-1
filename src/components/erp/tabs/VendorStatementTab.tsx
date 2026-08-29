@@ -247,17 +247,27 @@ export const VendorStatementTab: React.FC<VendorStatementTabProps> = ({
               <p className="text-xl font-black text-amber-700 font-mono">
                 Rs. {(vendorStatement?.totalInvoiced || 0).toLocaleString()}
               </p>
-              <p className="text-[10px] text-slate-400">Total Goods Received (Credit)</p>
+              <p className="text-[10px] text-slate-400">Total Goods Received (Credit Bills)</p>
             </div>
 
             <div className="bg-emerald-50/70 p-4 rounded-xl border border-emerald-200 space-y-1">
-              <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
-                Total Payments Cleared
-              </span>
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
+                  Total Payments Cleared (Debit)
+                </span>
+                <span className="text-[9px] font-bold bg-emerald-200 text-emerald-900 px-1.5 py-0.2 rounded font-mono">Grand Total</span>
+              </div>
               <p className="text-xl font-black text-emerald-700 font-mono">
                 Rs. {(vendorStatement?.totalPaid || 0).toLocaleString()}
               </p>
-              <p className="text-[10px] text-emerald-600">Total Payments Settled (Debit)</p>
+              <div className="flex items-center space-x-2 text-[10px] pt-0.5">
+                <span className="text-emerald-800 font-semibold bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-300">
+                  Cash: Rs. {(vendorStatement?.totalCashPaid || 0).toLocaleString()}
+                </span>
+                <span className="text-indigo-800 font-semibold bg-indigo-100/80 px-1.5 py-0.5 rounded border border-indigo-300">
+                  Credit/Bank: Rs. {(vendorStatement?.totalCreditPaid || 0).toLocaleString()}
+                </span>
+              </div>
             </div>
 
             <div className="bg-amber-500 text-white p-4 rounded-xl shadow-xs space-y-1">

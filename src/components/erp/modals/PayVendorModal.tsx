@@ -1,5 +1,5 @@
-import React from 'react';
-import { DollarSign, Printer, X, History, Coins, Calculator, CheckCircle2, Boxes } from 'lucide-react';
+import React, { useState } from 'react';
+import { DollarSign, Printer, X, History, Coins, Calculator, CheckCircle2, Boxes, ChevronDown, ChevronUp, CreditCard, Banknote } from 'lucide-react';
 import { ErpVendor, ErpPurchaseOrder, ErpGrn, ErpTransaction } from '../../../types';
 
 interface PayVendorModalProps {
@@ -8,7 +8,7 @@ interface PayVendorModalProps {
     poId?: string;
     invNo?: string;
     amount?: number;
-    paymentMethod?: 'Cash' | 'Bank Transfer' | 'Cheque' | 'Online/Card';
+    paymentMethod?: 'Cash' | 'Credit' | 'Bank' | 'Bank Transfer' | 'Cheque' | 'Online' | 'Online/Card';
     date?: string;
     description?: string;
   } | null;
@@ -35,6 +35,9 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
   handleSavePayVendorBill,
   isSubmitting,
 }) => {
+  const [showHistoryTable, setShowHistoryTable] = useState(false);
+  const [historyFilter, setHistoryFilter] = useState<'ALL' | 'CASH' | 'CREDIT'>('ALL');
+
   if (!payVendorModalData) return null;
   return (
         <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
@@ -109,7 +112,24 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                 return isVendorPay && ((vName && tVName === vName) || (vId && tVId === vId) || (tVName && vName.includes(tVName)));
               });
 
-              const totalPaidToVendor = vTxns.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
+              // Separate Cash vs Credit / Non-Cash Settlements
+              const cashTxns = vTxns.filter(t => {
+                const method = (t.PaymentMethod || '').toLowerCase();
+                const cat = (t.Category || '').toLowerCase();
+                const desc = (t.Description || '').toLowerCase();
+                return method === 'cash' || cat.includes('spot') || desc.includes('spot cash') || desc.includes('cash spot');
+              });
+
+              const creditTxns = vTxns.filter(t => {
+                const method = (t.PaymentMethod || '').toLowerCase();
+                const cat = (t.Category || '').toLowerCase();
+                const desc = (t.Description || '').toLowerCase();
+                return !(method === 'cash' || cat.includes('spot') || desc.includes('spot cash') || desc.includes('cash spot'));
+              });
+
+              const totalCashPaid = cashTxns.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
+              const totalCreditPaid = creditTxns.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
+              const grandTotalPaid = totalCashPaid + totalCreditPaid;
               const currentBalance = vVendor.Balance || 0;
 
               return (
@@ -120,8 +140,8 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                         <Coins className="w-4 h-4" />
                       </div>
                       <div>
-                        <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400 block">Vendor Financial Summary</span>
-                        <p className="text-[10px] text-slate-300">Based on verified GRN delivery records and payment logs</p>
+                        <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400 block">Vendor Financial & Settlement Summary</span>
+                        <p className="text-[10px] text-slate-300">Detailed breakdown of GRN purchases, cash payments, credit clearances & balance</p>
                       </div>
                     </div>
                     <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full border ${
@@ -129,36 +149,71 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                         ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                         : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                     }`}>
-                      {currentBalance > 0 ? '● Outstanding Due' : '✓ Account Cleared'}
+                      {currentBalance > 0 ? `● Outstanding Due: Rs. ${currentBalance.toLocaleString()}` : '✓ Account Cleared'}
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                  {/* 4-GRID FINANCIAL SNAPSHOT WITH CASH, CREDIT & GRAND TOTAL */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                     {/* Card 1: Total Outstanding Payable */}
-                    <div className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-lg p-3 space-y-0.5">
-                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Total Outstanding Payable</span>
-                      <div className="text-xl font-black font-mono text-emerald-400">
+                    <div className="bg-white/10 backdrop-blur-xs border border-amber-500/30 rounded-lg p-2.5 space-y-0.5">
+                      <span className="text-[9px] font-bold text-amber-300 uppercase tracking-wider block">Remaining Payable (Due)</span>
+                      <div className="text-lg font-black font-mono text-amber-400">
                         Rs. {(currentBalance || 0).toLocaleString()}
                       </div>
-                      <span className="text-[9px] text-slate-400 block">Current Ledger Balance</span>
+                      <span className="text-[9px] text-slate-400 block">Payable Balance</span>
                     </div>
 
-                    {/* Card 2: Total Billed from GRNs */}
-                    <div className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-lg p-3 space-y-0.5">
-                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Total GRN Purchases</span>
-                      <div className="text-xl font-black font-mono text-amber-300">
-                        Rs. {(totalGrnBilled || 0).toLocaleString()}
+                    {/* Card 2: Cash Payments Settled */}
+                    <div className="bg-white/10 backdrop-blur-xs border border-emerald-500/30 rounded-lg p-2.5 space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-bold text-emerald-300 uppercase tracking-wider block">Cash Payments Paid</span>
+                        <span className="text-[8px] bg-emerald-500/30 text-emerald-200 px-1 rounded font-bold">{cashTxns.length} Vouchers</span>
                       </div>
-                      <span className="text-[9px] text-slate-400 block">{totalGrnsCount} Received {totalGrnsCount === 1 ? 'GRN' : 'GRNs'} Logged</span>
+                      <div className="text-lg font-black font-mono text-emerald-300">
+                        Rs. {(totalCashPaid || 0).toLocaleString()}
+                      </div>
+                      <span className="text-[9px] text-slate-400 block">Spot / Direct Cash</span>
                     </div>
 
-                    {/* Card 3: Total Payments Settled */}
-                    <div className="bg-white/10 backdrop-blur-xs border border-white/15 rounded-lg p-3 space-y-0.5">
-                      <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wider block">Total Settled Payments</span>
-                      <div className="text-xl font-black font-mono text-teal-300">
-                        Rs. {(totalPaidToVendor || 0).toLocaleString()}
+                    {/* Card 3: Credit / Non-Cash Payments Settled */}
+                    <div className="bg-white/10 backdrop-blur-xs border border-indigo-500/30 rounded-lg p-2.5 space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-wider block">Credit / Bank Settled</span>
+                        <span className="text-[8px] bg-indigo-500/30 text-indigo-200 px-1 rounded font-bold">{creditTxns.length} Vouchers</span>
                       </div>
-                      <span className="text-[9px] text-slate-400 block">{vTxns.length} Payment {vTxns.length === 1 ? 'Voucher' : 'Vouchers'}</span>
+                      <div className="text-lg font-black font-mono text-indigo-300">
+                        Rs. {(totalCreditPaid || 0).toLocaleString()}
+                      </div>
+                      <span className="text-[9px] text-slate-400 block">Ledger / Bank Clearance</span>
+                    </div>
+
+                    {/* Card 4: Grand Total Settled Payments */}
+                    <div className="bg-teal-500/20 backdrop-blur-xs border border-teal-400/50 rounded-lg p-2.5 space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black text-teal-300 uppercase tracking-wider block">Grand Total Settled</span>
+                        <span className="text-[8px] bg-teal-400/30 text-teal-100 px-1 rounded font-bold">{vTxns.length} Total</span>
+                      </div>
+                      <div className="text-lg font-black font-mono text-teal-200">
+                        Rs. {(grandTotalPaid || 0).toLocaleString()}
+                      </div>
+                      <span className="text-[9px] text-teal-300/80 block">Cash + Credit Cleared</span>
+                    </div>
+                  </div>
+
+                  {/* Summary Bar showing Total GRN Invoiced vs Cleared */}
+                  <div className="flex flex-wrap items-center justify-between text-[10px] text-slate-300 bg-black/30 p-2 rounded-lg border border-white/10 gap-y-1">
+                    <div>
+                      <span>Total GRN Purchases: </span>
+                      <strong className="text-amber-300 font-mono">Rs. {(totalGrnBilled || 0).toLocaleString()}</strong>
+                      <span className="text-slate-400 ml-1">({totalGrnsCount} {totalGrnsCount === 1 ? 'GRN' : 'GRNs'})</span>
+                    </div>
+                    <div className="flex items-center space-x-3">
+                      <span>Cash Paid: <strong className="text-emerald-400 font-mono">Rs. {totalCashPaid.toLocaleString()}</strong></span>
+                      <span>•</span>
+                      <span>Credit Paid: <strong className="text-indigo-400 font-mono">Rs. {totalCreditPaid.toLocaleString()}</strong></span>
+                      <span>•</span>
+                      <span>Grand Total Settled: <strong className="text-teal-300 font-mono">Rs. {grandTotalPaid.toLocaleString()}</strong></span>
                     </div>
                   </div>
                 </div>
@@ -339,17 +394,23 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">Payment Method</label>
+                  <label className="text-xs font-bold text-slate-700 mb-1 block">Payment Method / Mode</label>
                   <select
-                    value={payVendorModalData.paymentMethod}
+                    value={payVendorModalData.paymentMethod || 'Bank'}
                     onChange={e => setPayVendorModalData({ ...payVendorModalData, paymentMethod: e.target.value as any })}
                     className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-semibold focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   >
-                    <option value="Cash">Cash</option>
-                    <option value="Bank">Bank Transfer / Online</option>
-                    <option value="Cheque">Cheque</option>
-                    <option value="Online">Online Gateway</option>
+                    <option value="Cash">Cash (Spot / Direct Cash Payment)</option>
+                    <option value="Credit">Credit / Payable Settlement (Clear Ledger Bill)</option>
+                    <option value="Bank">Bank Transfer / Online (Credit Settlement)</option>
+                    <option value="Cheque">Cheque (Payable Settlement)</option>
+                    <option value="Online">Online Gateway Payment</option>
                   </select>
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    {payVendorModalData.paymentMethod === 'Cash'
+                      ? '💵 Recorded as Direct Cash Outflow / Spot Cash Settlement.'
+                      : '🏦 Recorded as Credit Bill / Accounts Payable Clearance.'}
+                  </p>
                 </div>
 
                 <div>
@@ -374,6 +435,161 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                   className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                 />
               </div>
+
+              {/* COLLAPSIBLE SETTLED PAYMENTS HISTORY (CASH VS CREDIT BREAKDOWN) */}
+              {(() => {
+                const vVendor = payVendorModalData.vendor;
+                const vName = (vVendor.VendorName || '').trim().toLowerCase();
+                const vId = (vVendor.VendorID || vVendor._id || '').trim().toLowerCase();
+
+                const vTxns = (transactions || []).filter(t => {
+                  const tVName = (t.VendorName || '').trim().toLowerCase();
+                  const tVId = (t.VendorID || '').trim().toLowerCase();
+                  const isVendorPay = t.Type === 'VendorPayment' || t.Category === 'Vendor Payment' || (t.Type === 'Expense' && tVName);
+                  return isVendorPay && ((vName && tVName === vName) || (vId && tVId === vId) || (tVName && vName.includes(tVName)));
+                });
+
+                const cashTxns = vTxns.filter(t => {
+                  const method = (t.PaymentMethod || '').toLowerCase();
+                  const cat = (t.Category || '').toLowerCase();
+                  const desc = (t.Description || '').toLowerCase();
+                  return method === 'cash' || cat.includes('spot') || desc.includes('spot cash') || desc.includes('cash spot');
+                });
+
+                const creditTxns = vTxns.filter(t => {
+                  const method = (t.PaymentMethod || '').toLowerCase();
+                  const cat = (t.Category || '').toLowerCase();
+                  const desc = (t.Description || '').toLowerCase();
+                  return !(method === 'cash' || cat.includes('spot') || desc.includes('spot cash') || desc.includes('cash spot'));
+                });
+
+                const totalCashPaid = cashTxns.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
+                const totalCreditPaid = creditTxns.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
+                const grandTotalPaid = totalCashPaid + totalCreditPaid;
+
+                const displayedTxns = historyFilter === 'CASH'
+                  ? cashTxns
+                  : historyFilter === 'CREDIT'
+                  ? creditTxns
+                  : vTxns;
+
+                return (
+                  <div className="border border-slate-200 rounded-xl overflow-hidden bg-slate-50">
+                    <button
+                      type="button"
+                      onClick={() => setShowHistoryTable(!showHistoryTable)}
+                      className="w-full p-3 flex items-center justify-between text-left hover:bg-slate-100/80 transition cursor-pointer"
+                    >
+                      <div className="flex items-center space-x-2">
+                        <History className="w-4 h-4 text-indigo-600" />
+                        <span className="text-xs font-bold text-slate-800 uppercase tracking-wide">
+                          Settled Payments Log & Mode Breakdown ({vTxns.length} records)
+                        </span>
+                      </div>
+                      <div className="flex items-center space-x-3 text-xs">
+                        <span className="text-emerald-700 font-bold font-mono">Cash: Rs. {totalCashPaid.toLocaleString()}</span>
+                        <span className="text-slate-400">|</span>
+                        <span className="text-indigo-700 font-bold font-mono">Credit: Rs. {totalCreditPaid.toLocaleString()}</span>
+                        <span className="text-slate-400">|</span>
+                        <span className="text-teal-800 font-black font-mono">Grand Total: Rs. {grandTotalPaid.toLocaleString()}</span>
+                        {showHistoryTable ? <ChevronUp className="w-4 h-4 text-slate-500" /> : <ChevronDown className="w-4 h-4 text-slate-500" />}
+                      </div>
+                    </button>
+
+                    {showHistoryTable && (
+                      <div className="p-3 border-t border-slate-200 space-y-2.5 bg-white">
+                        {/* Filter Tabs */}
+                        <div className="flex items-center space-x-2">
+                          <button
+                            type="button"
+                            onClick={() => setHistoryFilter('ALL')}
+                            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+                              historyFilter === 'ALL'
+                                ? 'bg-slate-900 text-white'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            All Payments ({vTxns.length}) - Rs. {grandTotalPaid.toLocaleString()}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setHistoryFilter('CASH')}
+                            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+                              historyFilter === 'CASH'
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
+                            }`}
+                          >
+                            Cash Payments ({cashTxns.length}) - Rs. {totalCashPaid.toLocaleString()}
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setHistoryFilter('CREDIT')}
+                            className={`px-2.5 py-1 text-[11px] font-bold rounded-lg transition cursor-pointer ${
+                              historyFilter === 'CREDIT'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-indigo-50 text-indigo-800 hover:bg-indigo-100 border border-indigo-200'
+                            }`}
+                          >
+                            Credit / Bank Settlements ({creditTxns.length}) - Rs. {totalCreditPaid.toLocaleString()}
+                          </button>
+                        </div>
+
+                        {/* Transactions Table */}
+                        <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg">
+                          <table className="w-full text-left text-xs font-sans">
+                            <thead className="bg-slate-100 text-slate-700 font-bold sticky top-0 text-[10px] uppercase">
+                              <tr>
+                                <th className="p-2">Date</th>
+                                <th className="p-2">Voucher #</th>
+                                <th className="p-2">Type / Mode</th>
+                                <th className="p-2 text-right">Amount Paid</th>
+                                <th className="p-2">Remarks / Ref</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {displayedTxns.length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="p-4 text-center text-slate-400">
+                                    No payment records found for this category.
+                                  </td>
+                                </tr>
+                              ) : (
+                                displayedTxns.map((pt, idx) => {
+                                  const method = (pt.PaymentMethod || '').toLowerCase();
+                                  const cat = (pt.Category || '').toLowerCase();
+                                  const desc = (pt.Description || '').toLowerCase();
+                                  const isCash = method === 'cash' || cat.includes('spot') || desc.includes('spot cash') || desc.includes('cash spot');
+
+                                  return (
+                                    <tr key={pt._id || pt.TransactionID || idx} className="hover:bg-slate-50">
+                                      <td className="p-2 font-mono text-slate-600">{pt.Date || pt.TransactionDate || 'N/A'}</td>
+                                      <td className="p-2 font-mono font-bold text-slate-800">{pt.TransactionID || pt.ReferenceNo || 'N/A'}</td>
+                                      <td className="p-2">
+                                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-bold ${
+                                          isCash
+                                            ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                                            : 'bg-indigo-100 text-indigo-900 border border-indigo-300'
+                                        }`}>
+                                          {isCash ? '💵 CASH PAYMENT' : '🏦 CREDIT / BANK SETTLED'} ({pt.PaymentMethod || 'Bank'})
+                                        </span>
+                                      </td>
+                                      <td className="p-2 text-right font-mono font-bold text-emerald-700">
+                                        Rs. {Number(pt.Amount || 0).toLocaleString()}
+                                      </td>
+                                      <td className="p-2 text-slate-600 max-w-xs truncate text-[11px]">{pt.Description || pt.ReferenceNo || '-'}</td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* LIVE PO & PAYABLE CALCULATION BREAKDOWN */}
               {(() => {

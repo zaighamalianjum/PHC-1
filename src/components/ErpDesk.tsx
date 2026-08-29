@@ -759,14 +759,24 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       return true;
     });
 
-    // Calculate Running Balance
+    // Calculate Running Balance and Cash vs Credit Breakdown
     let running = 0;
     let totalInvoiced = 0;
     let totalPaid = 0;
+    let totalCashPaid = 0;
+    let totalCreditPaid = 0;
 
     const statementRows = filteredRows.map(r => {
       totalInvoiced += r.credit;
       totalPaid += r.debit;
+      if (r.debit > 0) {
+        const isCash = r.type?.includes('Spot Cash') || r.type?.includes('Cash') || (r.rawItem?.PaymentMethod || '').toLowerCase() === 'cash';
+        if (isCash) {
+          totalCashPaid += r.debit;
+        } else {
+          totalCreditPaid += r.debit;
+        }
+      }
       running = running + r.credit - r.debit;
       return {
         ...r,
@@ -780,6 +790,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       statementRows,
       totalInvoiced,
       totalPaid,
+      totalCashPaid,
+      totalCreditPaid,
       closingBalance
     };
   }, [selectedVendor, grns, transactions, vendorDateFilter]);
@@ -5254,13 +5266,15 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     setIsSubmitting(true);
     try {
+      const isCash = paymentMethod === 'Cash';
+      const defaultCat = isCash ? 'Spot Cash Vendor Payment' : 'Supplier Credit Bill Payment';
       const newTxn: ErpTransaction = {
         TransactionID: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
         Type: 'VendorPayment',
-        Category: category || 'Supplier Sales Invoice Payment',
-        Description: description || `Payment against Vendor Invoice #${invNo.trim()} for ${vendor.VendorName}`,
+        Category: category || defaultCat,
+        Description: description || `Payment against Vendor Invoice #${invNo.trim()} for ${vendor.VendorName} (${isCash ? 'Cash Payment' : 'Credit Settlement'})`,
         Amount: Number(amount),
-        PaymentMethod: paymentMethod || 'Bank',
+        PaymentMethod: paymentMethod || (isCash ? 'Cash' : 'Bank'),
         ReferenceNo: invNo.trim(),
         Date: date || new Date().toISOString().split('T')[0],
         CreatedBy: currentUser?.FullName || 'Admin',

@@ -150,6 +150,11 @@ export const VendorPrintStatementModal: React.FC<VendorPrintStatementModalProps>
                   <span>Total Bill Payments Settled (Debit):</span>
                   <span className="font-mono font-bold text-emerald-700 print:text-slate-900">Rs. {vendorStatement.totalPaid.toLocaleString()}</span>
                 </div>
+                <div className="flex justify-between items-center text-[10px] text-slate-500 pl-2">
+                  <span>↳ Cash Paid: <strong className="font-mono text-emerald-700">Rs. {(vendorStatement.totalCashPaid || 0).toLocaleString()}</strong></span>
+                  <span>•</span>
+                  <span>Credit / Bank: <strong className="font-mono text-indigo-700">Rs. {(vendorStatement.totalCreditPaid || 0).toLocaleString()}</strong></span>
+                </div>
               </div>
               <div className="pt-2 border-t border-slate-300 flex justify-between items-center bg-amber-500/10 p-2 rounded-lg border border-amber-300/80 print:bg-slate-100 print:border-slate-400">
                 <span className="text-xs font-black uppercase text-slate-900">Net Outstanding Balance:</span>
