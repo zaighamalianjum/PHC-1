@@ -1,7 +1,7 @@
 import React from 'react';
 import {
   DollarSign, Printer, ArrowUpRight, ArrowDownRight, TrendingUp,
-  Search, Calendar, Filter, Plus, Landmark, Wallet, Coins, FileText
+  Search, Calendar, Filter, Plus, Landmark, Wallet, Coins, FileText, Trash2
 } from 'lucide-react';
 import { DEFAULT_EXPENSE_CATEGORIES } from '../erpUtils';
 
@@ -31,6 +31,7 @@ interface CashBookPnlTabProps {
   isSubmitting: boolean;
   handlePrintCashBookReport: () => void;
   customExpenseCategories: string[];
+  handleDeleteCashBookEntry?: (entry: any) => void;
 }
 
 export const CashBookPnlTab: React.FC<CashBookPnlTabProps> = ({
@@ -59,6 +60,7 @@ export const CashBookPnlTab: React.FC<CashBookPnlTabProps> = ({
   isSubmitting,
   handlePrintCashBookReport,
   customExpenseCategories,
+  handleDeleteCashBookEntry
 }) => {
   const currentYear = new Date().getFullYear().toString();
   const currentYearMonth = new Date().toISOString().slice(0, 7);
@@ -389,6 +391,7 @@ export const CashBookPnlTab: React.FC<CashBookPnlTabProps> = ({
                     <th className="p-3 w-40">Category</th>
                     <th className="p-3 text-center w-24">Type</th>
                     <th className="p-3 text-right w-32">Amount (PKR)</th>
+                    <th className="p-3 text-center w-14">Action</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 text-slate-800">
@@ -420,11 +423,24 @@ export const CashBookPnlTab: React.FC<CashBookPnlTabProps> = ({
                         <td className={`p-3 text-right font-mono font-black text-sm ${e.type === 'INFLOW' ? 'text-emerald-700' : 'text-rose-700'}`}>
                           {e.type === 'INFLOW' ? '+' : '-'} PKR {(e.amount || 0).toLocaleString()}
                         </td>
+                        <td className="p-3 text-center">
+                          {handleDeleteCashBookEntry ? (
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteCashBookEntry(e)}
+                              className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer inline-flex items-center justify-center"
+                              title={`Delete entry: ${e.ref || e.id} (${e.particulars})`}
+                              aria-label={`Delete Cash Book Entry ${e.ref || e.id}`}
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          ) : null}
+                        </td>
                       </tr>
                     ))
                   ) : (
                     <tr>
-                      <td colSpan={7} className="p-8 text-center text-slate-400 font-medium">
+                      <td colSpan={8} className="p-8 text-center text-slate-400 font-medium">
                         No financial records found matching the current filters.
                       </td>
                     </tr>

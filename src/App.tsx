@@ -212,12 +212,22 @@ export default function App() {
 
   // Real-time synchronization function for users and access permissions across all browsers & tabs
   const syncUsersAndPermissions = async () => {
+    // 1. If user is offline, gracefully return without disrupting the application or triggering alerts
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      return;
+    }
+
     const bridgeUrl = mongoDbSettings.BridgeUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:5000');
     try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 4000);
       const res = await fetch(`${bridgeUrl}/api/users?_t=${Date.now()}`, {
         cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' },
+        signal: controller.signal
       });
+      clearTimeout(timeoutId);
+
       if (res.ok) {
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {
@@ -250,18 +260,21 @@ export default function App() {
             if (haveUserPermissionsChanged(currentUser, freshSelf)) {
               setCurrentUser(freshSelf);
               sessionStorage.setItem('cms_current_user', JSON.stringify(freshSelf));
-              setUserAccessToast({
-                message: `User Access & Permissions updated by Administrator for "${freshSelf.FullName || freshSelf.LoginName}"!`,
-                timestamp: Date.now()
-              });
-              window.dispatchEvent(new CustomEvent('phc_user_permissions_updated', { detail: freshSelf }));
+              // Only notify if permission changes were not initiated by the current active user themselves
+              if (freshSelf.AccessApprovedBy !== currentUser.FullName && freshSelf.UserID === currentUser.UserID) {
+                setUserAccessToast({
+                  message: `User Access & Permissions updated by Administrator for "${freshSelf.FullName || freshSelf.LoginName}"!`,
+                  timestamp: Date.now()
+                });
+              }
+              window.dispatchEvent(new CustomEvent('phc_local_user_updated', { detail: freshSelf }));
               window.dispatchEvent(new CustomEvent('phc_db_updated'));
             }
           }
         }
       }
     } catch (e) {
-      // Ignore background network transient errors
+      // Ignore background network transient and offline errors cleanly
     }
   };
 
@@ -614,28 +627,46 @@ export default function App() {
       return currentUser.Role === 'Administrator';
     }
 
+    // Administrator has universal access to all clinic management, query handler, audit and setup desks by default
+    if (currentUser.Role === 'Administrator') {
+      if (menuId === 'query_handler' || menuId === 'queryhandler' || menuId === 'queries') {
+        return currentUser.Permissions?.canViewQueryHandlerDesk !== false;
+      }
+      if (menuId === 'settings') return currentUser.Permissions?.canViewSettingsDesk !== false;
+      if (menuId === 'uploads') return currentUser.Permissions?.canViewUploadingDesk !== false;
+      if (menuId === 'reports') return currentUser.Permissions?.canViewReportingDesk !== false;
+      if (menuId === 'erp_system') return currentUser.Permissions?.canViewErpDesk !== false;
+      if (menuId === 'nhc_history' || menuId === 'nhchistory') return currentUser.Permissions?.canViewNhcHistoryDesk !== false;
+      if (menuId === 'pharmacy') return currentUser.Permissions?.canViewPharmacyPOS !== false;
+      if (menuId === 'patients') return currentUser.Permissions?.canViewPatientDesk !== false;
+      if (menuId === 'accounts') return currentUser.Permissions?.canViewAccountingDesk !== false;
+      if (menuId === 'patient_visit') return true;
+      return true;
+    }
+
     // 1. Check custom permissions object if configured on user
     if (currentUser.Permissions) {
       if (menuId === 'patients') return !!currentUser.Permissions.canViewPatientDesk;
       if (menuId === 'patient_visit') return !!currentUser.Permissions.canViewPatientDesk;
       if (menuId === 'emr') return !!currentUser.Permissions.canViewEMRDesk;
-      if (menuId === 'erp_system') return currentUser.Permissions.canViewErpDesk !== false && (currentUser.Role === 'Administrator' || currentUser.Role === 'Accountant' || !!currentUser.Permissions.canViewErpDesk);
+      if (menuId === 'erp_system') return currentUser.Permissions.canViewErpDesk !== false && (currentUser.Role === 'Accountant' || !!currentUser.Permissions.canViewErpDesk);
       if (menuId === 'pharmacy') return !!currentUser.Permissions.canViewPharmacyPOS;
       if (menuId === 'accounts') return !!currentUser.Permissions.canViewAccountingDesk;
       if (menuId === 'reports') return !!currentUser.Permissions.canViewReportingDesk;
       if (menuId === 'uploads') return !!currentUser.Permissions.canViewUploadingDesk;
       if (menuId === 'settings') return !!currentUser.Permissions.canViewSettingsDesk;
-      if (menuId === 'query_handler' || menuId === 'queryhandler') return !!currentUser.Permissions.canViewQueryHandlerDesk;
+      if (menuId === 'query_handler' || menuId === 'queryhandler' || menuId === 'queries') return !!currentUser.Permissions.canViewQueryHandlerDesk;
       if (menuId === 'nhc_history' || menuId === 'nhchistory') return !!currentUser.Permissions.canViewNhcHistoryDesk;
     }
 
-    if (menuId === 'erp_system') return currentUser.Role === 'Administrator' || currentUser.Role === 'Accountant';
+    if (menuId === 'erp_system') return currentUser.Role === 'Accountant';
     if (menuId === 'patient_visit') return true;
-    if (menuId === 'settings') return currentUser.Role === 'Administrator';
-    if (menuId === 'uploads') return currentUser.Role === 'Administrator';
-    if (menuId === 'reports') return currentUser.Role === 'Administrator' || currentUser.Role === 'Accountant';
+    if (menuId === 'settings') return false;
+    if (menuId === 'uploads') return false;
+    if (menuId === 'reports') return currentUser.Role === 'Accountant';
+    if (menuId === 'query_handler' || menuId === 'queryhandler' || menuId === 'queries') return false;
 
-    const right = currentUserRights.find((r) => r.MenuID === menuId);
+    const right = currentUserRights.find((r) => r.MenuID === menuId || (menuId === 'query_handler' && (r.MenuID === 'queries' || r.MenuID === 'query_handler')));
     return right ? right.Status : false;
   };
 
@@ -2853,8 +2884,8 @@ export default function App() {
         )}
 
         {/* Upper Navigation Tabs Row (Hidden on mobile; accessible via top header hamburger drawer) */}
-        <div className="hidden lg:flex bg-white border-b border-slate-200 px-3.5 py-1 lg:flex-row lg:items-center justify-between shadow-xs shrink-0 gap-1.5">
-            <div className="flex-1 min-w-0 flex items-center space-x-1 overflow-x-auto py-1 scrollbar-none pr-1 touch-pan-x">
+        <div className="hidden lg:flex bg-white border-b border-slate-200 px-2 py-0.5 lg:flex-row lg:items-center justify-between shadow-2xs shrink-0 gap-1">
+            <div className="flex-1 min-w-0 flex items-center space-x-0.5 overflow-x-auto py-0.5 scrollbar-none pr-1 touch-pan-x">
               {MENU_ITEMS.filter((item) => {
                 if (currentUser.Role !== 'Administrator' && item.id === 'dashboard') {
                   return false;
@@ -2866,29 +2897,29 @@ export default function App() {
                   <button
                     key={item.id}
                     onClick={() => handleTabChange(item.id)}
-                    className={`flex items-center space-x-1.5 px-2.5 py-1.5 sm:py-1 rounded-lg text-[10.5px] sm:text-[10px] font-bold uppercase tracking-tight transition-all duration-150 shrink-0 cursor-pointer min-h-[36px] sm:min-h-0 ${
+                    className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[10px] font-bold uppercase tracking-tight transition-all duration-150 shrink-0 cursor-pointer ${
                       active
-                        ? 'bg-blue-600 text-white shadow-xs'
+                        ? 'bg-blue-600 text-white shadow-2xs'
                         : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/80 active:bg-slate-200'
                     }`}
                     id={`nav-btn-${item.id}`}
                   >
-                    <item.icon className={`w-3.5 h-3.5 sm:w-3 sm:h-3 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
+                    <item.icon className={`w-3 h-3 shrink-0 ${active ? 'text-white' : 'text-slate-400'}`} />
                     <span className="whitespace-nowrap">{item.label}</span>
                   </button>
                 );
               })}
             </div>
 
-            <div className="hidden lg:flex items-center space-x-1.5 shrink-0">
+            <div className="hidden lg:flex items-center space-x-1 shrink-0">
               <button
                 onClick={refreshAllData}
                 disabled={isRefreshing}
-                className="bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 text-slate-700 text-[10px] font-extrabold px-2.5 py-1 rounded-md flex items-center space-x-1 transition cursor-pointer disabled:opacity-50 shrink-0"
+                className="bg-slate-50 hover:bg-emerald-50 hover:text-emerald-700 border border-slate-200 hover:border-emerald-300 text-slate-700 text-[9.5px] font-extrabold px-2 py-0.5 rounded-md flex items-center space-x-1 transition cursor-pointer disabled:opacity-50 shrink-0"
                 title="Click to fetch latest updates and refresh records across all modules"
               >
-                <RefreshCw className={`w-3 h-3 text-emerald-600 ${isRefreshing ? 'animate-spin' : ''}`} />
-                <span className="uppercase tracking-tight text-[9.5px]">{isRefreshing ? 'Syncing...' : 'Refresh'}</span>
+                <RefreshCw className={`w-2.5 h-2.5 text-emerald-600 ${isRefreshing ? 'animate-spin' : ''}`} />
+                <span className="uppercase tracking-tight text-[9px]">{isRefreshing ? 'Syncing...' : 'Refresh'}</span>
               </button>
             </div>
           </div>

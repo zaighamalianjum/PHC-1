@@ -87,6 +87,7 @@ import {
 import PatientDeskSubNav, { PatientDeskSubTab } from './patient/PatientDeskSubNav';
 import LargeScreenTokenDisplay from './patient/LargeScreenTokenDisplay';
 import PatientRegisterView from './patient/PatientRegisterView';
+import PatientProfileView from './patient/PatientProfileView';
 import InstantTokenIssueView from './patient/InstantTokenIssueView';
 import RegistrationSuccessModal from './patient/RegistrationSuccessModal';
 import EMRDesk from './EMRDesk';
@@ -2481,6 +2482,29 @@ Healing Naturally. Restoring Balance.`;
       const uniquePatent = patentItems.filter(
         (item, index, self) => index === self.findIndex((t) => t.medicineName === item.medicineName && t.dosage === item.dosage)
       );
+
+      if (!dateFilePkr || dateFilePkr === '0') {
+        const appMatch = (appointments || []).find(
+          (a) =>
+            isSamePatient(a.PatientID, pvSelectedPatientId) &&
+            parseCleanVisitDate(a.AppointmentDate) === dateStr
+        );
+        if (appMatch) {
+          const appFee = (appMatch as any).PaidAmount || (appMatch as any).ConsultationFee || appMatch.FeeCharged || 0;
+          if (appFee) dateFilePkr = String(appFee);
+        }
+      }
+      if (!dateFilePkr || dateFilePkr === '0') {
+        const tokMatch = (tokens || []).find(
+          (t) =>
+            isSamePatient(t.PatientID, pvSelectedPatientId) &&
+            parseCleanVisitDate(t.Date) === dateStr
+        );
+        if (tokMatch) {
+          const tokFee = (tokMatch as any).Fee || (tokMatch as any).PaidAmount || 0;
+          if (tokFee) dateFilePkr = String(tokFee);
+        }
+      }
 
       groupsMap.set(dateStr, {
         date: dateStr,
@@ -6123,6 +6147,43 @@ Healing Naturally. Restoring Balance.`;
 
 
 
+      {/* PATIENT PROFILE SUB-TAB VIEW */}
+      {activeSubTab === 'profile' && (
+        <PatientProfileView
+          patients={patients}
+          visits={visits}
+          visitMedicines={visitMedicines}
+          appointments={appointments}
+          tokens={tokens}
+          cities={cities}
+          nhcPatients={nhcPatients}
+          selectedPatientId={selectedPatientId || pvSelectedPatientId || ''}
+          setSelectedPatientId={(id) => {
+            setSelectedPatientId(id);
+            setPvSelectedPatientId(id);
+          }}
+          onOpenVisitDesk={(patId) => {
+            setPvSelectedPatientId(patId);
+            setSelectedPatientId(patId);
+            setActiveSubTab('patient_visit');
+          }}
+          onOpenTokenIssue={(patId) => {
+            setSelectedPatientId(patId);
+            setActiveSubTab('token_issue');
+          }}
+          onOpenBookAppointment={(patId) => {
+            setSelectedPatientId(patId);
+            setActiveSubTab('book');
+          }}
+          onEditPatient={(pat) => {
+            handleStartEditPatient(pat);
+            setActiveSubTab('register');
+          }}
+          clinicSettings={clinicSettings}
+          currentUser={currentUser}
+        />
+      )}
+
       {/* TOKEN ISSUE SUB-TAB VIEW */}
       {activeSubTab === 'token_issue' && (
         <InstantTokenIssueView
@@ -7190,6 +7251,30 @@ Healing Naturally. Restoring Balance.`;
                                 <p className="text-slate-400 italic text-[10px]">No structured medicine records found for this date.</p>
                               </div>
                             )}
+
+                            {/* DOCTOR VISIT PAYMENT BREAKDOWN BADGE */}
+                            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-lg p-2 flex flex-wrap items-center justify-between gap-1.5 shadow-2xs border border-indigo-900/40">
+                              <div className="flex items-center space-x-1.5">
+                                <div className="p-1 bg-emerald-500/20 text-emerald-300 rounded shrink-0">
+                                  <Coins className="w-3 h-3 text-emerald-300" />
+                                </div>
+                                <div className="text-[10px] font-mono">
+                                  <span className="text-slate-300 font-extrabold uppercase text-[8.5px] block">
+                                    Payment Received on this Visit:
+                                  </span>
+                                  <span className="text-blue-300 font-bold">
+                                    Appointment: <strong className="text-white">PKR {Number(group.filePkr || 0).toLocaleString()}</strong>
+                                  </span>
+                                  <span className="text-slate-500 mx-1.5">‚Ä¢</span>
+                                  <span className="text-amber-300 font-bold">
+                                    Clinical Meds: <strong className="text-white">PKR {Number(group.clinicalMedicinePkr || 0).toLocaleString()}</strong>
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="bg-emerald-600/90 text-white px-2 py-0.5 rounded text-[10px] font-mono font-black border border-emerald-400/40 shrink-0">
+                                Total Paid: PKR {(Number(group.filePkr || 0) + Number(group.clinicalMedicinePkr || 0)).toLocaleString()}
+                              </div>
+                            </div>
                           </div>
                         ))}
                       </div>
@@ -10120,6420 +10205,225 @@ Healing Naturally. Restoring Balance.`;
               if (clean.includes('-')) {
                 const parts = clean.split('-');
                 if (parts[0].length === 2 && parts[2]?.length === 4) {
-                  return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                }
-              }
-              if (clean.includes('/')) {
-                const parts = clean.split('/');
-                if (parts[0].length === 2 && parts[2]?.length === 4) {
-                  return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-                }
-              }
-              return clean;
-            };
-
-            // Unified Appointment Records list (incorporating Appointments, Tokens & Visits)
-            const combinedApps: Appointment[] = [...(appointments || [])];
-
-            (tokens || []).forEach((tok) => {
-              const tokDateNorm = normalizeDateStr(tok.Date);
-              const exists = combinedApps.some((a) => isSamePatient(a.PatientID, tok.PatientID) && normalizeDateStr(a.AppointmentDate) === tokDateNorm);
-              if (!exists) {
-                combinedApps.push({
-                  AppointmentID: `APP-TOK-${tok.TokenNo}-${tokDateNorm}`,
-                  PatientID: tok.PatientID,
-                  AppointmentDate: tokDateNorm,
-                  Shift: tok.Shift || 1,
-                  Status: tok.Status === 2 ? 2 : tok.Status === 3 ? 3 : 1,
-                  Remarks: `Token #${tok.TokenNo} Schedule`,
-                  FeeCharged: 0,
-                  PaymentStatus: tok.Status === 2 ? 'Visited' : 'Pending'
-                });
-              }
-            });
-
-            (visits || []).forEach((vis) => {
-              const visDateNorm = normalizeDateStr(vis.VisitDate);
-              const exists = combinedApps.some((a) => isSamePatient(a.PatientID, vis.PatientID) && normalizeDateStr(a.AppointmentDate) === visDateNorm);
-              if (!exists) {
-                combinedApps.push({
-                  AppointmentID: `APP-VIS-${vis.VisitID || Date.now()}`,
-                  PatientID: vis.PatientID,
-                  AppointmentDate: visDateNorm,
-                  Shift: 1,
-                  Status: 4,
-                  Remarks: vis.VisitRemarks || 'OPD Consultation Visit',
-                  FeeCharged: Number(vis.ConsultationFee) || 0,
-                  PaymentStatus: 'Paid'
-                });
-              }
-            });
-
-            const validApps = combinedApps.filter((app) => {
-              const apptDateStr = normalizeDateStr(app.AppointmentDate);
-              const matchingVisit = (visits || []).find(v => isSamePatient(v.PatientID, app.PatientID) && v.VisitDate && normalizeDateStr(v.VisitDate) === apptDateStr);
-              const feeVal = (Number(app.FeeCharged) > 0)
-                ? Number(app.FeeCharged)
-                : (Number(matchingVisit?.ConsultationFee) || 0);
-              return feeVal > 0;
-            });
-
-            const filteredApps = validApps.filter((app) => {
-              // 1. Shift filter
-              if (appGridShiftFilter !== 'all' && String(app.Shift) !== appGridShiftFilter) return false;
-
-              // 2. Date period filter
-              if (appGridDatePreset !== 'all') {
-                const appDate = normalizeDateStr(app.AppointmentDate);
-                if (appGridStartDate && appDate < appGridStartDate) return false;
-                if (appGridEndDate && appDate > appGridEndDate) return false;
-              }
-
-              // 3. Search query
-              if (appGridSearch.trim()) {
-                const q = appGridSearch.toLowerCase().trim();
-                const pat = patients.find((p) => isSamePatient(p.PatientID, app.PatientID));
-                const matchName = String(pat?.PatientName || '').toLowerCase().includes(q);
-                const matchPid = String(app.PatientID || '').toLowerCase().includes(q);
-                const matchPhone = String(pat?.PhoneMobile || '').includes(q);
-                const matchAppId = String(app.AppointmentID || '').toLowerCase().includes(q);
-                const matchRemarks = String(app.Remarks || '').toLowerCase().includes(q);
-                if (!matchName && !matchPid && !matchPhone && !matchAppId && !matchRemarks) return false;
-              }
-              return true;
-            });
-
-            return (
-              <div className="bg-white rounded-xl border border-slate-300 shadow-xs overflow-hidden space-y-0">
-                {/* Excel Ribbon Header Bar */}
-                <div className="bg-emerald-800 text-white px-4 py-2 flex flex-wrap items-center justify-between text-xs font-bold border-b border-emerald-900 gap-2">
-                  <div className="flex items-center space-x-2 font-mono">
-                    <Table className="w-4 h-4 text-emerald-300" />
-                    <span>Appointment Details Grid</span>
-                  </div>
-                  <div className="text-[11px] font-normal text-emerald-100 flex items-center space-x-2.5 flex-wrap">
-                    {appGridShiftFilter !== 'all' && (
-                      <span className="bg-amber-400 text-amber-950 font-extrabold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 shadow-xs">
-                        <span>Shift: {appGridShiftFilter === '1' ? 'Morning Shift (1)' : 'Evening Shift (2)'}</span>
-                        <button
-                          type="button"
-                          onClick={() => setAppGridShiftFilter('all')}
-                          className="bg-amber-950/20 hover:bg-amber-950/40 text-amber-950 px-1 rounded text-[9px] font-mono font-bold cursor-pointer transition"
-                          title="Show All Shifts"
-                        >
-                          Show All Shifts
-                        </button>
-                      </span>
-                    )}
-                    {appGridDatePreset !== 'all' && (
-                      <span className="bg-emerald-700 text-emerald-100 font-bold px-2 py-0.5 rounded text-[10px] flex items-center gap-1 border border-emerald-600">
-                        <span>Date: {appGridDatePreset === 'today' ? 'Today' : appGridDatePreset}</span>
-                        <button
-                          type="button"
-                          onClick={() => setAppGridDatePreset('all')}
-                          className="bg-emerald-900/40 hover:bg-emerald-900/80 text-white px-1 rounded text-[9px] font-mono font-bold cursor-pointer transition"
-                          title="Show All Dates"
-                        >
-                          Show All Dates
-                        </button>
-                      </span>
-                    )}
-                    <span>Filtered Records: <strong className="text-white font-mono">{filteredApps.length}</strong></span>
-                    <span>|</span>
-                    <span>Total Database: <strong className="text-emerald-200 font-mono">{validApps.length}</strong></span>
-                  </div>
-                </div>
-
-                {/* Filter Notice Banner if Shift or Date Filter is active and hiding records */}
-                {appGridShiftFilter !== 'all' && (
-                  <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2 text-xs font-medium flex items-center justify-between gap-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-amber-600 font-bold">üí° Filter Active:</span>
-                      <span>
-                        Showing only <strong>{appGridShiftFilter === '1' ? 'Morning Shift (1)' : 'Evening Shift (2)'}</strong> appointments.
-                        {filteredApps.length < validApps.length && (
-                          <span className="ml-1 text-amber-800 font-normal">
-                            (Appointments booked for {appGridShiftFilter === '1' ? 'Evening Shift' : 'Morning Shift'} or other dates are hidden by this filter)
-                          </span>
-                        )}
-                      </span>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => setAppGridShiftFilter('all')}
-                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded shadow-xs transition cursor-pointer shrink-0"
-                    >
-                      Show All Shifts
-                    </button>
-                  </div>
-                )}
-
-                {/* Table Sheet Container */}
-                <div className="overflow-x-auto max-h-[550px]">
-                  <table className="w-full text-left text-xs border-collapse font-sans">
-                    {/* Excel Column Headers */}
-                    <thead>
-                      <tr className="bg-slate-100 border-b border-slate-300 text-slate-700 font-bold uppercase tracking-wider text-[11px]">
-                        <th className="py-2.5 px-3 border-r border-slate-300 text-center w-12 bg-slate-200/80 font-mono text-slate-600">
-                          #
-                        </th>
-                        <th className="py-2.5 px-3 border-r border-slate-300 min-w-[140px]">
-                          Appointment ID & Date
-                        </th>
-                        <th className="py-2.5 px-3 border-r border-slate-300 min-w-[200px]">
-                          Patient Name
-                        </th>
-                        <th className="py-2.5 px-3 border-r border-slate-300 min-w-[140px]">
-                          Mobile Number
-                        </th>
-                        <th className="py-2.5 px-3 border-r border-slate-300 min-w-[150px] text-right">
-                          Appointment Fees
-                        </th>
-                        <th className="py-2.5 px-3 border-r border-slate-300 min-w-[120px] text-center">
-                          Shift
-                        </th>
-                        <th className="py-2.5 px-3 border-r border-slate-300 min-w-[180px]">
-                          Remarks / Reason
-                        </th>
-                        <th className="py-2.5 px-3 text-center min-w-[100px] bg-slate-200/50">
-                          Actions
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 font-medium text-slate-800">
-                      {filteredApps.length === 0 ? (
-                        <tr>
-                          <td colSpan={8} className="py-12 text-center text-slate-500 bg-slate-50">
-                            <CalendarPlus className="w-8 h-8 text-slate-400 mx-auto mb-2 opacity-60" />
-                            <p className="font-bold text-xs text-slate-700">No appointment records found in selected view.</p>
-                            {validApps.length > 0 ? (
-                              <div className="mt-2 space-y-1">
-                                <p className="text-[11px] text-slate-500">There are {validApps.length} total appointments recorded outside this date range or shift.</p>
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setAppGridDatePreset('all');
-                                    setAppGridStartDate('');
-                                    setAppGridEndDate('');
-                                    setAppGridShiftFilter('all');
-                                    setAppGridSearch('');
-                                  }}
-                                  className="mt-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-2xs transition cursor-pointer"
-                                >
-                                  Show All Dates & Records ({validApps.length})
-                                </button>
-                              </div>
-                            ) : (
-                              <p className="text-[11px] mt-1 text-slate-400">Click the "Add New Appointment" button below to create a new appointment record.</p>
-                            )}
-                          </td>
-                        </tr>
-                      ) : (
-                        filteredApps.map((app, index) => {
-                          const pat = patients.find((p) => isSamePatient(p.PatientID, app.PatientID));
-                          const isSelected = selectedAppId === app.AppointmentID;
-                          const patientNameStr = pat?.PatientName || app.PatientID;
-                          const mobileStr = pat?.PhoneMobile || 'N/A';
-                          const apptDateStr = normalizeDateStr(app.AppointmentDate);
-                          const matchingVisit = visits.find(v => isSamePatient(v.PatientID, app.PatientID) && v.VisitDate && normalizeDateStr(v.VisitDate) === apptDateStr);
-                          const feeVal = (Number(app.FeeCharged) > 0)
-                            ? Number(app.FeeCharged)
-                            : (matchingVisit?.ConsultationFee || 0);
-
-                          return (
-                            <tr
-                              key={`app-${app.AppointmentID}-${index}`}
-                              onClick={() => setSelectedAppId(app.AppointmentID)}
-                              className={`cursor-pointer transition hover:bg-emerald-50/50 ${
-                                isSelected ? 'bg-emerald-100/70 border-y-2 border-emerald-500 font-semibold' : index % 2 === 0 ? 'bg-white' : 'bg-slate-50/60'
-                              }`}
-                            >
-                              {/* Row Number */}
-                              <td className="py-2.5 px-3 border-r border-slate-200 text-center font-mono text-slate-500 bg-slate-100/50 text-[11px] font-bold">
-                                {index + 1}
-                              </td>
-
-                              {/* Appointment ID & Date */}
-                              <td className="py-2.5 px-3 border-r border-slate-200">
-                                <div className="font-mono text-slate-900 font-bold">{app.AppointmentID}</div>
-                                <div className="text-[11px] text-slate-500 font-mono">{apptDateStr || 'Today'}</div>
-                              </td>
-
-                              {/* Patient Name */}
-                              <td className="py-2.5 px-3 border-r border-slate-200 font-bold text-slate-950 text-xs">
-                                <div>{patientNameStr}</div>
-                                <div className="text-[10px] font-mono text-slate-500 font-normal">PID: {app.PatientID}</div>
-                              </td>
-
-                              {/* Mobile Number */}
-                              <td className="py-2.5 px-3 border-r border-slate-200 font-mono text-slate-800 text-xs">
-                                {mobileStr}
-                              </td>
-
-                              {/* Appointment Fees */}
-                              <td className="py-2.5 px-3 border-r border-slate-200 text-right font-mono font-black text-emerald-900 text-xs">
-                                PKR {Number(feeVal).toLocaleString()}
-                              </td>
-
-                              {/* Shift */}
-                              <td className="py-2.5 px-3 border-r border-slate-200 text-center">
-                                <span className={`text-[10px] font-bold px-2 py-0.5 rounded uppercase ${
-                                  app.Shift === 1 ? 'bg-amber-100 text-amber-900' : 'bg-blue-100 text-blue-900'
-                                }`}>
-                                  {app.Shift === 1 ? 'Morning' : 'Evening'}
-                                </span>
-                              </td>
-
-                              {/* Remarks */}
-                              <td className="py-2.5 px-3 border-r border-slate-200 text-slate-600 text-xs italic truncate max-w-[200px]">
-                                {app.Remarks || 'N/A'}
-                              </td>
-
-                              {/* Action Buttons */}
-                              <td className="py-2.5 px-3 text-center space-x-1" onClick={(e) => e.stopPropagation()}>
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditModal(app)}
-                                  title="Edit Appointment"
-                                  className="p-1.5 text-blue-600 hover:bg-blue-100 rounded transition cursor-pointer"
-                                >
-                                  <Edit3 className="w-3.5 h-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  onClick={() => handleDeleteAppointmentAction(app.AppointmentID)}
-                                  title="Delete Appointment"
-                                  className="p-1.5 text-red-600 hover:bg-red-100 rounded transition cursor-pointer"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        })
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* BOTTOM ACTION BAR WITH ADD, EDIT, DELETE BUTTONS */}
-                <div className="bg-slate-100 p-3 border-t border-slate-300 flex flex-wrap items-center justify-between gap-3">
-                  <div className="text-xs text-slate-600 font-medium">
-                    {selectedAppId ? (
-                      <span className="flex items-center space-x-1.5">
-                        <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                        <span>Selected Row ID: <strong className="font-mono text-slate-900">{selectedAppId}</strong></span>
-                      </span>
-                    ) : (
-                      <span className="text-slate-400 italic">Click any row in the grid above to select, edit, or delete</span>
-                    )}
-                  </div>
-
-                  <div className="flex items-center space-x-2">
-                    {/* ADD BUTTON */}
-                    <button
-                      type="button"
-                      disabled={!canBookAppointment}
-                      onClick={handleOpenAddModal}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
-                    >
-                      <Plus className="w-4 h-4" />
-                      <span>{canBookAppointment ? 'Add New Appointment' : 'Add Restricted'}</span>
-                    </button>
-
-                    {/* EDIT BUTTON */}
-                    <button
-                      type="button"
-                      disabled={!selectedAppId || !canBookAppointment}
-                      onClick={() => {
-                        const target = appointments.find((a) => a.AppointmentID === selectedAppId);
-                        if (target) handleOpenEditModal(target);
-                      }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
-                    >
-                      <Edit3 className="w-4 h-4" />
-                      <span>Edit Selected</span>
-                    </button>
-
-                    {/* DELETE BUTTON */}
-                    <button
-                      type="button"
-                      disabled={!selectedAppId || !canCancelAppointment}
-                      onClick={() => {
-                        if (selectedAppId) handleDeleteAppointmentAction(selectedAppId);
-                      }}
-                      className="px-4 py-2 bg-rose-600 hover:bg-rose-700 disabled:opacity-40 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                      <span>Delete Selected</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ADD APPOINTMENT MODAL */}
-          {isAddAppModalOpen && (
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                <div className="bg-emerald-800 text-white p-4 flex items-center justify-between">
-                  <h3 className="text-sm font-bold flex items-center space-x-2">
-                    <Plus className="w-4 h-4 text-emerald-300" />
-                    <span>Add New Patient Appointment</span>
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => setIsAddAppModalOpen(false)}
-                    className="text-emerald-200 hover:text-white transition cursor-pointer"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleSaveAddAppointment} className="p-5 space-y-4">
-                  {/* PATIENT SELECTION / SEARCH SECTION */}
-                  {!formPatientId ? (
-                    <div className="space-y-3 bg-emerald-50/60 p-3.5 rounded-xl border border-emerald-200 shadow-2xs">
-                      <div className="flex items-center justify-between">
-                        <label className="block text-xs font-black text-emerald-950 uppercase tracking-wide flex items-center">
-                          <History className="w-4 h-4 text-emerald-700 mr-1.5" />
-                          <span>Search PHC Patient History & Import to EMR</span>
-                        </label>
-                        <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-full">
-                          {patients.length} EMR Patients
-                        </span>
-                      </div>
-
-                      {/* Search Box Input with Explicit Search Button */}
-                      <div className="flex items-center space-x-2">
-                        <div className="relative flex-1">
-                          <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                          <input
-                            type="text"
-                            placeholder=""
-                            value={patientSearchQuery}
-                            onChange={(e) => {
-                              const val = e.target.value;
-                              setPatientSearchQuery(val);
-                              if (val.trim().length >= 2) {
-                                fetchNhcArchive(val);
-                              }
-                            }}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') {
-                                e.preventDefault();
-                                if (patientSearchQuery.trim()) {
-                                  fetchNhcArchive(patientSearchQuery.trim());
-                                }
-                              }
-                            }}
-                            className="w-full pl-9 pr-8 py-2 text-xs border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500/30 focus:border-emerald-600 bg-white font-medium shadow-inner"
-                          />
-                          {patientSearchQuery && (
-                            <button
-                              type="button"
-                              onClick={() => setPatientSearchQuery('')}
-                              className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 transition"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          )}
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (patientSearchQuery.trim()) {
-                              fetchNhcArchive(patientSearchQuery.trim());
-                            }
-                          }}
-                          className="px-3.5 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center space-x-1.5 shrink-0 cursor-pointer"
-                          title="Search PHC Patient History Records"
-                        >
-                          <Search className="w-3.5 h-3.5" />
-                          <span>Search History</span>
-                        </button>
-                      </div>
-
-                      {/* Matching Patients Search Results List */}
-                      {(() => {
-                        if (!patientSearchQuery.trim()) return null;
-
-                        const q = patientSearchQuery.toLowerCase().trim();
-
-                        // Combine active patients and PHC patient history records
-                        const candidateMap = new Map<string, {
-                          PatientID: string;
-                          PatientName: string;
-                          PhoneMobile?: string;
-                          Father_husband?: string;
-                          AgeYears?: number;
-                          Sex?: string;
-                          isNhcHistory: boolean;
-                        }>();
-
-                        patients.forEach(p => {
-                          candidateMap.set(p.PatientID, {
-                            PatientID: p.PatientID,
-                            PatientName: p.PatientName,
-                            PhoneMobile: p.PhoneMobile,
-                            Father_husband: p.Father_husband,
-                            AgeYears: p.AgeYears,
-                            Sex: p.Sex,
-                            isNhcHistory: false
-                          });
-                        });
-
-                        const allNhcRecords = [...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory];
-                        allNhcRecords.forEach(nhc => {
-                          if (nhc.PatientID && !candidateMap.has(nhc.PatientID)) {
-                            candidateMap.set(nhc.PatientID, {
-                              PatientID: nhc.PatientID,
-                              PatientName: getResolvedNhcPatientName(nhc, patients, allNhcRecords),
-                              PhoneMobile: nhc.PhoneMobile || '',
-                              Father_husband: nhc.Father_husband || '',
-                              AgeYears: nhc.AgeYears || 0,
-                              Sex: nhc.Sex || 'Male',
-                              isNhcHistory: true
-                            });
-                          }
-                        });
-
-                        const candidates = Array.from(candidateMap.values());
-                        const filtered = candidates.filter((p) => {
-                          const matchName = String(p.PatientName || '').toLowerCase().includes(q);
-                          const matchId = String(p.PatientID || '').toLowerCase().includes(q);
-                          const matchPhone = String(p.PhoneMobile || '').includes(q);
-                          const matchGuardian = String(p.Father_husband || '').toLowerCase().includes(q);
-                          return matchName || matchId || matchPhone || matchGuardian;
-                        });
-
-                        return (
-                          <div className="space-y-1 pt-1">
-                            <div className="flex items-center justify-between text-[10px] font-black text-emerald-900 uppercase tracking-wider">
-                              <span>Found {filtered.length} Matching PHC / EMR History Records</span>
-                              {isSearchingArchive && <span className="text-emerald-700 animate-pulse font-mono">Searching archive...</span>}
-                            </div>
-
-                            <div className="max-h-52 overflow-y-auto border border-emerald-300 rounded-xl divide-y divide-slate-100 bg-white shadow-2xs">
-                              {filtered.length === 0 ? (
-                                <div className="p-4 text-center text-slate-500 text-xs font-medium">
-                                  No patient history record found matching "{patientSearchQuery}".
-                                </div>
-                              ) : (
-                                filtered.map((p, pIdx) => {
-                                  const prevFee = getPatientLastFee(p.PatientID);
-                                  return (
-                                    <div
-                                      key={`cand-${p.PatientID}-${pIdx}`}
-                                      className="p-2.5 hover:bg-emerald-50/80 transition flex items-center justify-between group"
-                                    >
-                                      <div>
-                                        <div className="font-extrabold text-xs text-slate-950 group-hover:text-emerald-950 flex items-center space-x-1.5 flex-wrap">
-                                          <span>{p.PatientName}</span>
-                                          <span className="text-[10px] font-mono font-black bg-slate-100 text-slate-800 px-1.5 py-0.2 rounded border border-slate-300">
-                                            {p.PatientID}
-                                          </span>
-                                          {p.isNhcHistory ? (
-                                            <span className="text-[9px] font-black bg-amber-100 text-amber-950 px-1.5 py-0.2 rounded border border-amber-400">
-                                              PHC History
-                                            </span>
-                                          ) : (
-                                            <span className="text-[9px] font-black bg-emerald-100 text-emerald-950 px-1.5 py-0.2 rounded border border-emerald-300">
-                                              EMR Active
-                                            </span>
-                                          )}
-                                        </div>
-                                        <div className="text-[11px] text-slate-600 font-mono flex items-center space-x-2.5 mt-0.5 flex-wrap">
-                                          <span>Mobile: <strong>{p.PhoneMobile || 'N/A'}</strong></span>
-                                          <span className="text-emerald-800 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200 font-bold">
-                                            Appt Fee: <strong>PKR {prevFee}</strong>
-                                          </span>
-                                          {p.Father_husband ? <span>Guardian: <strong>{p.Father_husband}</strong></span> : null}
-                                          {p.AgeYears ? <span>Age: <strong>{p.AgeYears}Y ({p.Sex || 'N/A'})</strong></span> : null}
-                                        </div>
-                                      </div>
-
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setFormPatientId(p.PatientID);
-                                          setFormPatientName(p.PatientName);
-                                          setFormPhoneMobile(p.PhoneMobile || '');
-                                          setPatientSearchQuery('');
-
-                                          // Automatically populate payment/fee textbox with previous appointment fee
-                                          setFormFeeCharged(String(prevFee));
-
-                                          // If patient is from PHC History archive and not in active patients list, import into EMR
-                                          if (p.isNhcHistory && !patients.some(ap => ap.PatientID === p.PatientID)) {
-                                            const importedPat: Patient = {
-                                              PatientID: p.PatientID,
-                                              PatientName: p.PatientName,
-                                              Father_husband: p.Father_husband || 'N/A',
-                                              AgeYears: p.AgeYears || 0,
-                                              Sex: (p.Sex as any) || 'Male',
-                                              MaritalStatus: 'Single',
-                                              Occupation: 'N/A',
-                                              Address: 'N/A',
-                                              CityID: 1,
-                                              Country: 'Pakistan',
-                                              PhoneMobile: p.PhoneMobile || '03000000000',
-                                              RegistrationDate: new Date().toISOString().split('T')[0]
-                                            };
-                                            if (onAddPatient) {
-                                              onAddPatient(importedPat);
-                                            }
-                                          }
-                                        }}
-                                        className="text-[11px] font-extrabold text-white bg-emerald-700 hover:bg-emerald-800 px-3 py-1.5 rounded-lg transition shadow-2xs flex items-center space-x-1 shrink-0 cursor-pointer"
-                                      >
-                                        <UserPlus className="w-3.5 h-3.5 mr-0.5" />
-                                        <span>Import into EMR</span>
-                                      </button>
-                                    </div>
-                                  );
-                                })
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* OR ENTER NEW PATIENT MANUALLY */}
-                      <div className="pt-2 border-t border-slate-200">
-                        <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                          Or Enter New Patient Details (Walk-in / First Visit):
-                        </p>
-                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 bg-white p-2.5 rounded-lg border border-slate-200">
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-600 uppercase">Patient Name *</label>
-                            <input
-                              type="text"
-                              placeholder=""
-                              value={formPatientName}
-                              onChange={(e) => {
-                                setFormPatientName(e.target.value);
-                                setFormPatientId('');
-                              }}
-                              className="mt-0.5 w-full text-xs border border-slate-300 rounded-md p-1.5 font-bold text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[10px] font-bold text-slate-600 uppercase">Mobile Number *</label>
-                            <input
-                              type="text"
-                              placeholder=""
-                              value={formPhoneMobile}
-                              onChange={(e) => setFormPhoneMobile(e.target.value)}
-                              className="mt-0.5 w-full text-xs border border-slate-300 rounded-md p-1.5 font-mono text-slate-900 focus:outline-none focus:ring-1 focus:ring-emerald-500"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  ) : (
-                    /* SELECTED PREVIOUS PATIENT CARD */
-                    <div className="bg-emerald-50 border-2 border-emerald-500 p-3.5 rounded-xl text-xs flex justify-between items-center shadow-2xs">
-                      <div>
-                        <div className="flex items-center space-x-1.5">
-                          <span className="text-[9px] font-extrabold text-emerald-900 uppercase tracking-wider bg-emerald-200 px-2 py-0.5 rounded">
-                            Selected Patient
-                          </span>
-                          <span className="text-[10px] font-mono font-bold text-emerald-800">{formPatientId}</span>
-                        </div>
-                        <h4 className="font-extrabold text-slate-950 text-sm mt-1">{formPatientName}</h4>
-                        <div className="text-[11px] font-mono text-slate-600 mt-0.5 flex items-center space-x-2.5 flex-wrap">
-                          <span>Mobile: <strong className="text-slate-900">{formPhoneMobile || 'N/A'}</strong></span>
-                          <span>|</span>
-                          <span className="text-emerald-800 font-bold bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300">
-                            Appt Fee: <strong>PKR {formFeeCharged || 0}</strong>
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setFormPatientId('');
-                          setFormPatientName('');
-                          setFormPhoneMobile('');
-                        }}
-                        className="px-3 py-1.5 bg-white border border-emerald-300 text-emerald-800 hover:bg-emerald-100 font-bold rounded-lg text-xs transition cursor-pointer shadow-2xs"
-                      >
-                        Search / Reselect
-                      </button>
-                    </div>
-                  )}
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xxs font-bold text-slate-600 uppercase">Appointment Date *</label>
-                      <input
-                        type="date"
-                        required
-                        value={formAppDate}
-                        onChange={(e) => setFormAppDate(e.target.value)}
-                        className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xxs font-bold text-slate-600 uppercase">Shift *</label>
-                      <select
-                        value={formShift}
-                        onChange={(e) => setFormShift(Number(e.target.value) as 1 | 2)}
-                        className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none font-semibold"
-                      >
-                        <option value={1}>Morning Shift</option>
-                        <option value={2}>Evening Shift</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-600 uppercase">Appointment Fees (PKR)</label>
-                    <input
-                      type="number"
-                      placeholder=""
-                      value={formFeeCharged}
-                      onChange={(e) => setFormFeeCharged(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none font-mono font-bold text-emerald-800 text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-600 uppercase">Remarks / Chief Reason</label>
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={formRemarks}
-                      onChange={(e) => setFormRemarks(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="pt-2 flex items-center justify-end space-x-2 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setIsAddAppModalOpen(false)}
-                      className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-                    >
-                      Cancel
-                    </button>
-                    <button
-                      type="submit"
-                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition cursor-pointer shadow-xs"
-                    >
-                      Confirm & Save Appointment
-                    </button>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-
-          {/* EDIT APPOINTMENT MODAL */}
-          {editingApp && (
-            <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs z-50 flex items-center justify-center p-4">
-              <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-                <div className="bg-blue-800 text-white p-4 flex items-center justify-between">
-                  <h3 className="text-sm font-bold flex items-center space-x-2">
-                    <Edit3 className="w-4 h-4 text-blue-300" />
-                    <span>Edit Appointment ({editingApp.AppointmentID})</span>
-                  </h3>
-                  <button
-                    type="button"
-                    onClick={() => setEditingApp(null)}
-                    className="text-blue-200 hover:text-white transition cursor-pointer"
-                  >
-                    <X className="w-5 h-5" />
-                  </button>
-                </div>
-
-                <form onSubmit={handleSaveEditAppointment} className="p-5 space-y-4">
-                  <div className="bg-slate-100 p-3 rounded-xl border border-slate-200 space-y-1">
-                    <p className="text-xxs font-bold text-slate-500 uppercase">Patient Profile</p>
-                    <p className="text-sm font-bold text-slate-900">{formPatientName}</p>
-                    <p className="text-xs text-slate-600 font-mono">Patient ID: {editingApp.PatientID}</p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-600 uppercase">Mobile Number</label>
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={formPhoneMobile}
-                      onChange={(e) => setFormPhoneMobile(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 focus:outline-none font-mono text-slate-900"
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-xxs font-bold text-slate-600 uppercase">Appointment Date *</label>
-                      <input
-                        type="date"
-                        required
-                        value={formAppDate}
-                        onChange={(e) => setFormAppDate(e.target.value)}
-                        className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 focus:outline-none font-mono"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-xxs font-bold text-slate-600 uppercase">Shift *</label>
-                      <select
-                        value={formShift}
-                        onChange={(e) => setFormShift(Number(e.target.value) as 1 | 2)}
-                        className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 focus:outline-none font-semibold"
-                      >
-                        <option value={1}>Morning Shift</option>
-                        <option value={2}>Evening Shift</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-600 uppercase">Appointment Fees (PKR)</label>
-                    <input
-                      type="number"
-                      placeholder=""
-                      value={formFeeCharged}
-                      onChange={(e) => setFormFeeCharged(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 focus:outline-none font-mono font-bold text-emerald-800 text-sm"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-600 uppercase">Remarks / Chief Reason</label>
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={formRemarks}
-                      onChange={(e) => setFormRemarks(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-1 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="pt-2 flex items-center justify-between border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => handleDeleteAppointmentAction(editingApp.AppointmentID)}
-                      className="px-3 py-2 bg-rose-50 text-rose-700 hover:bg-rose-100 text-xs font-bold rounded-lg transition cursor-pointer flex items-center space-x-1"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span>Delete</span>
-                    </button>
-
-                    <div className="flex items-center space-x-2">
-                      <button
-                        type="button"
-                        onClick={() => setEditingApp(null)}
-                        className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition cursor-pointer"
-                      >
-                        Cancel
-                      </button>
-                      <button
-                        type="submit"
-                        className="px-5 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-lg transition cursor-pointer shadow-xs"
-                      >
-                        Update Appointment
-                      </button>
-                    </div>
-                  </div>
-                </form>
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-
-
-
-      {activeSubTab === 'queue' && (() => {
-        const realTodayStr = new Date().toISOString().split('T')[0];
-
-        const isTokenCompleted = (tok: Token) => {
-          if (tok.Status === 2) return true;
-          const tokDate = tok.Date || realTodayStr;
-          const hasVisit = (visits || []).some(
-            (v) => v.PatientID === tok.PatientID && (v.VisitDate ? v.VisitDate.split('T')[0] === tokDate : false)
-          );
-          const isAppCompleted = (appointments || []).some(
-            (a) => a.PatientID === tok.PatientID && a.AppointmentDate === tokDate && a.Status === 4
-          );
-          return hasVisit || isAppCompleted;
-        };
-
-        const userShift = currentUser?.AssignedShift;
-        const showMorningQueue = userShift === 1 || userShift === 'Both' || !userShift;
-        const showEveningQueue = userShift === 2 || userShift === 'Both' || !userShift;
-
-        // Clean & valid tokens for active queue (exclude legacy PAT- phantom IDs and only include valid registered patients for today)
-        const validTokens = (tokens || []).filter((t) => {
-          if (!t || !t.PatientID || t.PatientID.startsWith('PAT-') || t.PatientID === 'PAT-0075422') return false;
-          const tokDate = t.Date || realTodayStr;
-          if (tokDate !== realTodayStr) return false;
-          const patientExists = (patients || []).some((p) => p.PatientID === t.PatientID) || (nhcPatients || []).some((n) => n.PatientID === t.PatientID);
-          return patientExists;
-        });
-
-        const morningWaiting = validTokens.filter((t) => t.Shift === 1 && t.Status === 1 && !isTokenCompleted(t));
-        const eveningWaiting = validTokens.filter((t) => t.Shift === 2 && t.Status === 1 && !isTokenCompleted(t));
-        const completedList = validTokens.filter((t) => isTokenCompleted(t) || t.Status === 2);
-
-        const visibleBoxesCount = (showMorningQueue ? 1 : 0) + (showEveningQueue ? 1 : 0) + 1;
-        const gridColsClass = visibleBoxesCount === 2 ? 'grid-cols-1 md:grid-cols-2' : 'grid-cols-1 lg:grid-cols-3';
-
-        return (
-          <div className="space-y-6 animate-fadeIn" id="patients-view-queue">
-            
-            {/* Waiting List Visual Dashboard */}
-            <div className={`grid ${gridColsClass} gap-6`}>
-              
-              {/* Morning Waitlist */}
-              {showMorningQueue && (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-slate-100 bg-emerald-50/50 flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Clock className="w-4 h-4 text-emerald-600" />
-                    <h4 className="font-bold text-slate-900 text-sm">Morning Shift (Shift 1) Active Queue</h4>
-                  </div>
-                  <span className="text-xxs font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded">
-                    {morningWaiting.length} Waiting
-                  </span>
-                </div>
-
-                <div className="divide-y divide-slate-100 min-h-[200px]">
-                  {morningWaiting.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <CheckCircle2 className="w-8 h-8 text-emerald-500/40 mx-auto mb-2" />
-                      <p className="text-xs text-slate-400 font-semibold">No patients currently waiting in Morning Shift queue.</p>
-                    </div>
-                  ) : (
-                    morningWaiting.map((tok, idx) => {
-                      const matchedApp = appointments.find(
-                        (a) => a.PatientID === tok.PatientID && a.AppointmentDate === tok.Date && a.Shift === 1
-                      );
-
-                      return (
-                        <div key={`tok-m1-${tok.TokenNo}-${idx}`} className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
-                          <div className="flex items-center space-x-3.5">
-                            <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 text-slate-800 font-bold font-mono flex items-center justify-center shrink-0 shadow-inner">
-                              #{tok.TokenNo}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-900 truncate">{getPatientName(tok.PatientID)}</p>
-                              <p className="text-xxs text-slate-400 font-mono mt-0.5">ID: {tok.PatientID} | Mob: {getPatientPhone(tok.PatientID)}</p>
-                              
-                              <div className="mt-1.5 flex items-center space-x-1.5">
-                                <span className="text-xxs font-bold px-1.5 py-0.2 rounded uppercase bg-indigo-50 text-indigo-600 border border-indigo-100">
-                                  Waiting for Consultation
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Actions */}
-                          <div className="flex items-center space-x-1.5 justify-end">
-                            <button
-                              type="button"
-                              onClick={() => handlePrintThermalFromToken(tok)}
-                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xxs font-bold rounded flex items-center transition border border-slate-200 cursor-pointer"
-                              title="Print short thermal printer token slip"
-                            >
-                              <Printer className="w-3 h-3 mr-1 text-slate-600" />
-                              <span>Print Ticket</span>
-                            </button>
-                            <button
-                              onClick={() => handleCallPatient(tok)}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xxs font-bold rounded flex items-center transition"
-                            >
-                              <UserCheck className="w-3 h-3 mr-1" />
-                              <span>Call Patient</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleCancelQueue(tok)}
-                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-800 text-xxs font-bold rounded flex items-center transition border border-rose-200 cursor-pointer shadow-2xs"
-                              title="Delete token if issued by mistake"
-                            >
-                              <Trash2 className="w-3 h-3 mr-1" />
-                              <span>Delete Token</span>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-              )}
-
-              {/* Evening Shift */}
-              {showEveningQueue && (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-slate-100 bg-indigo-50/50 flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <Clock className="w-4 h-4 text-indigo-600" />
-                    <h4 className="font-bold text-slate-900 text-sm">Evening Shift (Shift 2) Active Queue</h4>
-                  </div>
-                  <span className="text-xxs font-bold bg-indigo-100 text-indigo-800 px-2 py-0.5 rounded">
-                    {eveningWaiting.length} Waiting
-                  </span>
-                </div>
-
-                <div className="divide-y divide-slate-100 min-h-[200px]">
-                  {eveningWaiting.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <CheckCircle2 className="w-8 h-8 text-indigo-500/40 mx-auto mb-2" />
-                      <p className="text-xs text-slate-400 font-semibold">No patients currently waiting in Evening Shift queue.</p>
-                    </div>
-                  ) : (
-                    eveningWaiting.map((tok, idx) => {
-                      const matchedApp = appointments.find(
-                        (a) => a.PatientID === tok.PatientID && a.AppointmentDate === tok.Date && a.Shift === 2
-                      );
-
-                      return (
-                        <div key={`tok-e2-${tok.TokenNo}-${idx}`} className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0">
-                          <div className="flex items-center space-x-3.5">
-                            <div className="w-10 h-10 rounded-full bg-slate-100 border border-slate-200 text-slate-800 font-bold font-mono flex items-center justify-center shrink-0 shadow-inner">
-                              #{tok.TokenNo}
-                            </div>
-                            <div className="min-w-0">
-                              <p className="text-xs font-bold text-slate-900 truncate">{getPatientName(tok.PatientID)}</p>
-                              <p className="text-xxs text-slate-400 font-mono mt-0.5">ID: {tok.PatientID} | Mob: {getPatientPhone(tok.PatientID)}</p>
-                              
-                              <div className="mt-1.5 flex items-center space-x-1.5">
-                                <span className="text-xxs font-bold px-1.5 py-0.2 rounded uppercase bg-indigo-50 text-indigo-600 border border-indigo-100">
-                                  Waiting for Consultation
-                                </span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Actions */}
-                          <div className="flex items-center space-x-1.5 justify-end">
-                            <button
-                              type="button"
-                              onClick={() => handlePrintThermalFromToken(tok)}
-                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xxs font-bold rounded flex items-center transition border border-slate-200 cursor-pointer"
-                              title="Print short thermal printer token slip"
-                            >
-                              <Printer className="w-3 h-3 mr-1 text-slate-600" />
-                              <span>Print Ticket</span>
-                            </button>
-                            <button
-                              onClick={() => handleCallPatient(tok)}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xxs font-bold rounded flex items-center transition"
-                            >
-                              <UserCheck className="w-3 h-3 mr-1" />
-                              <span>Call Patient</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleCancelQueue(tok)}
-                              className="px-2.5 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-800 text-xxs font-bold rounded flex items-center transition border border-rose-200 cursor-pointer shadow-2xs"
-                              title="Delete token if issued by mistake"
-                            >
-                              <Trash2 className="w-3 h-3 mr-1" />
-                              <span>Delete Token</span>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-              )}
-
-              {/* Dedicated Section: Completed Visits & Checked Patients */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
-                <div className="p-4 border-b border-slate-100 bg-emerald-50/70 flex items-center justify-between">
-                  <div className="flex items-center space-x-2">
-                    <CheckCircle2 className="w-5 h-5 text-emerald-600" />
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-sm">Completed Visits & Doctor Consultations</h4>
-                      <p className="text-xxs text-slate-500 font-medium">Patients checked by doctor & issued prescriptions</p>
-                    </div>
-                  </div>
-                  <span className="text-xs font-extrabold bg-emerald-600 text-white px-3 py-1 rounded-full shadow-xs">
-                    {completedList.length} Completed Visit{completedList.length === 1 ? '' : 's'}
-                  </span>
-                </div>
-
-                <div className="divide-y divide-slate-100 min-h-[200px]">
-                  {completedList.length === 0 ? (
-                    <div className="p-12 text-center">
-                      <Stethoscope className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                      <p className="text-xs text-slate-400 font-semibold">No completed visits recorded yet for today.</p>
-                      <p className="text-xxs text-slate-400 mt-0.5">When doctor saves a visit assessment or prescription in EMR, patients automatically move to this completed list.</p>
-                    </div>
-                  ) : (
-                    completedList.map((tok, idx) => {
-                      const matchedApp = appointments.find(
-                        (a) => a.PatientID === tok.PatientID && a.AppointmentDate === tok.Date
-                      );
-                      const matchedVisit = (visits || []).find(
-                        (v) => v.PatientID === tok.PatientID && (v.VisitDate ? v.VisitDate.split('T')[0] === tok.Date : false)
-                      );
-
-                      return (
-                        <div key={`tok-comp-${tok.TokenNo}-${idx}`} className="p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between space-y-3 sm:space-y-0 hover:bg-slate-50/50 transition">
-                          <div className="flex items-center space-x-3.5">
-                            <div className="w-10 h-10 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 font-bold font-mono flex items-center justify-center shrink-0 shadow-xs">
-                              #{tok.TokenNo}
-                            </div>
-                            <div className="min-w-0">
-                              <div className="flex items-center space-x-2">
-                                <p className="text-xs font-bold text-slate-900 truncate">{getPatientName(tok.PatientID)}</p>
-                                <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.2 rounded-full border border-emerald-200 uppercase tracking-wider flex items-center space-x-1">
-                                  <CheckCircle2 className="w-3 h-3 text-emerald-600" />
-                                  <span>Checked & Prescribed</span>
-                                </span>
-                              </div>
-                              <p className="text-xxs text-slate-400 font-mono mt-0.5">
-                                ID: {tok.PatientID} | Mob: {getPatientPhone(tok.PatientID)} | Shift {tok.Shift === 1 ? 'Morning' : 'Evening'}
-                              </p>
-                              {matchedVisit && (
-                                <p className="text-xxs font-medium text-slate-600 mt-1 truncate max-w-md bg-slate-100 px-2 py-0.5 rounded border border-slate-200">
-                                  <span className="font-bold text-emerald-700">Rx/Consultation: </span>
-                                  {matchedVisit.SymptomsDiagnosis || 'Prescription recorded'}
-                                </p>
-                              )}
-                            </div>
-                          </div>
-
-                          {/* Actions */}
-                          <div className="flex items-center space-x-1.5 justify-end">
-                            <button
-                              type="button"
-                              onClick={() => handlePrintThermalFromToken(tok)}
-                              className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xxs font-bold rounded flex items-center transition border border-slate-200 cursor-pointer"
-                              title="Print short thermal printer token slip"
-                            >
-                              <Printer className="w-3 h-3 mr-1 text-slate-600" />
-                              <span>Print Ticket</span>
-                            </button>
-                            <button
-                              onClick={() => speakVoice(tok)}
-                              className="px-2 py-1 bg-blue-50 hover:bg-blue-100 text-blue-700 text-xxs font-bold rounded flex items-center transition border border-blue-200"
-                              title="Repeat the calling voice announcement"
-                            >
-                              <Volume2 className="w-3 h-3 mr-1" />
-                              <span>Repeat Voice</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => handleCancelQueue(tok)}
-                              className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-600 hover:text-rose-800 text-xxs font-bold rounded flex items-center transition border border-rose-200 cursor-pointer"
-                              title="Delete token if issued by mistake"
-                            >
-                              <Trash2 className="w-3 h-3 mr-1" />
-                              <span>Delete</span>
-                            </button>
-                          </div>
-                        </div>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-
-            </div>
-
-          </div>
-        );
-      })()}
-
-      {/* Large Screen LED Live Queue Status display */}
-      {activeSubTab === 'status' && (
-        <div className="space-y-4">
-          {/* Quick controls panel */}
-          <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 flex flex-col sm:flex-row items-center justify-between gap-4 text-white">
-            <div className="flex items-center space-x-3">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-400">LCD Shift Filter:</span>
-              <div className="inline-flex rounded-lg border border-slate-800 p-0.5 bg-slate-950">
-                <button
-                  type="button"
-                  onClick={() => setFullscreenShift('both')}
-                  className={`px-3 py-1 text-xxs font-extrabold uppercase rounded transition ${fullscreenShift === 'both' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                >
-                  Both Shifts
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFullscreenShift('morning')}
-                  className={`px-3 py-1 text-xxs font-extrabold uppercase rounded transition ${fullscreenShift === 'morning' ? 'bg-amber-600 text-white' : 'text-slate-400 hover:text-white'}`}
-                >
-                  Morning Only
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setFullscreenShift('evening')}
-                  className={`px-3 py-1 text-xxs font-extrabold uppercase rounded transition ${fullscreenShift === 'evening' ? 'bg-indigo-500 text-white' : 'text-slate-400 hover:text-white'}`}
-                >
-                  Evening Only
-                </button>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setIsLcdFullScreenMode(true);
-                // Attempt native browser fullscreen on container
-                const container = document.getElementById('patients-large-screen-container');
-                if (container && container.requestFullscreen) {
-                  container.requestFullscreen().catch(() => {});
-                }
-              }}
-              className="w-full sm:w-auto px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-black text-xs uppercase rounded-lg flex items-center justify-center shadow-lg transition"
-            >
-              <Users className="w-4 h-4 mr-2" />
-              Go Full LCD Screen Mode
-            </button>
-          </div>
-
-          <div className="bg-slate-950 text-white p-8 rounded-2xl border-4 border-slate-800 shadow-2xl space-y-6 animate-fadeIn" id="patients-large-screen-container">
-            {/* Header for TV screen */}
-            <div className="flex justify-between items-center border-b-2 border-slate-800 pb-4">
-              <div>
-                <h1 className="text-2xl md:text-3xl font-extrabold tracking-tight text-emerald-400 font-sans uppercase animate-pulse">PCMS OPD Live Queue Display</h1>
-                <p className="text-xs font-semibold tracking-wide text-slate-400 uppercase mt-1">Please watch the screen for your Token number. Kindly keep your receipts ready.</p>
-              </div>
-              <div className="text-right">
-                <span className="text-sm md:text-lg font-mono font-bold bg-slate-900 border border-slate-800 px-4 py-2 rounded-lg text-emerald-400">
-                  Live Server Clock: {new Date().toLocaleTimeString()}
-                </span>
-              </div>
-            </div>
-
-            {/* Shift Grid */}
-            <div className="grid grid-cols-1 gap-8" style={{
-              gridTemplateColumns: fullscreenShift === 'both' ? 'repeat(2, minmax(0, 1fr))' : '1fr'
-            }}>
-              {/* Morning Shift Column */}
-              {(fullscreenShift === 'both' || fullscreenShift === 'morning') && (
-                <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-6">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                    <span className="text-base font-black tracking-wide text-amber-500 uppercase">Morning Shift (08:30 - 12:30)</span>
-                    <span className="text-xxs bg-slate-800 text-slate-300 font-bold px-2.5 py-1 rounded">
-                      {tokens.filter(t => t.Shift === 1 && t.Status === 1).length} Patients Remaining
-                    </span>
-                  </div>
-
-                  {/* Currently Consulting */}
-                  <div className="bg-slate-950 p-5 rounded-xl border-2 border-emerald-500/30 flex flex-col items-center justify-center text-center space-y-2 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 bg-emerald-500 text-slate-950 font-black text-[9px] tracking-widest px-3 py-1 uppercase">CURRENTLY IN ASSESSMENT</div>
-                    {tokens.filter(t => t.Shift === 1 && t.Status === 2).length === 0 ? (
-                      <div className="py-6">
-                        <span className="text-2xl font-black text-slate-600 font-mono">-- NONE --</span>
-                        <p className="text-xxs text-slate-500 font-semibold mt-1">Doctor ready for next token...</p>
-                      </div>
-                    ) : (
-                      <div className="py-4 space-y-1">
-                        <span className="text-5xl font-black text-emerald-400 font-mono tracking-wider animate-bounce block">
-                          #{tokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.TokenNo).pop()}
-                        </span>
-                        <span className="text-sm font-extrabold text-slate-200 uppercase block">
-                          {getPatientName(tokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.PatientID).pop() || '')}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Waiting Pool */}
-                  <div className="space-y-3">
-                    <span className="text-xxs font-black tracking-widest text-slate-400 uppercase">WAITING QUEUE (NEXT UP)</span>
-                    {tokens.filter(t => t.Shift === 1 && t.Status === 1).length === 0 ? (
-                      <p className="text-xs text-slate-500 font-semibold text-center py-6">No patients in Morning waitlist.</p>
-                    ) : (
-                      <div className="grid grid-cols-4 gap-2.5">
-                        {tokens.filter(t => t.Shift === 1 && t.Status === 1).map((tok, idx) => (
-                          <div key={`tok-w1-${tok.TokenNo}-${idx}`} className="bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-center font-mono">
-                            <span className="text-lg font-black text-blue-400">#{tok.TokenNo}</span>
-                            <p className="text-[8px] text-slate-500 font-sans truncate font-bold mt-1 uppercase">{getPatientName(tok.PatientID)}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-
-              {/* Evening Shift Column */}
-              {(fullscreenShift === 'both' || fullscreenShift === 'evening') && (
-                <div className="bg-slate-900 p-6 rounded-xl border border-slate-800 space-y-6">
-                  <div className="flex items-center justify-between border-b border-slate-800 pb-3">
-                    <span className="text-base font-black tracking-wide text-indigo-400 uppercase">Evening Shift (17:00 - 21:00)</span>
-                    <span className="text-xxs bg-slate-800 text-slate-300 font-bold px-2.5 py-1 rounded">
-                      {tokens.filter(t => t.Shift === 2 && t.Status === 1).length} Patients Remaining
-                    </span>
-                  </div>
-
-                  {/* Currently Consulting */}
-                  <div className="bg-slate-950 p-5 rounded-xl border-2 border-emerald-500/30 flex flex-col items-center justify-center text-center space-y-2 relative overflow-hidden">
-                    <div className="absolute top-0 left-0 bg-emerald-500 text-slate-950 font-black text-[9px] tracking-widest px-3 py-1 uppercase">CURRENTLY IN ASSESSMENT</div>
-                    {tokens.filter(t => t.Shift === 2 && t.Status === 2).length === 0 ? (
-                      <div className="py-6">
-                        <span className="text-2xl font-black text-slate-600 font-mono">-- NONE --</span>
-                        <p className="text-xxs text-slate-500 font-semibold mt-1">Doctor ready for next token...</p>
-                      </div>
-                    ) : (
-                      <div className="py-4 space-y-1">
-                        <span className="text-5xl font-black text-emerald-400 font-mono tracking-wider animate-bounce block">
-                          #{tokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.TokenNo).pop()}
-                        </span>
-                        <span className="text-sm font-extrabold text-slate-200 uppercase block">
-                          {getPatientName(tokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.PatientID).pop() || '')}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Waiting Pool */}
-                  <div className="space-y-3">
-                    <span className="text-xxs font-black tracking-widest text-slate-400 uppercase">WAITING QUEUE (NEXT UP)</span>
-                    {tokens.filter(t => t.Shift === 2 && t.Status === 1).length === 0 ? (
-                      <p className="text-xs text-slate-500 font-semibold text-center py-6">No patients in Evening waitlist.</p>
-                    ) : (
-                      <div className="grid grid-cols-4 gap-2.5">
-                        {tokens.filter(t => t.Shift === 2 && t.Status === 1).map((tok, idx) => (
-                          <div key={`tok-w2-${tok.TokenNo}-${idx}`} className="bg-slate-950 border border-slate-800 p-2.5 rounded-lg text-center font-mono">
-                            <span className="text-lg font-black text-indigo-400">#{tok.TokenNo}</span>
-                            <p className="text-[8px] text-slate-500 font-sans truncate font-bold mt-1 uppercase">{getPatientName(tok.PatientID)}</p>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Full LCD Screen Overlay Modal */}
-      {isLcdFullScreenMode && (
-        <div className="fixed inset-0 bg-slate-950 text-white p-12 z-[99999] flex flex-col justify-between overflow-y-auto font-sans" id="full-lcd-screen">
-          {/* Controls overlay in top corner */}
-          <div className="absolute top-4 right-4 flex items-center space-x-3 bg-slate-900 border border-slate-800 p-2.5 rounded-xl shadow-2xl z-[100000]">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Shift Filter:</span>
-            <select
-              value={fullscreenShift}
-              onChange={(e) => setFullscreenShift(e.target.value as any)}
-              className="bg-slate-950 border border-slate-700 text-xxs font-bold text-emerald-400 rounded-lg p-1.5 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
-            >
-              <option value="both">Both Shifts</option>
-              <option value="morning">Morning Shift Only</option>
-              <option value="evening">Evening Shift Only</option>
-            </select>
-            <button
-              type="button"
-              onClick={() => {
-                setIsLcdFullScreenMode(false);
-                if (document.fullscreenElement) {
-                  document.exitFullscreen().catch(() => {});
-                }
-              }}
-              className="bg-red-900/80 hover:bg-red-800 border border-red-700 text-red-100 text-xxs font-black px-3.5 py-1.5 rounded-lg transition uppercase tracking-wider cursor-pointer"
-            >
-              Close Fullscreen
-            </button>
-          </div>
-
-          {/* Header */}
-          <div className="border-b-2 border-slate-800 pb-6 flex flex-col md:flex-row justify-between items-start md:items-end gap-4 shrink-0">
-            <div>
-              <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-emerald-400 font-sans uppercase animate-pulse">PCMS OPD Live Queue Display</h1>
-              <p className="text-xs md:text-sm font-bold tracking-wide text-slate-400 uppercase mt-2">Please watch the screen for your Token number. Kindly keep your receipts ready.</p>
-            </div>
-            <div className="text-right shrink-0">
-              <span className="text-lg md:text-2xl font-mono font-bold bg-slate-900 border border-slate-800 px-6 py-3 rounded-xl text-emerald-400">
-                Live Server Clock: {new Date().toLocaleTimeString()}
-              </span>
-            </div>
-          </div>
-
-          {/* Main Content Area */}
-          <div className="my-8 flex-1 grid grid-cols-1 gap-12" style={{
-            gridTemplateColumns: fullscreenShift === 'both' ? 'repeat(2, minmax(0, 1fr))' : '1fr'
-          }}>
-            {/* Morning Shift Column */}
-            {(fullscreenShift === 'both' || fullscreenShift === 'morning') && (
-              <div className="bg-slate-900 p-8 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-6">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                  <span className="text-xl font-black tracking-wide text-amber-500 uppercase">Morning Shift (08:30 - 12:30)</span>
-                  <span className="text-xs bg-slate-800 text-slate-300 font-bold px-4 py-2 rounded">
-                    {tokens.filter(t => t.Shift === 1 && t.Status === 1).length} Patients Remaining
-                  </span>
-                </div>
-
-                {/* Currently Consulting */}
-                <div className="bg-slate-950 p-10 rounded-2xl border-4 border-emerald-500/50 flex flex-col items-center justify-center text-center space-y-4 relative overflow-hidden flex-1 min-h-[200px]">
-                  <div className="absolute top-0 left-0 bg-emerald-500 text-slate-950 font-black text-xs tracking-widest px-6 py-2 uppercase">CURRENTLY IN ASSESSMENT</div>
-                  {tokens.filter(t => t.Shift === 1 && t.Status === 2).length === 0 ? (
-                    <div className="py-12">
-                      <span className="text-4xl font-black text-slate-600 font-mono">-- NONE --</span>
-                      <p className="text-sm text-slate-500 font-semibold mt-2">Doctor ready for next token...</p>
-                    </div>
-                  ) : (
-                    <div className="py-8 space-y-3">
-                      <span className="text-7xl md:text-8xl font-black text-emerald-400 font-mono tracking-wider animate-bounce block">
-                        #{tokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.TokenNo).pop()}
-                      </span>
-                      <span className="text-2xl md:text-3xl font-extrabold text-slate-200 uppercase block tracking-wider truncate max-w-full">
-                        {getPatientName(tokens.filter(t => t.Shift === 1 && t.Status === 2).map(t => t.PatientID).pop() || '')}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Waiting Pool */}
-                <div className="space-y-4">
-                  <span className="text-xs font-black tracking-widest text-slate-400 uppercase block">WAITING QUEUE (NEXT UP)</span>
-                  {tokens.filter(t => t.Shift === 1 && t.Status === 1).length === 0 ? (
-                    <p className="text-sm text-slate-500 font-semibold text-center py-6">No patients in Morning waitlist.</p>
-                  ) : (
-                    <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
-                      {tokens.filter(t => t.Shift === 1 && t.Status === 1).slice(0, 18).map((tok, idx) => (
-                        <div key={`tok-fs1-${tok.TokenNo}-${idx}`} className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl text-center font-mono">
-                          <span className="text-xl md:text-2xl font-black text-blue-400 block">#{tok.TokenNo}</span>
-                          <p className="text-[9px] text-slate-400 font-sans truncate font-bold mt-1.5 uppercase">{getPatientName(tok.PatientID)}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Evening Shift Column */}
-            {(fullscreenShift === 'both' || fullscreenShift === 'evening') && (
-              <div className="bg-slate-900 p-8 rounded-2xl border border-slate-800 flex flex-col justify-between space-y-6">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-                  <span className="text-xl font-black tracking-wide text-indigo-400 uppercase">Evening Shift (17:00 - 21:00)</span>
-                  <span className="text-xs bg-slate-800 text-slate-300 font-bold px-4 py-2 rounded">
-                    {tokens.filter(t => t.Shift === 2 && t.Status === 1).length} Patients Remaining
-                  </span>
-                </div>
-
-                {/* Currently Consulting */}
-                <div className="bg-slate-950 p-10 rounded-2xl border-4 border-emerald-500/50 flex flex-col items-center justify-center text-center space-y-4 relative overflow-hidden flex-1 min-h-[200px]">
-                  <div className="absolute top-0 left-0 bg-emerald-500 text-slate-950 font-black text-xs tracking-widest px-6 py-2 uppercase">CURRENTLY IN ASSESSMENT</div>
-                  {tokens.filter(t => t.Shift === 2 && t.Status === 2).length === 0 ? (
-                    <div className="py-12">
-                      <span className="text-4xl font-black text-slate-600 font-mono">-- NONE --</span>
-                      <p className="text-sm text-slate-500 font-semibold mt-2">Doctor ready for next token...</p>
-                    </div>
-                  ) : (
-                    <div className="py-8 space-y-3">
-                      <span className="text-7xl md:text-8xl font-black text-emerald-400 font-mono tracking-wider animate-bounce block">
-                        #{tokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.TokenNo).pop()}
-                      </span>
-                      <span className="text-2xl md:text-3xl font-extrabold text-slate-200 uppercase block tracking-wider truncate max-w-full">
-                        {getPatientName(tokens.filter(t => t.Shift === 2 && t.Status === 2).map(t => t.PatientID).pop() || '')}
-                      </span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Waiting Pool */}
-                <div className="space-y-4">
-                  <span className="text-xs font-black tracking-widest text-slate-400 uppercase block">WAITING QUEUE (NEXT UP)</span>
-                  {tokens.filter(t => t.Shift === 2 && t.Status === 1).length === 0 ? (
-                    <p className="text-sm text-slate-500 font-semibold text-center py-6">No patients in Evening waitlist.</p>
-                  ) : (
-                    <div className="grid grid-cols-4 md:grid-cols-6 gap-3">
-                      {tokens.filter(t => t.Shift === 2 && t.Status === 1).slice(0, 18).map((tok, idx) => (
-                        <div key={`tok-fs2-${tok.TokenNo}-${idx}`} className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl text-center font-mono">
-                          <span className="text-xl md:text-2xl font-black text-indigo-400 block">#{tok.TokenNo}</span>
-                          <p className="text-[9px] text-slate-400 font-sans truncate font-bold mt-1.5 uppercase">{getPatientName(tok.PatientID)}</p>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Footer */}
-          <div className="text-center text-slate-600 text-xxs font-bold tracking-widest border-t border-slate-900 pt-4 uppercase shrink-0">
-            PHC Health Clinic CMS ‚Ä¢ Powered by AI Studio Build ‚Ä¢ Press Close to exit full LCD view
-          </div>
-        </div>
-      )}
-
-
-
-      {/* Patient Previous Visit History Alert Popup Modal */}
-      {historyAlertModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden my-auto">
-            {/* Modal Header */}
-            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-400/30">
-                  <History className="w-5 h-5 text-indigo-300" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold text-white flex items-center space-x-2">
-                    <span>Patient Previous Visit History & Prescriptions Alert</span>
-                  </h3>
-                  <p className="text-[11px] text-indigo-200">
-                    {selectedPvPatient
-                      ? (groupedRxByDate.length > 0 
-                          ? `Found ${groupedRxByDate.length} previous visit date(s) for ${selectedPvPatient.PatientName}`
-                          : `No previous visit history found for ${selectedPvPatient.PatientName}`)
-                      : 'Search or select a patient to view previous history'}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setHistoryAlertModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white rounded-lg transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Patient Info Bar */}
-            {selectedPvPatient && (
-              <div className="bg-indigo-50/80 p-3 border-b border-indigo-100 flex flex-wrap items-center justify-between text-xs shrink-0 gap-2">
-                <div>
-                  <span className="text-[9px] font-black text-indigo-800 uppercase tracking-wider block">Patient Profile</span>
-                  <div className="flex items-center space-x-2">
-                    <span className="font-bold text-slate-900 text-sm">{selectedPvPatient.PatientName}</span>
-                    <span className="font-mono text-[10px] bg-indigo-100 text-indigo-900 px-2 py-0.5 rounded font-bold">
-                      ID: {selectedPvPatient.PatientID}
-                    </span>
-                    {(() => {
-                      const activeTok = (tokens || []).find(t => t.PatientID === selectedPvPatient.PatientID);
-                      return activeTok ? (
-                        <span className="font-mono text-[10px] bg-amber-400 text-slate-950 px-2 py-0.5 rounded-full font-black">
-                          Token #{activeTok.TokenNo}
-                        </span>
-                      ) : null;
-                    })()}
-                  </div>
-                </div>
-                <div className="text-right text-[11px] text-slate-600">
-                  <p>Age/Sex: <span className="font-bold text-slate-800">{selectedPvPatient.AgeYears} yrs / {selectedPvPatient.Sex}</span></p>
-                  <p>Phone: <span className="font-mono font-bold text-slate-800">{selectedPvPatient.PhoneMobile || 'N/A'}</span></p>
-                </div>
-              </div>
-            )}
-
-            {/* Modal Body */}
-            <div className="p-4 overflow-y-auto space-y-3.5 flex-1 text-xs">
-              {!selectedPvPatient ? (
-                <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200">
-                  <Search className="w-8 h-8 text-slate-300 mx-auto mb-2" />
-                  <p className="text-sm font-bold text-slate-700">No Patient Selected</p>
-                  <p className="text-xs text-slate-400 mt-1">Please enter a Mobile No or Patient ID in the search box to view previous visit history.</p>
-                </div>
-              ) : isFetchingPvHistory ? (
-                <div className="text-center py-8 bg-indigo-50/40 rounded-xl border border-indigo-100 flex flex-col items-center justify-center space-y-2">
-                  <div className="w-6 h-6 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                  <p className="text-xs font-bold text-indigo-900">Loading Patient Previous Visit History & Prescriptions...</p>
-                </div>
-              ) : groupedRxByDate.length > 0 ? (
-                <>
-                  <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-900 text-xs font-semibold flex items-start space-x-2">
-                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                    <div>
-                      <p className="font-bold text-amber-950">
-                        Most Recent Visit Record ({groupedRxByDate[0]?.date || 'N/A'})
-                      </p>
-                      <p className="text-[11px] text-amber-800 font-normal mt-0.5">
-                        Displaying patient's latest visit record. Total recorded visits on profile: {groupedRxByDate.length}.
-                      </p>
-                    </div>
-                  </div>
-
-                  {(allLabTestsText || allMedicalReportResultsText) && (
-                    <div className="p-3 bg-blue-50/90 border border-blue-200 rounded-xl text-blue-950 text-xs font-semibold space-y-1.5 shadow-2xs">
-                      <div className="flex items-center space-x-1.5 font-bold text-blue-900 border-b border-blue-200 pb-1">
-                        <FileText className="w-4 h-4 text-blue-600 shrink-0" />
-                        <span>Advised Lab Investigations & Medical Report Results:</span>
-                      </div>
-                      {allLabTestsText && (
-                        <div>
-                          <span className="text-slate-500 font-bold uppercase text-[9px] tracking-wider block">Advised Lab Tests:</span>
-                          <p className="font-mono text-slate-800 font-bold text-xs">{allLabTestsText}</p>
-                        </div>
-                      )}
-                      {allMedicalReportResultsText && (
-                        <div className={allLabTestsText ? 'pt-1.5 border-t border-blue-200/60' : ''}>
-                          <span className="text-indigo-900 font-extrabold uppercase text-[9px] tracking-wider block mb-0.5">
-                            Medical Report Result (nhc_Patient_history):
-                          </span>
-                          <div className="bg-white border border-indigo-100 rounded-lg p-2.5 text-indigo-950 font-semibold text-xs whitespace-pre-wrap">
-                            {allMedicalReportResultsText}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  )}
-
-                  <h4 className="font-bold text-slate-700 text-xs uppercase tracking-wider">
-                    Recent Prescribed Medicines (Rx) Record:
-                  </h4>
-
-                  <div className="space-y-3">
-                    {groupedRxByDate.slice(0, 1).map((group, groupIdx) => (
-                      <div key={`grp-print-${group.date}-${groupIdx}`} className="border border-slate-900 rounded-xl bg-white p-3 space-y-2.5 shadow-2xs">
-                        {/* Top Row: Date & Item Count Badge + Copy & Print Rx Buttons */}
-                        <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                          <span className="font-bold text-slate-800 text-xs font-mono">Recent Visit Date: {formatDisplayDate(group.date)}</span>
-                          <div className="flex items-center space-x-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                handlePrintPreviousVisitPrescription(group);
-                                setHistoryAlertModalOpen(false);
-                              }}
-                              className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[9px] font-bold rounded flex items-center space-x-1 cursor-pointer transition"
-                            >
-                              <Printer className="w-2.5 h-2.5 text-emerald-600" />
-                              <span>Print Rx</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const cItems = group.clinicalItems
-                                  .filter(i => i.medicineName && i.medicineName !== 'None prescribed' && i.medicineName !== 'None recorded')
-                                  .map((i, idx) => ({ id: String(Date.now() + idx), medicineName: i.medicineName, dosage: i.dosage && i.dosage !== 'As directed' ? i.dosage : '' }));
-
-                                const pItems = group.patentItems
-                                  .filter(i => i.medicineName && i.medicineName !== 'None prescribed' && i.medicineName !== 'None recorded')
-                                  .map((i, idx) => ({ id: String(Date.now() + idx + 100), medicineName: i.medicineName, dosage: i.dosage && i.dosage !== 'As directed' ? i.dosage : '' }));
-
-                                const cExp = group.clinicalItems.map(i => i.expireDate).find(Boolean) || '';
-
-                                if (cItems.length > 0) setPvClinicalItems(cItems);
-                                if (pItems.length > 0) setPvPatientItems(pItems);
-                                if (cExp) setPvClinicalMedicineExpireDate(cExp);
-
-                                if (group.symptoms) {
-                                  setPvSymptomsDiagnosis(group.symptoms);
-                                }
-                                if (group.medicalReportResult && group.medicalReportResult !== 'N/A') {
-                                  setPvMedicalReportResult(group.medicalReportResult);
-                                }
-                                if (group.labTestAdvice && group.labTestAdvice !== 'N/A') {
-                                  setPvLabTestAdvice(group.labTestAdvice);
-                                }
-
-                                setPvSaveSuccess(`Prescription from ${group.date} copied into current visit form!`);
-                                setHidePreviousHistory(true);
-                                setHistoryAlertModalOpen(false);
-                                setTimeout(() => setPvSaveSuccess(''), 4000);
-                              }}
-                              className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[9px] font-bold rounded flex items-center space-x-1 cursor-pointer transition"
-                            >
-                              <Copy className="w-2.5 h-2.5 text-indigo-600" />
-                              <span>Copy This Date Rx</span>
-                            </button>
-                            <span className="text-[9px] font-extrabold text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded uppercase tracking-wider">
-                              {group.totalItems} ITEM(S)
-                            </span>
-                          </div>
-                        </div>
-
-                        {group.symptoms && (
-                          <div className="text-[10px] text-slate-700 bg-slate-50 px-2 py-1 rounded border border-slate-200 font-medium">
-                            <strong className="text-slate-900">Diagnosis / Symptoms:</strong> {group.symptoms}
-                          </div>
-                        )}
-
-                        {(group.labTestAdvice && group.labTestAdvice !== 'N/A' || group.medicalReportResult && group.medicalReportResult !== 'N/A') && (
-                          <div className="text-[10px] bg-blue-50/80 p-2.5 rounded-lg border border-blue-200 text-blue-950 font-medium space-y-1">
-                            <div className="flex items-center space-x-1.5 font-bold text-blue-900 border-b border-blue-200/60 pb-1">
-                              <FileText className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-                              <span>Advised Lab Investigations & Medical Report Results:</span>
-                            </div>
-                            {group.labTestAdvice && group.labTestAdvice !== 'N/A' && (
-                              <div>
-                                <span className="text-slate-500 font-bold uppercase text-[8px] tracking-wider block">Advised Lab Tests:</span>
-                                <p className="font-mono text-slate-800 font-semibold">{group.labTestAdvice}</p>
-                              </div>
-                            )}
-                            {group.medicalReportResult && group.medicalReportResult !== 'N/A' && (
-                              <div>
-                                <span className="text-indigo-900 font-bold uppercase text-[8px] tracking-wider block">Medical Report Result (nhc_Patient_history):</span>
-                                <div className="bg-white border border-indigo-100 rounded p-1.5 text-indigo-950 font-semibold text-[10px] whitespace-pre-wrap mt-0.5">
-                                  {group.medicalReportResult}
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {/* CLINICAL COMPOUNDED ('C') EXCEL TABLE */}
-                        {group.clinicalItems.length > 0 && (
-                          <div className="space-y-1">
-                            <div className="inline-block bg-amber-100 text-amber-950 font-extrabold text-[9px] uppercase border border-amber-300 px-2 py-0.5 rounded">
-                              Clinical Compounded ('C')
-                            </div>
-                            <div className="overflow-x-auto border border-amber-300 rounded-lg bg-white shadow-2xs">
-                              <table className="w-full text-left border-collapse font-sans text-xs">
-                                <thead>
-                                  <tr className="bg-amber-100/90 border-b border-amber-300 text-[10px] font-black text-amber-950 uppercase tracking-wider">
-                                    <th className="py-1 px-2 w-7 text-center border-r border-amber-200">#</th>
-                                    <th className="py-1 px-2 border-r border-amber-200">Clinical Medicine Name</th>
-                                    <th className="py-1 px-2">Dosage / Usage</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-amber-100">
-                                  {group.clinicalItems.map((item, idx) => (
-                                    <tr key={idx} className="hover:bg-amber-50/50">
-                                      <td className="py-1 px-1.5 text-center font-bold text-slate-500 text-[10px] border-r border-amber-100 bg-amber-50/50">
-                                        {idx + 1}
-                                      </td>
-                                      <td className="py-1 px-2 font-bold text-slate-900 border-r border-amber-100">
-                                        {item.medicineName}
-                                      </td>
-                                      <td className="py-1 px-2 font-mono font-bold text-amber-900">
-                                        {item.dosage} {item.expireDate ? `(EXP: ${item.expireDate})` : ''}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-
-                        {/* PATENT PRE-PACKAGED ('P') EXCEL TABLE */}
-                        {group.patentItems.length > 0 && (
-                          <div className="space-y-1">
-                            <div className="inline-block bg-emerald-100 text-emerald-950 font-extrabold text-[9px] uppercase border border-emerald-300 px-2 py-0.5 rounded">
-                              Patent Pre-Packaged ('P')
-                            </div>
-                            <div className="overflow-x-auto border border-emerald-300 rounded-lg bg-white shadow-2xs">
-                              <table className="w-full text-left border-collapse font-sans text-xs">
-                                <thead>
-                                  <tr className="bg-emerald-100/90 border-b border-emerald-300 text-[10px] font-black text-emerald-950 uppercase tracking-wider">
-                                    <th className="py-1 px-2 w-7 text-center border-r border-emerald-200">#</th>
-                                    <th className="py-1 px-2 border-r border-emerald-200">Patent Medicine Name</th>
-                                    <th className="py-1 px-2">Dosage / Instructions</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-emerald-100">
-                                  {group.patentItems.map((item, idx) => (
-                                    <tr key={idx} className="hover:bg-emerald-50/50">
-                                      <td className="py-1 px-1.5 text-center font-bold text-slate-500 text-[10px] border-r border-emerald-100 bg-emerald-50/50">
-                                        {idx + 1}
-                                      </td>
-                                      <td className="py-1 px-2 font-bold text-slate-900 border-r border-emerald-100">
-                                        {item.medicineName}
-                                      </td>
-                                      <td className="py-1 px-2 font-mono font-bold text-emerald-900">
-                                        {item.dosage}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            </div>
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </>
-              ) : (
-                <div className="text-center py-8 bg-slate-50 rounded-xl border border-dashed border-slate-200 space-y-2">
-                  <CheckCircle2 className="w-8 h-8 text-emerald-500 mx-auto" />
-                  <h4 className="font-bold text-slate-800 text-sm">New Patient / No Previous History</h4>
-                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
-                    No previous visit history or prescription records found for this patient. You can write a fresh prescription below.
-                  </p>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-slate-50 p-3 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
-              {groupedRxByDate.length > 0 && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    const latestGroup = groupedRxByDate[0];
-                    if (latestGroup) {
-                      const cItems = latestGroup.clinicalItems
-                        .filter(i => i.medicineName && i.medicineName !== 'None prescribed' && i.medicineName !== 'None recorded')
-                        .map((i, idx) => ({ id: String(Date.now() + idx), medicineName: i.medicineName, dosage: i.dosage && i.dosage !== 'As directed' ? i.dosage : '' }));
-
-                      const pItems = latestGroup.patentItems
-                        .filter(i => i.medicineName && i.medicineName !== 'None prescribed' && i.medicineName !== 'None recorded')
-                        .map((i, idx) => ({ id: String(Date.now() + idx + 100), medicineName: i.medicineName, dosage: i.dosage && i.dosage !== 'As directed' ? i.dosage : '' }));
-
-                      const cExp = latestGroup.clinicalItems.map(i => i.expireDate).find(Boolean) || '';
-
-                      if (cItems.length > 0) setPvClinicalItems(cItems);
-                      if (pItems.length > 0) setPvPatientItems(pItems);
-                      if (cExp) setPvClinicalMedicineExpireDate(cExp);
-
-                      if (latestGroup.symptoms) {
-                        setPvSymptomsDiagnosis(latestGroup.symptoms);
-                      }
-                      if (latestGroup.medicalReportResult && latestGroup.medicalReportResult !== 'N/A') {
-                        setPvMedicalReportResult(latestGroup.medicalReportResult);
-                      }
-                      if (latestGroup.labTestAdvice && latestGroup.labTestAdvice !== 'N/A') {
-                        setPvLabTestAdvice(latestGroup.labTestAdvice);
-                      }
-
-                      setPvSaveSuccess(`Latest prescription (${latestGroup.date}) copied into current visit!`);
-                      setHidePreviousHistory(true);
-                      setTimeout(() => setPvSaveSuccess(''), 4000);
-                    }
-                    setHistoryAlertModalOpen(false);
-                  }}
-                  className="w-full sm:w-auto px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center space-x-1.5 cursor-pointer"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  <span>Copy Recent Rx to Current Form</span>
-                </button>
-              )}
-              
-              <button
-                type="button"
-                onClick={() => setHistoryAlertModalOpen(false)}
-                className="w-full sm:w-auto px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition cursor-pointer text-center"
-              >
-                Close & Continue to Desk
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* NEW PATIENT REGISTRATION SUCCESS POPUP MODAL */}
-      {regSuccessModalOpen && regSuccessData && (
-        <div className="fixed inset-0 z-[9999] bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-sm w-full border border-emerald-300 shadow-2xl p-6 space-y-4 animate-scaleUp text-center">
-            <div className="w-14 h-14 bg-emerald-100 text-emerald-600 rounded-full flex items-center justify-center mx-auto shadow-inner border border-emerald-200">
-              <CheckCircle2 className="w-8 h-8" />
-            </div>
-            
-            <div>
-              <h3 className="text-lg font-black text-slate-900">Save Successfully</h3>
-              <p className="text-xs text-slate-500 font-medium mt-1">
-                New patient intake file has been saved to EMR records.
-              </p>
-            </div>
-
-            <div className="bg-emerald-50/80 p-3.5 rounded-xl border border-emerald-200 text-xs text-left space-y-1.5 font-sans">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Patient ID:</span>
-                <span className="font-mono font-black text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-300">{regSuccessData.patientId}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Patient Name:</span>
-                <span className="font-bold text-slate-900">{regSuccessData.patientName}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Mobile Phone:</span>
-                <span className="font-mono font-bold text-slate-800">{regSuccessData.phoneMobile}</span>
-              </div>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => {
-                setRegSuccessModalOpen(false);
-                setRegSuccessData(null);
-              }}
-              className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition shadow-md cursor-pointer"
-            >
-              OK / Continue
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* SMS Sent Live Toast Notification */}
-      {smsSentToast && (
-        <div className="fixed bottom-5 right-5 z-50 max-w-sm bg-slate-900 text-white rounded-xl shadow-2xl border border-slate-700 p-4 animate-slideIn flex flex-col space-y-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-2 text-emerald-400">
-              <span className="flex h-2 w-2 relative">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span className="text-[10px] font-bold tracking-widest uppercase">Automated SMS Dispatched</span>
-            </div>
-            <button 
-              onClick={() => setSmsSentToast(null)}
-              className="text-slate-400 hover:text-white text-xs font-bold"
-            >
-              ‚úï
-            </button>
-          </div>
-          <p className="text-[11px] font-semibold text-slate-300">
-            Sent to: <span className="font-mono text-emerald-300">{smsSentToast.recipient}</span> via <span className="underline font-bold capitalize">{smsSentToast.provider}</span>
-          </p>
-          <div className="bg-slate-950 p-2 rounded text-[10px] text-slate-400 font-mono border border-slate-800 leading-normal">
-            "{smsSentToast.message}"
-          </div>
-          <div className="text-[8px] text-slate-500 flex justify-between items-center pt-1 border-t border-slate-800/60">
-            <span>Provider HTTP Code: 200 OK</span>
-            <span>Ref: {Math.floor(100000 + Math.random() * 900000)}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Follow-up Patient / Missing Payment Confirmation Modal Popup */}
-      {showFollowUpConfirmModal && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-md overflow-hidden animate-scaleUp">
-            {/* Header */}
-            <div className="bg-amber-500 text-slate-950 p-4 flex items-center justify-between border-b border-amber-600">
-              <div className="flex items-center space-x-2">
-                <AlertCircle className="w-5 h-5 text-slate-950 shrink-0" />
-                <h3 className="font-extrabold text-base tracking-tight">Payment Not Entered</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowFollowUpConfirmModal(false)}
-                className="text-slate-950 hover:bg-amber-400/80 p-1.5 rounded-lg transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-5 space-y-3.5 text-slate-800">
-              <div className="p-3.5 bg-amber-50 border border-amber-200 rounded-xl text-xs font-bold text-amber-950 leading-relaxed shadow-2xs">
-                Payment of Patient is not entered. Is this a Follow-up Patient or FOC (Free of Charge) Case?
-              </div>
-              <p className="text-xs text-slate-600 leading-relaxed">
-                Visit Charges & Fees (OPD Fee, Clinical Med, File, Card) are currently empty or 0. Select <strong>Follow-up Patient</strong> for follow-up consultation, <strong>FOC Case</strong> for free treatment, or <strong>No</strong> to return and enter payment charges.
-              </p>
-            </div>
-
-            {/* Footer Buttons */}
-            <div className="bg-slate-50 p-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-end gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setShowFollowUpConfirmModal(false)}
-                className="w-full sm:w-auto px-3 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-extrabold rounded-xl transition cursor-pointer"
-              >
-                No (Enter Payment)
-              </button>
-              <button
-                type="button"
-                onClick={() => executeSavePatientVisit(true, false)}
-                className="w-full sm:w-auto px-3.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl shadow-md transition cursor-pointer flex items-center justify-center space-x-1"
-              >
-                <CheckCircle2 className="w-3.5 h-3.5" />
-                <span>Yes (Follow-up)</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowFollowUpConfirmModal(false);
-                  setShowFocFeeDetailsModal(true);
-                }}
-                className="w-full sm:w-auto px-3.5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold rounded-xl shadow-md transition cursor-pointer flex items-center justify-center space-x-1"
-              >
-                <HeartHandshake className="w-3.5 h-3.5" />
-                <span>FOC Case</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* FOC Waived Charges Entry Secondary Modal Popup */}
-      {showFocFeeDetailsModal && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-lg w-full shadow-2xl border border-purple-200 overflow-hidden animate-scaleUp">
-            {/* Header */}
-            <div className="bg-purple-700 px-5 py-4 text-white flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <HeartHandshake className="w-5 h-5 text-purple-200 shrink-0" />
-                <div>
-                  <h3 className="font-extrabold text-sm">Enter FOC Waived Value (Reporting Record)</h3>
-                  <p className="text-[10px] text-purple-200">Patient bill will be PKR 0 (Free of Charge)</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowFocFeeDetailsModal(false)}
-                className="text-white hover:text-purple-200 font-bold text-lg leading-none cursor-pointer"
-              >
-                √ó
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-5 space-y-4 text-xs text-slate-800">
-              <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-purple-950 font-medium leading-relaxed">
-                Enter the standard fees being waived for this Free of Charge (FOC) visit to generate accurate financial welfare reports in Reporting Desk.
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Waived OPD Fee (PKR)
-                  </label>
-                  <input
-                    type="number"
-                    value={focWaivedOpdFee}
-                    onChange={(e) => setFocWaivedOpdFee(e.target.value)}
-                    placeholder="500"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Waived Clinical Meds (PKR)
-                  </label>
-                  <input
-                    type="number"
-                    value={focWaivedClinicalFee}
-                    onChange={(e) => setFocWaivedClinicalFee(e.target.value)}
-                    placeholder="0"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500 font-mono"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                    Waived File / Card (PKR)
-                  </label>
-                  <input
-                    type="number"
-                    value={focWaivedFileCardFee}
-                    onChange={(e) => setFocWaivedFileCardFee(e.target.value)}
-                    placeholder="0"
-                    className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500 font-mono"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                  FOC Category / Reason
-                </label>
-                <select
-                  value={focReason}
-                  onChange={(e) => setFocReason(e.target.value)}
-                  className="w-full px-3 py-2 bg-slate-50 border border-slate-300 rounded-lg text-xs font-bold text-slate-900 focus:bg-white focus:ring-2 focus:ring-purple-500"
-                >
-                  <option value="Deserving / Needy Patient">Deserving / Needy Patient</option>
-                  <option value="Staff / Doctor Relative">Staff / Doctor Relative</option>
-                  <option value="Welfare / Zakat Fund">Welfare / Zakat Fund</option>
-                  <option value="Free OPD Camp">Free OPD Camp</option>
-                  <option value="Doctor Courtesy / Special Waiver">Doctor Courtesy / Special Waiver</option>
-                  <option value="Other">Other</option>
-                </select>
-              </div>
-
-              <div className="bg-slate-100 p-2.5 rounded-lg flex items-center justify-between font-mono text-xs">
-                <span className="font-bold text-slate-600">Total Waived Financial Value:</span>
-                <strong className="text-purple-900 font-extrabold text-sm">
-                  PKR {((Number(focWaivedOpdFee) || 0) + (Number(focWaivedClinicalFee) || 0) + (Number(focWaivedFileCardFee) || 0)).toLocaleString()}
-                </strong>
-              </div>
-            </div>
-
-            {/* Footer */}
-            <div className="bg-slate-50 p-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-end gap-2 text-xs">
-              <button
-                type="button"
-                onClick={() => setShowFocFeeDetailsModal(false)}
-                className="w-full sm:w-auto px-4 py-2.5 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowFocFeeDetailsModal(false);
-                  executeSavePatientVisit(false, true, {
-                    opd: Number(focWaivedOpdFee) || 0,
-                    clin: Number(focWaivedClinicalFee) || 0,
-                    fileCard: Number(focWaivedFileCardFee) || 0,
-                    reason: focReason || 'Deserving Patient'
-                  });
-                }}
-                className="w-full sm:w-auto px-5 py-2.5 bg-purple-700 hover:bg-purple-800 text-white font-extrabold rounded-xl shadow-md transition cursor-pointer flex items-center justify-center space-x-1.5"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Confirm & Save FOC Visit</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Delete Patient Permanent Confirmation Modal */}
-      {deletePatientModalData.isOpen && deletePatientModalData.pt && (
-        <div className="fixed inset-0 z-50 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-red-200 overflow-hidden animate-scaleUp">
-            {/* Header */}
-            <div className="bg-red-600 px-5 py-4 text-white flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <AlertTriangle className="w-5 h-5 text-red-200 shrink-0" />
-                <h3 className="font-extrabold text-sm">Delete Patient Record Permanently</h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDeletePatientModalData({ isOpen: false, pt: null })}
-                className="text-white hover:text-red-200 font-bold text-lg leading-none cursor-pointer"
-              >
-                √ó
-              </button>
-            </div>
-
-            {/* Body */}
-            <div className="p-5 space-y-3 text-xs text-slate-800">
-              <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-900 font-bold leading-relaxed">
-                Are you sure you want to permanently delete patient <span className="underline font-black">{deletePatientModalData.pt.PatientName}</span> (ID: <span className="font-mono font-black">{deletePatientModalData.pt.PatientID}</span>)?
-              </div>
-
-              <p className="text-slate-600 leading-normal font-medium">
-                This action cannot be undone. Deleting this patient will also permanently remove:
-              </p>
-
-              <ul className="list-disc list-inside space-y-1 text-slate-700 font-bold pl-2">
-                <li>All Consultation Visits & Prescriptions History</li>
-                <li>All Queue Tokens & Appointments</li>
-                <li>All Billing & Payment Records</li>
-              </ul>
-            </div>
-
-            {/* Footer */}
-            <div className="bg-slate-50 p-4 border-t border-slate-200 flex items-center justify-end space-x-2">
-              <button
-                type="button"
-                onClick={() => setDeletePatientModalData({ isOpen: false, pt: null })}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => executeDeletePatientRecord(deletePatientModalData.pt!)}
-                className="px-5 py-2 bg-red-600 hover:bg-red-700 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5 cursor-pointer"
-              >
-                <Trash2 className="w-4 h-4" />
-                <span>Yes, Delete Everything</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Future Appointment Booking Confirmation Modal Popup */}
-      {futureBookingModal && futureBookingModal.isOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-md w-full border border-slate-200 shadow-2xl p-6 space-y-5 animate-scaleUp">
-            <div className="flex items-center space-x-3 text-emerald-600 border-b border-slate-100 pb-3">
-              <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shrink-0">
-                <CalendarPlus className="w-6 h-6" />
-              </div>
-              <div>
-                <h3 className="font-extrabold text-slate-900 text-base">Appointment Scheduled</h3>
-                <p className="text-xxs text-emerald-700 font-semibold uppercase tracking-wider">Future Booking Confirmed</p>
-              </div>
-            </div>
-
-            <div className="bg-slate-50 rounded-xl p-4 border border-slate-200 space-y-2.5 text-xs">
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Patient Name:</span>
-                <span className="font-bold text-slate-900">{futureBookingModal.patientName}</span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Patient ID:</span>
-                <span className="font-mono font-bold text-slate-800">{futureBookingModal.patientId}</span>
-              </div>
-              {futureBookingModal.phoneMobile && (
-                <div className="flex justify-between items-center">
-                  <span className="text-slate-500 font-medium">Mobile Phone:</span>
-                  <span className="font-mono text-slate-800">{futureBookingModal.phoneMobile}</span>
-                </div>
-              )}
-              <div className="flex justify-between items-center pt-2 border-t border-slate-200">
-                <span className="text-slate-500 font-medium">Appointment Date:</span>
-                <span className="font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded border border-blue-200">
-                  {futureBookingModal.date}
-                </span>
-              </div>
-              <div className="flex justify-between items-center">
-                <span className="text-slate-500 font-medium">Assigned Shift:</span>
-                <span className="font-bold text-slate-800">
-                  {futureBookingModal.shift === 1 ? 'Morning Shift (08:00 - 14:00)' : 'Evening Shift (14:00 - 20:00)'}
-                </span>
-              </div>
-            </div>
-
-            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3 text-xxs text-amber-900 font-medium flex items-start space-x-2">
-              <Sparkles className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <p>
-                <strong>Important Note:</strong> Because this appointment is scheduled for a future date (<strong>{futureBookingModal.date}</strong>), an OPD Token was <strong>NOT issued for today</strong>. The token will be issued when the patient arrives on their appointment date.
-              </p>
-            </div>
-
-            <div className="flex justify-end space-x-2 pt-2">
-              <button
-                type="button"
-                onClick={() => setFutureBookingModal(null)}
-                className="bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition shadow-md cursor-pointer"
-              >
-                Acknowledge & Close
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Direct Visit Shift Selection & Token Auto-Generation Modal */}
-      {directVisitShiftModal && directVisitShiftModal.isOpen && (
-        <div className="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-lg w-full border border-slate-200 shadow-2xl p-5 space-y-4 animate-scaleUp">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center space-x-3 text-emerald-600">
-                <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-700 flex items-center justify-center font-bold shrink-0">
-                  <Stethoscope className="w-6 h-6" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-slate-900 text-base">Direct Patient Visit (No Token Issued)</h3>
-                  <p className="text-xxs text-emerald-700 font-semibold uppercase tracking-wider">Select Shift & Confirm Payment Collection</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setDirectVisitShiftModal(null)}
-                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-3 text-xs text-amber-900 space-y-1">
-              <p className="font-bold flex items-center gap-1.5 text-amber-950">
-                <Sparkles className="w-4 h-4 text-amber-600 shrink-0" />
-                Direct Walk-In Checkup: <span className="underline font-black">{directVisitShiftModal.patient.PatientName}</span> ({directVisitShiftModal.patient.PatientID})
-              </p>
-              <p className="text-[11px] text-amber-800/90 leading-relaxed">
-                This patient arrived directly for consultation without a token. Selecting the shift auto-issues a direct token so payment collection and shift logs stay 100% accurate.
-              </p>
-            </div>
-
-            {/* Shift Selection */}
-            <div className="space-y-1.5">
-              <label className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Select Shift:</label>
-              <div className="grid grid-cols-2 gap-3">
-                <button
-                  type="button"
-                  onClick={() => setDirectVisitShiftModal(prev => prev ? { ...prev, shift: 1 } : null)}
-                  className={`p-3 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
-                    directVisitShiftModal.shift === 1
-                      ? 'bg-amber-50 border-amber-400 ring-2 ring-amber-400/50 shadow-xs'
-                      : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="text-xs font-black text-amber-950">‚òÄÔ∏è Morning Shift</span>
-                    {directVisitShiftModal.shift === 1 && <span className="w-2.5 h-2.5 rounded-full bg-amber-500"></span>}
-                  </div>
-                  <span className="text-[11px] font-bold text-slate-600 mt-1">08:30 AM ‚Äì 12:30 PM</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setDirectVisitShiftModal(prev => prev ? { ...prev, shift: 2 } : null)}
-                  className={`p-3 rounded-xl border text-left transition flex flex-col justify-between cursor-pointer ${
-                    directVisitShiftModal.shift === 2
-                      ? 'bg-indigo-50 border-indigo-400 ring-2 ring-indigo-400/50 shadow-xs'
-                      : 'bg-slate-50 border-slate-200 hover:border-slate-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-between w-full">
-                    <span className="text-xs font-black text-indigo-950">üåô Evening Shift</span>
-                    {directVisitShiftModal.shift === 2 && <span className="w-2.5 h-2.5 rounded-full bg-indigo-500"></span>}
-                  </div>
-                  <span className="text-[11px] font-bold text-slate-600 mt-1">05:00 PM ‚Äì 09:00 PM</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Fee & Remarks */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-              <div>
-                <label className="text-[11px] font-extrabold text-slate-700 uppercase">OPD Fee Charged (PKR):</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={directVisitShiftModal.fee}
-                  onChange={(e) => {
-                    const val = Number(e.target.value) || 0;
-                    setDirectVisitShiftModal(prev => prev ? { ...prev, fee: val } : null);
-                  }}
-                  className="w-full mt-1 text-xs font-bold bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
-              <div>
-                <label className="text-[11px] font-extrabold text-slate-700 uppercase">Remarks:</label>
-                <input
-                  type="text"
-                  value={directVisitShiftModal.remarks}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setDirectVisitShiftModal(prev => prev ? { ...prev, remarks: val } : null);
-                  }}
-                  className="w-full mt-1 text-xs bg-slate-50 border border-slate-300 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-emerald-500 focus:outline-none"
-                />
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-2 pt-1">
-              <input
-                type="checkbox"
-                id="directVisitAutoPrint"
-                checked={directVisitShiftModal.autoPrintTicket}
-                onChange={(e) => {
-                  const checked = e.target.checked;
-                  setDirectVisitShiftModal(prev => prev ? { ...prev, autoPrintTicket: checked } : null);
-                }}
-                className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 h-4 w-4"
-              />
-              <label htmlFor="directVisitAutoPrint" className="text-xs font-semibold text-slate-700 cursor-pointer">
-                Print Token Slip for Patient
-              </label>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-100">
-              <button
-                type="button"
-                onClick={() => setDirectVisitShiftModal(null)}
-                className="px-3.5 py-2 text-xs font-bold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 rounded-xl transition cursor-pointer"
-              >
-                Skip Token Generation
-              </button>
-              <button
-                type="button"
-                onClick={handleConfirmDirectVisitToken}
-                className="px-4 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl shadow-md transition cursor-pointer flex items-center space-x-1.5"
-              >
-                <CheckCircle2 className="w-4 h-4" />
-                <span>Confirm Shift & Issue Direct Token</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* LAB TESTS / INVESTIGATIONS ADVICE POPUP MODAL */}
-      {pvLabTestModalOpen && (
-        <div className="fixed inset-0 bg-slate-950/60 backdrop-blur-xs z-[9999] flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-2xl w-full border border-purple-200 shadow-2xl overflow-hidden animate-scaleUp flex flex-col max-h-[90vh]">
-            
-            {/* Modal Header */}
-            <div className="bg-purple-900 text-white p-3.5 sm:p-4 flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-purple-800 rounded-xl border border-purple-700">
-                  <FlaskConical className="w-5 h-5 text-purple-200" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-bold flex items-center space-x-1.5">
-                    <span>Select Lab Tests & Diagnostic Advice</span>
-                  </h3>
-                  <p className="text-[11px] text-purple-200 font-medium">
-                    Choose tests from catalog or quick categories to advise patient
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPvLabTestModalOpen(false)}
-                className="text-purple-200 hover:text-white p-1 rounded-lg hover:bg-purple-800 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Currently Selected Tests Summary Bar */}
-            <div className="bg-purple-50 p-3 border-b border-purple-100 shrink-0 space-y-1.5">
-              <div className="flex items-center justify-between">
-                <span className="text-[10px] font-black uppercase text-purple-900 tracking-wider flex items-center">
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-purple-700" />
-                  Selected Advice Tests ({getLabTestList(pvLabTestAdvice).length})
-                </span>
-                {getLabTestList(pvLabTestAdvice).length > 0 && (
-                  <button
-                    type="button"
-                    onClick={() => setPvLabTestAdvice('')}
-                    className="text-[10px] font-bold text-rose-600 hover:text-rose-800 hover:underline cursor-pointer"
-                  >
-                    Clear All Tests
-                  </button>
-                )}
-              </div>
-
-              {getLabTestList(pvLabTestAdvice).length === 0 ? (
-                <p className="text-xs text-slate-400 italic font-medium">No lab tests selected yet. Click quick badges or catalog items below to select.</p>
-              ) : (
-                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto pt-0.5">
-                  {getLabTestList(pvLabTestAdvice).map((testItem, idx) => (
-                    <span
-                      key={idx}
-                      className="inline-flex items-center text-xs font-bold bg-purple-700 text-white px-2.5 py-0.5 rounded-lg shadow-2xs"
-                    >
-                      <span>{testItem}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleLabTestAdvice(testItem)}
-                        className="ml-1.5 text-purple-200 hover:text-white font-black focus:outline-none cursor-pointer"
-                        title="Remove test"
-                      >
-                        √ó
-                      </button>
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            {/* Modal Scrollable Body */}
-            <div className="p-4 overflow-y-auto space-y-4 flex-1 text-xs">
-              
-              {/* Quick Common Test Badges */}
-              <div className="space-y-1.5">
-                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                  Popular Quick Tests (1-Click Toggle):
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    'CBC', 'LFT', 'RFT', 'Lipid Profile', 'Blood Sugar Fasting', 'Blood Sugar Random',
-                    'Urine RE', 'Serum Creatinine', 'Uric Acid', 'HbA1c', 'TSH',
-                    'Ultrasound Abdomen', 'Chest X-Ray', 'ECG', 'Sputum for AFB'
-                  ].map((quickTest) => {
-                    const isSelected = getLabTestList(pvLabTestAdvice).map(s => s.toLowerCase()).includes(quickTest.toLowerCase());
-                    return (
-                      <button
-                        key={quickTest}
-                        type="button"
-                        onClick={() => handleToggleLabTestAdvice(quickTest)}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-bold transition cursor-pointer border flex items-center space-x-1 ${
-                          isSelected
-                            ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
-                            : 'bg-slate-100 hover:bg-purple-50 text-slate-800 border-slate-200 hover:border-purple-300'
-                        }`}
-                      >
-                        <span>{isSelected ? '‚úì' : '+'}</span>
-                        <span>{quickTest}</span>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Search Catalog & Add Custom Test Section */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-2 border-t border-slate-100">
-                
-                {/* Catalog Search & List */}
-                <div className="space-y-2 border-r border-slate-100 pr-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[10px] font-bold text-purple-950 uppercase tracking-wider">
-                      Uploaded Diagnostics Catalog ({labTests ? labTests.length : 0}):
-                    </span>
-                  </div>
-
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-purple-600 pointer-events-none" />
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={pvLabTestModalSearch}
-                      onChange={(e) => setPvLabTestModalSearch(e.target.value)}
-                      className="w-full text-xs pl-8 pr-3 py-1.5 border border-purple-200 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium text-slate-800"
-                    />
-                  </div>
-
-                  <div className="border border-purple-200 rounded-xl overflow-hidden max-h-48 overflow-y-auto divide-y divide-purple-50 bg-slate-50/50">
-                    {(() => {
-                      const term = pvLabTestModalSearch.trim().toLowerCase();
-                      const filtered = (labTests || []).filter(t => 
-                        !term || String(t.TestName || '').toLowerCase().includes(term) || String(t.TID || '').toLowerCase().includes(term)
-                      );
-
-                      if (filtered.length === 0) {
-                        return (
-                          <div className="p-4 text-center text-slate-400 text-xs italic">
-                            No matching lab tests found in catalog. Use custom input on right.
-                          </div>
-                        );
-                      }
-
-                      return filtered.map((t, idx) => {
-                        const isSelected = getLabTestList(pvLabTestAdvice).map(s => s.toLowerCase()).includes(String(t.TestName || '').toLowerCase());
-                        return (
-                          <button
-                            key={`lab-${t.TID || t.TestName}-${idx}`}
-                            type="button"
-                            onClick={() => handleToggleLabTestAdvice(t.TestName)}
-                            className={`w-full text-left p-2 hover:bg-purple-100/60 transition flex items-center justify-between cursor-pointer ${
-                              isSelected ? 'bg-purple-100/80 font-bold' : ''
-                            }`}
-                          >
-                            <div className="flex items-center space-x-2">
-                              <input
-                                type="checkbox"
-                                checked={isSelected}
-                                onChange={() => {}}
-                                className="rounded text-purple-600 focus:ring-purple-500 cursor-pointer pointer-events-none"
-                              />
-                              <div>
-                                <span className="font-bold text-slate-900 block text-xs">{t.TestName}</span>
-                                {t.TID && <span className="text-[10px] text-slate-400 font-mono">ID: {t.TID}</span>}
-                              </div>
-                            </div>
-                            {t.Cost ? (
-                              <span className="text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200 font-mono">
-                                PKR {t.Cost}
-                              </span>
-                            ) : null}
-                          </button>
-                        );
-                      });
-                    })()}
-                  </div>
-                </div>
-
-                {/* Add Custom Test Box */}
-                <div className="space-y-2.5">
-                  <span className="text-[10px] font-bold text-slate-600 uppercase tracking-wider block">
-                    Add Custom Lab Test / Investigation:
-                  </span>
-                  <div className="space-y-2 bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={pvCustomTestInput}
-                      onChange={(e) => setPvCustomTestInput(e.target.value)}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleAddCustomLabTest();
-                        }
-                      }}
-                      className="w-full text-xs border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-purple-500 focus:outline-none font-medium text-slate-800 bg-white"
-                    />
-                    <button
-                      type="button"
-                      onClick={handleAddCustomLabTest}
-                      className="w-full py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs rounded-lg transition shadow-2xs cursor-pointer flex items-center justify-center space-x-1"
-                    >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>Add Custom Test to Advice</span>
-                    </button>
-                  </div>
-
-                  <div className="pt-1">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">
-                      Direct Advice Text (Editable):
-                    </label>
-                    <textarea
-                      rows={2}
-                      placeholder=""
-                      value={pvLabTestAdvice}
-                      onChange={(e) => setPvLabTestAdvice(e.target.value)}
-                      className="w-full text-xs border border-purple-200 bg-purple-50/20 rounded-lg p-2 focus:ring-1 focus:ring-purple-500 font-mono text-slate-800 resize-y"
-                    />
-                  </div>
-                </div>
-
-              </div>
-
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-slate-50 p-3 border-t border-slate-200 flex items-center justify-between shrink-0">
-              <span className="text-xs font-bold text-purple-900">
-                {getLabTestList(pvLabTestAdvice).length} Test(s) Selected
-              </span>
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setPvLabTestModalOpen(false)}
-                  className="px-5 py-2 bg-purple-700 hover:bg-purple-800 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer flex items-center space-x-1"
-                >
-                  <CheckCircle2 className="w-4 h-4" />
-                  <span>Apply & Done</span>
-                </button>
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* POPUP MODAL: SEARCH TOKEN / PATIENT ID */}
-      {isNewPatientSearchModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-300 w-full max-w-2xl flex flex-col overflow-hidden my-auto max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="bg-slate-900 text-white p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-3">
-                <div className="p-2.5 bg-emerald-500/20 rounded-xl border border-emerald-400/30 text-emerald-400">
-                  <Search className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-base font-extrabold text-white flex items-center space-x-2">
-                    <span>Search Mobile No / Patient ID</span>
-                    <span className="text-[10px] bg-emerald-500/30 text-emerald-200 border border-emerald-400/30 px-2 py-0.5 rounded-full uppercase font-mono">
-                      Patient Desk
-                    </span>
-                  </h3>
-                  <p className="text-xs text-slate-300 font-medium">
-                    Enter Mobile No or Patient ID to select and load patient record for consultation
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsNewPatientSearchModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 bg-slate-50 flex-1">
-              {/* Search Input Card */}
-              <div className="bg-white p-3.5 rounded-xl border-2 border-emerald-500 shadow-sm space-y-2">
-                <label className="text-xs font-black text-slate-800 flex items-center justify-between">
-                  <span className="flex items-center space-x-1.5 text-emerald-950">
-                    <UserPlus className="w-4 h-4 text-emerald-600" />
-                    <span>Enter Mobile No or Patient ID:</span>
-                  </span>
-                  {newPatientSearchQuery && (
-                    <button
-                      type="button"
-                      onClick={() => setNewPatientSearchQuery('')}
-                      className="text-[11px] text-slate-500 hover:text-slate-800 underline font-medium cursor-pointer"
-                    >
-                      Clear
-                    </button>
-                  )}
-                </label>
-                <div className="relative">
-                  <Search className="w-5 h-5 absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    autoFocus
-                    placeholder=""
-                    value={newPatientSearchQuery}
-                    onChange={(e) => {
-                      const val = e.target.value;
-                      setNewPatientSearchQuery(val);
-                      if (val.trim().length >= 2) {
-                        fetchNhcArchive(val.trim());
-                      }
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const query = newPatientSearchQuery.trim().toLowerCase();
-                        if (!query) return;
-                        const cleanNum = query.replace(/\D/g, '');
-
-                        const tokMatch = (tokens || []).find(t => 
-                          String(t.TokenNo) === cleanNum || 
-                          String(t.PatientID).toLowerCase() === query ||
-                          `token-${t.TokenNo}` === query ||
-                          `#${t.TokenNo}` === query
-                        );
-                        if (tokMatch) {
-                          handleSelectPatientFromModal(tokMatch.PatientID);
-                          return;
-                        }
-
-                        const patMatch = patients.find(p => matchPatientRecord(p, query)) 
-                          || [...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory].find(p => matchPatientRecord(p, query));
-                        if (patMatch) {
-                          handleSelectPatientFromModal(patMatch.PatientID);
-                          return;
-                        }
-                      }
-                    }}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-50 text-slate-900 text-sm font-semibold rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white transition"
-                  />
-                </div>
-              </div>
-
-              {/* Database Fetching Progress Bar & Status Message */}
-              {(isSearchingArchive || isSearchLoadingModal) && (
-                <div className="bg-emerald-50 border-2 border-emerald-400 rounded-xl p-3 shadow-2xs space-y-2">
-                  <div className="flex items-center justify-between text-xs font-black text-emerald-950">
-                    <span className="flex items-center space-x-2">
-                      <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                      <span>Fetching patient records from database archive...</span>
-                    </span>
-                    <span className="font-mono text-[10px] text-emerald-800 font-extrabold uppercase bg-emerald-100 px-2 py-0.5 rounded border border-emerald-300">
-                      Loading Database Records
-                    </span>
-                  </div>
-                  <div className="w-full bg-emerald-200 h-2 rounded-full overflow-hidden">
-                    <div className="bg-gradient-to-r from-emerald-500 via-teal-500 to-emerald-600 h-full w-full animate-pulse rounded-full"></div>
-                  </div>
-                </div>
-              )}
-
-              {/* Results List */}
-              <div className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden">
-                <div className="bg-slate-100 px-3.5 py-2 border-b border-slate-200 flex items-center justify-between text-xs font-bold text-slate-700">
-                  <span>
-                    {newPatientSearchQuery.trim() ? 'Matching Tokens & Patient Records' : "Today's Issued Tokens & Patient Queue"}
-                  </span>
-                  <span className="text-[10px] text-slate-500 font-mono">Click record to select & show</span>
-                </div>
-
-                <div className="max-h-[320px] overflow-y-auto divide-y divide-slate-100">
-                  {(() => {
-                    const query = newPatientSearchQuery.trim().toLowerCase();
-                    const cleanNum = query.replace(/\D/g, '');
-
-                    const matchedItems: {
-                      patientId: string;
-                      patientName: string;
-                      tokenNo?: number;
-                      tokenShift?: number;
-                      tokenStatus?: number;
-                      phone?: string;
-                      gender?: string;
-                      age?: string | number;
-                      isNhc?: boolean;
-                      source: string;
-                    }[] = [];
-
-                    const seenIds = new Set<string>();
-
-                    // 1. Check today's active tokens first
-                    (tokens || []).forEach(tok => {
-                      if (!tok || !tok.PatientID) return;
-                      const pid = String(tok.PatientID).trim();
-                      const tokNoStr = String(tok.TokenNo);
-                      const isTokMatch = !query || tokNoStr === query || tokNoStr === cleanNum || `token-${tokNoStr}` === query || `#${tokNoStr}` === query;
-
-                      const allNhc = [...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory];
-                      const pObj = patients.find(p => String(p.PatientID).trim().toLowerCase() === pid.toLowerCase()) || allNhc.find(p => String(p.PatientID).trim().toLowerCase() === pid.toLowerCase());
-                      const isPatMatch = pObj ? matchPatientRecord(pObj, query) : pid.toLowerCase().includes(query);
-
-                      if (isTokMatch || isPatMatch) {
-                        seenIds.add(pid.toLowerCase());
-                        matchedItems.push({
-                          patientId: pid,
-                          patientName: pObj ? (pObj.PatientName || `Patient ${pid}`) : `Patient ${pid}`,
-                          tokenNo: tok.TokenNo,
-                          tokenShift: tok.Shift,
-                          tokenStatus: tok.Status,
-                          phone: pObj?.PhoneMobile || '',
-                          gender: (pObj as any)?.Gender || (pObj as any)?.Sex,
-                          age: (pObj as any)?.Age || (pObj as any)?.AgeYears,
-                          isNhc: false,
-                          source: 'Issued Token'
-                        });
-                      }
-                    });
-
-                    // 2. Check local EMR patients
-                    patients.forEach(p => {
-                      if (!p || !p.PatientID) return;
-                      const pid = String(p.PatientID).trim();
-                      if (seenIds.has(pid.toLowerCase())) return;
-
-                      const isMatch = !query || matchPatientRecord(p, query);
-
-                      if (isMatch) {
-                        seenIds.add(pid.toLowerCase());
-                        matchedItems.push({
-                          patientId: pid,
-                          patientName: p.PatientName,
-                          phone: p.PhoneMobile,
-                          gender: (p as any)?.Gender || (p as any)?.Sex,
-                          age: (p as any)?.Age || (p as any)?.AgeYears,
-                          isNhc: false,
-                          source: 'EMR Patient'
-                        });
-                      }
-                    });
-
-                    // 3. Check NHC archive patients
-                    const allNhc = [...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory];
-                    allNhc.forEach(nhc => {
-                      if (!nhc || !nhc.PatientID) return;
-                      const pid = String(nhc.PatientID).trim();
-                      if (seenIds.has(pid.toLowerCase())) return;
-
-                      const isMatch = !query || matchPatientRecord(nhc, query);
-
-                      if (isMatch) {
-                        seenIds.add(pid.toLowerCase());
-                        matchedItems.push({
-                          patientId: pid,
-                          patientName: getResolvedNhcPatientName(nhc, patients, allNhc),
-                          phone: nhc.PhoneMobile || '',
-                          gender: (nhc as any)?.Gender || (nhc as any)?.Sex,
-                          age: (nhc as any)?.Age || (nhc as any)?.AgeYears,
-                          isNhc: true,
-                          source: 'Patient History'
-                        });
-                      }
-                    });
-
-                    if (matchedItems.length === 0) {
-                      return (
-                        <div className="p-6 text-center text-slate-500 text-xs">
-                          <p className="font-semibold text-slate-700 mb-1">No matching Mobile No or Patient ID found</p>
-                          <p className="text-[11px] text-slate-500">
-                            You can click "Create Blank Walk-in Form" below to write a new consultation record from scratch.
-                          </p>
-                        </div>
-                      );
-                    }
-
-                    return matchedItems.slice(0, 25).map((item, idx) => (
-                      <div
-                        key={`tok-search-${item.patientId}-${idx}`}
-                        onClick={() => handleSelectPatientFromModal(item.patientId)}
-                        className="p-3 hover:bg-emerald-50/80 transition flex items-center justify-between cursor-pointer group"
-                      >
-                        <div className="flex items-center space-x-3">
-                          {item.tokenNo !== undefined ? (
-                            <div className="w-10 h-10 rounded-xl bg-amber-500 text-slate-900 font-black text-sm flex flex-col items-center justify-center shrink-0 border border-amber-400 shadow-2xs">
-                              <span className="text-[8px] font-extrabold uppercase text-slate-800 leading-none">Token</span>
-                              <span className="leading-tight">#{item.tokenNo}</span>
-                            </div>
-                          ) : (
-                            <div className="w-10 h-10 rounded-xl bg-emerald-100 text-emerald-800 font-extrabold text-xs flex items-center justify-center shrink-0 border border-emerald-200">
-                              {item.patientName.charAt(0).toUpperCase()}
-                            </div>
-                          )}
-
-                          <div>
-                            <div className="flex items-center space-x-2">
-                              <span className="font-bold text-xs text-slate-900 group-hover:text-emerald-700 transition">
-                                {item.patientName}
-                              </span>
-                              <span className="text-[10px] font-mono bg-slate-100 text-slate-700 px-1.5 py-0.2 rounded border border-slate-200 font-bold">
-                                {item.patientId}
-                              </span>
-                              {item.tokenNo !== undefined && (
-                                <span className="text-[9px] bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded font-extrabold border border-amber-200">
-                                  {item.tokenShift === 1 ? 'Morning' : 'Evening'}
-                                </span>
-                              )}
-                            </div>
-                            <div className="text-[10px] text-slate-500 flex items-center space-x-2 mt-0.5">
-                              {item.phone && <span>Mobile: {item.phone}</span>}
-                              {item.gender && <span>‚Ä¢ {item.gender}</span>}
-                              {item.age && <span>‚Ä¢ {item.age} Yrs</span>}
-                              <span className="text-emerald-600 font-bold">‚Ä¢ {item.source}</span>
-                            </div>
-                          </div>
-                        </div>
-
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectPatientFromModal(item.patientId);
-                          }}
-                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-md shadow-2xs transition shrink-0 cursor-pointer"
-                        >
-                          Show Record
-                        </button>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-slate-100 p-3 sm:p-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-2 shrink-0">
-              <button
-                type="button"
-                onClick={() => handleSelectPatientFromModal('')}
-                className="w-full sm:w-auto px-4 py-2 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
-              >
-                <UserPlus className="w-4 h-4 text-emerald-400" />
-                <span>+ Create Blank / Walk-in Patient Form</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => setIsNewPatientSearchModalOpen(false)}
-                className="w-full sm:w-auto px-4 py-2 bg-white hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 transition cursor-pointer"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* MULTIPLE PATIENT MATCHES POPUP SELECTION MODAL */}
-      {isMultiPatientModalOpen && (() => {
-        const filter = multiPatientModalFilter.trim().toLowerCase();
-        const filteredResults = multiPatientSearchResults.filter(p => {
-          if (!filter) return true;
-          const pName = String(p.PatientName || '').toLowerCase();
-          const pId = String(p.PatientID || '').toLowerCase();
-          const pFather = String(p.Father_husband || '').toLowerCase();
-          const pPhone = String(p.PhoneMobile || '').toLowerCase();
-          return pName.includes(filter) || pId.includes(filter) || pFather.includes(filter) || pPhone.includes(filter);
-        });
-
-        return (
-          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex items-center justify-center p-3 sm:p-4 animate-fadeIn">
-            <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-3xl w-full flex flex-col overflow-hidden max-h-[90vh]">
-              
-              {/* Modal Header */}
-              <div className="bg-gradient-to-r from-slate-900 via-emerald-950 to-slate-900 text-white p-4 sm:p-5 flex items-start justify-between border-b border-emerald-500/30">
-                <div className="flex items-start space-x-3">
-                  <div className="p-2.5 bg-emerald-500/20 rounded-xl border border-emerald-400/30 text-emerald-300 shrink-0 mt-0.5">
-                    <Users className="w-6 h-6 text-emerald-400" />
-                  </div>
-                  <div>
-                    <div className="flex items-center space-x-2 flex-wrap gap-1">
-                      <h3 className="text-base sm:text-lg font-black text-white tracking-tight">
-                        Multiple Patients Found for Search
-                      </h3>
-                      <span className="text-[10px] font-black uppercase tracking-wider bg-amber-400 text-slate-900 px-2 py-0.5 rounded-md shadow-2xs font-mono">
-                        {multiPatientSearchResults.length} Patients Found
-                      </span>
-                    </div>
-                    <p className="text-xs text-emerald-200 mt-1">
-                      Search Term: <strong className="text-amber-300 font-mono bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">"{multiPatientSearchQuery}"</strong>
-                    </p>
-                    <p className="text-[11px] text-slate-300 mt-0.5">
-                      Doctor Sahab, multiple patient records match this mobile number/search term. Please click <strong>"Select Patient"</strong> on the intended record below:
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => setIsMultiPatientModalOpen(false)}
-                  className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
-                  title="Close Modal"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Filter inside Modal */}
-              <div className="p-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-3">
-                <div className="relative flex-1">
-                  <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Filter list by patient name, MR#, father name..."
-                    value={multiPatientModalFilter}
-                    onChange={(e) => setMultiPatientModalFilter(e.target.value)}
-                    className="w-full pl-9 pr-3 py-1.5 text-xs bg-white border border-slate-300 rounded-lg focus:outline-none focus:ring-1 focus:ring-emerald-500 font-semibold text-slate-800"
-                  />
-                  {multiPatientModalFilter && (
-                    <button
-                      type="button"
-                      onClick={() => setMultiPatientModalFilter('')}
-                      className="absolute right-2.5 top-2 text-slate-400 hover:text-slate-600 text-xs font-bold"
-                    >
-                      ‚úï
-                    </button>
-                  )}
-                </div>
-                <span className="text-[11px] text-slate-500 font-bold uppercase tracking-wider shrink-0 hidden sm:inline">
-                  Showing {filteredResults.length} of {multiPatientSearchResults.length}
-                </span>
-              </div>
-
-              {/* Patient List Content Body */}
-              <div className="p-3 sm:p-4 overflow-y-auto space-y-2.5 flex-1 max-h-[55vh]">
-                {filteredResults.length === 0 ? (
-                  <div className="p-8 text-center text-slate-500">
-                    <p className="font-bold text-slate-700 text-sm">No matching patients found in filtered list</p>
-                    <p className="text-xs text-slate-400 mt-1">Try clearing the filter text above.</p>
-                  </div>
-                ) : (
-                  filteredResults.map((patient, idx) => (
-                    <div
-                      key={`multi-pat-${patient.PatientID}-${idx}`}
-                      onClick={() => handleSelectPatientFromMultiModal(patient.PatientID, patient)}
-                      className="bg-white hover:bg-emerald-50/60 border border-slate-200 hover:border-emerald-400 rounded-xl p-3 sm:p-3.5 transition-all shadow-2xs hover:shadow-md flex flex-col sm:flex-row sm:items-center justify-between gap-3 cursor-pointer group"
-                    >
-                      {/* Left Column: Avatar & Patient Demographics */}
-                      <div className="flex items-start space-x-3">
-                        {patient.tokenNo ? (
-                          <div className="w-11 h-11 rounded-xl bg-amber-500 text-slate-900 font-black flex flex-col items-center justify-center shrink-0 border border-amber-400 shadow-2xs">
-                            <span className="text-[8px] font-extrabold uppercase text-slate-900 leading-none">Token</span>
-                            <span className="text-base leading-tight">#{patient.tokenNo}</span>
-                          </div>
-                        ) : (
-                          <div className="w-11 h-11 rounded-xl bg-emerald-600 text-white font-black text-lg flex items-center justify-center shrink-0 shadow-2xs border border-emerald-500">
-                            {patient.PatientName.charAt(0).toUpperCase()}
-                          </div>
-                        )}
-
-                        <div className="space-y-1">
-                          {/* Row 1: Name, MR#, Source Badge */}
-                          <div className="flex items-center space-x-2 flex-wrap gap-1">
-                            <h4 className="text-sm font-extrabold text-slate-900 group-hover:text-emerald-700 transition">
-                              {patient.PatientName}
-                            </h4>
-                            <span className="text-[10px] font-mono font-black bg-slate-100 text-slate-800 px-2 py-0.5 rounded border border-slate-200">
-                              MR# {patient.PatientID}
-                            </span>
-                            {patient.source && (
-                              <span className="text-[9px] font-extrabold uppercase tracking-wider bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded border border-emerald-300">
-                                {patient.source}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Row 2: Mobile No, Father/Husband Name, Age & Sex */}
-                          <div className="flex items-center space-x-3 flex-wrap gap-2 text-xs text-slate-600">
-                            {patient.PhoneMobile && (
-                              <span className="flex items-center space-x-1 font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded border border-slate-200 font-mono">
-                                <Phone className="w-3 h-3 text-emerald-600" />
-                                <span>{patient.PhoneMobile}</span>
-                              </span>
-                            )}
-
-                            {patient.Father_husband && (
-                              <span className="font-semibold text-slate-700">
-                                S/O / W/O: <strong>{patient.Father_husband}</strong>
-                              </span>
-                            )}
-
-                            {(patient.AgeYears || patient.Sex) && (
-                              <span className="text-slate-500 font-medium">
-                                ‚Ä¢ {patient.AgeYears ? `${patient.AgeYears} Yrs` : ''} {patient.Sex ? `(${patient.Sex})` : ''}
-                              </span>
-                            )}
-                          </div>
-
-                          {/* Row 3: Address / City if available */}
-                          {(patient.Address || patient.City) && (
-                            <div className="text-[11px] text-slate-500 flex items-center space-x-1">
-                              <MapPin className="w-3 h-3 text-slate-400 shrink-0" />
-                              <span className="truncate max-w-md">{patient.Address || patient.City}</span>
-                            </div>
-                          )}
-                        </div>
-                      </div>
-
-                      {/* Right Column: Select Button */}
-                      <div className="shrink-0 flex items-center justify-end sm:justify-start">
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleSelectPatientFromMultiModal(patient.PatientID, patient);
-                          }}
-                          className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition flex items-center space-x-1.5 cursor-pointer group-hover:scale-105 shrink-0"
-                        >
-                          <CheckCircle2 className="w-4 h-4 text-emerald-200" />
-                          <span>Select Patient</span>
-                        </button>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-
-              {/* Modal Footer */}
-              <div className="bg-slate-100 p-3 sm:p-4 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0">
-                <span className="text-xs text-slate-600 font-medium">
-                  Click <strong>Select Patient</strong> to open medical history & consultation workspace.
-                </span>
-                <button
-                  type="button"
-                  onClick={() => setIsMultiPatientModalOpen(false)}
-                  className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition cursor-pointer"
-                >
-                  Cancel / Close
-                </button>
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* GRID VIEW VISIT DATE SELECTOR MODAL */}
-      {isGridVisitSelectorModalOpen && gridSelectorPatientId && (() => {
-        const selectedPt = patients.find(p => isSamePatient(p.PatientID, gridSelectorPatientId)) || (nhcPatients || []).find(p => isSamePatient(p.PatientID, gridSelectorPatientId));
-        const options = getPatientVisitDateOptions(gridSelectorPatientId);
-        const isPrint = gridSelectorMode === 'PRINT';
-
-        return (
-          <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-4 overflow-y-auto">
-            <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full border border-slate-200 overflow-hidden space-y-0 transform transition-all my-auto">
-              
-              {/* Modal Header */}
-              <div className={`p-4 text-white flex items-center justify-between ${
-                isPrint ? 'bg-gradient-to-r from-emerald-800 to-teal-900' : 'bg-gradient-to-r from-amber-700 to-orange-800'
-              }`}>
-                <div className="flex items-center space-x-3">
-                  <div className="p-2.5 bg-white/10 rounded-xl border border-white/20">
-                    {isPrint ? <Printer className="w-5 h-5 text-emerald-200" /> : <Pencil className="w-5 h-5 text-amber-200" />}
-                  </div>
-                  <div>
-                    <h3 className="font-extrabold text-sm sm:text-base tracking-tight">
-                      {isPrint ? 'Select Visit Date to Print' : 'Select Visit Date to Edit'}
-                    </h3>
-                    <p className="text-[11px] text-white/80 font-medium">
-                      Patient: <strong className="text-white">{selectedPt?.PatientName || gridSelectorPatientId}</strong> ({gridSelectorPatientId})
-                    </p>
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setIsGridVisitSelectorModalOpen(false)}
-                  className="p-1.5 text-white/70 hover:text-white hover:bg-white/10 rounded-lg transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Modal Body */}
-              <div className="p-4 sm:p-5 space-y-4 text-slate-800">
-                <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-600">Total Recorded Visits:</span>
-                  <span className="font-mono font-extrabold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200">
-                    {options.length} Visit Date{options.length > 1 ? 's' : ''}
-                  </span>
-                </div>
-
-                <div className="space-y-2">
-                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wide">
-                    Select Visit Date:
-                  </label>
-
-                  <select
-                    value={gridSelectorSelectedDate}
-                    onChange={(e) => setGridSelectorSelectedDate(e.target.value)}
-                    className="w-full text-xs font-bold font-mono p-2.5 bg-white border-2 border-slate-300 rounded-xl text-slate-900 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 cursor-pointer shadow-2xs"
-                  >
-                    {options.map((opt, idx) => (
-                      <option key={opt.date + '-' + idx} value={opt.date}>
-                        {opt.date} {idx === 0 ? '(Latest Visit Date)' : ''} ‚Äî {opt.symptoms.slice(0, 30)}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                {/* Cards List for Visual Selection */}
-                <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
-                  <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wide">
-                    Available Visit Records (Click to Select):
-                  </label>
-                  {options.map((opt, idx) => {
-                    const isSelected = gridSelectorSelectedDate === opt.date;
-                    return (
-                      <div
-                        key={`opt-${opt.date}-${idx}`}
-                        onClick={() => setGridSelectorSelectedDate(opt.date)}
-                        className={`p-3 rounded-xl border-2 transition cursor-pointer flex items-center justify-between gap-3 ${
-                          isSelected
-                            ? isPrint
-                              ? 'bg-emerald-50/90 border-emerald-500 shadow-xs'
-                              : 'bg-amber-50/90 border-amber-500 shadow-xs'
-                            : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                        }`}
-                      >
-                        <div className="space-y-0.5 flex-1 min-w-0">
-                          <div className="flex items-center space-x-2">
-                            <span className="font-mono font-extrabold text-xs text-slate-900">
-                              {opt.date}
-                            </span>
-                            {idx === 0 && (
-                              <span className="text-[9px] font-black uppercase px-1.5 py-0.2 rounded bg-indigo-100 text-indigo-800 border border-indigo-200">
-                                Latest Visit
-                              </span>
-                            )}
-                          </div>
-                          <p className="text-[11px] text-slate-600 font-medium truncate">
-                            {opt.symptoms}
-                          </p>
-                          {opt.summary && (
-                            <p className="text-[10px] text-slate-400 font-mono truncate">
-                              {opt.summary}
-                            </p>
-                          )}
-                        </div>
-
-                        <div className="text-right flex flex-col items-end shrink-0">
-                          {opt.fee > 0 && (
-                            <span className="text-[11px] font-mono font-extrabold text-slate-800">
-                              PKR {opt.fee}
-                            </span>
-                          )}
-                          <div className={`w-4 h-4 rounded-full border flex items-center justify-center mt-1 ${
-                            isSelected
-                              ? isPrint ? 'bg-emerald-600 border-emerald-600 text-white' : 'bg-amber-600 border-amber-600 text-white'
-                              : 'border-slate-300 bg-white'
-                          }`}>
-                            {isSelected && <Check className="w-2.5 h-2.5 stroke-[3]" />}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Modal Footer */}
-              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setIsGridVisitSelectorModalOpen(false)}
-                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-extrabold text-xs rounded-xl transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleConfirmGridVisitSelection}
-                  className={`px-5 py-2 text-white font-extrabold text-xs rounded-xl transition shadow-xs flex items-center space-x-1.5 cursor-pointer ${
-                    isPrint
-                      ? 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800'
-                      : 'bg-amber-600 hover:bg-amber-700 active:bg-amber-800'
-                  }`}
-                >
-                  {isPrint ? (
-                    <>
-                      <Printer className="w-4 h-4" />
-                      <span>Print Visit ({gridSelectorSelectedDate})</span>
-                    </>
-                  ) : (
-                    <>
-                      <Pencil className="w-4 h-4" />
-                      <span>Edit Visit ({gridSelectorSelectedDate})</span>
-                    </>
-                  )}
-                </button>
-              </div>
-
-            </div>
-          </div>
-        );
-      })()}
-
-      {/* POPUP MODAL: GRID-VIEW EDIT RECENT PATIENT MEDICAL RECORDS */}
-      {isRecentVisitsModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs z-50 flex items-center justify-center p-2 sm:p-4 overflow-y-auto animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-300 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden my-auto">
-            {/* Modal Header */}
-            <div className="bg-slate-900 text-white p-3.5 sm:p-4 border-b border-slate-800 flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-3">
-                <div className="p-2 bg-amber-500/20 rounded-xl border border-amber-400/30 text-amber-400">
-                  <Pencil className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-sm sm:text-base font-extrabold text-white flex items-center space-x-2">
-                    <span>Grid-View Show Recent Patients & Edit Medical Records</span>
-                    <span className="text-[10px] bg-amber-500/30 text-amber-200 border border-amber-400/30 px-2 py-0.5 rounded-full uppercase font-mono">
-                      Edit Mode
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-slate-300 font-medium">
-                    Select any patient visit record from the grid view below to edit prescription, lab tests, payment details, and click Save & Update & Print.
-                  </p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setIsRecentVisitsModalOpen(false)}
-                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-3 sm:p-5 overflow-y-auto space-y-4 bg-slate-50 flex-1">
-              {/* TOP SECTION: GRID-VIEW OF RECENT PATIENTS */}
-              <div className="bg-white p-3 sm:p-4 rounded-xl border border-slate-200 shadow-2xs space-y-3">
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-2">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="text-xs font-bold text-slate-900 flex items-center space-x-1.5">
-                      <Table className="w-4 h-4 text-amber-600" />
-                      <span>Select Recent Patient Visit Record to Edit:</span>
-                    </span>
-
-                    {modalPatientId && (
-                      <div className="flex items-center space-x-1.5 bg-amber-50 border border-amber-300 text-amber-900 text-[11px] font-bold px-2 py-0.5 rounded-lg shadow-2xs">
-                        <UserIcon className="w-3.5 h-3.5 text-amber-600" />
-                        <span>
-                          {recentModalPatientOnly
-                            ? `Filtered for: ${modalPatientName || modalPatientId} (${modalPatientId})`
-                            : `Showing All Patients`}
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setRecentModalPatientOnly(!recentModalPatientOnly)}
-                          className="ml-1 px-1.5 py-0.5 bg-amber-200 hover:bg-amber-300 rounded text-[10px] font-black text-amber-950 transition cursor-pointer"
-                        >
-                          {recentModalPatientOnly ? 'Show All Patients' : `Show Only ${modalPatientName || modalPatientId}`}
-                        </button>
-                      </div>
-                    )}
-                  </div>
-
-                  <div className="relative min-w-[200px]">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                    <input
-                      type="text"
-                      placeholder="Search date, symptoms..."
-                      value={recentModalSearch}
-                      onChange={(e) => setRecentModalSearch(e.target.value)}
-                      className="w-full text-xs border border-slate-300 rounded-lg pl-8 pr-3 py-1.5 focus:ring-2 focus:ring-amber-500 focus:outline-none bg-slate-50"
-                    />
-                  </div>
-                </div>
-
-                {/* Grid Table of Recent Visits */}
-                <div className="max-h-48 overflow-y-auto border border-slate-200 rounded-lg overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead className="bg-slate-800 text-white font-bold text-[10px] uppercase sticky top-0">
-                      <tr>
-                        <th className="p-2 border-b border-slate-700">Visit Date</th>
-                        <th className="p-2 border-b border-slate-700">Patient ID & Name</th>
-                        <th className="p-2 border-b border-slate-700">Symptoms / Diagnosis</th>
-                        <th className="p-2 border-b border-slate-700">Lab Advice</th>
-                        <th className="p-2 border-b border-slate-700">Total Payment</th>
-                        <th className="p-2 border-b border-slate-700 text-center">Action</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 text-slate-800 text-[11px]">
-                      {(() => {
-                        const rawRecentVisits: (Visit | NhcPatientHistory)[] = [...(visits || []), ...(pvNhcHistory || [])];
-                        // Sort rawRecentVisits descending by visit date, then by VisitID descending
-                        const sortedRecentVisits = [...rawRecentVisits].sort((a, b) => {
-                          const dateA = parseCleanVisitDate('VisitDate' in a ? a.VisitDate : ('date' in a ? (a as any).date : ''));
-                          const dateB = parseCleanVisitDate('VisitDate' in b ? b.VisitDate : ('date' in b ? (b as any).date : ''));
-                          if (dateA !== dateB) {
-                            return dateB.localeCompare(dateA);
-                          }
-                          const idA = ('VisitID' in a && a.VisitID) ? Number(a.VisitID) || 0 : 0;
-                          const idB = ('VisitID' in b && b.VisitID) ? Number(b.VisitID) || 0 : 0;
-                          return idB - idA;
-                        });
-
-                        let allRecentVisits: (Visit | NhcPatientHistory)[] = [];
-
-                        if (recentModalPatientOnly && modalPatientId) {
-                          // Show ALL visit records for the selected patient
-                          allRecentVisits = sortedRecentVisits.filter((v) => isSamePatient(v.PatientID, modalPatientId));
-                        } else {
-                          // Show all recent patients (one latest per patient)
-                          const seenKeys = new Set<string>();
-                          const seenPatientIds = new Set<string>();
-
-                          for (const v of sortedRecentVisits) {
-                            const vId = ('VisitID' in v && v.VisitID) ? v.VisitID : ('date' in v ? `NHC-${v.date}` : '');
-                            const pId = String(v.PatientID || '').trim();
-                            const vDate = 'VisitDate' in v && v.VisitDate ? v.VisitDate.split('T')[0] : ('date' in v ? (v as any).date : '');
-                            const key = vId || (pId && vDate ? `${pId}_${vDate}` : '');
-
-                            if (pId) {
-                              if (!seenPatientIds.has(pId)) {
-                                seenPatientIds.add(pId);
-                                if (key) seenKeys.add(key);
-                                allRecentVisits.push(v);
-                              }
-                            } else {
-                              if (!key || !seenKeys.has(key)) {
-                                if (key) seenKeys.add(key);
-                                allRecentVisits.push(v);
-                              }
-                            }
-                          }
-                        }
-
-                        const filteredRecent = allRecentVisits.filter((v) => {
-                          if (!recentModalSearch.trim()) return true;
-                          const term = recentModalSearch.toLowerCase();
-                          const pId = String(v.PatientID || '');
-                          const pt = patients.find(p => String(p.PatientID) === pId);
-                          const pName = String(pt?.PatientName || ('PatientName' in v ? (v as any).PatientName : '') || '');
-                          const sx = String('SymptomsDiagnosis' in v ? v.SymptomsDiagnosis : ('symptoms' in v ? (v as any).symptoms : '') || '');
-                          const vDate = String('VisitDate' in v ? v.VisitDate : ('date' in v ? (v as any).date : '') || '');
-                          return (
-                            pId.toLowerCase().includes(term) ||
-                            pName.toLowerCase().includes(term) ||
-                            sx.toLowerCase().includes(term) ||
-                            vDate.toLowerCase().includes(term)
-                          );
-                        });
-
-                        if (filteredRecent.length === 0) {
-                          return (
-                            <tr>
-                              <td colSpan={6} className="p-4 text-center text-slate-500 italic">
-                                No visit records found for {recentModalPatientOnly && modalPatientId ? `patient (${modalPatientName || modalPatientId})` : 'recent visits'}.
-                              </td>
-                            </tr>
-                          );
-                        }
-
-                        return filteredRecent.slice(0, 15).map((v, i) => {
-                          const vId = ('VisitID' in v && v.VisitID) ? v.VisitID : ('date' in v ? `NHC-${v.date}` : `VIS-${i}`);
-                          const pt = patients.find(p => p.PatientID === v.PatientID);
-                          const pName = pt?.PatientName || ('PatientName' in v ? (v as any).PatientName : 'Patient');
-                          const vDate = 'VisitDate' in v && v.VisitDate ? v.VisitDate.split('T')[0] : ('date' in v ? (v as any).date : 'N/A');
-                          const sx = 'SymptomsDiagnosis' in v ? v.SymptomsDiagnosis : ('symptoms' in v ? (v as any).symptoms : 'Routine Consultation');
-                          const labAdv = 'LabTestAdvice' in v ? v.LabTestAdvice : 'None';
-                          let clinFee = Number((v as any).ClinicalMedicinePayment) || 0;
-                          let fileFee = Number((v as any).FileFee) || 0;
-                          let cardFee = Number((v as any).CardFee) || Number((v as any).CardsPayment) || 0;
-                          let opdFee = Number((v as any).ConsultationFee) || Number((v as any).fee) || 0;
-                          const remText = (v as any).VisitRemarks || (v as any).Remarks || '';
-                          if (remText) {
-                            if (!clinFee) { const cPkr = remText.match(/Clinical Meds PKR\s*(\d+)/); if (cPkr) clinFee = Number(cPkr[1]); }
-                            if (!fileFee) { const fPkr = remText.match(/File PKR\s*(\d+)/); if (fPkr) fileFee = Number(fPkr[1]); }
-                            if (!cardFee) { const kPkr = remText.match(/Card PKR\s*(\d+)/); if (kPkr) cardFee = Number(kPkr[1]); }
-                          }
-                          const fee = clinFee + fileFee + cardFee + opdFee;
-                          const isSelected = modalEditingVisitId === vId;
-
-                          return (
-                            <tr
-                              key={vId + '-' + i}
-                              className={`cursor-pointer transition ${isSelected ? 'bg-amber-100/80 font-semibold' : 'hover:bg-slate-100'}`}
-                              onClick={() => loadVisitIntoModalForm(v, pName)}
-                            >
-                              <td className="p-2 font-mono font-bold text-slate-900 whitespace-nowrap">{vDate}</td>
-                              <td className="p-2">
-                                <span className="font-extrabold text-slate-900 block">{pName}</span>
-                                <span className="text-[10px] text-slate-500 font-mono">ID: {v.PatientID}</span>
-                              </td>
-                              <td className="p-2 truncate max-w-[180px]">{sx}</td>
-                              <td className="p-2 truncate max-w-[140px] text-purple-900 font-medium">{labAdv}</td>
-                              <td className="p-2 font-bold text-slate-900 whitespace-nowrap">PKR {fee}</td>
-                              <td className="p-2 text-center">
-                                <button
-                                  type="button"
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    loadVisitIntoModalForm(v, pName);
-                                  }}
-                                  className={`px-2 py-0.5 text-[10px] font-bold rounded border cursor-pointer transition ${
-                                    isSelected ? 'bg-amber-600 text-white border-amber-700' : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
-                                  }`}
-                                >
-                                  {isSelected ? 'Editing Now' : 'Select Record'}
-                                </button>
-                              </td>
-                            </tr>
-                          );
-                        });
-                      })()}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* BOTTOM SECTION: MEDICAL RECORD EDIT FORM */}
-              <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-2xs space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                  <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center space-x-1.5">
-                    <Stethoscope className="w-4 h-4 text-emerald-600" />
-                    <span>Edit Medical Record Details (Visit ID: <strong className="text-indigo-700 font-mono">{modalEditingVisitId}</strong>)</span>
-                  </h4>
-                  <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2.5 py-0.5 rounded border border-slate-200">
-                    Patient: {modalPatientName} ({modalPatientId})
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  {/* Left Form Column */}
-                  <div className="space-y-3">
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Select Patient:</label>
-                        <select
-                          value={modalPatientId}
-                          onChange={(e) => {
-                            const pId = e.target.value;
-                            setModalPatientId(pId);
-                            const found = patients.find(p => p.PatientID === pId);
-                            if (found) setModalPatientName(found.PatientName);
-                          }}
-                          className="w-full text-xs border border-slate-300 rounded-lg p-2 font-bold text-slate-800 bg-white focus:ring-2 focus:ring-amber-500"
-                        >
-                          {patients.map((p, idx) => (
-                            <option key={`m-pat-opt-${p.PatientID}-${idx}`} value={p.PatientID}>
-                              {p.PatientName} ({p.PatientID})
-                            </option>
-                          ))}
-                        </select>
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Visit Date:</label>
-                        <input
-                          type="date"
-                          value={modalVisitDate}
-                          onChange={(e) => setModalVisitDate(e.target.value)}
-                          className="w-full text-xs border border-slate-300 rounded-lg p-2 font-bold text-slate-800 bg-white focus:ring-2 focus:ring-amber-500"
-                        />
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Symptoms & Clinical Diagnosis:</label>
-                      <textarea
-                        rows={3}
-                        placeholder=""
-                        value={modalSymptomsDiagnosis}
-                        onChange={(e) => setModalSymptomsDiagnosis(e.target.value)}
-                        className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-800 bg-white focus:ring-2 focus:ring-amber-500 font-medium"
-                      />
-                    </div>
-
-                    <div className="grid grid-cols-2 gap-2">
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Medical Report Results:</label>
-                        <textarea
-                          rows={2}
-                          placeholder=""
-                          value={modalMedicalReportResult}
-                          onChange={(e) => setModalMedicalReportResult(e.target.value)}
-                          className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-800 bg-white focus:ring-2 focus:ring-amber-500 font-medium"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Lab Test Advice:</label>
-                        <textarea
-                          rows={2}
-                          placeholder=""
-                          value={modalLabTestAdvice}
-                          onChange={(e) => setModalLabTestAdvice(e.target.value)}
-                          className="w-full text-xs border border-slate-300 rounded-lg p-2 text-slate-800 bg-white focus:ring-2 focus:ring-amber-500 font-medium"
-                        />
-                      </div>
-                    </div>
-
-                    {/* Visit Charges & Fees (PKR) Box */}
-                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
-                      <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                        <label className="text-[10px] font-black text-slate-800 uppercase tracking-wide flex items-center">
-                          <Coins className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-                          Visit Charges & Fees (PKR)
-                        </label>
-                        <div className="text-xs font-black text-emerald-950 bg-emerald-100 px-2.5 py-0.5 rounded-md border border-emerald-300 font-mono shadow-2xs">
-                          Total: PKR {(Number(modalConsultationFee) || 0) + (Number(modalClinicalMedicinePkr) || 0) + (Number(modalFilePkr) || 0) + (Number(modalCardPkr) || 0)}
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5">
-                        <div>
-                          <label className="block text-[9px] font-extrabold text-slate-600 uppercase mb-0.5 truncate">Clinical Med (PKR):</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={5}
-                            placeholder=""
-                            value={modalClinicalMedicinePkr}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, '').slice(0, 5);
-                              setModalClinicalMedicinePkr(val);
-                            }}
-                            className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-center font-bold text-slate-900 shadow-inner"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[9px] font-extrabold text-slate-600 uppercase mb-0.5 truncate">File (PKR):</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={5}
-                            placeholder=""
-                            value={modalFilePkr}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, '').slice(0, 5);
-                              setModalFilePkr(val);
-                            }}
-                            className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-center font-bold text-slate-900 shadow-inner"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[9px] font-extrabold text-slate-600 uppercase mb-0.5 truncate">Card (PKR):</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={5}
-                            placeholder=""
-                            value={modalCardPkr}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, '').slice(0, 5);
-                              setModalCardPkr(val);
-                            }}
-                            className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-center font-bold text-slate-900 shadow-inner"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[9px] font-extrabold text-slate-600 uppercase mb-0.5 truncate">OPD / App (PKR):</label>
-                          <input
-                            type="text"
-                            inputMode="numeric"
-                            maxLength={5}
-                            placeholder=""
-                            value={modalConsultationFee}
-                            onChange={(e) => {
-                              const val = e.target.value.replace(/\D/g, '').slice(0, 5);
-                              setModalConsultationFee(val);
-                            }}
-                            className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-center font-bold text-slate-900 shadow-inner"
-                          />
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Right Form Column: Prescription Medicines */}
-                  <div className="space-y-3">
-                    {/* Clinical Compounded Medicines */}
-                    <div className="bg-emerald-50/70 p-3 rounded-xl border border-emerald-200 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold text-emerald-950 uppercase tracking-tight flex items-center space-x-1">
-                          <Pill className="w-3.5 h-3.5 text-emerald-700" />
-                          <span>Clinical Compounded Medicines:</span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setModalClinicalItems(prev => [...prev, { id: String(Date.now()), medicineName: '', dosage: '' }])}
-                          className="px-2 py-0.5 bg-emerald-700 hover:bg-emerald-800 text-white text-[10px] font-bold rounded transition flex items-center space-x-1 cursor-pointer"
-                        >
-                          <Plus className="w-3 h-3" />
-                          <span>Add Row</span>
-                        </button>
-                      </div>
-
-                      <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                        {modalClinicalItems.map((item, idx) => (
-                          <div key={`m-clin-row-${item.id || idx}-${idx}`} className="flex items-center space-x-1.5">
-                            <input
-                              type="text"
-                              placeholder=""
-                              value={item.medicineName}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setModalClinicalItems(prev => prev.map((row, i) => i === idx ? { ...row, medicineName: val } : row));
-                              }}
-                              className="flex-1 text-xs border border-emerald-300 rounded p-1.5 font-semibold text-slate-900 bg-white"
-                            />
-                            <input
-                              type="text"
-                              placeholder=""
-                              value={item.dosage}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setModalClinicalItems(prev => prev.map((row, i) => i === idx ? { ...row, dosage: val } : row));
-                              }}
-                              className="w-28 text-xs border border-emerald-300 rounded p-1.5 font-mono text-slate-900 bg-white"
-                            />
-                            {modalClinicalItems.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => setModalClinicalItems(prev => prev.filter((_, i) => i !== idx))}
-                                className="p-1 text-rose-600 hover:text-rose-800"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    {/* Commercial / Patent Medicines */}
-                    <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-200 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <span className="text-xs font-extrabold text-blue-950 uppercase tracking-tight flex items-center space-x-1">
-                          <Pill className="w-3.5 h-3.5 text-blue-700" />
-                          <span>Patent / Commercial Medicines:</span>
-                        </span>
-                        <button
-                          type="button"
-                          onClick={() => setModalPatentItems(prev => [...prev, { id: String(Date.now()), medicineName: '', dosage: '' }])}
-                          className="px-2 py-0.5 bg-blue-700 hover:bg-blue-800 text-white text-[10px] font-bold rounded transition flex items-center space-x-1 cursor-pointer"
-                        >
-                          <Plus className="w-3 h-3" />
-                          <span>Add Row</span>
-                        </button>
-                      </div>
-
-                      <div className="space-y-1.5 max-h-36 overflow-y-auto pr-1">
-                        {modalPatentItems.map((item, idx) => (
-                          <div key={`m-pat-row-${item.id || idx}-${idx}`} className="flex items-center space-x-1.5">
-                            <input
-                              type="text"
-                              placeholder=""
-                              value={item.medicineName}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setModalPatentItems(prev => prev.map((row, i) => i === idx ? { ...row, medicineName: val } : row));
-                              }}
-                              className="flex-1 text-xs border border-blue-300 rounded p-1.5 font-semibold text-slate-900 bg-white"
-                            />
-                            <input
-                              type="text"
-                              placeholder=""
-                              value={item.dosage}
-                              onChange={(e) => {
-                                const val = e.target.value;
-                                setModalPatentItems(prev => prev.map((row, i) => i === idx ? { ...row, dosage: val } : row));
-                              }}
-                              className="w-28 text-xs border border-blue-300 rounded p-1.5 font-mono text-slate-900 bg-white"
-                            />
-                            {modalPatentItems.length > 1 && (
-                              <button
-                                type="button"
-                                onClick={() => setModalPatentItems(prev => prev.filter((_, i) => i !== idx))}
-                                className="p-1 text-rose-600 hover:text-rose-800"
-                              >
-                                <Trash2 className="w-3.5 h-3.5" />
-                              </button>
-                            )}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">Doctor Remarks / Notes:</label>
-                      <input
-                        type="text"
-                        placeholder=""
-                        value={modalRemarks}
-                        onChange={(e) => setModalRemarks(e.target.value)}
-                        className="w-full text-xs border border-slate-300 rounded-lg p-2 font-medium text-slate-800 bg-white"
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="bg-slate-100 p-3 sm:p-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shrink-0">
-              <div className="text-xs font-semibold">
-                {modalSaveSuccess && (
-                  <span className="text-emerald-700 font-extrabold flex items-center space-x-1 animate-fadeIn">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    <span>{modalSaveSuccess}</span>
-                  </span>
-                )}
-                {modalSaveError && (
-                  <span className="text-rose-600 font-extrabold flex items-center space-x-1 animate-fadeIn">
-                    <AlertCircle className="w-4 h-4 text-rose-600" />
-                    <span>{modalSaveError}</span>
-                  </span>
-                )}
-                {!modalSaveSuccess && !modalSaveError && (
-                  <span className="text-slate-500 italic text-[11px]">
-                    Make your updates above and click <strong>Save & Update and Print</strong> to finish.
-                  </span>
-                )}
-              </div>
-
-              <div className="flex items-center space-x-2 shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsRecentVisitsModalOpen(false)}
-                  className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer"
-                >
-                  Cancel
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSaveFromRecentModal(false)}
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs rounded-xl shadow-xs transition flex items-center space-x-1.5 cursor-pointer"
-                >
-                  <Save className="w-4 h-4" />
-                  <span>Save & Update</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSaveFromRecentModal(true)}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md transition flex items-center space-x-1.5 cursor-pointer"
-                >
-                  <Printer className="w-4 h-4" />
-                  <span>Save & Update and Print</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* SMART MEDICINE LOCATOR MODAL POPUP FOR PATIENT VISIT */}
-      {pvSmartLocatorModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 z-50 print:hidden animate-fadeIn">
-          <div className="bg-white rounded-2xl max-w-2xl w-full shadow-2xl border border-slate-150 flex flex-col max-h-[90vh] overflow-hidden">
-            
-            {/* Modal Header */}
-            <div className="p-4 border-b border-slate-150 flex justify-between items-center bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-400/40 flex items-center justify-center shrink-0">
-                  <Sparkles className="w-4 h-4 text-amber-300 animate-pulse" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black uppercase tracking-wider text-white flex items-center gap-2">
-                    <span>Smart Medicine Locator</span>
-                    <span className="text-[9px] bg-emerald-500/20 text-emerald-300 font-extrabold px-2 py-0.5 rounded border border-emerald-500/30">
-                      MongoDB Table: smart_locator_medicines
-                    </span>
-                  </h3>
-                  <p className="text-[11px] text-slate-300 font-medium">
-                    Search medicines by symptom to populate Clinical or Patent medicine box
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setPvSmartLocatorModalOpen(false)}
-                className="text-slate-400 hover:text-white font-extrabold text-sm p-1.5 rounded-lg hover:bg-white/10 transition cursor-pointer"
-              >
-                ‚úï
-              </button>
-            </div>
-
-            {/* Notification Banner */}
-            {pvSmartLocatorNotification && (
-              <div className="bg-emerald-600 text-white text-xs font-bold px-4 py-2 flex items-center justify-between shadow-xs animate-fadeIn">
-                <span className="flex items-center">
-                  <CheckCircle2 className="w-4 h-4 mr-1.5 text-emerald-200" />
-                  {pvSmartLocatorNotification}
-                </span>
-                <span className="text-[10px] text-emerald-100 italic">Medicine name populated!</span>
-              </div>
-            )}
-
-            {/* Modal Body */}
-            <div className="p-4 overflow-y-auto space-y-3.5">
-              
-              {/* Destination Box Selector */}
-              <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 space-y-1.5">
-                <label className="block text-[10px] font-black text-slate-600 uppercase tracking-wider">
-                  Target Medicine Box Destination:
-                </label>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setPvSmartLocatorTargetBox('clinical')}
-                    className={`py-2 px-3 rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center space-x-1.5 transition cursor-pointer ${
-                      pvSmartLocatorTargetBox === 'clinical'
-                        ? 'bg-emerald-600 text-white shadow-xs'
-                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Pill className="w-3.5 h-3.5" />
-                    <span>1. Clinical Medicine Box</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPvSmartLocatorTargetBox('patient')}
-                    className={`py-2 px-3 rounded-lg text-xs font-black uppercase tracking-wider flex items-center justify-center space-x-1.5 transition cursor-pointer ${
-                      pvSmartLocatorTargetBox === 'patient'
-                        ? 'bg-blue-600 text-white shadow-xs'
-                        : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <Pill className="w-3.5 h-3.5" />
-                    <span>2. Patient Medicine Box</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Symptom Search Bar */}
-              <div>
-                <label className="block text-xxs font-extrabold text-slate-500 uppercase mb-1">
-                  Search Symptoms / Diseases / Indications:
-                </label>
-                <div className="relative">
-                  <Search className="absolute left-3 top-2.5 h-4 w-4 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder=""
-                    value={pvSmartLocatorSearch}
-                    onChange={(e) => {
-                      setPvSmartLocatorSearch(e.target.value);
-                      setPvSmartLocatorSelectedTag('');
-                    }}
-                    className="w-full text-xs font-semibold border border-slate-300 rounded-xl pl-9 pr-8 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 bg-white text-slate-900 shadow-2xs"
-                  />
-                  {pvSmartLocatorSearch && (
-                    <button
-                      type="button"
-                      onClick={() => setPvSmartLocatorSearch('')}
-                      className="absolute right-2.5 top-2.5 text-slate-400 hover:text-slate-600 text-xs font-bold"
-                    >
-                      ‚úï
-                    </button>
-                  )}
-                </div>
-              </div>
-
-              {/* Quick Symptom Filter Badges */}
-              <div className="space-y-1">
-                <span className="block text-[10px] font-black text-slate-400 uppercase tracking-wider">
-                  Quick Symptom Presets:
-                </span>
-                <div className="flex flex-wrap gap-1.5">
-                  {[
-                    { label: 'Fever & Flu', keyword: 'fever' },
-                    { label: 'Cough & Throat', keyword: 'cough' },
-                    { label: 'Gastro & Acid', keyword: 'stomach' },
-                    { label: 'Loose Motions', keyword: 'diarrhea' },
-                    { label: 'Nausea & Vomiting', keyword: 'vomiting' },
-                    { label: 'Pain & Muscle', keyword: 'pain' },
-                    { label: 'Infection', keyword: 'infection' },
-                    { label: 'Allergy', keyword: 'allergy' }
-                  ].map((tag) => {
-                    const isSelected = pvSmartLocatorSelectedTag === tag.keyword;
-                    return (
-                      <button
-                        key={tag.keyword}
-                        type="button"
-                        onClick={() => {
-                          setPvSmartLocatorSelectedTag(isSelected ? '' : tag.keyword);
-                          setPvSmartLocatorSearch('');
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-[11px] font-bold transition cursor-pointer ${
-                          isSelected
-                            ? 'bg-indigo-600 text-white shadow-xs'
-                            : 'bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200'
-                        }`}
-                      >
-                        {tag.label}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-
-              {/* Matching Medicines Result List */}
-              <div className="border-t border-slate-150 pt-2 space-y-2">
-                <div className="flex justify-between items-center">
-                  <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-wider">
-                    Matching Smart Medicines ({
-                      (() => {
-                        const activeList = mongoSmartLocatorList.length > 0 ? mongoSmartLocatorList : smartLocatorMedicines;
-                        const query = pvSmartLocatorSearch.toLowerCase().trim();
-                        const tag = pvSmartLocatorSelectedTag.toLowerCase().trim();
-                        return activeList.filter(m => {
-                          const sym = (m.Symptoms || '').toLowerCase();
-                          const name = (m.MedicineName || '').toLowerCase();
-                          const comp = (m.Composition || '').toLowerCase();
-                          const dos = (m.Dosage || '').toLowerCase();
-                          if (tag && !sym.includes(tag) && !name.includes(tag) && !comp.includes(tag)) return false;
-                          if (!query) return true;
-                          return sym.includes(query) || name.includes(query) || comp.includes(query) || dos.includes(query);
-                        }).length;
-                      })()
-                    } records)
-                  </span>
-                  <span className="text-[9px] text-slate-400 font-bold">
-                    Select medicine to populate name
-                  </span>
-                </div>
-
-                <div className="overflow-y-auto max-h-[300px] space-y-2 pr-1">
-                  {(() => {
-                    const activeList = mongoSmartLocatorList.length > 0 ? mongoSmartLocatorList : smartLocatorMedicines;
-                    const query = pvSmartLocatorSearch.toLowerCase().trim();
-                    const tag = pvSmartLocatorSelectedTag.toLowerCase().trim();
-
-                    const filtered = activeList.filter(m => {
-                      const sym = (m.Symptoms || '').toLowerCase();
-                      const name = (m.MedicineName || '').toLowerCase();
-                      const comp = (m.Composition || '').toLowerCase();
-                      const dos = (m.Dosage || '').toLowerCase();
-                      if (tag && !sym.includes(tag) && !name.includes(tag) && !comp.includes(tag)) return false;
-                      if (!query) return true;
-                      return sym.includes(query) || name.includes(query) || comp.includes(query) || dos.includes(query);
-                    });
-
-                    if (filtered.length === 0) {
-                      return (
-                        <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 text-center space-y-2">
-                          <AlertCircle className="w-6 h-6 text-slate-400 mx-auto" />
-                          <p className="text-xs font-bold text-slate-600">No matching medicines found for symptoms.</p>
-                          <p className="text-[10px] text-slate-400">Try searching another symptom or upload more smart locator rows in Bulk Uploader tab.</p>
-                        </div>
-                      );
-                    }
-
-                    return filtered.map((m, idx) => (
-                      <div
-                        key={idx}
-                        className="bg-slate-50/80 hover:bg-indigo-50/40 border border-slate-200 hover:border-indigo-300 rounded-xl p-3 transition space-y-2"
-                      >
-                        <div className="flex flex-wrap items-start justify-between gap-2">
-                          <div>
-                            <span className="text-xs font-extrabold text-slate-900 block">
-                              {m.MedicineName}
-                            </span>
-                            {m.Composition && (
-                              <span className="text-[10px] font-mono text-slate-500 block">
-                                Comp: {m.Composition}
-                              </span>
-                            )}
-                          </div>
-                          {m.Dosage && (
-                            <span className="text-[10px] font-mono font-bold bg-amber-100 text-amber-900 border border-amber-200 px-2 py-0.5 rounded-md">
-                              Dosage: {m.Dosage}
-                            </span>
-                          )}
-                        </div>
-
-                        {m.Symptoms && (
-                          <p className="text-[10px] text-slate-600 bg-white p-1.5 rounded-lg border border-slate-150 leading-relaxed">
-                            <strong className="text-indigo-900 font-extrabold uppercase text-[9px] mr-1">Symptoms:</strong>
-                            {m.Symptoms}
-                          </p>
-                        )}
-
-                        {/* Direct Selection Buttons */}
-                        <div className="flex items-center justify-end space-x-2 pt-1">
-                          <button
-                            type="button"
-                            onClick={() => handleSelectSmartMedicine(m, 'clinical')}
-                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition flex items-center space-x-1 cursor-pointer"
-                            title={`Insert "${m.MedicineName}" into Clinical Medicine Box`}
-                          >
-                            <Plus className="w-3 h-3" />
-                            <span>Clinical Box</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => handleSelectSmartMedicine(m, 'patient')}
-                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition flex items-center space-x-1 cursor-pointer"
-                            title={`Insert "${m.MedicineName}" into Patient Medicine Box`}
-                          >
-                            <Plus className="w-3 h-3" />
-                            <span>Patient Box</span>
-                          </button>
-                        </div>
-                      </div>
-                    ));
-                  })()}
-                </div>
-              </div>
-
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-3 bg-slate-50 border-t border-slate-150 flex justify-between items-center">
-              <span className="text-[10px] text-slate-400 font-medium">
-                Clicking a medicine populates its name directly into doctor's prescription box.
-              </span>
-              <button
-                type="button"
-                onClick={() => setPvSmartLocatorModalOpen(false)}
-                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl shadow-xs transition cursor-pointer"
-              >
-                Done / Close
-              </button>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* OPD TOKEN ISSUE POPUP MODAL */}
-      {isOpdTokenModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="bg-emerald-700 px-6 py-4 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-2.5">
-                <div className="p-2 bg-emerald-600/80 rounded-xl text-white">
-                  <Ticket className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-base tracking-tight text-white flex items-center">
-                    Issue OPD Token
-                  </h3>
-                  <p className="text-xs text-emerald-100 font-medium">
-                    Patient Intake & Token Generation Desk
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsOpdTokenModalOpen(false)}
-                className="p-1.5 hover:bg-emerald-600 rounded-lg text-emerald-100 hover:text-white transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-4">
-              {/* Mode Toggle: Existing Patient vs New Patient */}
-              <div className="flex bg-slate-100 p-1 rounded-xl gap-1">
-                <button
-                  type="button"
-                  onClick={() => setTokenIssueMode('existing')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition ${
-                    tokenIssueMode === 'existing'
-                      ? 'bg-white text-emerald-800 shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  Existing Selected Patient
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTokenIssueMode('new_patient')}
-                  className={`flex-1 py-2 text-xs font-bold rounded-lg transition flex items-center justify-center space-x-1 ${
-                    tokenIssueMode === 'new_patient'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900'
-                  }`}
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>+ Quick New Patient Registration</span>
-                </button>
-              </div>
-
-              {appError && (
-                <div className="p-3 bg-red-50 text-red-700 text-xs rounded-xl font-semibold border border-red-200">
-                  {appError}
-                </div>
-              )}
-              {appSuccess && (
-                <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-xl font-semibold border border-emerald-200 flex items-center">
-                  <CheckCircle2 className="w-4 h-4 mr-2 text-emerald-600 shrink-0" />
-                  {appSuccess}
-                </div>
-              )}
-
-              {/* MODE 1: EXISTING PATIENT FORM */}
-              {tokenIssueMode === 'existing' && (
-                <div className="space-y-4">
-                  {/* Selected Patient Banner */}
-                  {selectedPatientId ? (() => {
-                    const pat = opdTokenModalPatient || patients.find(p => p.PatientID === selectedPatientId);
-                    return (
-                      <div className="bg-emerald-50/90 p-4 rounded-xl border border-emerald-200 space-y-1 shadow-2xs">
-                        <div className="flex justify-between items-start">
-                          <span className="text-[10px] font-extrabold text-emerald-800 uppercase tracking-wider">Patient Selected for OPD Token</span>
-                          <span className="text-xs font-mono font-bold text-emerald-900 bg-emerald-100 px-2 py-0.5 rounded-full">
-                            ID: {selectedPatientId}
-                          </span>
-                        </div>
-                        <p className="text-base font-black text-slate-950">{pat?.PatientName || selectedPatientId}</p>
-                        <div className="grid grid-cols-2 gap-2 text-xs text-slate-600 pt-1">
-                          <p><strong className="text-slate-800">Phone:</strong> {pat?.PhoneMobile || 'N/A'}</p>
-                          <p><strong className="text-slate-800">Age / Gender:</strong> {pat?.AgeYears || 0} Yrs ({pat?.Sex || 'N/A'})</p>
-                        </div>
-                      </div>
-                    );
-                  })() : (
-                    <div className="bg-amber-50/80 p-4 rounded-xl border border-amber-200 text-xs text-amber-900 font-medium">
-                      <p className="font-bold">No Patient Selected</p>
-                      <p className="text-[11px] text-amber-800 mt-0.5">Please search and click "Select for Token" on a patient record, or register a new patient below.</p>
-                    </div>
-                  )}
-
-                  <form onSubmit={handleBookAppointment} className="space-y-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <div>
-                        <label className="block text-xxs font-bold text-slate-500 uppercase">Token Date</label>
-                        <input
-                          type="date"
-                          required
-                          value={appDate}
-                          onChange={(e) => setAppDate(e.target.value)}
-                          className="mt-1 w-full text-xs border border-slate-200 rounded-lg p-2 font-mono focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                        />
-                      </div>
-
-                      <div>
-                        <label className="block text-xxs font-bold text-slate-500 uppercase">Shift Selection</label>
-                        <div className="grid grid-cols-2 gap-1 mt-1">
-                          <button
-                            type="button"
-                            onClick={() => setShift(1)}
-                            className={`p-2 text-xs font-bold rounded-lg border transition text-center cursor-pointer ${
-                              shift === 1
-                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-xs'
-                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                            }`}
-                          >
-                            Morning
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setShift(2)}
-                            className={`p-2 text-xs font-bold rounded-lg border transition text-center cursor-pointer ${
-                              shift === 2
-                                ? 'bg-blue-600 text-white border-blue-700 shadow-xs'
-                                : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                            }`}
-                          >
-                            Evening
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Pre-booked Appointment Check */}
-                    {(() => {
-                      const activePreBookedApp = selectedPatientId
-                        ? appointments.find(a => a.PatientID === selectedPatientId && a.AppointmentDate === appDate && a.Status !== 3)
-                        : undefined;
-
-                      if (activePreBookedApp) {
-                        return (
-                          <div className="bg-emerald-50 border border-emerald-300 p-3 rounded-xl space-y-1.5 shadow-xs">
-                            <div className="flex items-center space-x-1.5 text-xs font-bold text-emerald-950">
-                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                              <span>Pre-Booked Appointment Detected</span>
-                            </div>
-                            <p className="text-xs text-emerald-900">
-                              Appointment <strong className="font-mono text-emerald-950">{activePreBookedApp.AppointmentID}</strong> pre-booked for {appDate}.
-                            </p>
-                            <div className="bg-white/90 p-2 rounded-lg border border-emerald-200 text-xs flex justify-between items-center">
-                              <span className="font-semibold text-slate-700">Fee Paid on Booking:</span>
-                              <span className="font-mono font-black text-emerald-800">PKR {Number(activePreBookedApp.FeeCharged || 0).toLocaleString()}</span>
-                            </div>
-                            <div className="bg-emerald-100/90 px-2.5 py-1.5 rounded-md text-[11px] font-bold text-emerald-950 flex justify-between items-center">
-                              <span>Fee Charged Today for Token:</span>
-                              <span className="font-mono font-black text-emerald-800 bg-white px-1.5 py-0.5 rounded border border-emerald-300">PKR 0 (Prepaid)</span>
-                            </div>
-                          </div>
-                        );
-                      }
-
-                      return (
-                        <div>
-                          <label className="block text-xxs font-bold text-slate-500 uppercase">Appointment / OPD Fee Charged (PKR)</label>
-                          <input
-                            type="text"
-                            placeholder=""
-                            value={existingFee}
-                            onChange={(e) => setExistingFee(e.target.value)}
-                            className="mt-1 w-full text-xs border border-slate-300 font-mono font-bold text-slate-800 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                          />
-                        </div>
-                      );
-                    })()}
-
-                    {(() => {
-                      const activePreBookedApp = selectedPatientId
-                        ? appointments.find(a => a.PatientID === selectedPatientId && a.AppointmentDate === appDate && a.Status !== 3)
-                        : undefined;
-                      const realTodayStr = new Date().toISOString().split('T')[0];
-                      const isFuture = appDate !== realTodayStr;
-
-                      return (
-                        <div className="pt-2">
-                          <button
-                            type="submit"
-                            disabled={isSubmittingToken || !selectedPatientId || !canAdd || (isFuture ? !canBookAppointment : !canIssueToken)}
-                            className={`w-full py-3 disabled:opacity-50 text-white text-xs font-extrabold rounded-xl shadow-md transition flex items-center justify-center space-x-2 cursor-pointer ${
-                              isSubmittingToken
-                                ? 'bg-emerald-800 cursor-wait'
-                                : (!canIssueToken && !isFuture) || (!canBookAppointment && isFuture)
-                                ? 'bg-slate-400 cursor-not-allowed'
-                                : activePreBookedApp
-                                ? 'bg-emerald-700 hover:bg-emerald-800'
-                                : isFuture
-                                ? 'bg-blue-600 hover:bg-blue-700'
-                                : 'bg-emerald-600 hover:bg-emerald-700'
-                            }`}
-                          >
-                            {isSubmittingToken ? (
-                              <div className="flex items-center space-x-2">
-                                <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
-                                <span>Processing Token...</span>
-                              </div>
-                            ) : (
-                              <>
-                                <Ticket className="w-4 h-4" />
-                                <span>
-                                  {(!canIssueToken && !isFuture) || (!canBookAppointment && isFuture)
-                                    ? 'Access Restricted - Permission Denied'
-                                    : activePreBookedApp
-                                    ? 'Issue Token (PKR 0 - Prepaid) & Print Slip'
-                                    : isFuture
-                                    ? 'Book Future Appointment & Record Fee'
-                                    : 'Issue OPD Token & Print Slip'}
-                                </span>
-                              </>
-                            )}
-                          </button>
-                        </div>
-                      );
-                    })()}
-                  </form>
-                </div>
-              )}
-
-              {/* MODE 2: NEW PATIENT QUICK REGISTRATION FORM */}
-              {tokenIssueMode === 'new_patient' && (
-                <form onSubmit={handleIssueTokenForNewPatient} className="space-y-3 pt-1">
-                  <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-200 text-xs text-emerald-900 font-medium space-y-0.5">
-                    <p className="font-bold flex items-center text-emerald-950">
-                      <UserPlus className="w-3.5 h-3.5 mr-1 text-emerald-600 shrink-0" />
-                      Quick New Patient Registration
-                    </p>
-                    <p className="text-[11px] text-emerald-800">
-                      Enter basic patient info to create a new profile. They will immediately be selected to issue an OPD token.
-                    </p>
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-600 uppercase">Patient Full Name *</label>
-                    <input
-                      type="text"
-                      required
-                      placeholder=""
-                      value={newPatName}
-                      onChange={(e) => setNewPatName(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-bold text-slate-900"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-600 uppercase">Mobile Phone Number</label>
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={newPatPhone}
-                      onChange={(e) => setNewPatPhone(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 font-mono focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-xxs font-bold text-slate-600 uppercase">Chief Complaint / Remarks</label>
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={newPatRemarks}
-                      onChange={(e) => setNewPatRemarks(e.target.value)}
-                      className="mt-1 w-full text-xs border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500"
-                    />
-                  </div>
-
-                  <div className="pt-2">
-                    <button
-                      type="submit"
-                      disabled={!canAdd}
-                      className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center justify-center space-x-2 cursor-pointer"
-                    >
-                      <UserPlus className="w-4 h-4" />
-                      <span>Register Patient & Proceed to Token</span>
-                    </button>
-                  </div>
-                </form>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-3 bg-slate-50 border-t border-slate-150 flex justify-end shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsOpdTokenModalOpen(false)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer"
-              >
-                Close Modal
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ORGANIZATION CLAIM BILL / INVOICE MODAL */}
-      {isClaimBillModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-in fade-in duration-150">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-xl w-full border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
-            {/* Modal Header */}
-            <div className="bg-slate-900 px-5 py-3.5 text-white flex items-center justify-between shrink-0">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-white shrink-0">
-                  <Building2 className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-sm font-black tracking-tight text-white">
-                    Organization Reimbursement Claim Bill
-                  </h3>
-                  <p className="text-[10px] text-blue-200 font-medium">
-                    Generate official itemized invoice for employer / corporate medical claim
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsClaimBillModalOpen(false)}
-                className="w-7 h-7 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white flex items-center justify-center transition cursor-pointer"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 overflow-y-auto space-y-4">
-              {selectedPvPatient ? (
-                <>
-                  {/* Selected Patient Banner */}
-                  <div className="bg-blue-50/70 p-3 rounded-xl border border-blue-200 flex items-center justify-between">
-                    <div>
-                      <span className="text-[10px] font-bold text-blue-700 uppercase tracking-wider block">Claim Patient</span>
-                      <span className="text-sm font-black text-slate-900">{selectedPvPatient.PatientName}</span>
-                      <span className="text-xs font-mono font-bold text-blue-900 ml-2">({selectedPvPatient.PatientID})</span>
-                    </div>
-                    <div className="text-right">
-                      <span className="text-[10px] font-bold text-slate-500 block uppercase">Visit Date</span>
-                      <span className="text-xs font-mono font-extrabold text-slate-900">{formatDisplayDate(pvVisitDate)}</span>
-                    </div>
-                  </div>
-
-                  {/* Organization Selection Presets */}
-                  <div className="space-y-1.5">
-                    <label className="block text-xs font-extrabold text-slate-800 uppercase tracking-wider">
-                      Select Organization / Employer:
-                    </label>
-                    <div className="grid grid-cols-3 gap-1.5">
-                      {['WAPDA', 'SNGPL', 'State Bank', 'Pakistan Railways', 'Police / Govt', 'Custom'].map((org) => {
-                        const isSelected = claimBillOrg === org;
-                        return (
-                          <button
-                            key={org}
-                            type="button"
-                            onClick={() => setClaimBillOrg(org)}
-                            className={`py-2 px-2.5 rounded-xl text-xs font-black transition cursor-pointer text-center border ${
-                              isSelected
-                                ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                                : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                            }`}
-                          >
-                            {org === 'Custom' ? '‚úèÔ∏è Custom / Other' : org}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Custom Organization Name Field */}
-                    {claimBillOrg === 'Custom' && (
-                      <div className="pt-1 animate-in fade-in duration-100">
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                          Custom Organization / Company Name:
-                        </label>
-                        <input
-                          type="text"
-                          placeholder=""
-                          value={claimBillCustomOrg}
-                          onChange={(e) => setClaimBillCustomOrg(e.target.value)}
-                          className="w-full text-xs font-bold border border-blue-300 rounded-lg p-2.5 bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                        />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Employee ID & Designation Fields */}
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                        Employee ID / Token #:
-                      </label>
-                      <input
-                        type="text"
-                        placeholder=""
-                        value={claimBillEmployeeId}
-                        onChange={(e) => setClaimBillEmployeeId(e.target.value)}
-                        className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none font-mono"
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                        Designation / Department:
-                      </label>
-                      <input
-                        type="text"
-                        placeholder=""
-                        value={claimBillDesignation}
-                        onChange={(e) => setClaimBillDesignation(e.target.value)}
-                        className="w-full text-xs font-bold border border-slate-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                      />
-                    </div>
-                  </div>
-
-                  {/* Financial Summary Preview Box */}
-                  {(() => {
-                    const claimAppt = (appointments || []).find(a => a.PatientID === selectedPvPatient.PatientID && a.AppointmentDate.startsWith(pvVisitDate));
-                    const consultationFeeNum = Number(claimAppt?.FeeCharged) || 0;
-                    const clinFeeNum = Number(pvClinicalMedicinePkr) || 0;
-                    const fileFeeNum = Number(pvFilePkr) || 0;
-                    const cardFeeNum = Number(pvCardPkr) || 0;
-                    const grandTotalNum = consultationFeeNum + clinFeeNum + fileFeeNum + cardFeeNum;
-
-                    return (
-                      <div className="bg-slate-900 text-white p-3.5 rounded-xl space-y-2 border border-slate-800">
-                        <span className="block text-[10px] font-black uppercase text-amber-400 tracking-wider">
-                          Itemized Claim Amount Breakdown (PKR)
-                        </span>
-                        <div className="grid grid-cols-4 gap-2 text-center text-xs">
-                          <div className="bg-slate-800 p-2 rounded-lg border border-slate-700">
-                            <span className="block text-[9px] text-slate-400 font-bold uppercase">Consultation</span>
-                            <span className="font-mono font-bold text-emerald-400">PKR {consultationFeeNum}</span>
-                          </div>
-                          <div className="bg-slate-800 p-2 rounded-lg border border-slate-700">
-                            <span className="block text-[9px] text-slate-400 font-bold uppercase">Clinical Meds</span>
-                            <span className="font-mono font-bold text-blue-400">PKR {clinFeeNum}</span>
-                          </div>
-                          <div className="bg-slate-800 p-2 rounded-lg border border-slate-700">
-                            <span className="block text-[9px] text-slate-400 font-bold uppercase">File Fee</span>
-                            <span className="font-mono font-bold text-purple-400">PKR {fileFeeNum}</span>
-                          </div>
-                          <div className="bg-slate-800 p-2 rounded-lg border border-slate-700">
-                            <span className="block text-[9px] text-slate-400 font-bold uppercase">Card Fee</span>
-                            <span className="font-mono font-bold text-amber-400">PKR {cardFeeNum}</span>
-                          </div>
-                        </div>
-                        <div className="flex items-center justify-between pt-1 border-t border-slate-800">
-                          <span className="text-xs font-bold uppercase text-slate-300">Total Claimable Amount:</span>
-                          <span className="text-base font-black font-mono text-emerald-400">
-                            PKR {grandTotalNum.toLocaleString()}
-                          </span>
-                        </div>
-                      </div>
-                    );
-                  })()}
-
-                  {/* Claim Remarks Field */}
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                      Official Remarks / Claim Note (Optional):
-                    </label>
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={claimBillRemarks}
-                      onChange={(e) => setClaimBillRemarks(e.target.value)}
-                      className="w-full text-xs font-semibold border border-slate-300 rounded-lg p-2 bg-white focus:ring-2 focus:ring-blue-500 focus:outline-none"
-                    />
-                  </div>
-                </>
-              ) : (
-                <div className="p-8 text-center text-slate-500">
-                  <p className="text-sm font-bold">No patient selected for claim bill.</p>
-                </div>
-              )}
-            </div>
-
-            {/* Modal Footer */}
-            <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between shrink-0">
-              <button
-                type="button"
-                onClick={() => setIsClaimBillModalOpen(false)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  handlePrintClaimBill();
-                  setIsClaimBillModalOpen(false);
-                }}
-                disabled={!selectedPvPatient}
-                className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white font-extrabold text-xs rounded-xl transition flex items-center space-x-1.5 cursor-pointer shadow-md"
-              >
-                <Printer className="w-4 h-4 text-white" />
-                <span>Print Official Claim Bill</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PRINT REPORT DATE RANGE SELECTION POPUP MODAL */}
-      {isReportDateModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 animate-fadeIn">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden">
-            {/* Modal Header */}
-            <div className="p-4 bg-gradient-to-r from-slate-900 to-slate-800 text-white flex items-center justify-between">
-              <div className="flex items-center space-x-2">
-                <div className="p-2 bg-amber-500/20 rounded-xl text-amber-400">
-                  <Printer className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm text-white">Print Patient Visit & Financial Report</h3>
-                  <p className="text-[11px] text-slate-300">Select report date range to run report</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsReportDateModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-700/50 transition cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <div className="p-5 space-y-4">
-              {/* Quick Date Presets */}
-              <div>
-                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">Quick Date Range Presets</label>
-                <div className="grid grid-cols-4 gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const today = new Date().toISOString().split('T')[0];
-                      setReportStartDate(today);
-                      setReportEndDate(today);
-                    }}
-                    className={`py-1.5 px-2 rounded-lg text-xs font-bold transition border cursor-pointer ${
-                      reportStartDate === new Date().toISOString().split('T')[0] && reportEndDate === new Date().toISOString().split('T')[0]
-                        ? 'bg-emerald-600 text-white border-emerald-600 shadow-2xs'
-                        : 'bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    Today
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const yest = new Date();
-                      yest.setDate(yest.getDate() - 1);
-                      const yestStr = yest.toISOString().split('T')[0];
-                      setReportStartDate(yestStr);
-                      setReportEndDate(yestStr);
-                    }}
-                    className="py-1.5 px-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition cursor-pointer"
-                  >
-                    Yesterday
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const now = new Date();
-                      const day = now.getDay();
-                      const diff = now.getDate() - day + (day === 0 ? -6 : 1);
-                      const monday = new Date(now.setDate(diff)).toISOString().split('T')[0];
-                      const today = new Date().toISOString().split('T')[0];
-                      setReportStartDate(monday);
-                      setReportEndDate(today);
-                    }}
-                    className="py-1.5 px-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition cursor-pointer"
-                  >
-                    This Week
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const now = new Date();
-                      const firstDay = new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0];
-                      const today = new Date().toISOString().split('T')[0];
-                      setReportStartDate(firstDay);
-                      setReportEndDate(today);
-                    }}
-                    className="py-1.5 px-2 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200 rounded-lg text-xs font-bold transition cursor-pointer"
-                  >
-                    This Month
-                  </button>
-                </div>
-              </div>
-
-              {/* Date Input Controls */}
-              <div className="grid grid-cols-2 gap-3">
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">From Date *</label>
-                  <input
-                    type="date"
-                    value={reportStartDate}
-                    onChange={(e) => setReportStartDate(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none transition cursor-pointer"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-[11px] font-bold text-slate-700 uppercase tracking-wider block">To Date *</label>
-                  <input
-                    type="date"
-                    value={reportEndDate}
-                    onChange={(e) => setReportEndDate(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:bg-white focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 focus:outline-none transition cursor-pointer"
-                  />
-                </div>
-              </div>
-
-              {/* Report Format Selection */}
-              <div>
-                <label className="text-[11px] font-bold text-slate-600 uppercase tracking-wider block mb-1.5">Select Report Format *</label>
-                <div className="space-y-2">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedReportTypeInModal('patient_shift_wise')}
-                    className={`w-full text-left p-2.5 rounded-xl border transition flex items-start space-x-2.5 cursor-pointer ${
-                      selectedReportTypeInModal === 'patient_shift_wise'
-                        ? 'bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-500/20'
-                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className={`p-1.5 rounded-lg shrink-0 ${selectedReportTypeInModal === 'patient_shift_wise' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                      <Users className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="font-extrabold text-xs text-slate-900">ü©∫ Doctor Shift-Wise Patient Report</div>
-                      <div className="text-[10px] text-slate-500 leading-tight">Patient Name, Age, Gender, Mobile No & Total Payment = Clinical + File + Card + Store (Shift-Wise)</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedReportTypeInModal('grid')}
-                    className={`w-full text-left p-2.5 rounded-xl border transition flex items-start space-x-2.5 cursor-pointer ${
-                      selectedReportTypeInModal === 'grid'
-                        ? 'bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-500/20'
-                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className={`p-1.5 rounded-lg shrink-0 ${selectedReportTypeInModal === 'grid' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                      <Grid className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="font-extrabold text-xs text-slate-900">üìä Daily Collection Summary (Grid)</div>
-                      <div className="text-[10px] text-slate-500 leading-tight">Matrix view of Morning & Evening collections (App, Meds, Cards, File, Store)</div>
-                    </div>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setSelectedReportTypeInModal('pdf')}
-                    className={`w-full text-left p-2.5 rounded-xl border transition flex items-start space-x-2.5 cursor-pointer ${
-                      selectedReportTypeInModal === 'pdf'
-                        ? 'bg-indigo-50/80 border-indigo-500 ring-2 ring-indigo-500/20'
-                        : 'bg-slate-50 border-slate-200 hover:bg-slate-100'
-                    }`}
-                  >
-                    <div className={`p-1.5 rounded-lg shrink-0 ${selectedReportTypeInModal === 'pdf' ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'}`}>
-                      <FileText className="w-4 h-4" />
-                    </div>
-                    <div>
-                      <div className="font-extrabold text-xs text-slate-900">üìÑ Payment Collection Statement (PDF)</div>
-                      <div className="text-[10px] text-slate-500 leading-tight">Formal printable letterhead collection statement itemized by date and shift</div>
-                    </div>
-                  </button>
-                </div>
-              </div>
-
-              <div className="bg-amber-50 border border-amber-200 rounded-xl p-2.5 flex items-start space-x-2 text-[11px] text-amber-900 font-medium">
-                <Calendar className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                <span>
-                  Report will generate and aggregate all OPD visits, payments, and clinic collections from <strong>{formatDisplayDate(reportStartDate)}</strong> to <strong>{formatDisplayDate(reportEndDate)}</strong>.
-                </span>
-              </div>
-            </div>
-
-            {/* Modal Actions Footer */}
-            <div className="p-4 bg-slate-50 border-t border-slate-100 flex items-center justify-end space-x-2">
-              <button
-                type="button"
-                onClick={() => setIsReportDateModalOpen(false)}
-                className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  if (!reportStartDate || !reportEndDate) {
-                    alert('Please select valid From Date and To Date.');
-                    return;
-                  }
-                  if (reportStartDate > reportEndDate) {
-                    alert('From Date cannot be after To Date.');
-                    return;
-                  }
-                  setDailyCollectionStartDate(reportStartDate);
-                  setDailyCollectionEndDate(reportEndDate);
-                  const data = generateDailyCollectionReport(reportStartDate, reportEndDate);
-                  setDailyCollectionReportData(data);
-                  setDailyCollectionReportFormat(selectedReportTypeInModal);
-                  setIsReportDateModalOpen(false);
-                  setIsDailyCollectionReportModalOpen(true);
-                }}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl transition flex items-center space-x-1.5 cursor-pointer shadow-md"
-              >
-                <Printer className="w-4 h-4 text-white" />
-                <span>Run Report</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* DAILY COLLECTION REPORT MODAL (Matching Financials Tab Format) */}
-      {isDailyCollectionReportModalOpen && dailyCollectionReportData && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-5xl w-full flex flex-col h-[90vh] print:h-auto print:border-0 print:shadow-none animate-fadeIn">
-            {/* Modal Top Control Bar */}
-            <div className="p-4 border-b border-slate-100 flex items-center justify-between print:hidden bg-slate-50 rounded-t-2xl">
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => setDailyCollectionReportFormat('patient_shift_wise')}
-                  className={`px-3 py-1.5 rounded-lg text-xxs font-black uppercase transition cursor-pointer flex items-center ${
-                    dailyCollectionReportFormat === 'patient_shift_wise' ? 'bg-indigo-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 bg-slate-200/60'
-                  }`}
-                >
-                  <Users className="w-3.5 h-3.5 mr-1.5" />
-                  ü©∫ Doctor Shift-Wise Patients
-                </button>
-                <button
-                  onClick={() => setDailyCollectionReportFormat('grid')}
-                  className={`px-3 py-1.5 rounded-lg text-xxs font-black uppercase transition cursor-pointer flex items-center ${
-                    dailyCollectionReportFormat === 'grid' ? 'bg-indigo-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 bg-slate-200/60'
-                  }`}
-                >
-                  <Grid className="w-3.5 h-3.5 mr-1.5" />
-                  üìä Collection Grid Summary
-                </button>
-                <button
-                  onClick={() => setDailyCollectionReportFormat('pdf')}
-                  className={`px-3 py-1.5 rounded-lg text-xxs font-black uppercase transition cursor-pointer flex items-center ${
-                    dailyCollectionReportFormat === 'pdf' ? 'bg-indigo-700 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900 bg-slate-200/60'
-                  }`}
-                >
-                  <FileText className="w-3.5 h-3.5 mr-1.5" />
-                  üìÑ PDF Printable Format
-                </button>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={() => handleCleanPrintDailyCollectionReport(dailyCollectionReportData, dailyCollectionReportFormat)}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-1.5 rounded-lg text-xxs font-black uppercase tracking-wider transition flex items-center shadow-xs cursor-pointer"
-                >
-                  <Printer className="w-3.5 h-3.5 mr-1" />
-                  Send to Printer / Save PDF
-                </button>
-                <button
-                  onClick={() => {
-                    setDailyCollectionReportData(null);
-                    setIsDailyCollectionReportModalOpen(false);
-                  }}
-                  className="bg-slate-200 hover:bg-slate-300 text-slate-700 px-3 py-1.5 rounded-lg text-xxs font-black uppercase tracking-wider transition cursor-pointer"
-                >
-                  Close Preview
-                </button>
-              </div>
-            </div>
-
-            {/* VIEW 0: DOCTOR SHIFT-WISE PATIENT REPORT */}
-            {dailyCollectionReportFormat === 'patient_shift_wise' ? (
-              <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50 font-sans text-slate-900">
-                {/* Header Summary Card */}
-                <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm space-y-3">
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                    <div>
-                      <h2 className="text-base font-black text-slate-900 uppercase tracking-tight flex items-center gap-2">
-                        <span>ü©∫ Doctor Shift-Wise Patient Visit & Payment Report</span>
-                      </h2>
-                      <p className="text-xs text-slate-500 font-medium">
-                        Period: <strong>{formatReportDate(dailyCollectionReportData.startDate)}</strong> to <strong>{formatReportDate(dailyCollectionReportData.endDate)}</strong>
-                      </p>
-                    </div>
-                    <div className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-3 py-1.5 rounded-xl font-mono text-xs font-bold flex items-center space-x-1.5">
-                      <span>Total Collection:</span>
-                      <strong className="text-sm font-black text-emerald-700">Rs. {(dailyCollectionReportData.doctorShiftGrandTotals?.totalPayment || 0).toLocaleString()}</strong>
-                    </div>
-                  </div>
-
-                  {/* Stat Chips */}
-                  <div className="grid grid-cols-2 sm:grid-cols-6 gap-2">
-                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase">Total Patients</div>
-                      <div className="text-sm font-black text-slate-900 mt-0.5">{dailyCollectionReportData.doctorShiftGrandTotals?.totalPatients || 0}</div>
-                    </div>
-                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase">Clinical Charges</div>
-                      <div className="text-sm font-black text-slate-900 mt-0.5 font-mono">Rs. {(dailyCollectionReportData.doctorShiftGrandTotals?.clinicalFee || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase">File Fee</div>
-                      <div className="text-sm font-black text-slate-900 mt-0.5 font-mono">Rs. {(dailyCollectionReportData.doctorShiftGrandTotals?.fileFee || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase">Card Fee</div>
-                      <div className="text-sm font-black text-slate-900 mt-0.5 font-mono">Rs. {(dailyCollectionReportData.doctorShiftGrandTotals?.cardFee || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-200 text-center">
-                      <div className="text-[10px] font-bold text-slate-500 uppercase">Store POS Sales</div>
-                      <div className="text-sm font-black text-slate-900 mt-0.5 font-mono">Rs. {(dailyCollectionReportData.doctorShiftGrandTotals?.storePayment || 0).toLocaleString()}</div>
-                    </div>
-                    <div className="bg-emerald-600 text-white p-2.5 rounded-xl text-center shadow-xs">
-                      <div className="text-[10px] font-bold text-emerald-200 uppercase">Grand Payment</div>
-                      <div className="text-sm font-black mt-0.5 font-mono">Rs. {(dailyCollectionReportData.doctorShiftGrandTotals?.totalPayment || 0).toLocaleString()}</div>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Shift-Wise Blocks */}
-                {(!dailyCollectionReportData.doctorShiftBlocks || dailyCollectionReportData.doctorShiftBlocks.length === 0) ? (
-                  <div className="bg-white p-12 text-center rounded-2xl border border-slate-200 text-slate-500 font-medium">
-                    No patient visits recorded for the selected date range.
-                  </div>
-                ) : (
-                  dailyCollectionReportData.doctorShiftBlocks.map((block: any, bIdx: number) => (
-                    <div key={bIdx} className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-                      <div className="bg-slate-900 text-white px-4 py-2.5 flex items-center justify-between text-xs font-bold">
-                        <div className="flex items-center space-x-2">
-                          <span className="bg-indigo-500 text-white px-2 py-0.5 rounded text-[10px] font-black uppercase">üóìÔ∏è {block.date}</span>
-                          <span className="text-slate-200 font-extrabold">{block.shiftLabel}</span>
-                        </div>
-                        <span className="bg-amber-400 text-slate-950 px-2.5 py-0.5 rounded-full text-[11px] font-black">
-                          {block.shiftTotals.patientCount} Patients Visited
-                        </span>
-                      </div>
-
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left text-xs">
-                          <thead>
-                            <tr className="bg-slate-100 text-slate-700 font-black uppercase text-[10px] border-b border-slate-200">
-                              <th className="p-2.5 text-center w-12">Sr#</th>
-                              <th className="p-2.5">Patient Name</th>
-                              <th className="p-2.5 text-center">Age / Gender</th>
-                              <th className="p-2.5 text-center">Mobile No</th>
-                              <th className="p-2.5 text-right">Clinical Fee</th>
-                              <th className="p-2.5 text-right">File Fee</th>
-                              <th className="p-2.5 text-right">Card Fee</th>
-                              <th className="p-2.5 text-right">Store Sales</th>
-                              <th className="p-2.5 text-right bg-emerald-50 text-emerald-900 font-extrabold">Total Payment</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 font-medium text-slate-800">
-                            {block.patients.map((p: any, pIdx: number) => (
-                              <tr key={pIdx} className="hover:bg-slate-50 transition">
-                                <td className="p-2.5 text-center font-bold text-slate-500">{p.srNo}</td>
-                                <td className="p-2.5 font-bold text-slate-900">{p.patientName}</td>
-                                <td className="p-2.5 text-center text-slate-600 font-semibold">{p.age} / {p.gender}</td>
-                                <td className="p-2.5 text-center font-mono text-slate-600">{p.mobileNo}</td>
-                                <td className="p-2.5 text-right font-mono">Rs. {(p.clinicalFee || 0).toLocaleString()}</td>
-                                <td className="p-2.5 text-right font-mono">Rs. {(p.fileFee || 0).toLocaleString()}</td>
-                                <td className="p-2.5 text-right font-mono">Rs. {(p.cardFee || 0).toLocaleString()}</td>
-                                <td className="p-2.5 text-right font-mono">Rs. {(p.storePayment || 0).toLocaleString()}</td>
-                                <td className="p-2.5 text-right font-mono font-black text-emerald-700 bg-emerald-50/50">
-                                  Rs. {(p.totalPayment || 0).toLocaleString()}
-                                </td>
-                              </tr>
-                            ))}
-                            <tr className="bg-slate-100 font-black text-slate-900 border-t-2 border-slate-300">
-                              <td colSpan={4} className="p-2.5 uppercase text-[10px] tracking-wider text-slate-700">
-                                {block.shiftLabel} Subtotal ({block.shiftTotals.patientCount} Patients)
-                              </td>
-                              <td className="p-2.5 text-right font-mono">Rs. {block.shiftTotals.clinicalFee.toLocaleString()}</td>
-                              <td className="p-2.5 text-right font-mono">Rs. {block.shiftTotals.fileFee.toLocaleString()}</td>
-                              <td className="p-2.5 text-right font-mono">Rs. {block.shiftTotals.cardFee.toLocaleString()}</td>
-                              <td className="p-2.5 text-right font-mono">Rs. {block.shiftTotals.storePayment.toLocaleString()}</td>
-                              <td className="p-2.5 text-right font-mono text-sm text-emerald-800 bg-emerald-100/80 font-extrabold">
-                                Rs. {block.shiftTotals.totalPayment.toLocaleString()}
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            ) : dailyCollectionReportFormat === 'pdf' ? (
-              <div className="flex-1 overflow-y-auto p-8 space-y-4 print:overflow-visible print:p-0 bg-white font-sans text-slate-900">
-                <div className="text-center space-y-0.5">
-                  <h1 className="text-base font-black tracking-wide uppercase text-slate-950">
-                    {clinicSettings?.ClinicName || 'Punjab Homoeopathic Clinic'}
-                  </h1>
-                  <p className="text-[11px] font-semibold text-slate-700">
-                    {clinicSettings?.ClinicAddress || '39-Shalimar Road, Garhi Shahu, Lahore-39'}
-                  </p>
-                </div>
-
-                <div className="border-t-2 border-slate-950 my-2"></div>
-
-                <div className="text-center space-y-1">
-                  <h2 className="text-sm font-black uppercase tracking-widest text-slate-950">
-                    Payment Collection Report
-                  </h2>
-                  <div className="flex justify-center items-center space-x-8 text-xs font-bold text-slate-800 pt-0.5">
-                    <span>From: <span className="underline ml-1 font-extrabold">{formatReportDate(dailyCollectionReportData.startDate)}</span></span>
-                    <span>To: <span className="underline ml-1 font-extrabold">{formatReportDate(dailyCollectionReportData.endDate)}</span></span>
-                  </div>
-                </div>
-
-                <div className="border-t-2 border-slate-950 my-2"></div>
-
-                <div className="overflow-x-auto pt-1">
-                  <table className="w-full border-collapse text-xs">
-                    <thead>
-                      <tr className="border-b-2 border-slate-950 text-slate-950 font-black uppercase text-[11px] bg-slate-50 text-left">
-                        <th className="py-2 px-2 w-[22%]">Date & Shift</th>
-                        <th className="py-2 px-2 w-[16%] text-center">Patients Visited</th>
-                        <th className="py-2 px-2 w-[16%] text-center">No of Patients</th>
-                        <th className="py-2 px-2 w-[31%] text-left">Payment Description</th>
-                        <th className="py-2 px-2 w-[15%] text-right">Amount</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-200 font-medium text-slate-900">
-                      {dailyCollectionReportData.pdfRows.length === 0 ? (
-                        <tr>
-                          <td colSpan={5} className="py-8 text-center text-slate-400 font-bold italic">
-                            No collection records found.
-                          </td>
-                        </tr>
-                      ) : (
-                        dailyCollectionReportData.pdfRows.map((dateBlock: any, dateIdx: number) => (
-                          <React.Fragment key={dateBlock.rawDate || dateIdx}>
-                            {dateBlock.shiftBlocks.map((shiftBlock: any, shiftIdx: number) => (
-                              <React.Fragment key={shiftIdx}>
-                                {shiftBlock.items.map((item: any, itemIdx: number) => (
-                                  <tr key={itemIdx} className="hover:bg-slate-50/50">
-                                    <td className="py-1 px-2 font-bold text-slate-950">
-                                      {itemIdx === 0 ? `${dateBlock.date} ${shiftBlock.shiftLabel}` : ''}
-                                    </td>
-                                    <td className="py-1 px-2 text-center font-bold text-slate-950">
-                                      {itemIdx === 0 ? shiftBlock.visitedCount : ''}
-                                    </td>
-                                    <td className="py-1 px-2 text-center font-mono font-semibold">
-                                      {item.count || '-'}
-                                    </td>
-                                    <td className="py-1 px-2 text-left text-slate-900">
-                                      {item.description}
-                                    </td>
-                                    <td className="py-1 px-2 text-right font-mono font-semibold">
-                                      {item.amount.toLocaleString()}
-                                    </td>
-                                  </tr>
-                                ))}
-
-                                <tr className="bg-slate-50/60 font-bold">
-                                  <td className="py-1 px-2"></td>
-                                  <td className="py-1 px-2"></td>
-                                  <td className="py-1 px-2"></td>
-                                  <td className="py-1.5 px-2 text-left font-bold text-slate-950">
-                                    Shift Total
-                                  </td>
-                                  <td className="py-1.5 px-2 text-right font-mono font-bold text-slate-950 border-t border-slate-300">
-                                    {shiftBlock.shiftTotal.toLocaleString()}
-                                  </td>
-                                </tr>
-                              </React.Fragment>
-                            ))}
-
-                            <tr className="border-b-2 border-slate-900 font-extrabold bg-slate-100/70">
-                              <td className="py-2 px-2"></td>
-                              <td className="py-2 px-2"></td>
-                              <td className="py-2 px-2"></td>
-                              <td className="py-2 px-2 text-left text-slate-950 uppercase tracking-wide">
-                                Today Closing
-                              </td>
-                              <td className="py-2 px-2 text-right font-mono text-slate-950 font-black border-t-2 border-slate-900">
-                                {dateBlock.todayClosing.toLocaleString()}
-                              </td>
-                            </tr>
-                          </React.Fragment>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="border-t-2 border-b-2 border-slate-950 py-3 my-4 flex justify-between items-center text-sm font-black">
-                  <span className="uppercase tracking-widest text-slate-950">Grand Total</span>
-                  <span className="font-mono text-base text-slate-950">{dailyCollectionReportData.pdfGrandTotal.toLocaleString()}</span>
-                </div>
-
-                <div className="pt-4 flex justify-between items-center text-[10px] font-bold text-slate-600 border-t border-slate-300">
-                  <span>
-                    Print Date: {new Date().toLocaleDateString('en-GB')} {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                  <span>User: {currentUser?.FullName || currentUser?.LoginName || 'ADMIN'}</span>
-                </div>
-              </div>
-            ) : (
-              /* VIEW 2: GRID-VIEW TABLE */
-              <div className="flex-1 overflow-y-auto p-8 space-y-6 print:overflow-visible print:p-0 bg-white">
-                <div className="text-center space-y-1">
-                  <h1 className="text-base font-black tracking-wide text-slate-950 uppercase">{clinicSettings?.ClinicName || 'Punjab Homeopathic Clinic'}</h1>
-                  <h2 className="text-sm font-bold text-slate-900">Daily Collection Report (Clinic & Store)</h2>
-                  <div className="flex justify-center items-center space-x-4 text-xxs font-semibold text-slate-700 pt-1">
-                    <span>From: <span className="font-bold underline">{formatReportDate(dailyCollectionReportData.startDate)}</span></span>
-                    <span>To: <span className="font-bold underline">{formatReportDate(dailyCollectionReportData.endDate)}</span></span>
-                  </div>
-                </div>
-
-                <div className="overflow-x-auto pt-2">
-                  <table className="min-w-full border-collapse border border-slate-400 text-[10px]">
-                    <thead>
-                      <tr className="bg-white">
-                        <th rowSpan={2} className="border border-slate-400 px-2 py-1.5 text-center font-bold text-slate-900 bg-slate-50">
-                          Date
-                        </th>
-                        <th colSpan={6} className="border border-blue-500 px-2 py-1 text-center font-black text-blue-700 uppercase tracking-wide">
-                          Morning
-                        </th>
-                        <th colSpan={6} className="border border-blue-500 px-2 py-1 text-center font-black text-blue-700 uppercase tracking-wide">
-                          Evening
-                        </th>
-                        <th rowSpan={2} className="border border-slate-400 px-2 py-1.5 text-center font-bold text-slate-900 bg-slate-50">
-                          Total
-                        </th>
-                      </tr>
-                      <tr className="bg-slate-50 text-slate-700 font-bold">
-                        <th className="border border-slate-400 px-1.5 py-1 text-center">App</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center">C.med</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center">Cards</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center">File</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center">Store</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center bg-blue-50 text-blue-900">Total</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center">App</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center">C.med</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center">Cards</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center">File</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center">Store</th>
-                        <th className="border border-slate-400 px-1.5 py-1 text-center bg-blue-50 text-blue-900">Total</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {dailyCollectionReportData.rows.length === 0 ? (
-                        <tr>
-                          <td colSpan={14} className="border border-slate-400 px-4 py-8 text-center text-slate-400 font-bold italic">
-                            No transaction records found.
-                          </td>
-                        </tr>
-                      ) : (
-                        dailyCollectionReportData.rows.map((row: any) => (
-                          <tr key={row.date} className="hover:bg-slate-50 font-mono text-slate-800">
-                            <td className="border border-slate-400 px-2 py-1 text-center font-sans font-bold">
-                              {(() => {
-                                const pts = row.date.split('-');
-                                if (pts.length === 3) {
-                                  return `${pts[2]}-${pts[1]}-${pts[0].substring(2)}`;
-                                }
-                                return row.date;
-                              })()}
-                            </td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right">{row.morning.app || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right">{row.morning.cmed || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right">{row.morning.cards || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right">{row.morning.file || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right">{row.morning.store || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right bg-blue-50/40 font-bold text-slate-950">{row.morning.total || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right">{row.evening.app || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right">{row.evening.cmed || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right">{row.evening.cards || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right">{row.evening.file || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right">{row.evening.store || '-'}</td>
-                            <td className="border border-slate-400 px-1.5 py-1 text-right bg-blue-50/40 font-bold text-slate-950">{row.evening.total || '-'}</td>
-                            <td className="border border-slate-400 px-2 py-1 text-right font-sans font-black bg-slate-50 text-slate-950">
-                              {row.dayTotal.toLocaleString()}
-                            </td>
-                          </tr>
-                        ))
-                      )}
-
-                      {dailyCollectionReportData.rows.length > 0 && (
-                        <tr className="bg-slate-50 font-sans font-extrabold text-slate-950 border-t-2 border-slate-900">
-                          <td className="border border-slate-400 px-2 py-1.5 text-center uppercase tracking-wide text-[9px]">
-                            Total
-                          </td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px]">{dailyCollectionReportData.morningTotals.app || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px]">{dailyCollectionReportData.morningTotals.cmed || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px]">{dailyCollectionReportData.morningTotals.cards || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px]">{dailyCollectionReportData.morningTotals.file || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px]">{dailyCollectionReportData.morningTotals.store || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px] bg-blue-50 text-blue-900">{dailyCollectionReportData.morningTotals.total || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px]">{dailyCollectionReportData.eveningTotals.app || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px]">{dailyCollectionReportData.eveningTotals.cmed || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px]">{dailyCollectionReportData.eveningTotals.cards || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px]">{dailyCollectionReportData.eveningTotals.file || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px]">{dailyCollectionReportData.eveningTotals.store || '-'}</td>
-                          <td className="border border-slate-400 px-1.5 py-1.5 text-right font-mono text-[9px] bg-blue-50 text-blue-900">{dailyCollectionReportData.eveningTotals.total || '-'}</td>
-                          <td className="border border-slate-400 px-2 py-1.5 text-right font-sans font-black bg-blue-100 text-blue-950 text-[9.5px]">
-                            {dailyCollectionReportData.grandTotals.total.toLocaleString()}
-                          </td>
-                        </tr>
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-
-                <div className="grid grid-cols-2 gap-8 pt-4 bg-white">
-                  <div className="space-y-2">
-                    <h3 className="text-xxs font-black uppercase text-slate-900 tracking-wider">Summary 1</h3>
-                    <table className="min-w-full border border-slate-400 text-xxs text-left">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-800 font-bold border-b border-slate-400">
-                          <th className="border border-slate-400 px-3 py-1.5">Category</th>
-                          <th className="border border-slate-400 px-3 py-1.5 text-right">Morning</th>
-                          <th className="border border-slate-400 px-3 py-1.5 text-right">Evening</th>
-                          <th className="border border-slate-400 px-3 py-1.5 text-right bg-slate-50">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-300 font-mono text-slate-800">
-                        <tr>
-                          <td className="border border-slate-400 px-3 py-1.5 font-sans font-bold">App</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.morningTotals.app || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.eveningTotals.app || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-sans font-extrabold bg-slate-50">{dailyCollectionReportData.grandTotals.app || '-'}</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-slate-400 px-3 py-1.5 font-sans font-bold">C.med</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.morningTotals.cmed || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.eveningTotals.cmed || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-sans font-extrabold bg-slate-50">{dailyCollectionReportData.grandTotals.cmed || '-'}</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-slate-400 px-3 py-1.5 font-sans font-bold">Cards</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.morningTotals.cards || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.eveningTotals.cards || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-sans font-extrabold bg-slate-50">{dailyCollectionReportData.grandTotals.cards || '-'}</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-slate-400 px-3 py-1.5 font-sans font-bold">File</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.morningTotals.file || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.eveningTotals.file || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-sans font-extrabold bg-slate-50">{dailyCollectionReportData.grandTotals.file || '-'}</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-slate-400 px-3 py-1.5 font-sans font-bold">Store</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.morningTotals.store || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.eveningTotals.store || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-sans font-extrabold bg-slate-50">{dailyCollectionReportData.grandTotals.store || '-'}</td>
-                        </tr>
-                        <tr className="bg-slate-50 font-sans font-black border-t border-slate-900 text-slate-950">
-                          <td className="border border-slate-400 px-3 py-1.5 uppercase">Total</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-mono">{dailyCollectionReportData.morningTotals.total || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-mono">{dailyCollectionReportData.eveningTotals.total || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-mono bg-blue-50 text-blue-900">{dailyCollectionReportData.grandTotals.total || '-'}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="space-y-2">
-                    <h3 className="text-xxs font-black uppercase text-slate-900 tracking-wider">Summary 2</h3>
-                    <table className="min-w-full border border-slate-400 text-xxs text-left">
-                      <thead>
-                        <tr className="bg-slate-100 text-slate-800 font-bold border-b border-slate-400">
-                          <th className="border border-slate-400 px-3 py-1.5">Grouping</th>
-                          <th className="border border-slate-400 px-3 py-1.5 text-right">Morning</th>
-                          <th className="border border-slate-400 px-3 py-1.5 text-right">Evening</th>
-                          <th className="border border-slate-400 px-3 py-1.5 text-right bg-slate-50">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-300 font-mono text-slate-800">
-                        <tr>
-                          <td className="border border-slate-400 px-3 py-1.5 font-sans font-bold">App & C.med</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{(dailyCollectionReportData.morningTotals.app + dailyCollectionReportData.morningTotals.cmed) || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{(dailyCollectionReportData.eveningTotals.app + dailyCollectionReportData.eveningTotals.cmed) || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-sans font-extrabold bg-slate-50">{(dailyCollectionReportData.grandTotals.app + dailyCollectionReportData.grandTotals.cmed) || '-'}</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-slate-400 px-3 py-1.5 font-sans font-bold">Cards & File</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{(dailyCollectionReportData.morningTotals.cards + dailyCollectionReportData.morningTotals.file) || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{(dailyCollectionReportData.eveningTotals.cards + dailyCollectionReportData.eveningTotals.file) || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-sans font-extrabold bg-slate-50">{(dailyCollectionReportData.grandTotals.cards + dailyCollectionReportData.grandTotals.file) || '-'}</td>
-                        </tr>
-                        <tr>
-                          <td className="border border-slate-400 px-3 py-1.5 font-sans font-bold">Store</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.morningTotals.store || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right">{dailyCollectionReportData.eveningTotals.store || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-sans font-extrabold bg-slate-50">{dailyCollectionReportData.grandTotals.store || '-'}</td>
-                        </tr>
-                        <tr className="bg-slate-50 font-sans font-black border-t border-slate-900 text-slate-950">
-                          <td className="border border-slate-400 px-3 py-1.5 uppercase">Total</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-mono">{dailyCollectionReportData.morningTotals.total || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-mono">{dailyCollectionReportData.eveningTotals.total || '-'}</td>
-                          <td className="border border-slate-400 px-3 py-1.5 text-right font-mono bg-blue-50 text-blue-900">{dailyCollectionReportData.grandTotals.total || '-'}</td>
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                <div className="grid grid-cols-3 gap-8 pt-12 mt-12 text-center text-[9px] font-black uppercase tracking-wider text-slate-500">
-                  <div className="border-t border-slate-300 pt-2">
-                    <p>PREPARED BY (ACCOUNTANT)</p>
-                  </div>
-                  <div className="border-t border-slate-300 pt-2">
-                    <p>AUDITED BY</p>
-                  </div>
-                  <div className="border-t border-slate-300 pt-2">
-                    <p>APPROVED BY</p>
-                  </div>
-                </div>
-
-              </div>
-            )}
-          </div>
-        </div>
-      )}
-
-      {/* COMPREHENSIVE PRINT DETAIL REPORT MODAL */}
-      {isDetailReportModalOpen && (() => {
-        // Prepare list of detail items
-        const rawList = (filteredPatients || []).map((pt) => {
-          let pVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
-          if (gridViewStartDate || gridViewEndDate) {
-            pVisits = pVisits.filter(v => {
-              const d = parseDateToISOKey(v.VisitDate || (v as any).date);
-              if (gridViewStartDate && d < gridViewStartDate) return false;
-              if (gridViewEndDate && d > gridViewEndDate) return false;
-              return true;
-            });
-          }
-
-          let pApps = (appointments || []).filter(a => isSamePatient(a.PatientID, pt.PatientID) && a.Status !== 3);
-          if (gridViewStartDate || gridViewEndDate) {
-            pApps = pApps.filter(a => {
-              const d = parseDateToISOKey(a.AppointmentDate);
-              if (gridViewStartDate && d < gridViewStartDate) return false;
-              if (gridViewEndDate && d > gridViewEndDate) return false;
-              return true;
-            });
-          }
-
-          let pInvoices = (invoices || []).filter(inv => isSamePatient(inv.PatientID, pt.PatientID) && (inv.Status as number) !== 3);
-          if (gridViewStartDate || gridViewEndDate) {
-            pInvoices = pInvoices.filter(inv => {
-              const d = parseDateToISOKey(inv.InvoiceDate);
-              if (gridViewStartDate && d < gridViewStartDate) return false;
-              if (gridViewEndDate && d > gridViewEndDate) return false;
-              return true;
-            });
-          }
-
-          // Compute fees
-          let appOpdFee = pApps.reduce((sum, a) => sum + (Number(a.FeeCharged) || 0), 0);
-          pVisits.forEach(v => {
-            let vFee = Number(v.ConsultationFee) || 0;
-            if (!vFee && v.VisitRemarks) {
-              const oMatch = v.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
-              if (oMatch) vFee = Number(oMatch[1]);
-            }
-            const hasAppFee = pApps.some(a => a.AppointmentDate === v.VisitDate && (Number(a.FeeCharged) || 0) > 0);
-            if (!hasAppFee && vFee > 0) appOpdFee += vFee;
-          });
-
-          let clinMedsFee = 0;
-          let fileFee = 0;
-          let cardFee = 0;
-          pVisits.forEach(v => {
-            let clin = Number(v.ClinicalMedicinePayment) || 0;
-            let f = Number(v.FileFee) || 0;
-            let c = Number(v.CardFee) || Number(v.CardsPayment) || 0;
-            if (v.VisitRemarks) {
-              if (!clin) { const cPkr = v.VisitRemarks.match(/Clinical Meds PKR\s*(\d+)/); if (cPkr) clin = Number(cPkr[1]); }
-              if (!f) { const fPkr = v.VisitRemarks.match(/File PKR\s*(\d+)/); if (fPkr) f = Number(fPkr[1]); }
-              if (!c) { const kPkr = v.VisitRemarks.match(/Card PKR\s*(\d+)/); if (kPkr) c = Number(kPkr[1]); }
-            }
-            clinMedsFee += clin;
-            fileFee += f;
-            cardFee += c;
-          });
-
-          const storeMedsFee = pInvoices.reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
-          const totalFee = appOpdFee + clinMedsFee + fileFee + cardFee + storeMedsFee;
-
-          // Determine Shift
-          let shiftNum = 1;
-          if (pVisits.length > 0) {
-            const v = pVisits[pVisits.length - 1];
-            shiftNum = v.Shift || (v.VisitRemarks?.includes('Shift 2') || v.VisitRemarks?.includes('Evening') ? 2 : v.VisitRemarks?.includes('Shift 3') || v.VisitRemarks?.includes('Night') ? 3 : 1);
-          } else if (pApps.length > 0) {
-            shiftNum = pApps[0].Shift || 1;
-          }
-
-          const visitDateStr = pVisits.length > 0 ? pVisits[pVisits.length - 1].VisitDate : pt.RegistrationDate || '-';
-          const tokenNum = pVisits.length > 0 ? (pVisits[pVisits.length - 1].TokenNo || '-') : '-';
-
-          return {
-            patient: pt,
-            visitDateStr,
-            tokenNum,
-            shiftNum,
-            shiftLabel: shiftNum === 1 ? 'Morning' : shiftNum === 2 ? 'Evening' : 'Night',
-            appOpdFee,
-            fileFee,
-            cardFee,
-            fileCardFee: fileFee + cardFee,
-            clinMedsFee,
-            storeMedsFee,
-            totalFee
-          };
-        });
-
-        // Filter by shift if detailReportShiftFilter > 0
-        let detailList = rawList;
-        if (detailReportShiftFilter > 0) {
-          detailList = detailList.filter(item => item.shiftNum === detailReportShiftFilter);
-        }
-
-        // Filter by detailReportSearch if typed
-        if (detailReportSearch.trim()) {
-          const q = detailReportSearch.toLowerCase().trim();
-          detailList = detailList.filter(item =>
-            item.patient.PatientName.toLowerCase().includes(q) ||
-            item.patient.PatientID.toLowerCase().includes(q) ||
-            (item.patient.PhoneMobile && item.patient.PhoneMobile.includes(q)) ||
-            String(item.tokenNum).includes(q)
-          );
-        }
-
-        // Shift Summaries
-        const morningList = detailList.filter(i => i.shiftNum === 1);
-        const eveningList = detailList.filter(i => i.shiftNum === 2);
-        const nightList = detailList.filter(i => i.shiftNum === 3);
-
-        const getListTotals = (list: typeof detailList) => {
-          return {
-            count: list.length,
-            opd: list.reduce((s, i) => s + i.appOpdFee, 0),
-            fileCard: list.reduce((s, i) => s + i.fileCardFee, 0),
-            clinMeds: list.reduce((s, i) => s + i.clinMedsFee, 0),
-            storeMeds: list.reduce((s, i) => s + i.storeMedsFee, 0),
-            grandTotal: list.reduce((s, i) => s + i.totalFee, 0)
-          };
-        };
-
-        const morningTotals = getListTotals(morningList);
-        const eveningTotals = getListTotals(eveningList);
-        const nightTotals = getListTotals(nightList);
-        const overallTotals = getListTotals(detailList);
-
-        // Printing helper
-        const printDetailReport = () => {
-          const printWin = window.open('', '_blank');
-          if (!printWin) return;
-
-          let reportTitle = 'DAILY COLLECTION REPORT (PATIENT WISE)';
-          if (detailReportMode === 'shift_wise') reportTitle = 'DAILY COLLECTION REPORT (SHIFT WISE)';
-          if (detailReportMode === 'hybrid') reportTitle = 'DAILY COLLECTION REPORT (PATIENT WISE & SHIFT WISE TOTAL)';
-
-          let shiftFilterText = detailReportShiftFilter === 1 ? 'Morning Shift' : detailReportShiftFilter === 2 ? 'Evening Shift' : detailReportShiftFilter === 3 ? 'Night Shift' : 'All Shifts';
-          let dateRangeText = gridViewStartDate && gridViewEndDate ? `${gridViewStartDate} to ${gridViewEndDate}` : gridViewStartDate || gridViewEndDate || 'All Time Records';
-
-          let bodyContentHtml = '';
-
-          if (detailReportMode === 'patient_wise') {
-            bodyContentHtml = `
-              <table>
-                <thead>
-                  <tr>
-                    <th>Sr #</th>
-                    <th>Patient ID</th>
-                    <th>Patient Name</th>
-                    <th>Token / Date</th>
-                    <th>Shift</th>
-                    <th style="text-align: right;">OPD Fee</th>
-                    <th style="text-align: right;">File & Card</th>
-                    <th style="text-align: right;">Clinical Meds</th>
-                    <th style="text-align: right;">Store Meds</th>
-                    <th style="text-align: right;">Total (PKR)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${detailList.map((item, idx) => `
-                    <tr>
-                      <td style="text-align: center;">${idx + 1}</td>
-                      <td><strong>${item.patient.PatientID}</strong></td>
-                      <td>${item.patient.PatientName}</td>
-                      <td>${item.visitDateStr} (Tok #${item.tokenNum})</td>
-                      <td>${item.shiftLabel}</td>
-                      <td style="text-align: right;">${item.appOpdFee.toLocaleString()}</td>
-                      <td style="text-align: right;">${item.fileCardFee.toLocaleString()}</td>
-                      <td style="text-align: right;">${item.clinMedsFee.toLocaleString()}</td>
-                      <td style="text-align: right;">${item.storeMedsFee.toLocaleString()}</td>
-                      <td style="text-align: right; font-weight: bold;">PKR ${item.totalFee.toLocaleString()}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colspan="5" style="text-align: right; font-weight: bold;">TOTAL (${detailList.length} Patients):</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.opd.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.fileCard.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.clinMeds.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.storeMeds.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: 900; font-size: 13px;">PKR ${overallTotals.grandTotal.toLocaleString()}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            `;
-          } else if (detailReportMode === 'shift_wise') {
-            bodyContentHtml = `
-              <table>
-                <thead>
-                  <tr>
-                    <th>Shift Name</th>
-                    <th style="text-align: center;">Patients Count</th>
-                    <th style="text-align: right;">OPD Revenue</th>
-                    <th style="text-align: right;">File & Card</th>
-                    <th style="text-align: right;">Clinical Meds</th>
-                    <th style="text-align: right;">Store Meds</th>
-                    <th style="text-align: right;">Shift Collection (PKR)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <td><strong>üåÖ MORNING SHIFT</strong></td>
-                    <td style="text-align: center;">${morningTotals.count}</td>
-                    <td style="text-align: right;">PKR ${morningTotals.opd.toLocaleString()}</td>
-                    <td style="text-align: right;">PKR ${morningTotals.fileCard.toLocaleString()}</td>
-                    <td style="text-align: right;">PKR ${morningTotals.clinMeds.toLocaleString()}</td>
-                    <td style="text-align: right;">PKR ${morningTotals.storeMeds.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold; color: #1e1b4b;">PKR ${morningTotals.grandTotal.toLocaleString()}</td>
-                  </tr>
-                  <tr>
-                    <td><strong>üåÜ EVENING SHIFT</strong></td>
-                    <td style="text-align: center;">${eveningTotals.count}</td>
-                    <td style="text-align: right;">PKR ${eveningTotals.opd.toLocaleString()}</td>
-                    <td style="text-align: right;">PKR ${eveningTotals.fileCard.toLocaleString()}</td>
-                    <td style="text-align: right;">PKR ${eveningTotals.clinMeds.toLocaleString()}</td>
-                    <td style="text-align: right;">PKR ${eveningTotals.storeMeds.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold; color: #1e1b4b;">PKR ${eveningTotals.grandTotal.toLocaleString()}</td>
-                  </tr>
-                  ${nightTotals.count > 0 ? `
-                  <tr>
-                    <td><strong>üåÉ NIGHT SHIFT</strong></td>
-                    <td style="text-align: center;">${nightTotals.count}</td>
-                    <td style="text-align: right;">PKR ${nightTotals.opd.toLocaleString()}</td>
-                    <td style="text-align: right;">PKR ${nightTotals.fileCard.toLocaleString()}</td>
-                    <td style="text-align: right;">PKR ${nightTotals.clinMeds.toLocaleString()}</td>
-                    <td style="text-align: right;">PKR ${nightTotals.storeMeds.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold; color: #1e1b4b;">PKR ${nightTotals.grandTotal.toLocaleString()}</td>
-                  </tr>
-                  ` : ''}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td><strong>COMBINED TOTALS:</strong></td>
-                    <td style="text-align: center; font-weight: bold;">${overallTotals.count}</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.opd.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.fileCard.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.clinMeds.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.storeMeds.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: 900; font-size: 14px; color: #065f46;">PKR ${overallTotals.grandTotal.toLocaleString()}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            `;
-          } else if (detailReportMode === 'hybrid') {
-            const renderShiftTable = (title: string, list: typeof detailList, totals: typeof morningTotals) => `
-              <h3 style="margin-top: 20px; margin-bottom: 6px; font-size: 13px; text-transform: uppercase; color: #1e293b; border-bottom: 2px solid #0f172a; padding-bottom: 4px;">
-                ${title} (${totals.count} Patients)
-              </h3>
-              <table>
-                <thead>
-                  <tr>
-                    <th>Sr #</th>
-                    <th>Patient ID</th>
-                    <th>Patient Name</th>
-                    <th>Token / Date</th>
-                    <th style="text-align: right;">OPD Fee</th>
-                    <th style="text-align: right;">File/Card</th>
-                    <th style="text-align: right;">Clinical Meds</th>
-                    <th style="text-align: right;">Store Meds</th>
-                    <th style="text-align: right;">Total (PKR)</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  ${list.map((item, idx) => `
-                    <tr>
-                      <td style="text-align: center;">${idx + 1}</td>
-                      <td><strong>${item.patient.PatientID}</strong></td>
-                      <td>${item.patient.PatientName}</td>
-                      <td>${item.visitDateStr} (Tok #${item.tokenNum})</td>
-                      <td style="text-align: right;">${item.appOpdFee.toLocaleString()}</td>
-                      <td style="text-align: right;">${item.fileCardFee.toLocaleString()}</td>
-                      <td style="text-align: right;">${item.clinMedsFee.toLocaleString()}</td>
-                      <td style="text-align: right;">${item.storeMedsFee.toLocaleString()}</td>
-                      <td style="text-align: right; font-weight: bold;">PKR ${item.totalFee.toLocaleString()}</td>
-                    </tr>
-                  `).join('')}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colspan="4" style="text-align: right; font-weight: bold;">${title} SUBTOTAL:</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${totals.opd.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${totals.fileCard.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${totals.clinMeds.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: bold;">PKR ${totals.storeMeds.toLocaleString()}</td>
-                    <td style="text-align: right; font-weight: 900; font-size: 12px; color: #1e1b4b;">PKR ${totals.grandTotal.toLocaleString()}</td>
-                  </tr>
-                </tfoot>
-              </table>
-            `;
-
-            bodyContentHtml = `
-              ${morningList.length > 0 ? renderShiftTable('üåÖ Morning Shift', morningList, morningTotals) : ''}
-              ${eveningList.length > 0 ? renderShiftTable('üåÜ Evening Shift', eveningList, eveningTotals) : ''}
-              ${nightList.length > 0 ? renderShiftTable('üåÉ Night Shift', nightList, nightTotals) : ''}
-
-              <div style="margin-top: 24px; padding: 12px; background: #f8fafc; border: 2px solid #334155; border-radius: 8px;">
-                <h3 style="margin: 0 0 8px 0; font-size: 14px; text-transform: uppercase;">DAILY GRAND TOTAL SUMMARY (ALL SHIFTS COMBINED)</h3>
-                <table style="margin-top: 0;">
-                  <thead>
-                    <tr>
-                      <th>Shift</th>
-                      <th style="text-align: center;">Patients</th>
-                      <th style="text-align: right;">OPD Total</th>
-                      <th style="text-align: right;">File & Card</th>
-                      <th style="text-align: right;">Clinical Meds</th>
-                      <th style="text-align: right;">Store Meds</th>
-                      <th style="text-align: right;">Grand Net Collection</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr>
-                      <td>Morning Shift</td>
-                      <td style="text-align: center;">${morningTotals.count}</td>
-                      <td style="text-align: right;">PKR ${morningTotals.opd.toLocaleString()}</td>
-                      <td style="text-align: right;">PKR ${morningTotals.fileCard.toLocaleString()}</td>
-                      <td style="text-align: right;">PKR ${morningTotals.clinMeds.toLocaleString()}</td>
-                      <td style="text-align: right;">PKR ${morningTotals.storeMeds.toLocaleString()}</td>
-                      <td style="text-align: right; font-weight: bold;">PKR ${morningTotals.grandTotal.toLocaleString()}</td>
-                    </tr>
-                    <tr>
-                      <td>Evening Shift</td>
-                      <td style="text-align: center;">${eveningTotals.count}</td>
-                      <td style="text-align: right;">PKR ${eveningTotals.opd.toLocaleString()}</td>
-                      <td style="text-align: right;">PKR ${eveningTotals.fileCard.toLocaleString()}</td>
-                      <td style="text-align: right;">PKR ${eveningTotals.clinMeds.toLocaleString()}</td>
-                      <td style="text-align: right;">PKR ${eveningTotals.storeMeds.toLocaleString()}</td>
-                      <td style="text-align: right; font-weight: bold;">PKR ${eveningTotals.grandTotal.toLocaleString()}</td>
-                    </tr>
-                    ${nightTotals.count > 0 ? `
-                    <tr>
-                      <td>Night Shift</td>
-                      <td style="text-align: center;">${nightTotals.count}</td>
-                      <td style="text-align: right;">PKR ${nightTotals.opd.toLocaleString()}</td>
-                      <td style="text-align: right;">PKR ${nightTotals.fileCard.toLocaleString()}</td>
-                      <td style="text-align: right;">PKR ${nightTotals.clinMeds.toLocaleString()}</td>
-                      <td style="text-align: right;">PKR ${nightTotals.storeMeds.toLocaleString()}</td>
-                      <td style="text-align: right; font-weight: bold;">PKR ${nightTotals.grandTotal.toLocaleString()}</td>
-                    </tr>
-                    ` : ''}
-                  </tbody>
-                  <tfoot>
-                    <tr>
-                      <td style="font-weight: bold;">ALL SHIFTS TOTAL</td>
-                      <td style="text-align: center; font-weight: bold;">${overallTotals.count}</td>
-                      <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.opd.toLocaleString()}</td>
-                      <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.fileCard.toLocaleString()}</td>
-                      <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.clinMeds.toLocaleString()}</td>
-                      <td style="text-align: right; font-weight: bold;">PKR ${overallTotals.storeMeds.toLocaleString()}</td>
-                      <td style="text-align: right; font-weight: 900; font-size: 15px; color: #047857;">PKR ${overallTotals.grandTotal.toLocaleString()}</td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            `;
-          }
-
-          printWin.document.write(`
-            <html>
-              <head>
-                <title>Punjab Clinic - Comprehensive Detailed Collection Report</title>
-                <style>
-                  @page {
-                    size: A4 portrait;
-                    margin: 10mm 8mm 10mm 8mm;
-                  }
-                  *, *::before, *::after {
-                    box-sizing: border-box;
-                  }
-                  html, body {
-                    width: 100%;
-                    height: 100%;
-                    margin: 0;
-                    padding: 0;
-                    background: #ffffff !important;
-                    color: #0f172a !important;
-                    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-                    font-size: 10px;
-                    line-height: 1.35;
-                    -webkit-print-color-adjust: exact;
-                    print-color-adjust: exact;
-                  }
-                  /* Hide non-essential UI elements like scrollbars, action controls */
-                  button, input, select, .no-print, ::-webkit-scrollbar {
-                    display: none !important;
-                  }
-                  body {
-                    padding: 12px 16px;
-                  }
-                  .report-container {
-                    width: 100%;
-                  }
-                  .clinic-title {
-                    font-size: 16px;
-                    font-weight: 900;
-                    text-transform: uppercase;
-                    letter-spacing: 0.5px;
-                    color: #0f172a;
-                    margin: 0 0 4px 0;
-                  }
-                  .meta-header {
-                    display: flex;
-                    justify-content: space-between;
-                    align-items: flex-end;
-                    margin-bottom: 12px;
-                    padding-bottom: 8px;
-                    border-bottom: 2px solid #0f172a;
-                  }
-                  .meta-header p {
-                    margin: 2px 0;
-                    color: #334155;
-                    font-weight: 600;
-                    font-size: 10px;
-                  }
-                  .report-subtitle {
-                    font-size: 12px;
-                    font-weight: 800;
-                    color: #1e1b4b;
-                    text-transform: uppercase;
-                  }
-                  table {
-                    width: 100%;
-                    border-collapse: collapse !important;
-                    margin-top: 8px;
-                    margin-bottom: 14px;
-                    page-break-inside: auto;
-                  }
-                  tr {
-                    page-break-inside: avoid;
-                    page-break-after: auto;
-                  }
-                  thead {
-                    display: table-header-group;
-                  }
-                  tfoot {
-                    display: table-footer-group;
-                  }
-                  th, td {
-                    border: 1px solid #94a3b8 !important;
-                    padding: 4px 6px !important;
-                    text-align: left;
-                    font-size: 9.5px;
-                  }
-                  th {
-                    background-color: #1e293b !important;
-                    color: #ffffff !important;
-                    font-size: 9px;
-                    text-transform: uppercase;
-                    letter-spacing: 0.3px;
-                    font-weight: 800;
-                  }
-                  tfoot td {
-                    background-color: #f1f5f9 !important;
-                    font-weight: bold !important;
-                    font-size: 10px !important;
-                  }
-                  h3 {
-                    page-break-after: avoid;
-                  }
-                  .footer-signatures {
-                    display: flex;
-                    justify-content: space-between;
-                    margin-top: 36px;
-                    padding-top: 10px;
-                    border-top: 1.5px solid #475569;
-                    font-weight: bold;
-                    font-size: 9.5px;
-                    color: #334155;
-                    text-transform: uppercase;
-                    page-break-inside: avoid;
-                  }
-                  @media print {
-                    body {
-                      padding: 0;
-                    }
-                    .page-break {
-                      page-break-before: always;
-                    }
-                  }
-                </style>
-              </head>
-              <body>
-                <div class="report-container">
-                  <h1 class="clinic-title">PUNJAB CLINIC & PHARMACY</h1>
-                  <div class="meta-header">
-                    <div>
-                      <div class="report-subtitle">${reportTitle}</div>
-                      <p>Period Range: <strong>${dateRangeText}</strong> | Filter Shift: <strong>${shiftFilterText}</strong></p>
-                    </div>
-                    <div style="text-align: right;">
-                      <p>Printed On: <strong>${new Date().toLocaleString()}</strong></p>
-                      <p>Total Patients Included: <strong>${overallTotals.count}</strong></p>
-                    </div>
-                  </div>
-
-                  ${bodyContentHtml}
-
-                  <div class="footer-signatures">
-                    <div>PREPARED BY (ACCOUNTANT)</div>
-                    <div>VERIFIED BY (MANAGER)</div>
-                    <div>DOCTOR / CLINIC STAMP</div>
-                  </div>
-                </div>
-              </body>
-            </html>
-          `);
-          printWin.document.close();
-          printWin.focus();
-          setTimeout(() => printWin.print(), 500);
-        };
-
-        return (
-          <div className="fixed inset-0 bg-slate-900/75 backdrop-blur-xs flex items-center justify-center z-50 p-3 sm:p-6 overflow-y-auto animate-fadeIn">
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-6xl w-full flex flex-col max-h-[92vh] overflow-hidden">
-              {/* Modal Header */}
-              <div className="bg-slate-900 text-white p-4 sm:p-5 flex flex-wrap items-center justify-between gap-3 border-b border-slate-800 shrink-0">
-                <div className="flex items-center space-x-3">
-                  <div className="p-2.5 bg-indigo-600 text-white rounded-xl shadow-md">
-                    <FileText className="w-6 h-6" />
-                  </div>
-                  <div>
-                    <h2 className="text-base sm:text-lg font-black uppercase tracking-wide flex items-center gap-2">
-                      <span>Punjab Clinic Detailed Collection Report</span>
-                      <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 font-mono">
-                        {gridViewStartDate && gridViewEndDate
-                          ? `${gridViewStartDate} to ${gridViewEndDate}`
-                          : gridViewStartDate || gridViewEndDate || 'All Dates Record'}
-                      </span>
-                    </h2>
-                    <p className="text-xs text-slate-300 font-medium">
-                      Detailed reporting with Patient Wise, Shift Wise, and Combined Shift Totals.
-                    </p>
-                  </div>
-                </div>
-
-                <button
-                  onClick={() => setIsDetailReportModalOpen(false)}
-                  className="p-2 text-slate-400 hover:text-white bg-slate-800 hover:bg-slate-700 rounded-xl transition cursor-pointer"
-                >
-                  <X className="w-5 h-5" />
-                </button>
-              </div>
-
-              {/* Mode Tabs & Controls Header */}
-              <div className="bg-slate-100 p-3 sm:p-4 border-b border-slate-200 flex flex-wrap items-center justify-between gap-3 shrink-0">
-                {/* Report Style Tabs */}
-                <div className="flex flex-wrap items-center bg-slate-200/80 p-1 rounded-xl gap-1">
-                  <button
-                    onClick={() => setDetailReportMode('patient_wise')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center space-x-1.5 ${
-                      detailReportMode === 'patient_wise'
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'text-slate-700 hover:bg-slate-300/60'
-                    }`}
-                  >
-                    <Users className="w-3.5 h-3.5" />
-                    <span>Daily Collection Report (Patient Wise)</span>
-                  </button>
-                  <button
-                    onClick={() => setDetailReportMode('shift_wise')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center space-x-1.5 ${
-                      detailReportMode === 'shift_wise'
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'text-slate-700 hover:bg-slate-300/60'
-                    }`}
-                  >
-                    <Clock className="w-3.5 h-3.5" />
-                    <span>Daily Collection Report (Shift Wise)</span>
-                  </button>
-                  <button
-                    onClick={() => setDetailReportMode('hybrid')}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-extrabold transition cursor-pointer flex items-center space-x-1.5 ${
-                      detailReportMode === 'hybrid'
-                        ? 'bg-indigo-600 text-white shadow-xs'
-                        : 'text-slate-700 hover:bg-slate-300/60'
-                    }`}
-                  >
-                    <Grid className="w-3.5 h-3.5" />
-                    <span>Patient Wise & Shift Wise Total</span>
-                  </button>
-                </div>
-
-                {/* Filters & Actions */}
-                <div className="flex items-center space-x-2">
-                  <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={detailReportSearch}
-                      onChange={(e) => setDetailReportSearch(e.target.value)}
-                      className="text-xs bg-white border border-slate-300 rounded-lg pl-8 pr-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium w-44"
-                    />
-                  </div>
-
-                  {/* Shift Selector */}
-                  <select
-                    value={detailReportShiftFilter}
-                    onChange={(e) => setDetailReportShiftFilter(Number(e.target.value))}
-                    className="bg-white border border-slate-300 text-slate-800 text-xs font-bold rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer shadow-2xs"
-                  >
-                    <option value={0}>All Shifts</option>
-                    <option value={1}>üåÖ Morning Shift (1)</option>
-                    <option value={2}>üåÜ Evening Shift (2)</option>
-                    <option value={3}>üåÉ Night Shift (3)</option>
-                  </select>
-
-                  {/* Print Button */}
-                  <button
-                    onClick={printDetailReport}
-                    className="bg-emerald-600 hover:bg-emerald-700 text-white px-4 py-1.5 rounded-lg text-xs font-black uppercase tracking-wider transition flex items-center space-x-1.5 shadow-xs cursor-pointer"
-                  >
-                    <Printer className="w-4 h-4" />
-                    <span>Print Report</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Summary Cards */}
-              <div className="p-4 bg-indigo-950 text-white border-b border-indigo-900 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 text-xs shrink-0">
-                <div className="bg-indigo-900/60 p-2.5 rounded-xl border border-indigo-700/50">
-                  <span className="text-[10px] font-extrabold uppercase text-indigo-300 block">Total Patients</span>
-                  <span className="text-base font-black font-mono text-white">{overallTotals.count}</span>
-                </div>
-                <div className="bg-indigo-900/60 p-2.5 rounded-xl border border-indigo-700/50">
-                  <span className="text-[10px] font-extrabold uppercase text-indigo-300 block">OPD Fees</span>
-                  <span className="text-base font-black font-mono text-emerald-300">PKR {overallTotals.opd.toLocaleString()}</span>
-                </div>
-                <div className="bg-indigo-900/60 p-2.5 rounded-xl border border-indigo-700/50">
-                  <span className="text-[10px] font-extrabold uppercase text-indigo-300 block">File & Cards</span>
-                  <span className="text-base font-black font-mono text-cyan-300">PKR {overallTotals.fileCard.toLocaleString()}</span>
-                </div>
-                <div className="bg-indigo-900/60 p-2.5 rounded-xl border border-indigo-700/50">
-                  <span className="text-[10px] font-extrabold uppercase text-indigo-300 block">Clinical Meds</span>
-                  <span className="text-base font-black font-mono text-purple-300">PKR {overallTotals.clinMeds.toLocaleString()}</span>
-                </div>
-                <div className="bg-indigo-900/60 p-2.5 rounded-xl border border-indigo-700/50">
-                  <span className="text-[10px] font-extrabold uppercase text-indigo-300 block">Store Meds</span>
-                  <span className="text-base font-black font-mono text-amber-300">PKR {overallTotals.storeMeds.toLocaleString()}</span>
-                </div>
-                <div className="bg-emerald-950/80 p-2.5 rounded-xl border border-emerald-600/50 col-span-2 sm:col-span-1">
-                  <span className="text-[10px] font-extrabold uppercase text-emerald-300 block">Net Grand Total</span>
-                  <span className="text-lg font-black font-mono text-emerald-200">PKR {overallTotals.grandTotal.toLocaleString()}</span>
-                </div>
-              </div>
-
-              {/* Report Preview Body */}
-              <div className="flex-1 overflow-y-auto p-4 sm:p-6 bg-slate-50 space-y-6">
-                {/* MODE 1: PATIENT WISE REPORT */}
-                {detailReportMode === 'patient_wise' && (
-                  <div className="bg-white rounded-xl border border-slate-300 shadow-xs overflow-hidden">
-                    <div className="p-3 bg-slate-900 text-white font-extrabold text-xs uppercase flex items-center justify-between">
-                      <span className="flex items-center space-x-1.5">
-                        <Users className="w-4 h-4 text-indigo-400" />
-                        <span>Daily Collection Report - Patient Wise ({detailList.length} Records)</span>
-                      </span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-100 border-b border-slate-300 text-slate-700 font-extrabold uppercase text-[10px]">
-                            <th className="p-2.5 border-r border-slate-200 text-center w-10">Sr #</th>
-                            <th className="p-2.5 border-r border-slate-200">Patient ID</th>
-                            <th className="p-2.5 border-r border-slate-200">Patient Name</th>
-                            <th className="p-2.5 border-r border-slate-200">Token / Visit Date</th>
-                            <th className="p-2.5 border-r border-slate-200">Shift</th>
-                            <th className="p-2.5 border-r border-slate-200 text-right">OPD Fee</th>
-                            <th className="p-2.5 border-r border-slate-200 text-right">File/Card</th>
-                            <th className="p-2.5 border-r border-slate-200 text-right">Clinical Meds</th>
-                            <th className="p-2.5 border-r border-slate-200 text-right">Store Meds</th>
-                            <th className="p-2.5 text-right font-black">Total (PKR)</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 text-slate-800">
-                          {detailList.length === 0 ? (
-                            <tr>
-                              <td colSpan={10} className="p-8 text-center text-slate-400 font-medium">
-                                No patient collection records matching search or shift filter.
-                              </td>
-                            </tr>
-                          ) : (
-                            detailList.map((item, idx) => (
-                              <tr key={`dt-pt-${item.patient.PatientID}-${idx}`} className="hover:bg-slate-50 transition">
-                                <td className="p-2 border-r border-slate-200 text-center text-slate-500 font-mono text-xxs">{idx + 1}</td>
-                                <td className="p-2 border-r border-slate-200 font-bold font-mono text-indigo-900">{item.patient.PatientID}</td>
-                                <td className="p-2 border-r border-slate-200 font-extrabold text-slate-900">{item.patient.PatientName}</td>
-                                <td className="p-2 border-r border-slate-200 font-medium text-slate-600">
-                                  {item.visitDateStr} <span className="text-xxs font-bold text-indigo-600">(Tok #{item.tokenNum})</span>
-                                </td>
-                                <td className="p-2 border-r border-slate-200">
-                                  <span className={`px-2 py-0.5 rounded-full text-xxs font-extrabold uppercase ${
-                                    item.shiftNum === 1 ? 'bg-amber-100 text-amber-800' : item.shiftNum === 2 ? 'bg-indigo-100 text-indigo-800' : 'bg-purple-100 text-purple-800'
-                                  }`}>
-                                    {item.shiftLabel}
-                                  </span>
-                                </td>
-                                <td className="p-2 border-r border-slate-200 text-right font-mono font-medium">{item.appOpdFee ? `PKR ${item.appOpdFee.toLocaleString()}` : '-'}</td>
-                                <td className="p-2 border-r border-slate-200 text-right font-mono font-medium">{item.fileCardFee ? `PKR ${item.fileCardFee.toLocaleString()}` : '-'}</td>
-                                <td className="p-2 border-r border-slate-200 text-right font-mono font-medium">{item.clinMedsFee ? `PKR ${item.clinMedsFee.toLocaleString()}` : '-'}</td>
-                                <td className="p-2 border-r border-slate-200 text-right font-mono font-medium">{item.storeMedsFee ? `PKR ${item.storeMedsFee.toLocaleString()}` : '-'}</td>
-                                <td className="p-2 text-right font-mono font-black text-slate-950 bg-slate-50/80">PKR {item.totalFee.toLocaleString()}</td>
-                              </tr>
-                            ))
-                          )}
-                        </tbody>
-                        <tfoot className="bg-slate-100 border-t-2 border-slate-400 font-bold text-xs">
-                          <tr>
-                            <td colSpan={5} className="p-2.5 text-right uppercase text-slate-700 font-extrabold">
-                              Grand Total ({detailList.length} Patients):
-                            </td>
-                            <td className="p-2.5 text-right font-mono text-emerald-800 font-extrabold">PKR {overallTotals.opd.toLocaleString()}</td>
-                            <td className="p-2.5 text-right font-mono text-cyan-800 font-extrabold">PKR {overallTotals.fileCard.toLocaleString()}</td>
-                            <td className="p-2.5 text-right font-mono text-purple-800 font-extrabold">PKR {overallTotals.clinMeds.toLocaleString()}</td>
-                            <td className="p-2.5 text-right font-mono text-amber-800 font-extrabold">PKR {overallTotals.storeMeds.toLocaleString()}</td>
-                            <td className="p-2.5 text-right font-mono text-indigo-950 font-black text-sm bg-indigo-50">PKR {overallTotals.grandTotal.toLocaleString()}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* MODE 2: SHIFT WISE REPORT */}
-                {detailReportMode === 'shift_wise' && (
-                  <div className="bg-white rounded-xl border border-slate-300 shadow-xs overflow-hidden space-y-0">
-                    <div className="p-3 bg-slate-900 text-white font-extrabold text-xs uppercase flex items-center justify-between">
-                      <span className="flex items-center space-x-1.5">
-                        <Clock className="w-4 h-4 text-emerald-400" />
-                        <span>Daily Collection Report - Shift Wise Breakdown</span>
-                      </span>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <table className="w-full text-left text-xs border-collapse">
-                        <thead>
-                          <tr className="bg-slate-100 border-b border-slate-300 text-slate-700 font-extrabold uppercase text-[10px]">
-                            <th className="p-3 border-r border-slate-200">Shift Name</th>
-                            <th className="p-3 border-r border-slate-200 text-center">Patients Count</th>
-                            <th className="p-3 border-r border-slate-200 text-right">OPD Revenue</th>
-                            <th className="p-3 border-r border-slate-200 text-right">File & Card</th>
-                            <th className="p-3 border-r border-slate-200 text-right">Clinical Meds</th>
-                            <th className="p-3 border-r border-slate-200 text-right">Store Meds</th>
-                            <th className="p-3 text-right font-black">Net Shift Collection</th>
-                          </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-200 text-slate-800">
-                          <tr className="hover:bg-amber-50/50 transition">
-                            <td className="p-3 border-r border-slate-200 font-black text-slate-900 flex items-center space-x-2">
-                              <span>üåÖ</span>
-                              <span>MORNING SHIFT (Shift 1)</span>
-                            </td>
-                            <td className="p-3 border-r border-slate-200 text-center font-bold font-mono">{morningTotals.count}</td>
-                            <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {morningTotals.opd.toLocaleString()}</td>
-                            <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {morningTotals.fileCard.toLocaleString()}</td>
-                            <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {morningTotals.clinMeds.toLocaleString()}</td>
-                            <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {morningTotals.storeMeds.toLocaleString()}</td>
-                            <td className="p-3 text-right font-mono font-black text-indigo-900 bg-amber-50/80">PKR {morningTotals.grandTotal.toLocaleString()}</td>
-                          </tr>
-
-                          <tr className="hover:bg-indigo-50/50 transition">
-                            <td className="p-3 border-r border-slate-200 font-black text-slate-900 flex items-center space-x-2">
-                              <span>üåÜ</span>
-                              <span>EVENING SHIFT (Shift 2)</span>
-                            </td>
-                            <td className="p-3 border-r border-slate-200 text-center font-bold font-mono">{eveningTotals.count}</td>
-                            <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {eveningTotals.opd.toLocaleString()}</td>
-                            <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {eveningTotals.fileCard.toLocaleString()}</td>
-                            <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {eveningTotals.clinMeds.toLocaleString()}</td>
-                            <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {eveningTotals.storeMeds.toLocaleString()}</td>
-                            <td className="p-3 text-right font-mono font-black text-indigo-900 bg-indigo-50/80">PKR {eveningTotals.grandTotal.toLocaleString()}</td>
-                          </tr>
-
-                          {nightTotals.count > 0 && (
-                            <tr className="hover:bg-purple-50/50 transition">
-                              <td className="p-3 border-r border-slate-200 font-black text-slate-900 flex items-center space-x-2">
-                                <span>üåÉ</span>
-                                <span>NIGHT SHIFT (Shift 3)</span>
-                              </td>
-                              <td className="p-3 border-r border-slate-200 text-center font-bold font-mono">{nightTotals.count}</td>
-                              <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {nightTotals.opd.toLocaleString()}</td>
-                              <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {nightTotals.fileCard.toLocaleString()}</td>
-                              <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {nightTotals.clinMeds.toLocaleString()}</td>
-                              <td className="p-3 border-r border-slate-200 text-right font-mono font-medium">PKR {nightTotals.storeMeds.toLocaleString()}</td>
-                              <td className="p-3 text-right font-mono font-black text-indigo-900 bg-purple-50/80">PKR {nightTotals.grandTotal.toLocaleString()}</td>
-                            </tr>
-                          )}
-                        </tbody>
-                        <tfoot className="bg-slate-900 text-white font-extrabold text-xs border-t-2 border-slate-950">
-                          <tr>
-                            <td className="p-3 uppercase">COMBINED SHIFTS GRAND TOTAL:</td>
-                            <td className="p-3 text-center font-mono font-black text-amber-300">{overallTotals.count} Patients</td>
-                            <td className="p-3 text-right font-mono text-emerald-300">PKR {overallTotals.opd.toLocaleString()}</td>
-                            <td className="p-3 text-right font-mono text-cyan-300">PKR {overallTotals.fileCard.toLocaleString()}</td>
-                            <td className="p-3 text-right font-mono text-purple-300">PKR {overallTotals.clinMeds.toLocaleString()}</td>
-                            <td className="p-3 text-right font-mono text-amber-300">PKR {overallTotals.storeMeds.toLocaleString()}</td>
-                            <td className="p-3 text-right font-mono font-black text-sm text-emerald-400 bg-slate-950">PKR {overallTotals.grandTotal.toLocaleString()}</td>
-                          </tr>
-                        </tfoot>
-                      </table>
-                    </div>
-                  </div>
-                )}
-
-                {/* MODE 3: HYBRID REPORT (PATIENT WISE & SHIFT WISE TOTAL) */}
-                {detailReportMode === 'hybrid' && (
-                  <div className="space-y-6">
-                    {/* MORNING SHIFT BLOCK */}
-                    {morningList.length > 0 && (
-                      <div className="bg-white rounded-xl border border-slate-300 shadow-xs overflow-hidden">
-                        <div className="p-3 bg-amber-800 text-white font-black text-xs uppercase flex items-center justify-between">
-                          <span className="flex items-center space-x-2">
-                            <span>üåÖ MORNING SHIFT PATIENTS</span>
-                            <span className="px-2 py-0.5 rounded-full bg-amber-950/60 text-amber-200 text-xxs font-mono">{morningList.length} Patients</span>
-                          </span>
-                          <span className="font-mono text-sm">Subtotal: PKR {morningTotals.grandTotal.toLocaleString()}</span>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <thead>
-                              <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-extrabold uppercase text-[10px]">
-                                <th className="p-2 border-r border-slate-200 text-center w-8">#</th>
-                                <th className="p-2 border-r border-slate-200">Patient ID</th>
-                                <th className="p-2 border-r border-slate-200">Patient Name</th>
-                                <th className="p-2 border-r border-slate-200">Token / Date</th>
-                                <th className="p-2 border-r border-slate-200 text-right">OPD Fee</th>
-                                <th className="p-2 border-r border-slate-200 text-right">File/Card</th>
-                                <th className="p-2 border-r border-slate-200 text-right">Clinical Meds</th>
-                                <th className="p-2 border-r border-slate-200 text-right">Store Meds</th>
-                                <th className="p-2 text-right font-black">Total (PKR)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 text-slate-800">
-                              {morningList.map((item, idx) => (
-                                <tr key={`m-pt-${item.patient.PatientID}-${idx}`} className="hover:bg-amber-50/40 transition">
-                                  <td className="p-2 border-r border-slate-200 text-center font-mono text-xxs text-slate-400">{idx + 1}</td>
-                                  <td className="p-2 border-r border-slate-200 font-bold font-mono text-amber-900">{item.patient.PatientID}</td>
-                                  <td className="p-2 border-r border-slate-200 font-bold text-slate-900">{item.patient.PatientName}</td>
-                                  <td className="p-2 border-r border-slate-200 font-medium text-slate-600">{item.visitDateStr} (Tok #{item.tokenNum})</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.appOpdFee ? `PKR ${item.appOpdFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.fileCardFee ? `PKR ${item.fileCardFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.clinMedsFee ? `PKR ${item.clinMedsFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.storeMedsFee ? `PKR ${item.storeMedsFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 text-right font-mono font-extrabold text-slate-950 bg-amber-50/50">PKR {item.totalFee.toLocaleString()}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                            <tfoot className="bg-amber-100/60 font-bold text-xs border-t border-amber-300">
-                              <tr>
-                                <td colSpan={4} className="p-2 text-right font-black uppercase text-amber-950">MORNING SHIFT SUBTOTAL:</td>
-                                <td className="p-2 text-right font-mono font-bold text-amber-900">PKR {morningTotals.opd.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-bold text-amber-900">PKR {morningTotals.fileCard.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-bold text-amber-900">PKR {morningTotals.clinMeds.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-bold text-amber-900">PKR {morningTotals.storeMeds.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-black text-amber-950 text-xs">PKR {morningTotals.grandTotal.toLocaleString()}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* EVENING SHIFT BLOCK */}
-                    {eveningList.length > 0 && (
-                      <div className="bg-white rounded-xl border border-slate-300 shadow-xs overflow-hidden">
-                        <div className="p-3 bg-indigo-900 text-white font-black text-xs uppercase flex items-center justify-between">
-                          <span className="flex items-center space-x-2">
-                            <span>üåÜ EVENING SHIFT PATIENTS</span>
-                            <span className="px-2 py-0.5 rounded-full bg-indigo-950/60 text-indigo-200 text-xxs font-mono">{eveningList.length} Patients</span>
-                          </span>
-                          <span className="font-mono text-sm">Subtotal: PKR {eveningTotals.grandTotal.toLocaleString()}</span>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <thead>
-                              <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-extrabold uppercase text-[10px]">
-                                <th className="p-2 border-r border-slate-200 text-center w-8">#</th>
-                                <th className="p-2 border-r border-slate-200">Patient ID</th>
-                                <th className="p-2 border-r border-slate-200">Patient Name</th>
-                                <th className="p-2 border-r border-slate-200">Token / Date</th>
-                                <th className="p-2 border-r border-slate-200 text-right">OPD Fee</th>
-                                <th className="p-2 border-r border-slate-200 text-right">File/Card</th>
-                                <th className="p-2 border-r border-slate-200 text-right">Clinical Meds</th>
-                                <th className="p-2 border-r border-slate-200 text-right">Store Meds</th>
-                                <th className="p-2 text-right font-black">Total (PKR)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 text-slate-800">
-                              {eveningList.map((item, idx) => (
-                                <tr key={`e-pt-${item.patient.PatientID}-${idx}`} className="hover:bg-indigo-50/40 transition">
-                                  <td className="p-2 border-r border-slate-200 text-center font-mono text-xxs text-slate-400">{idx + 1}</td>
-                                  <td className="p-2 border-r border-slate-200 font-bold font-mono text-indigo-900">{item.patient.PatientID}</td>
-                                  <td className="p-2 border-r border-slate-200 font-bold text-slate-900">{item.patient.PatientName}</td>
-                                  <td className="p-2 border-r border-slate-200 font-medium text-slate-600">{item.visitDateStr} (Tok #{item.tokenNum})</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.appOpdFee ? `PKR ${item.appOpdFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.fileCardFee ? `PKR ${item.fileCardFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.clinMedsFee ? `PKR ${item.clinMedsFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.storeMedsFee ? `PKR ${item.storeMedsFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 text-right font-mono font-extrabold text-slate-950 bg-indigo-50/50">PKR {item.totalFee.toLocaleString()}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                            <tfoot className="bg-indigo-100/60 font-bold text-xs border-t border-indigo-300">
-                              <tr>
-                                <td colSpan={4} className="p-2 text-right font-black uppercase text-indigo-950">EVENING SHIFT SUBTOTAL:</td>
-                                <td className="p-2 text-right font-mono font-bold text-indigo-900">PKR {eveningTotals.opd.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-bold text-indigo-900">PKR {eveningTotals.fileCard.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-bold text-indigo-900">PKR {eveningTotals.clinMeds.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-bold text-indigo-900">PKR {eveningTotals.storeMeds.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-black text-indigo-950 text-xs">PKR {eveningTotals.grandTotal.toLocaleString()}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* NIGHT SHIFT BLOCK */}
-                    {nightList.length > 0 && (
-                      <div className="bg-white rounded-xl border border-slate-300 shadow-xs overflow-hidden">
-                        <div className="p-3 bg-purple-900 text-white font-black text-xs uppercase flex items-center justify-between">
-                          <span className="flex items-center space-x-2">
-                            <span>üåÉ NIGHT SHIFT PATIENTS</span>
-                            <span className="px-2 py-0.5 rounded-full bg-purple-950/60 text-purple-200 text-xxs font-mono">{nightList.length} Patients</span>
-                          </span>
-                          <span className="font-mono text-sm">Subtotal: PKR {nightTotals.grandTotal.toLocaleString()}</span>
-                        </div>
-                        <div className="overflow-x-auto">
-                          <table className="w-full text-left text-xs border-collapse">
-                            <thead>
-                              <tr className="bg-slate-100 border-b border-slate-200 text-slate-700 font-extrabold uppercase text-[10px]">
-                                <th className="p-2 border-r border-slate-200 text-center w-8">#</th>
-                                <th className="p-2 border-r border-slate-200">Patient ID</th>
-                                <th className="p-2 border-r border-slate-200">Patient Name</th>
-                                <th className="p-2 border-r border-slate-200">Token / Date</th>
-                                <th className="p-2 border-r border-slate-200 text-right">OPD Fee</th>
-                                <th className="p-2 border-r border-slate-200 text-right">File/Card</th>
-                                <th className="p-2 border-r border-slate-200 text-right">Clinical Meds</th>
-                                <th className="p-2 border-r border-slate-200 text-right">Store Meds</th>
-                                <th className="p-2 text-right font-black">Total (PKR)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 text-slate-800">
-                              {nightList.map((item, idx) => (
-                                <tr key={`n-pt-${item.patient.PatientID}-${idx}`} className="hover:bg-purple-50/40 transition">
-                                  <td className="p-2 border-r border-slate-200 text-center font-mono text-xxs text-slate-400">{idx + 1}</td>
-                                  <td className="p-2 border-r border-slate-200 font-bold font-mono text-purple-900">{item.patient.PatientID}</td>
-                                  <td className="p-2 border-r border-slate-200 font-bold text-slate-900">{item.patient.PatientName}</td>
-                                  <td className="p-2 border-r border-slate-200 font-medium text-slate-600">{item.visitDateStr} (Tok #{item.tokenNum})</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.appOpdFee ? `PKR ${item.appOpdFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.fileCardFee ? `PKR ${item.fileCardFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.clinMedsFee ? `PKR ${item.clinMedsFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 border-r border-slate-200 text-right font-mono">{item.storeMedsFee ? `PKR ${item.storeMedsFee.toLocaleString()}` : '-'}</td>
-                                  <td className="p-2 text-right font-mono font-extrabold text-slate-950 bg-purple-50/50">PKR {item.totalFee.toLocaleString()}</td>
-                                </tr>
-                              ))}
-                            </tbody>
-                            <tfoot className="bg-purple-100/60 font-bold text-xs border-t border-purple-300">
-                              <tr>
-                                <td colSpan={4} className="p-2 text-right font-black uppercase text-purple-950">NIGHT SHIFT SUBTOTAL:</td>
-                                <td className="p-2 text-right font-mono font-bold text-purple-900">PKR {nightTotals.opd.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-bold text-purple-900">PKR {nightTotals.fileCard.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-bold text-purple-900">PKR {nightTotals.clinMeds.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-bold text-purple-900">PKR {nightTotals.storeMeds.toLocaleString()}</td>
-                                <td className="p-2 text-right font-mono font-black text-purple-950 text-xs">PKR {nightTotals.grandTotal.toLocaleString()}</td>
-                              </tr>
-                            </tfoot>
-                          </table>
-                        </div>
-                      </div>
-                    )}
-
-                    {/* COMBINED HYBRID FOOTER SUMMARY CARD */}
-                    <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 flex flex-wrap items-center justify-between gap-4">
-                      <div>
-                        <h4 className="font-extrabold uppercase text-xs text-amber-300">All Shifts Overall Collection Summary</h4>
-                        <p className="text-xxs text-slate-400 font-medium">Combined totals across Morning, Evening and Night shifts for current date selection.</p>
-                      </div>
-                      <div className="flex items-center space-x-6 text-xs font-mono">
-                        <div>
-                          <span className="text-slate-400 text-[10px] block uppercase font-sans">Patients</span>
-                          <span className="font-bold">{overallTotals.count}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 text-[10px] block uppercase font-sans">OPD</span>
-                          <span className="font-bold text-emerald-300">PKR {overallTotals.opd.toLocaleString()}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 text-[10px] block uppercase font-sans">File & Card</span>
-                          <span className="font-bold text-cyan-300">PKR {overallTotals.fileCard.toLocaleString()}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 text-[10px] block uppercase font-sans">Clinical Meds</span>
-                          <span className="font-bold text-purple-300">PKR {overallTotals.clinMeds.toLocaleString()}</span>
-                        </div>
-                        <div>
-                          <span className="text-slate-400 text-[10px] block uppercase font-sans">Store Meds</span>
-                          <span className="font-bold text-amber-300">PKR {overallTotals.storeMeds.toLocaleString()}</span>
-                        </div>
-                        <div className="bg-emerald-950 px-3 py-1.5 rounded-lg border border-emerald-500/40">
-                          <span className="text-emerald-300 text-[10px] block uppercase font-sans font-bold">Net Total</span>
-                          <span className="font-black text-emerald-200 text-sm">PKR {overallTotals.grandTotal.toLocaleString()}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-              </div>
-            </div>
-          </div>
-        );
-      })()}
-      {/* WHATSAPP MESSAGE PREVIEW MODAL */}
-      {waModalOpen && (
-        <div className="fixed inset-0 z-[99999] flex items-center justify-center bg-slate-900/70 backdrop-blur-xs p-4 overflow-y-auto">
-          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 max-w-lg w-full overflow-hidden animate-in fade-in zoom-in-95 duration-150">
-            {/* Modal Header */}
-            <div className="bg-emerald-600 px-5 py-4 text-white flex items-center justify-between">
-              <div className="flex items-center space-x-2.5">
-                <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center">
-                  <WhatsAppIcon className="w-5 h-5 fill-current text-white" />
-                </div>
-                <div>
-                  <h3 className="font-extrabold text-sm tracking-wide">WhatsApp Message Preview</h3>
-                  <p className="text-[11px] text-emerald-100 font-medium">Review prescription details before opening WhatsApp</p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setWaModalOpen(false)}
-                className="text-white/80 hover:text-white hover:bg-white/10 w-7 h-7 rounded-full flex items-center justify-center transition cursor-pointer text-lg font-bold"
-              >
-                ‚úï
-              </button>
-            </div>
-
-            <div className="p-5 space-y-4">
-              {/* Patient Badge & Phone Field */}
-              <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-                <div>
-                  <span className="text-[10px] font-black uppercase text-slate-400 block tracking-wider">Patient</span>
-                  <p className="font-extrabold text-slate-900 text-xs">{waModalPatientName} <span className="text-slate-500 font-mono">({waModalPatientId})</span></p>
-                </div>
-                <div className="w-full sm:w-auto">
-                  <label className="text-[10px] font-black uppercase text-emerald-800 block mb-0.5">Mobile Number</label>
-                  <input
-                    type="text"
-                    value={waModalMobile}
-                    onChange={(e) => setWaModalMobile(e.target.value)}
-                    placeholder="e.g. 03001234567 or 923001234567"
-                    className="px-2.5 py-1 text-xs font-mono font-bold text-slate-900 bg-white border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-hidden w-full"
-                  />
-                </div>
-              </div>
-
-              {/* Message Chat Bubble Preview */}
-              <div>
-                <div className="flex items-center justify-between mb-1.5">
-                  <label className="text-xs font-bold text-slate-700 flex items-center space-x-1">
-                    <span>Formatted WhatsApp Message</span>
-                  </label>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      navigator.clipboard.writeText(waModalMessage);
-                      setWaCopied(true);
-                      setTimeout(() => setWaCopied(false), 2000);
-                    }}
-                    className="text-[11px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center space-x-1 cursor-pointer bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded border border-emerald-200 transition"
-                  >
-                    <Copy className="w-3 h-3" />
-                    <span>{waCopied ? 'Copied to Clipboard!' : 'Copy Text'}</span>
-                  </button>
-                </div>
-                
-                <textarea
-                  value={waModalMessage}
-                  onChange={(e) => setWaModalMessage(e.target.value)}
-                  rows={11}
-                  className="w-full p-3 font-sans text-xs sm:text-sm font-medium text-slate-800 bg-[#efeae2] border border-slate-300 rounded-xl focus:ring-2 focus:ring-emerald-500 focus:outline-hidden resize-y shadow-inner leading-relaxed"
-                />
-              </div>
-            </div>
-
-            {/* Modal Footer Actions */}
-            <div className="bg-slate-100 px-5 py-3 border-t border-slate-200 flex items-center justify-end space-x-2">
-              <button
-                type="button"
-                onClick={() => setWaModalOpen(false)}
-                className="px-3.5 py-2 bg-white hover:bg-slate-200 text-slate-700 border border-slate-300 text-xs font-bold rounded-xl transition cursor-pointer"
-              >
-                Cancel
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  let phone = waModalMobile.replace(/\D/g, '');
-                  if (phone.startsWith('03') && phone.length === 11) {
-                    phone = '92' + phone.slice(1);
-                  } else if (phone.startsWith('0') && phone.length === 11) {
-                    phone = '92' + phone.slice(1);
-                  } else if (phone.length === 10 && phone.startsWith('3')) {
-                    phone = '92' + phone;
-                  }
-
-                  let waUrl = '';
-                  if (phone && phone.length >= 10) {
-                    waUrl = `https://wa.me/${phone}?text=${encodeURIComponent(waModalMessage)}`;
-                  } else {
-                    waUrl = `https://api.whatsapp.com/send?text=${encodeURIComponent(waModalMessage)}`;
-                  }
-
-                  openWhatsAppUrl(waUrl, true);
-                  setWaModalOpen(false);
-                }}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-extrabold rounded-xl shadow-md hover:shadow-lg transition flex items-center space-x-2 cursor-pointer"
-              >
-                <WhatsAppIcon className="w-4 h-4 fill-current text-white" />
-                <span>Open WhatsApp App</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
+                  return `${parts[2]}-${partxúÏ}Îr€F∫‡ˇyäé&ëgLJ¢d[÷»r…íú®bKIN&õJÉ$$b ‘%ä™Œ3l’÷˛Ÿ™≠=Ø≤o2O∞è∞ﬂ◊› ∫›ç)YJF¨J,@£/ﬂ˝ö˛ºÚK7ˆÜ'ôód≠ﬁ3≤∏ºÿæÌ|}√˜ÙÁeÕ≈O˝Q>∑≤ŒHk˙ﬁ§L·tËß≠≈•≈võ‹TÜDì4#ÙÌ‰5a•qdÙâÍ´qËbÆ°?9œF‰ıÎ◊§Gæ˘ÜÛsÔó7‚ï5›k	I¸löL»ß|ÈΩ_ m¯{ƒﬂOW,?}˚◊?Iﬂóñ»«Ip¯C≤«Q0…∆˛$#«˛ JÜ)	ÿ¿ltîƒQ‚e¡‰\º/}FN£œ˛$%ﬂêÇ4»“∂4:;ÄA4Ó¶‚„?ˇ«Ús∑€my¬ò‰∑ﬂ»œø¥Qf⁄ ÿõÿ’ÓYîÏyÉQnì◊[ïs`ÔÜ´ª^ÊD…ﬁ5Åº0¯’«ﬂN≤Ó‚ﬂ``O˚W∞~
+;¬∫i4ˆ[-èæ5HOº±;Soy]˛◊˛Ó3|u˘µç TyΩ◊vÉŒÉBï0È ƒFøbÛ“Éº0—xöéZ:¯ﬁ∫øªA>muNø0ƒI”#=ànŸ◊|&∑üûiF*∏!ØWwØ≤÷qù∫˚OF¡Y∆∆•‚—ØhoÃºlöÚ;Èﬂmﬂ¿ïüW·ÁU¯Y;‘±?ˆíœ0÷'∫‰œÚñêì¡»NC_ªÔ|g‰%Á˛pÉ,ÎwÎWoôÔ"E#∏\<Ú'C¿∏≈*˛W¿B¶ x]Fûäù‰Åü-»Wm»óªt∫˜ÖA¯ÇŸ0Hò˘ó√†ˆO eä]Ÿﬂ≈Ì∆it'—e´]ã@“rùHX¶Å¨8≥f≈Çb1¸\—‚·—.ŸÅ”ùÜ0FMÈ_¨√àÉÈ∏Ô3®üÜ[⁄8¨¬,y¡–ÅÉ7@=f<œÇ0Éô"W≤`\Õ8Í∞.W`Sè#c/å œÈ6¬P*≤ìaÎ¢ä*"™‡€dTπ(qSã9¬uÜ3¬z=Û˝ºg»œﬂZqõlëÂvÂtﬁ˝›ï7äq•y£ó π–√'	S˘´∞≥ˆs8(`¢@rZÈ2„ÉhË<¸mÈ]ÔËM‰+ÿÍE/ÒT`ØaôtgË=mzπ˙TªXù¶æ≤:ó^óí˚IkgÑ˜%~ÍgÂÑÃ"4<DüÃÂΩ@·6á |‡M¢^UWlqo2T«€"Ú5˚h∑ö˝\Ö≥ıΩd0"ˇò˙…µÂlÈ]]8»qÀ¢Ö¸ÉîÁ üàﬁGó~≤„•~´ÕüØÆ3◊aê0ƒ¡SFZ±Ü∆f¢`úb€Ø‡ 	ozì?JØ ›_l+s.∞ÿ«>
+ÜÂ–“§ÊwM*ì∆ﬂ>D˝ ,&Ì:ÄÒæ2QâÕœ7ŸúÉJ„ãlµŸ»Tä)O`ˇ´bØÀ/tÉäØlÅ≈W˛Ú:‹êøÛ{≥dÍ◊–W~gK`s\ÄfÍ•)N¸ıBˇºs9ëó$—t2Ùáù´êÙA˘R…˛È§!`pguyô§#o]vÆR]¯…YèÇ·‰Ù4ˆ~Á∫≥º∞UŸ™õ•#{W?$«AøÚ wæá√øıÚoKÍµ3Ù«~‚Ö√Œ:L"ÛØ2>Â¯™≥F‚ÎNèúÖ˛˝_Á2Òb«ig `Ô˘o”4ŒÆ;}?ªÙaÆt X√Y4…:˝(ÊÌÁ‰Ø{Ø;˜‚NO≥™Í<È§7≥]π¬˘·ª∆—$“écùz}¿a¥KX⁄˛£≥Õ'á∞@ñC¿€&[¢a◊œº L	ΩÕ%zY∑å%XáÀ˙ËL~^YâØ~aÎaÃHû·
+lôe#∫œÀS2l≈M”V!Z⁄ p<îg:k9ÿ∞ØØû/≥¿OâG! ∆CHZÜ	rD |ΩÀtΩï%!\¨îaXLy0\–≠•ø≈ïET??D…ç<LÆi≠¥©"∫w·ãøˆ⁄ã∑ÊÛ‰/ÌO≥,öØí]«∏GÙ∂À}—d'ü_ﬂ¥(øëeª≤Ñ`™∏\~tÁ±‘[&#§&“ØkïÉZQéÊUâàY>¶I%ä	∞øp»d˚:≥ ar'£Ëílá!€Ï‘¸ÑyÔQÛì1ü“€”X∂S6ÏˆçE¬lä=9RøÃÒG¬ÚbªgEôÕ‰cøX÷1iö[L˝÷,ï¢RΩkäNßÏØRπÛ1 P9õ∆¯#p(ƒïÉƒﬂ◊U^˘eÒW7/˙–1æ$ˆ0z«ï“‹øøgIXeáloÓ~#*¥‹UÅ∞Fﬂ≤ÕàΩ˙∑˙[N£Ã£[„ıAP5œ-áÖ^é¨|Ü•éÌ>=Éê¿÷ä|úπDY0AÿõL‡àÕåâE	”ó˘]AJºA\¯ƒõ	ï»ÓÓ—	â3I	…í1‡/™».Ù…ayY:%ArÏÉÈXCÎTÒ”,P6)ç4≤B»Ö˘øÈˆ¬÷ˇ˚ﬂˇ˝ˇ‰'∞M∑√N7Ì4Ò.öÑ◊9Xn›°ƒ√$¢∑™kúå…&Q°ﬂ∆µ€9Åê
+{∫ûÔ)á-º?-—}∞}2sÿP≥M“Ü–-í6nÒ1* F‘â&ÒüpÂ¨M≤`€ê™·OXlS4r(+’2)uL÷Ö¡ﬁÅt*úmÃT¿nêNŒ§QD‘ó≤Z—å(Õôm©5óåTe±È(	&üA}÷Œ—t .b¶çIN¶]1»1äŒt‘ìëÇ÷,”ê§ª®Öπ‡™„M≥àåΩ´Œ®ÛÛÛÁ(ÍïÎ¨™üMCÆmÜ>PÖú¸rÇ=à¬–ãSŒçSÿiìÇYÿ#v¢p:ŒÌz>√Ê2Ç;å41Kû¬&(#´L•4•–…≥Ø/%az«~2 ∆é–2¯ﬁπPLÄÃ&E˙öÙUg5üÉ∆ÆCáÊÊ≤≥“#≈"zLé,ÖDaﬁvAùê?[∑lt«KìŒ%lœö¢Úèh!Ÿﬂ%ﬂP9‰¶
+[[7Unß%8˙„‹LnÈe~£áò"• *ì‡|î9˝;ﬂ™Y‹€Ñ{ÂÑ∆YgL	˚CLsΩˆËs€˘¸Â•MyÊYäd)üEô>=∑ì!l£…lg◊ìPca
+õY?^ãÀ~DºsM¯≈Ï%ÂA ÆÎ‚™ïlQV\I—,Ànö÷í_≈?
+O@é{}≥~´ JO:a¶œëœù_j‰ﬂÕ&<Ùí£pö Ï}ùå‡?ad4€ésâ°
+W Oê]Á1Z¡ã˜ƒíU∞◊\hê˘Ô¬÷A$™ÖÍyÜ2	& XÜ˛ iÓ"/ªõK±˝ı%‚÷”·”VßqÀŒù++5{[]∑(ò G∂∞u
+∫ÇO’Ñ™EÄd‘∆ Ö≤-Åà¶Y
+0Ãt
+T6àµÁ>* )í´˙›°≠µØÂW;[˛QT]¯Pıc± Uùˆ
+zk±˘√‹a>À£UçßÒ‘3Ó˙Ó[õπ2ˇ»∞º¬I;◊±‡¡f)ÈY”≥†iIæª‹mûÁäVœ¶i’P=Ë™Jê!ÛÄ›Vól˙6˚‘Ÿ1À˚åät˛icO›0FÅ'§‡Ö-äLÄÏ>Yÿ…Å) QÑÕùÙ}–ÔÄnêA‚#M»Ó¨“‘zÍ`5Éﬂ5jb6~]∑5K{1<zîË_’íë{Q_cÂºËu¡ñxÏ^í√&ÍGåÀ@Lß?ëÊY?Êò*‚pJ`»¡“ˆb˝0w‰ßôõ«‚˝E†_u≤≥˝âÁ @Ò∏bèÃÉ -£"P‰H•5ÙÍ≥˝˙ÊLæÛıM∫1Jû"ÈÌß:vT5ûàÿS8≤"¸îdÙÊì—gVÂiœQg!_◊&™ø!ã¬†-Ω,ÃKËãPú®œsÕ"ı«ÚI4”}"ˇÖÙ
+ea1è˛°eAä_z±\çÛï?u^«Õ–w,Éß—¯V~®Ç“DüÌ)¶-≠KR_V®:©∑Á:ﬂ…_»JÌZ(sÿ!≠µÍû6ÀEΩPT∫-}%{ô4HÎ …ËﬁfVg$ß»4ê’∞( ∑ó:åhõª/‡U‘Væª9ÄZÉéƒ-‹∫ë9¸ú€ø,áË"wÖa^≈çƒ3Ô¯$‰ΩûÉ∫ÿ"—Èn
+ÅË^HZ3ÔïÑR„j%X$ÙP5É^5⁄ï£Ôè…óNò†√Çp›*”≠e¬Œ˚≈|…˜œg\∞Rq*ﬂ|™‡ñ1≤™t9HÑπîÈØp¶œ‹ò+ïËÜ\ËáSøºLø·’⁄˜ÅP‡¢?ﬂhf≈˝Ÿ¢˚±ﬁ¬PÁ±ŒÔrÑë‹®}üPRxœ
+kFêÅ∆0¿†Ó… Ÿ;∫G›<D|Êj,;*WwGg®ùº•z˛ú[#äcy(À Ç ö˚T6˜ªi≈GI{ÁT· 2àLä#o2˝√ÿüÏÉÏà!ÕSr1àÒ09|P≤£4≥•≈‘xV"ßd;+ê∑˜ª_kÿ&.fU6Ê£âoÑˇØµ‘”-`_¸åwAˇ |·ú2Ã†+“)±≥gÉﬁÕÈ'æb8≈æ‰Ÿü&^:Í}â√∑õ˛¯Vó≈‹b4”öEó®èOUCcWöEKæ=<==¸@∂wN˜»€ÌcÚ„˛Èwd{w˜Ÿ€›?}Fv˜ﬁÔùÓë∑·∆É◊Ãô2%.9SVı˚6I†¡∆Ußîç∑ÌÖÏÛ4≈Ë»ÜM≥„¨ûgôú©,ó¡∏@‹+4˙H≤‚,oåqQÒ4L˝kxoÒé≠¬¶É÷Tê4º&Ω¥[ig‹BãkB°-Üq}0iÈûeíKÓ$&◊∞]óË/E¡yâ◊ Ñ~6Ôgé˛%dH…`„ m›EÙ,wvw9íô¬Ê[)“à·ÎõØﬁ‰m}∏Åâï™î?∂áC*~∏≈6Ú∏eü[>¡ç‹Áæ&¸∆…$Õ!£À<£¿›G'ªË¨8Îƒ∂åp_3†iu∆ƒêÙ¶z,®§h<`Ta¡ﬂè}@≈ Q”ûûUÚ;#"≈ˇ¢@(ì[P!fÀ:;/	Ñﬁáå•cóa‹Ã[∆JíxJﬁ/™à“-|ÛrŸ⁄Z1ù_3`Ùiõ… }ˇëPH#›ª·’qrn7'FH“œ‚ƒé7¯·]bB¨›5∫á*4Ü‰$JH¶ø¸ë Yß´∏Å2WŸö≥Óö-ç™ˆGÈ∞o€-9P?^∂èé˜N?Ïúíáª€Ôtπ	R`W =î""y¨Ê¿TD©‡ «8∏‘œ:Çø”_¿woyòD1“æèÛWÃ®2ßBÒØ1l|e’uÂ	zW!∑è Òú ]ΩÇ^YØ Q‰í{ÄuÜÙﬂ_£hˇv^='√iBÕNØXÉ
+ _µ)azUj¥Zïª«5ónM¬P„\ ]`â≤eéVµø[Hv=¡Æ˙Ù˜U‡n—∫5ﬁñ3…Ë†HÀöòR¯wyˇ—Nb≤íò	âI⁄<√Rq—‰d⁄YÆ'úx>€ìÇg…∆§ÁEÑiÒC›ù€ß˚HPNÄ3≈¸Ω}ºÛ¸√~–3ÂõØpRπ˚œ¨ ´8ïOiU÷πë‹ƒ‘¿d¨W"ûahŒó¨’]–ïèz}?îHCÂ.≤Çjºf@.â?U<∑:6ø“,JÆk—˘˙8°Fªë.7Z–bLGﬂÌhüøÈ≤?é£ã}íΩ«µFê%∫I,1zø≥PæE
+å©˙#ı‡± ryUˇÂ(÷-æ)B¸ÚhiXuæ+∂<ªÅ∆d’†ØD˜%;Å∑—Ÿüƒ”å\ŸàÏ]≈@ ©úÕ.≥hL≥ìÊ.Rå´£$>0]Lﬂ¶&D{†˙&ü™∏◊O£p
+$˚–M≤Dèë◊»eπeLj¿∏=VC1c,8™›
+™˙#Ä1?yΩ`øı¬ΩÔulâ√“ev« 0∞FœÆØ:ünQ;4høÀ‘Ÿ.}y]Ã60«£ ÏZhm¥7™(p/íVd4º&=}˝e˘sÊcï¨—`ﬁ	 ‚ÙF˚¶’DûGìÔ˝Î›Ër‚º©∏@ø˚Ÿøf)◊{à⁄z|Í«Ô∆âÅ°ß˛ô73]	9›À™`b©`W˝®[jÆ~:ué´πé¢öøáùW$N:ÎrS…1ÅÀüEÉi∫ÅA!¥†VÒE0»/≠.Û+’¢2§P%ƒî+. Xù¬Ü‡Vä£¡˙∫≤ÆûÃ&^Ã™0¨¡˜E{ô¸Ë3çˇ°49ßÕä'@êñÖ ß 1ıûFUlÆS⁄˘SéEÀfÿY≤ÀŒX!»NÊ$wE:l@d%
+≤˝âßINâó:ßÑ¢XW3˙J1É])/¿–¿Iû<2K∆<+h∂"H1…›≥.	Ì|:ıÇy]9•:ıœ(Ñ·\*=ˆ1u %Ô±üÅY6ΩiπKø≤@?O9ò ß±§&î%auCiÎ¬«ZZ";¨xu^¡(Wh)#˛q∞‡…•5”¿„¶W~bÃ}Ò/acÙ√?≥‚πP‘ú›nCe!œ«Èˆ2èÁçÀ˝Ô<,JÛÔ£i⁄á9=≤}Óˇí¬Õjª˘ƒør4HÅËqLÿ¿¬;’Ê‚ÁvÀzÍeñ/Â◊Êà	«Ÿ≈‰R)ÃNµÖÛåÌ%Í+œ∞cç≈lÆöÁ Û•œï_Ìœ…Áåè øÿüŒèüÀˇ∂?Áé7√?ˆ˚‰sß∂@Á≤Ü’í/·my2(oÆ2
+z»j ?#˚§‡¡HÈOÒE9◊_ÃëﬁR@ åWÉH=·6°˛3#ñ s‰•Ú-µ"E∞•«Î@[n˘I∑ÁÄÉ<&
+/¸·A±›x	gÛ¨@◊gÚﬁµkﬂ!"ùùZﬁ∫n-p˘7∑qJ¡Úo∆∆‚áb
+>–ó}BøˆÖ2ﬁ`Ωiª8hÕÚ†R Üµù$ﬁu˜,â∆-	®$µJ≠r√l:Q\t–˜®é¢´Ÿ>g¡vÌ+ƒÇËÛ’m◊ØVpo\æ];Í∑S/ﬁDXÛ3ŒüÀxÂ¿`˘fÂ≤ÖÂﬂÚ	ÕH€ÚXMﬁãgµu;{ H≈"n»ƒ1´Õ)‡uPiıì¢‹LaÔ.Â|ênó®˘[Qy‹“2n0¡%oãÛB‰HzÄ®JqóbÓ_1Òÿx¿U˘\ÏVè:e_wN¨ä›Û^È\æf≈jÃAI’óZUﬁ´b+ïCr®dZVú‹ıµ~4UORT9àä/≤ìßõìù}¡\Ë≥XáKb°KÅå≤´É ±?¨/ëxUÖƒø¿<˘◊(úp ˝ﬁK3¯M$ÂN•Vú2ÈÛûß”çyj=ÚAlÅ($i‚WXr}R}˛ë‡á∫n4YÔÎÀvÉL%––%v…çpÀU¿œ¶SÊ´xw%,ªÏ†	oGO.ùvG0àän^ª™Æ9Çaö,dUí@júÜquºRÜ#%(π±1[ıÆQÙ&;£Â¢¡]Ä’&+lº'&Qv"®“ı{˙J·‹∆îÃÁnYÙπh∏ëÑ≤pæ∏fkºïn§WzáÛÊô˝ˇé(F?5›BîX˘Ï˚ﬁAwXwLÒ/nw´¥P&ÔPB`ÌÛ2ŒhX≈<-◊ºãR‚UÖf∫:&¡_dî5◊ô4V≤∞F∞$ïphU€qL≥˙À≈”\y.Tî+æo‚ßËmo¯…‰ït6ÚΩïS!‘.ﬂÑ^ﬂî÷¿‚’ÉÙ÷¸Ü€üHÎ&.å0⁄sœ°π(¬›Œ©¨Ï”4°ï}f™Ü»>©üΩc˜ã≠˙Å®YNíUf¨$ZªE√!ıûrky+ı≥¥D∂A˚=&xaxM‚ÙS⁄íµQ]:ÛY@|?∫b—[àŒA4M•:ypWÛÌ(Îzµrõ#Ì∆ãÿ?+5lêDcQH»kÍ›öD&˚©éØê¥À¢qÅ&A]‹≤‹ÖÜÍ¬ÈB˚{‘Â‚âV1‘y„¶kı√Ï—y˚Cg£pÈæn8‘lN„(ç›8’OùÉ¶†öM÷˘nú”Íá™[åÑ{Ë>Ωnª€´’œ/¡‰‘¢uÒ	‡ƒ√”òÊlÃ∏;√a‚ßÈåOÔŸ5Bê∂á¥ıAêL2¥‹/yüáºI„wõ=ÅÙTñATÊü∆C˚Á0'ñc¡zy°{õæE£˛…a^˝ßõ∆aêµO€?/ˇ“Ë5∑MX #:&‘rkJ<ê’ñO∑*“à’‰ÕvØSµ^ˆ±ı|TåÃNÈªCÀø¢øB
+ò` ˜Zå$≥DÍàü:—«‘◊î)/Bp0|~Ÿ±∆E1&ïB˜eŒÿL0wØï¬Óvî_]"EÎJ◊Ëßµs©π¡úÎ®¶¬âL:<&{ß{«‰`Ô«"ïÂ√ˆ¡«Ì˜Ôj,ge©Õ¨íofãó◊’\Vä})vvc#òqø¶îp≠Ñ–f)M+o€˙—?c¬€y$ –ØÌÛ‰mõ’-¢Eÿê'E|oî_{¨˝YÈ‚`∆bÅ r˘Ïµ0nMÃ±ùƒÒ$∂‰™èµ©,Ù’ıÈÓ		çRä§Ñ3Y˘r(î€,'A´·……	‰•¢n:hqµ\MÆ?è)±èîC‡˘xHXπ%}1ŒÂ<‡<öfa0Ò;t<—È+ÜPu˚—ŸÉ;kÈË√•¸ÊÔ
+!Jy∂1Bhl
+∏a∏‘ó‡}\piΩlkh∫dv(`∫MT›€%G«{?Ï~<)¯˛ŒˆÒ.|˝ªÃô›eèPmµÌJRj·'GYVıl ≤≠[í™;ûµñÉ«Eëˇ]ÇMDı†ßO∫¨1é≥8o∞¬`ù,›8ΩTı`ì_ëO’∑íÆ¡ã—ZùèY©¸úéi´y"‹È;ZsáìävßiÒ'˙qÃŒ7/è÷´c®.ˆ™‹Ë9]>çïÖ≠æ cŒ±Ëz>∑ã—‡¸9ìÏº‘ƒÊ‰ö>Ìk\n.ã.ä¶2¢F.u|B`Ì÷',®íÈ$¥<‚fcòX*&ï	EÉJìbÈ5[∞√‘Õ†¬Ûy∞Á+CdÑõë¬Ã—µZ|çäŸ≥§¥sN{π©jëY+ƒ±Ê5Rpç¸Àp√íÕì¯ˇòâ?4ﬁ »π0?úñLM“-–]≤Uz}5ïhxô5¿AJ’∑y®aÜ¶¢6ØÌΩC/J_2Vdìéõÿ¸∞Ècyã!Âƒ—≥B~#ΩG~ˆyØõÊdm3ä)•‰˚∏rª%uWﬂ\b◊ùË›nI€Î M∏!π¥óB5v◊4è∂ûhÅÄ“∂±ïÍ1ö«í˝LßÁ§ÁàPJJñ}Z\|Èé¥Ô1@ç÷ík˙ù3†z *[Ôåˇå7ûºl∆§¶¿≈gÿ≤¯cø∞∫3H©xPÃëﬂ˛dXÍïOÀäQöø¸Áºı‰Â5´U0‡/‰˚2úZÔ$ùß˛%´]j`1Vy›a_SZsŒ¥ØÚÆTK>Ã›˚µV›1i;∆Õä&gA2&ﬂ¨ü'÷8lºÅ∆™üHI ~V~™÷˝§£kbÈuLµä„ßäüsW¸§uûuπOS·f°oL}±OµQi	`§¥ık?|˘œΩbn-Ùu,˚I˜‚èVÛ∑bˆ¢üµΩDåı7l¨i\Øâä0äàœóµé¯£$:Bﬂ¢†yÖÑVzã≥dQwŸ‘ÈÑ¶¶Ê3¶-;#j_ı`b∏‰‹}L“∑ÉÎˆ]∂˜-ÖS‚S´Ÿ)Äz≤˘ì]ı_”ÆÍÄOF’?ûQµˆ‡ü,™Âï'ãÍ…¢Í∆tüÃ©∫œì9µ1L=Ñ-5è5{p+™Ωùë…ö‡ha]ïÂ!REÔ"πõQQ†π—Twmà\
+ªä≠àÊhßu Ó%«Ÿ|ÉüG`g∑…?[{}
+è€Ó⁄-Ófõª•e›Ω[€m[ˆ1FÂ¨÷“>sp—}ò·µ◊–<ü£ﬁÀç>ôˆOΩ>Î.è©?ı©^xc	»âÔÖß—–ª>…^˘∑>5R»ÚÊiÃÈiÙŸüÏD„	le—ÁBÆD⁄—∆â—Á.Kò•3Ìıî±¸£«;9Fü©b˛ˇÍ“?˚Mö}ıôëó“t#úÕ˛ë◊DeI›“Ü∑.Ë,/îo|ôT¡¥u—•c“º!¬7yãÚßÈ}º¨ò“÷ÆN7H•-ªVZ¶ûw≤¨ô∫‘Íím¶0GzÉp k¶…Úc*6Ê%œºº˘∂(”‘Oò∆¸±9Åô`Ê„õÓvöÁH/˛Uy*Eó\•˚4<,ì]¡Y»?-æç≤—"m•X\–çÀ5=˝∏=◊qãÅ±D7V{&ﬂ†Ãq˝	í∂$/]@qí¥¸+ZÅíÑ˛π7∏∆åÅâA|…¢1ŸﬂeΩ£IxMx©J>^B”ôiU—¢û!¥ï“GNŸJ‚_íÚ:§ô?ø¢'˚U&ævSÑ≥Ù« µqˆãmÂ∂_xiy˘ÂÛµ^o±@räV,Ø≈qNDËm_¡ãƒ˚Íﬁ√wnÔ
+∂íÓL±ï"ñÒ
+≠j’aÖt≈ö¢À¸yF˘&ñÁ5à%ÕM¿•vô∆%~Ù®Àé[9›¨+"‡z&‚:˝Â+ïà√£mc|Ü-M_Ÿõ„ïÉ¸"-Ëo{£f4ëü©l#≤Ü~ËøçÆ¸îñ2@Ä®êú70Â≤‹&a%∫!\\QÁèFÓù(LwPD¬˘W_GwËYSY«C1ïï6~/áÁ¬Â’EaQö˙ç¶ä±/
+G5z©˜'$Ç «aπs¯óJ≠Ÿ\˙Ç!9<–#∂0ıB#“Q?Úía%ÁYôŒÕ'Í¯˙F⁄©[ÍxÒÈVïñîØ¥7˜·4B}€áõ ÅjöÊ‘Üÿ¸èLM«j0ÄÉá]˘|¿~EsVzZC¨^ˇπU±Õj™Îˆ˜¬ÊÁ◊‰ÈÚ\sãól…%-ˆœJõ◊¿#Ù(MâHfÈ\õ|#õ∏lÖ˛÷eñ›»t∫®lÃøk'ÆW∏ç~yÂhÕÂ~«¡§3Í¸ _˝¢o¿©ùmMâﬂ*@ØÙƒ∫æf›~g‰>Ô… Ù+≈:@÷∫ºÔÿukq≈Jè˚ ™Fù”|-wöÆá≠≤ppöÀß Å]rÚLàèî8vÕn˚ÊŸ§ Ó”ö¿ Â< l/
+,‘DßÌ∫µMÔç˙‹:DWP"JI√>sô∞⁄‚√“X)axkgº“˘˙_O9ˇAÑ≈ÑZKX•Øî‹—‘A`ôX(Ç˛ùDó¯∑L«™Y≥lÛ/ıu"‹»ÌjMûlu¨K¿e¿éï“†ƒ’DSìâO)ïsÖ†/K≠M%¥Æ(ã#u¥≥ØÅê?Ke_p}%ôJÅt†ló5gBü”R3#J¶ì˙Ò∑n “⁄4∑O¬ç∂9v«˛jE¢Á¿≤a∂hèÙ∫[ÚP¢>¸\NäFõÃ0´∫I´˚ú≈£gK˚Ê√:∞`}˝”2ı‡àZpñx˛ıE˛˘≥#B˛‰Ú,*÷;@XßaF#6ÎóÂT^…ºÎYÓ@…ò˘=RKŸ!:Vìú~1~æén›w€IÊÌ9jîùé¸dÏÖÔíhLIbBì π<∑"ìQ≈àØP–¬é}•≥^kêD0fõt≥Rcº1 ›¥gakl∂$NòôúZ}H5ÂÌk°ˆà(;ì–ïDª{+˛áZeÃ…ƒÊ~
+«Íg.¯„VîÃˆ¥¥„Öa^Zo(b$ke∂îÉ∆p4Áô¢ıï ‡¶Su>F‹µºh∆ó>∆πIs°QmrŒ#œ=√_0˝VÇC˘€˙ùë:\ïí8‰‚€…à
+Û˛r˙úë MßXi‚‘»4Û>[ÇÒS6Zﬂts¿„”§TˇÆ oûÚBÜ⁄äÜ@”é≠˝±Z¡Ä¶Áà°k&KòdΩ¸=Y¬
+ÅÔ¬J)ÙÓÏ`Ú©r;XÔÀÿ¡J·YZ_C+òÏ:xÏV0Ìl÷
+VÄ˛É¡d`º{#ò≤˘øo#XÔﬁç`~Ô…ˆd{2Ç=¡ûå`ÍÁ…ˆd{2ÇŸgd{2Ç=¡*€˘d˚˝¡v˝aÄÎêú¯÷Q©å¨˛Å≈ÇC(Œó•ûu¬£5Ñ	!a/“f¥\–“#"√lâ⁄M≠eö≥ﬁçô"»¶∂
+÷ız ÛBO·ç…0p∏"1dØ˝&ßq‚ßÉ$à˘˚õ⁄LööÚRµí∫¬è≈zByŸ`Yü.ìlv=)>∑0Î)'†Ωãø!ã4º5]‘1úµg}F¿ìÃœFQ:àbﬂh,3EÔ◊˛W,úƒôƒ ík?+ÛÃV?WE?WÔ{Â»íz~J<ˆjC¯iJì’·öà?‘˘·¯Yi≠Ù§ûòc ª0O–ÇTXFﬂ©πRÜíﬂóµ≤˚VÊl»Æ™ô˜=eZuM©V ∫Ó»Ëäá˛ÄfWU'g1A#z|fY1ú∫A9˙;1ŒZ⁄ù‰üGbôΩÉÑia¥á≥ÛöDíJ√'˜@˚ûR∆FË∆Ó0∂ºzì®E‹e:õ≥∏´Ÿ™≠\˘Ü1.◊˜áÆ˝ÔÃÊ:ªÖævésò·>ÊQ£œãπl =Úò|*Dr◊§Vîîw¢Ço$.ß	ípﬁ:AK–tºY)éóeÛ´∆…>SÎ¬bñ*bJœºƒÒéØñDùi√“*ÿ=π« ù•ªÅw>â“ÄäãG¢<óôµßÁt~w‘!Ù…π‰\xr.ËÓö≈πê∆æ˜˘á(Ãdb.¿áó?R äÚÉ\ddn–…Kˆ:Ç ±ã§PBPEÍÆòxì	º|‡£&6'§¸Ö”±^id7Ês•'ÚØÊ∞x¸Óä?¢è‚Óù¯ì˝7Â—b"R[qî+ﬁcï9r2H–~oóº/‚<	Øg0“8ÙÆ—CS(•˜. Ú´© Ä\ûßÒ∑iÄnQÄÌ$
+S'Ááä¨c¨ﬁ˝ Åµ.T¬∫
+â›Bb-7á%÷#∂"-5∞sT[XÍœçj¶¨*-lΩﬂŸÂÍÀ;Z∞bCèÍtÉ	≠ÈGg]”µú* TA(wˇπ∂πÄë2◊Q„jµw†Öß@YÒŸ≈>ñ∆—Ra±⁄CÈhêigÈ§(76'•·¸˙ÊL~/És˙n‘ÀÄ(Ÿ¡A’CEâUK/ﬁ~™Œ^GD∞;“TCåuıÔsÛyÊ¯CÌ˛z~ÉΩœ»Ò'·ıc9∑¸PGêø^∆ÇÁ˜wyx£30Wªì”îÌêj[ª“KÔC<7∆X?DCêì©Øññ»vº"Œ»ƒ£I}‡G)ZãÕ'XîŒ:ùTF»ÎÒÎ‰5:∏¶(¸wœ˝l/§z¿€kÏ,[‘‹	ëÌwÿËù‚Q]SX¨UéÏΩ¯“≈“Ú~*¿g[ÎÉ≤<–jwhº…´ﬁj&†¬H•;≠$/2gÚx„íπ-ã*ëåeYcƒûÀ&lMÕòpËÂâ”*∆ ØtpPˇÄTgR¨
+¸b¥X™K˛aXÁä˝6"∏±ÑJlÓ®"ãFx4JZœeW~g]ÍhƒEÖµ™Ã Ù0r,
+•PE“@…Ò;ﬂ£&˜(!ß?é/5•†ÍÿÁ*yŸ≤MêÄ˙ÜûO>0Z©w¥˘”ê¬U¯[ÌéûyYp> dSiÈE @1ﬂ x“N2;N»·ë$ÃÔ2)~si¥¢ô¶ŸÅì˚Îe·S5”óSa]‹èBø\"rS?<¶Îhö∞2¬äπw…˜¿D¬kÚŸ˜cv9Ò~”Ä o®ıˇÎï#Âúôç˚®ìQµ¢76¢ÁáÉà≠©õÓ§xî|’F÷¬Yj≠ÆÙÃN¸®°	Ä‰F™ó˙>x°å˝ºl™Nu‘J˛n<—äÒ˚o±bZ2)=VV®∫¥æ@“Ï:)De	xÁ);‹™4/M“bóµj=jıûa0Õÿªj-?#+gIªM≈¯kQz«m•òõXΩçΩÄΩYó∑⁄≤ÃÂ∑ﬂÙ3-ÑbΩˇ∆™∫∆@
+k¢¸÷Ö∆S/f±3îPÔk…õ±Cée˙àÍ"´¨R
+&ß+Øî¢kÀÎ´À§CVzØ•Ôö-°•ÿŸuôôØJ~1åÿûNJ®'P®ô9îπl·iE®ñı&˙TõW’ÏBêﬁ)≤&πÔwSÔ!≤ÚtlùV¡íÛâu—Vó#äMÍ‚—
+¯ÇËáL–≠W’Õ‹ÎßÄª‘wñIËüÒné‰∏ü_apÄßXÆµPó ›˘x|ºwp˙˛'≤@∂ONˆNN∞•≈Ó◊bzm∑†?Mÿüâ €µà“ÀÖaG¥˝›:rpx∞G:ù:kjÉ0÷B†`íò•|ûäxÜŸòª]k‡ü˘Ã1t⁄\´ÌÍgﬁÀÁöΩ¨Hk¨€ôlºÀE∂>u’⁄≈ÍÖ˝ÛLpÖaÇ¸Ns‘Ó∆Q¨ì ç≠9kì‹§
+≤Â·À—2ık’ƒÕ≥Ú2¬É≠ùÜËÕ'.[`É<}l±çàÁ˘èGQ§öºãvÙfl∫ÙUπtö%˙Ö≠∑˜O˜æ%˚∏˜qè¥ˆ˛~J>Y9Ù\≥û÷≈WIç»à…ãı6/yi_3·iB[…xçJ∆=k”LWç∂≈)¶óNµ-%y¡ÏËï±CÖ¬√˜]‡+vßúxs]L ≥‘]Nµ(9¶“…ÛWÖ°ü◊©L†#T∂ã‡©Rå§AUûÃÕX„hl…’å‰»Ègó⁄?w´J∆Ì'UJØJq{ªB£ï¬=+/7ñQóÍ≠¿øø]JSøˇIóz“•AÃì.ı§KÕØKi·Í_Bó™[˘ì.ıÿt)◊|]*EΩ.•›∏˘t)ßièPó*Ö 'mÍ^µ)Î= ïåÏ/$t™ßˇƒ?å—¸=ëÚ›’H{åÊYpÂçSüãÇ◊ˇJè¸
+≤~~QƒXU?*d”kîQÄÛ˘£ÿ	CÓÌØƒÜÓ‰Q°_$–êW… J0$≈%*I∏kÑ˙ÇÛ@P}à¶£WBœ´Pq¯≥Ò£¶˚[Suâo÷¯œÖ≠⁄`œM÷1^√ºKµ¨~´¿≠ÌP≠Ñ¢…]™âáÌØ+h“ÑÙ≤)*≤†‘¡z•Ë`≠4=◊7µï[ |≈}±¸1∂h«XÿB47óÿ5œqg±ÍˇƒË6«∏çD’˙Õ# lP@P~˝b±o,Y^\V´ï»c÷Ù·d≈˝˛Upè°dòû4`i]LŸY∫∞íW·%∆ÀJå)≥çiÆ;UåÓ^Ü]„Ωõ¿ÍN¡ Âˆ(‡‡&DW’D‚€c•^(Ïa<,√Óı1X¥Â'ﬁ«æ˙ì!¡œÛÌ5¯î—D^≠
+ëWœC‰ï^¸Œßò´Å√Øz˜~•$2Ü^ôNÕ"ûÊ;PXWf¡zÅò∂*≤iá¨;¿“ÚbÉ¥ß`‹ƒy∞Õ6ÏÚçØ;Î∑Và6k•g≈∫Ô@,5À9ÎÓC∞jº∫0÷*<ŸÖ\õS·é]
+’‡S˙Ω°"¨q'‹edñ1ô…Ÿï «LöjÅ›{HV”j`ç5Ó°§ç.®Zt <ü◊Å∞ft ‰$•æzŸ}¯–Uu(º`¿1áC·˛B≥4¶sÈ=¢¨›µ/A#^§„ZGBofG¬EÕ4˚∂NÍl≤¶|)»wÎ_»ôÖ¬≤j⁄Ëõ≤%X}
+ïdSπxÚ`õÈıA∏¨˛n#å∞µ‰æ÷’‡ñ¸\‹mœn‰e»a∂±Ø·˛¢∂f†Dw≥ÂN|*>¿ûÚÎ*Nõi“LªóÜX£≈Ëıfæ≈Ûpñﬁe◊™l€lÓz0
+£ÕN–ï√oSGÑŒÒ dZµπ!`ıw‰à∞óá0∞HTÌèj ós◊›q=)c_&∂ÎëhcÛu=icˇö⁄ÿÏ¡]O⁄y“∆Ó1∞Îè≠ç›qÿì6v?⁄ÿÏq_˜°çπF}=mLª{wßç›e ÿ√hcÇ,˙§è›á>VπÆxﬂEQVÎ{ÅAQta4
+Õ‚¿ñ…PGı0åí*iò¡Ö{Ù›ÜÑ@qvBﬂ˝ﬂˇ¸èˇB|È'¨8‰ˆ>9…¶√ "oßLÇ^N¸4ÂA
+YD0îÉjí4¶Ì"/´ª£˝äj≠«· «ø"@lVU˚; HQS	˝.FÒ4ÆÜ çÿMÙzÒ0…{∆`9Ïñ‘áÕ& w˜√iÇ‹„◊éµõxN^YåwP#Áîí9[¿®têÍ…Aj¶™≈ºÑì+®ÃÅŒÒj˘b§˙©Z òMSS•ám∂6öD;ıÛƒ‚Av≤®T.â∆l^^NùhXb§ˆf cuq~SÅ18¡ΩEÇ6
+π⁄°ß'uQ]^Í…ùTWÂzï⁄¶™k4mH/≥‰@.ïå⁄cïØ—ñR5≤hﬂÊh’ò∑PJÏ$fh¯≈
+J€±πh`¿⁄\1Ï∂ÂçVµøkÿ‘ J¡ß¯∂ô´ﬁﬂ∞ÿ:xt¡'l‡/ éù√«˛¯ÍÌ5m1√≈µ-÷,åÙ˘ÙÉ|}£‡±-b›åÜ´í∂©∂¯uuÇ]Åﬁ~≤ºyÉ|B9OúJÁ‰Ù
+S£ú≤x‚{…`ÑMóÿƒÀÂJ‰» ˜Û7:xi¯æ{É?S≈F{Ω∆jµ∆Ôt\Ñ@Vß-—îs—H≠ôh¥ós÷lÀﬂ5TBCÙ≈M5£rt›üúØ˜™Ñæ
+%éˆ·Çhb,&ÚG’$[ˆúX‘e‚≈v‚ü´uEöTb ÊÓä"ìrı∫≠só¥K¬Å˛b©e}≠k∫th⁄÷ {£lc¡#ƒ¬óG^“Êﬂ–®§òµQ¢maå3ﬂﬂ5…˛ñƒ¨ñ)ö}XaNV+¥&Ï`∆îR©ÉôjT°∫®eû∆ûiºµX˘>s⁄WìÉ`bkU3±ÊòÏXæU+e1®æ)&\ﬂÀÆs¢ia0U]◊€Ûö$X√\+íCŸAC/vlmü˚K'˛’Ü#Æ„HÜa~&öﬁíÎ$%K:(á∑‰xi–èa:¥%íi2JÆ√¥Ëp¢>0j!<X⁄^¥Nb_&S0ﬁF√ÎZıBßX6nÃ$aæŒ*gwÛUïãÈ0Õ¶©Sª∫–Tœ,˜ΩtTÙa™i¿¥…E)âµœ⁄’So#‘ m‡bbæ'|åêVìs vñeDŸ¶yÑº
+§≈B⁄ÿ•	a‰ŒñﬂèÆ™í£$πÍmì˙î=†)A˙Œœ#‡“GπÓ1ÎâóíÃZΩ∂∑Rqt[kÁU!úÉóù /**Ñ¢ˆπu®C%ÕÿCá™LÈs{DìÖ-s◊`ó˛Ä%É_ÿzÅ˙èÊ¸F
+†…f<Xã6¶=_ó}çYaV≠,˚π'k˙Bv!gU Ô
+íKè©Ï®
+¬öÍ Ho}AK4sò˜Ÿõ©Åvl·a|Å⁄v˘ÁC”±è Õè˙òˆj#-UÒ˝y˘ó7]‘rK÷b“1õ58õr—t—v\µçy¬0◊dSÇî«ËÎ@◊(Éã¶«ºø-(t1¸±c°^·Ô6]l]Øoù™ÂÖ·{Ø
+OO—Á{?}†]Ô√c?éíÏÿ«Ë
+zŸP≤âæDè%ºø÷“+OÚVX4°äd‰
+ñ≈GÄè∆NsS÷f˝ÚÄfS)Èdø2˘∏oØÇÚéòÓ´	=ÈH"vZõ 1£Ÿˆ¿Ä	4Ò8ª‡úı°z…èé∞≥#¸çb—_ºQaƒ⁄¡“F=ä%TŸ)©fEé%≠6-ÓùgÕzÈD™§¨TéÑ04$‘‘ô«!e“Ñn,XX ¬ *ß˜Ü,∆Ã„¶˙Ür®^z±L≥Ω+U∂•˜hRP‚ççHjée÷˙>∞Z8'≠…hÔ\¶¯w.∂7l´®áì€≈(–IôÎΩÆlú/¬Ød«;–9:*£F ‘R€VÕÿÄƒ⁄DtûégÕ=®Zﬂ¬Z≠2¸RêîÃ¥≥·FŸ˝òÅK0ÒS“:æjs°CõK£5-ØlZV®¬◊À–y@ox∆d‘˝ö !¸‡<â;¥ahá;®îtõ€Ø!hÅØW‘y·R[-’7À‘Û”(&«—ÂM¢>¥<ñÏ¿2Ú÷û˚‰/-f=6=æ"o©ÂŸﬁÒˆÆbyW≥∂˜:w6“»≤	ãŒêÑZ‹ÌŒPûÃ∏¥H≥ãÀkªƒW4ë^∫√Ø…HZ~Ñ¿πæG∑K‘ÒÿM†Âß∆S7@•2Ñ˙eY¡*÷V[U:œø¨‰ØãÊ+Œ{€œ‚¥ê±Áê˙±É14FB0*9Y≥∂ÙbÁ‡„´ﬂQkÿzxÊ}πê‘•‰5#‰›ìÒB˙kÌÑ‰Òkæ3Ëé9£¬ΩGAO˘Â+Læ8¿⁄7q¡‹≠˜Ω–M⁄≥4 ò! Ó˛‹ ºÂcìË6Ë/ÙñgD|ÎÜ2ãgd•ﬁ9˝ù˝≈f ˇ¶s‹∆ˆ£	µ&bÇ‚" ü‰∂xÏx±|†ó£3Â_‡‡ˇ@u”QˆÆb=>–•ÒMˆØbxÆÜ˚…ﬁFQË{mÏ6⁄πéç[ˆ⁄»é.vƒ◊Úª∏
+ÜÃttƒ∏…à∏! ºrÅtØÿvó„≤Ÿﬁ¶◊„8ã`ƒä∞˜üGvÔ|•A™Uø¢:Œ)Œp\UOÃŒ,m/6XìF2ø˛é2›-ø\ö¸Û,ãz/é†{ô”B\ƒ( 
+{=~ö∂>â“Ã#íû84&2ãP°>fÙDq˜´OÆ≤€–œÖ@.«ôhjüû]Ú£`mühöµä®yÅûÆ-YΩG9≤ïb§!&¢*Dñ1kèOÜ§zûMÄ,=PŒÚ#Ût§LøºSA≤.¬Gõ¬É∂J—økä∂’Ö≤4¥fîéá:(ˇπ%˚ß{Z'v±¬A—t≤ô 2±(n‘jëÃó Á[Y¥!0n:SÀÅˆO«µıs≥$öú“‘UYpJ≤DrÓâˆe˙‡ñ∫ˆ9ÏnzSﬂ·ôÿJRÛÛ·9NS ≠k*\B≤H8Lß“Û∫9›≠€gÈE≠ÁáOCÔˇY•‰p5'áÕ|@|‰{ÚÒ—ÌÄäüõô‡±îËªk_]¨&7“˙›∫ë¯t8ìr√?Ê9U7´ÆÏ5}[˝ÒX ı„Áf^™pﬂ'©˙ëöe˜êÛ!œÍ	"B‰∑›ƒ…¶∆Tî‡r∫ıöçlÕÄÛ0B,˝~ˇ`g˚=Ÿ9¸pt¯Ò`woó¥wÄUÌ˝}gÔ=9›~˚~œÍV∏—Ÿ&Ñ‡†Ü,oV∂Lh-kÊˆ,bä
+Èø®— °LB≤ê5qH´z	¥är+Ÿâ∆1b∫√Û≤uä0MØhZÑ(4‰hÁ‰õ‚ØÕºæ$E„€ËNbÕå¸ïÉ(Ω8Ô—≈rVq¢∫◊å|oËÇ¢õY¢êí‚ÏÀXôRÚ(7B$j˛A	/3k≈:‘‚å.;/•Ï‰º:v%˙maÎœõKŸhŒ◊YÜ/ 47§|x˛wb1jı\"Ò_◊·æƒ@ñ!d3Îc§≥0C@8¡Œ5·“Ñ%Tç±-îä›Z°à≥Kò33ﬁ≈IÜå<:r…®é:‘I¡:≈åxù:.)Z»YaÂ,ì√NÃ÷^œC˘rñ2'R`YzOøXA7©.∞—ä‡Ï%7¡ó_õ.Î†àîmºÊ±∏ÂﬂJ&X∂ˆ˛~¥AæV/›∂?±`ß;_∫I∞µ™ë∆BÇP/òQF7ßv7ßxv¥}∫wpJéé˜:G€;ﬂoK≈≥£Ê‚ô‡√{¬ô—≈?õÄñ?=´àvD7cú:G¿‚Ïálóø¨à&.„è/§	0†”ƒÕ∞	j"‰<î®&Ñ°‹è∞&ΩÄCÎ˝	k˚ì4K¶j¸z¥2õ >M§6ëﬁ£ÃV∆5=©M$π3O±KnMÅ"_”„î›
+“6ªÙˆ$à9ﬁP'à}8‹›~‚ÿOX§ìº=ﬁ€˛~˜«Úv{˜[ª vO{ÑàcÊjR ÅVn‰	ΩŸ€y≠ŸAo˛í
+¶ëòùWÆΩZ“IJ„°π<QÂe;Q ÇéÕì$º¢÷á4É$(¶œπ6(µªjäÇƒ5y"ıMêŸÁ»ª∆Œq4 ∏ â8öê˜^öáe∑j"≤≠©"l”\\˙S7üTÅŸaA€1œ†ãzÁ”‹}Ω√ö"»Yﬂìõ⁄ıãØ≥è>'Ë
+^.{[}≠
+Gˆ=Æºdˆc©˛œˇ¯œy,Õ°Mˆ≤b2úa7J¯ﬁ⁄Ÿy9Öñ¢q‹®ÃàÖ’h…3)÷¢hP,f=àäç^-\£‰ÿï»±lŸ#£]Èﬁ∑Ã†ù€…héfÓHò∆ı¢Ö±2â˙õæ¶ÍΩ†®´6∞3ÚüYÚyœXêB¨AŒKRò™Q8dÑï’Ï«[˛eQ=`	+F%xp À‰“º…•#:´éòéãYÎè’\:-JÚ‡pH…"¿S°§ZÜ—l<}ºK~ä¶d §Ó2AÙ@¿Ú”ë<Dﬂ£K]ZxÉö⁄˛‘“oe≠myR-%)C¥  ]Y¢‰JÈ∏ÏÍ$¯Hà!Åﬁl*4gé‘eã8eà∞xV‡[úZ
+/’6–«ïb\±§9\XI=ûqL@yø£d%≈D‹nóDìﬂﬂf?|RâîJbÑÔªH(π≥4íªJπ´îÖö8•ãíD¥√òÊoíØ‘˘¬œÍnq ¶0&Ü‘å>˜¢*ëÊãÓëìAå#Z&o∏PMˇxœ ÿHíGÎÎÒù4§mN±‰ÄÃí˘1∫Ü˛Ïf»#—f{TV ⁄\2gYŸæGdï´ö;¸R6ñU*èà"<7É±∆=yëÿ⁄¬„b–≥Ω¢¨>ÕCì⁄QX†Lr}ôæ¡3‰èiÒ6ﬁæ	ÑÃdlnˇ§œﬂ®ËR ◊ØÙ´ÉµJe¶ ≠µ‘
+ ∆⁄¿¢◊•æN0+–ˇÌGL¶¥VˇÆü~Vw‘V&ÿ¯C•ê?˚5åÉΩ1N`”«{ﬂÓüú√∑√rÚqggÔ‰Ñ}<‚l°Ñ‚üs§ó
+¯ó?[ÙöîÙˇµÛÛ+¯¸"◊ˆ°©ÌÔP÷mÓ˙˝Öﬁ…A»Ïl*˝«ùBã±¢dö<>∆<(ÁW©∏Ç•©‡∂páÇ˝öUÉ≠€òº%ür0ôK“:ãU‡´15T(èFı≠¨ªÚMµ˚‹–å:∑êu∏◊∫ÚÛN∆1√Öï≈¨‡)Z;Ú¢ÈÄÊﬁg X)s‰•§OªxhÓÜMﬁ˚púT[A≈N†”ˇ-Ü¬¢:∑‹Æ¶¶ºEæ^¿!ño+Ç7‹:3®f‚tΩ]2DÚ±≤‘®1†∂hn5ºcùπ≠Kõ™öhƒÓÖ≠ô§u˘·ÔecÙ•uj©∂ÿl'5Ær„.Pw˜cﬁ^«ñ’[û¢¥eò’)k0ªÔàÔµBìMd™µÜá=ÆÚk£x-›éãka≠Ô çº*x≈¨x’]
+‹Çº≈Ÿÿxhï°’c8¸û,bñrU· ]í:˘pBNÁﬁc[—”Ωù@6h∂t∫ÇÙîéSºï›‰ $ı#ò◊∏Îü√ø¥øQ!£ò◊™ûbÍGÙí∂?dñ0@πIµk=çKÉ’H?ñ0ÄJ;À*«™‡2é6¢qxΩ¢Î´Y…∑"∆Í≤EsWå G•@Œa]≈‡∆€, »Æ;/ücÌfG*T¥®ﬂ)Ω%_ñË`zÖ·W}÷Ω/©Îg&tâ€ëwjHQ ]˙^6aQÚÍ˚t4ê!ù™;Vµ¿iE≤ •»y•ªK•4∂ùh¸Û˝è¶§B+säAr∆aá°¿Ê	kœcmPâ9Ÿí(Lƒ– F~ùs&å™àêï ®	Á>‚ Û¬‡W_4N"å•L4‹Nëok?mØ•DÂ À≈ö∫7Ü>≠dŒkG+ª∏ œ}å#‹¨«ßç∫YW&˜<˜ßŸƒlÚ∑bp»≠”<vï&Úbmlã…wßßG¿≥Ü˛Aq˛{-n—üé˝≥rÛ¡ÀF›≥0äíËç!!Ù7‡û√h8ıo‰Ω†+ËŒÙﬁE!F§Oc¡¸!HSVRû≈ Ø=0⁄ô Ûh≤æÄ"CEól¨è1øü›9SS¿e}S@'√Â¨_∫˚à0já?≈z†ÈÙÁﬁ„/œ≥™6ñqj‹ßOÇ‘u[ô/¢œ\G_Ë≠WNﬁZ•A1#Ë“B˙R¨Üí*NhAr#{8c‰cs¬}66;1 Éã≈SŸ#%£Ä®Â`EÆˇÒËú9∂óy.µìQU¥‡dˆìY:HT[jîø9BÈ©ì5Ô&á∂Ë¨†üAJ& {>ÉΩ.ŸOYÄäß°µQBﬁÓê÷ªƒ˜qåùëóú˚m≤ê˝∆	bÎ¨b/ñ++“,Éu≤∑c≈ìw>÷w><⁄≈øûIÒ~œñbÅﬂºdÿ&^‚Á´ö¯„8£;À]ﬁŸ&è‹™¨Ω¨˚É!<g≈eÙVO√å2õgÂ„∞K∏) S∏mY‚{4¨Ûæ9‡ *oÕ¢¢·◊d»;‰ƒ¸‡lÕ3¯ÑŒ√¶
+ÃˆüµªÒÒae,º«îøıàõ÷´' Â+ùUôı%`Jé‡‚—©'ÜiQÆëc∂bÚ§›…Ó˙W˛ tT¥ás,°àIù∫œ»¨˚ÀΩ¶3öq¥;\nÃﬁ3w™è2;.ÏnS&RˇÑ‘¨†@mìv}è'´ãJ®«%ù„ºxj §y◊œº dAìÎ_„io1Ò4âC_˛€„Ö≠ìÏ; ˜Êœ~sà¯ç3®Ã·ƒ≈◊˝Ë—<ãú	JÆÅã?zóUÔRa°ôﬂˆ˘]©^w„≥q6áJì∆·≈}™]òZP§X≥7Î∂JÁ÷Øl`-®X¬ˆÿu,Sü´z›«£`˜/ú˙§≈¢¿–Ç¿∫É¥µ/çGÂ2JX?@É-˛ØÔ”ÃÜÂäÙ¸H∫[®¥´
+» L0{
+á™Ë.Ä0•Ìl‚7z˛Ôˇ¸≤™ﬁ—(*é
+ü¿ë*˙û∞C™¬«/©U0Î5#„¥efÊ!%í3Té˙>¬˜%É˚"	AÜDÄÃ√ù6Og ÷zÓO@Œ¬§Ñ˛qLº…  Ç}Èág®L%wRÏ”Y¢∆U5]%Yu«Œì Ù¯jig}˘uï™∫æ;F z}?î»$≠ÍQ±çÎzçÕï>9·'ifÎ"∞7óË˚µ3&Ò4”Œ0wBsúÙô/êpΩæ9ãl"áÒ¶°vLyìs∏ΩÂÁ∏˛N~∞Âw3Ä¨K6§I≈!†√ˆ…O^/†€G{ó∆'õÎLµeìïR"”GÈyÑıO”çÇ5≥Ø’NÛ‘ã/˛	V}›‰u«Pˇ¯Å‡M4l§u˘lf=·È‡Ô	˙æ<Ù°!Cê©<4Ï·\p"≥¡ûÙÏÏi‘0qÕ ˜åL—Õ¸sLµ\ô√K5≤Ø
+7YÉwÕ¿%Ä±1up`Ä)ˆÄ =jqÃàXf€Øı¸‰Öæ%r‡˚ YsÕgaÀxisâç·0¸IÊùù¡Ûª— °ı∏ß1\h0Ùè\Ç]"ˇ’˚Ïe‰lÌ¬ñÓ◊ÉRÅ•¬o∫ºÙµ¡0|U;—4…¸˝$ˆ©‹MÈWÇÂØÏw4xŸ!h0"˝«¸ÿÊCwí†ı#–våj7Äzè∞z¢ımπEóR/2+7P∞µ\©°ˆ K‘¶ædDÆ´Um¸ÖÂAs¨ A^Ê@ë‰€E•É ÇÿdπK`pm˜b¶¬éÅ§ÇÈ_∆Ø4ãΩƒú$4£WÈJ;Ä
+~¯h\ÜÌ’9LŒ(˙ƒ3¬|R˙lÀ(n&>3|¡§˙\Aıüq≠P¡]˝ 	ï:6H!±–dÁíÈÚMX‘<|{'nç”Â•∆È≤˛0NóÓÛπ‹tòµfq∏pÔ˘Ü–l K)∏}!Ã.bÿÃ‹ |‰'cobà}º/C˙ä^•©Aöß”nàùÇ∆≠á@™ŒCì¯√{wœ‡;^<ﬂç};MPh,—o˘æÃ˚ÜRê¥ÃŸR¬Æ!èÓ>}ªZp«#6gq∂A0 (Áûê|Ánê’9› ∏›6ﬂ’ÇøÀ=ÄÍ}€†∑]GSíN˘óe'q	bú¬)ïµ1Èò‹∑∞e¢úq÷=™f¶ë÷˛Æ5~æŸ–˚ª˘¿mCêù˙k’OYçÆcaÎ5Ûh„Eo¿X±7¡@¡æO`è `ªå°¨!V¥bﬁN¿yﬂ°ñY§æOı∑©d5
+É4ÎÉt@Ë_¿dÇ°_¶ì™ñ£`‚PO¯¬`k;ƒ7e‡„›I(ˆ@
+ä¡3∆Å˛6ıßòıŸß›◊Ñ¬ç©˝¡∑∞Q∏{ﬂà’+1}W˜ÿÊ“4|HÃ®môôÃc•“ööMï≠&u£“≈ï%igµå‰Ë´⁄]-Àù‰¢N±ß¯É=¸ \ÎD÷ÏGìü&^:j(¸ˇ‰ßœr|xÙor˛•bØ¶Ú7±>Ï€(¬îßƒó3˙8¢æ™˛*(3 ˝_M£î˚MI1ÜZœk‰~w—{µZBCÕn£}MpÉ¶V«2÷ÍX6&ÄV
+wº¥ÒJù~KÕ÷Õÿ+9
+ßJEÍ0©⁄<C^˛lzÑúv‹g	°.ú`&Ë4‘g—ËrâV⁄.)a“‹™Éc£ÇÅ¯ˆJPók:æÖOKe‘◊ÃPùßMÁ9*:3ËÔæBÑÜf˝^™D‹E’mçÛû4´¢®,8a(Øz€ÿp#ù mX7”ikKm∂±"15ﬁ"L‰ÌôeÛyQ§úXW≤!8™	éXËû7oÁ›øç’o˛?   ˇˇÏ}Îr‹8ñÊ´¿Ó⁄RÊîï∫Y.YÎK»∫∏eKjIU=ΩnGõ §$Æ2ìŸdJ≤Z•à~Äçò≥±—±O1œS/0˚ãs ê àÄô)_zä?™,&	‚rppÆﬂ©Wˇ∂RÉm9Ö–Êº˙b˜˚Fû'gC ,8ON«Sr?õ…Öö™æ«û?ŒñÿK6˜6ÕÜpLa7Xkqmù˜tû-=Êˇoœ4+gı'˛ƒÚ">1≈¨uMR#GÖIJù‡E˝¿J‘¨&˙‰„(ªT÷£Qî]Ù„‹¢Ëü–ã∂´Õ—«ÿ-]¨ªàñçDÊ/Ó;ô˝˜*ÓFó i†ÈE€ü¸œ\	7¬I±ù¡Ü`-’2πeäo¥q˘„–j¡Æ£ºLD‹?Ê_ /Uò0˝¶x±√éœ)_íAÌÚ·Îs~‚éï( ≤‰äOdä∑ì¨2ËœL@ *[∑bé@Œyo6âù⁄€BòAﬂﬁ|60∂]≈˙]õ≠¢1K7ö5¶.≤È«›ãazÕ)Ó¡"4Úﬁ}[à-s|…π0ío%…Ã¸k†nwua+ÿ∂Q®∫÷˛¥›2)H€]•ë#kª> áÜ*nuöH¯b4f8S∆Ò¯<ÕªÈ(Sô	±≈¯;°‚,∑öRGd≠§ΩTn≤]dÌM“°¶“•e
+æÿÚﬂ*]ZÉuÈK.ÖdLmŸ8I¿1@CEï^öQ• œÁ@≈pge‘@˘¨&û—•y´DUn±˙nÑ0Ø¢ÿdÅáa„u÷])∑À¢˛≈¸ÓêaÙ»Â»‚È£úà÷£GUÇ±:√ﬁŸ›∫´'˛◊P$<ò6	k¢&îﬂ€z¨˚¸Ñ∞◊ìákˇeGÉããú^Ú'Ö¯® 7Ñ˜™√¶á–¢y(D4&≈Mp'*åÇ @ÜxµüûÂêÛvÂ+˛Kë≤61PÜ)x¯‹iæmù¶k°ïËm+ß©/åUÆ—Óû‹∫e:ônVerH	•ì‡¸ˇKvÀ:ù¸˚ëXÃuÆ≠ﬁ1·ÃÛƒ—ﬂ~ .S«$.ÅáM◊QKj
+-F®Ÿ7ˆXA˚~‘ÙlÎ[¥Ô∫z[¢$1ôèˇ+±ìVK¿[$\Îÿ≤ë;P˜kπ÷∏¿ı…∂¸çB!òÈEvSJë€P¬+kL˛◊ˇı∑ˇ¯˜aÉÜ´û¡Gu˚ó˝k=πFÕÍº∞ÆÑ«‰¨¿ølPÈçµ+1Œ'Åæ∏∂æ≤»6ﬁ≤_ˇˆØli˛8xÎ/¶%ÓÙÂØvß/;w∫¨J[nHy√‹ÎÂÌﬂ6{e≥óUÖæ¯ˇÁ¸oV1MNµ◊óÔıb5?«f_ÏÅÿÏãO≈M+ß4I·à¡‘s∏–ÏGsgÏK!·H≠jø-: *,Èseòæ◊¶á/TjæÄ6ê	´î®ƒË‰T_jÍ °2£–Nåßˆº’ZÜ°´“ ˇ {Æ“åÏCL∞◊DöÄWüBb¯\¡´ß®ëTmI_lòˇ®U™≈äEB„í˛á^ÜT‹Ê:Ç[C»m}’¶ä^ò· ç71©BÀç…1ùIViqfT(;yOî¯’–_∞[ÑÄ¥∑Ûb;Q	íÍÇ°„$˝XÔo“{˛P£(∞ Å[€à{FÍÕc.U∆„˙˙ë°,)>•¢ºE ‘5%D£≥Î≈DÈŒØ™z∆ÕT›iDò≤ÆÁõÛ^ß'¡§Œ«É˛NöãGäg6y`_ÜW©Œ≥∞]iU>Í'#¥I„Uç‚-|èíU6Ñq&Œ40í∂UŒx…ñô z≠A'.¿õπY+*}4F ¥ôû1yúÛ—_yA•Î.»@=ısﬁ—Î«“•†Õ3ˆ&0ZúòZ·èÒÌNùÏ¯©≥ï+A ¸çSˆâÇùﬂlºb«€G«GlÅÌÓ˝Ãˇµ˚À±ç≠üw7∑©rÅ#U9µR-∞9≤?·÷-ä¯wW@%öùõ˛eıÛVPGØ'°—∞î¿'Œ˘ÿØŒﬂlÆ∆{ÖGΩ1:•Q2HÄ¢ÀÚ€HOk	»b°Øø?âZ3Y¯ÆL~∂˚wx´|K!róÛ¬2ìπ‹i:oqònîÎÅo/˚RûdµËq“e¢±#≥	¥ÊíZ”ì∞◊Êy
+µM«ÿª”,∞n4é˙È ÆˇÂíüp Ñí8á¸¿àw:/"ó¨Ω˛"Œ5¶œ©M`≠4Q’◊lO‡ˇ“Í5l ˛Ç9Û‘xt9 ˛´®	S¬∏ïZ‹ä¸uIèˆs:˙ö⁄JÉK+ı±–H™9ö™≥∞æ’Ì\* ≤ú2•0k<œ^˛πXYÚ\¨NÎñkcíàﬂ$˘∏5™V8ow˙Òl|^sgSë¶ú¬Zd/ÿ¢=l›ÂÒ;Bú˚Tñmüõ#`Âú´\òÁf¶Ëé˜ J“e¿ÅØ∫∑›»ı†cæc -W  Ìíπ-Ã›öñ∫R`¢_‰∑%√¿W>º+X>¨[='ˆR∆µJy$‰ä4o‚qá·‚…c·$Íñ9ƒ.»˜„˙hz'Öxµc9⁄\ıLâ@iÎ:ãFEãªñó“⁄çÑY°≈÷poﬂl¢Q´#ﬁÂcxƒíﬁG§O€ê\á9]ƒ7œo˘ÎvÆP±^9∞¬˜¨ˆ^;,iY[¨¬Ñiïm¨=±∂í[n’Tê)Úi3ÄÀœ‡2òÇP?è”≥≥~\Â™Wá0Êw–/Cû\G∫vN‘Õé<B5˜˘G1u7ı,5ôî
+u—ÏD¸J≠Q€
+\ÊOæ°$	°∆u≥¥œYD?∆®o÷2ûwxaZÆm_ì/Ú^¸˘œf:p»É0»ãÃé4ã<
+'#—™#Úà!Üß–.]ˆ˘"F"è˚•y¡^Â∑M¯zù√ßù1æ≥R‘‹Ê´ÕπGlÓÕŒ1¸ÔP¸ÔM2JzÏ KènºÍßièKëg|(;QjÊÌC,i8gáÂö˚)Éc¯pﬁ:ä≥À€ÑäO…êﬂÜ{¸wÆ&uì¸Ò√…∆R˛q|ÙŸ`üØAlêmú«CxÅãkúH˛y˛0∫Å?∑7_„Góc»x·'ÿ∆Œ+õ€ˇΩ8ºÉEÚ∫tíºÂû≥ê3'G)·Ø„™í¥⁄ÌN2Ïˆ/{q^~Ÿx¬Ó&íÖ∞ÏáñüY„—U|ëf±3fÍÂÏÜpı€ö3…ÉÒJ•I¬°◊Sq.‚*óŸÒê
+n—jÏË&P”‚gó‘R1@ó⁄ôiØv∆Ω»◊à¿qŸ¬_ƒEüeRê–vüé_ˇ˛Øò9˜›úG∞(ﬁ/È—#â8OHª„3Ùp$$t|Âz@˜@ñQ ˛ñ+p=ÆnÁ„t ¶#""6 6d–≥«ÜPÆ6gKÌ¯îŸ_Ÿ˝o0(KÈÛ≥ËDVÎeV,°Ÿh¸ÿNÉcZ+BG4ı”®üF‡i,mvy1w≠€æ`c9'lıO•ï≠≥≈;Àéùwò˚ÏˆıâsTJ««Â∫Üâ¢\:
+‹ÉtT‚h¸JÚÀ˘¯
+ öÑﬁn¡pDZ¿Âé∂Ä´O=$√2™˛
+1XäAŸ`»,ÔáA€€#äÃ¬˛¸–˛ääs∞4Á0˙öN¢'Ï…Œ÷n[ó,ú‹B*ÒòÆ°•?^´	˛ºmæÈÊo‘?¥Ç?eP…Ç57Æ€çÑãÎÉr'⁄ó¿lÑ“g…†’Æ
+TvyJµ∆≈]¨˜ [lõ˛ó_ÿª˜Ìé¯≠5Ü>ëgŸÏC¬Iè;–L.‚–ŒΩ)Â?xØ]}qw+‰¢+|†ƒ/…)k©qVlKmr™Ω'\6]IV∑uîˆ(µôÑ]ä‰Ã‚⁄K9ôçªÄ'•Y¨NQ˙OÜ ,’a?Â†∆„°åL
+“¨3®(m&ºT:NÖßäã$ô;jÜÂdì,LN•≠âûÊ˚—-¬hëgÿÍ{T∏PÌ¯¿◊o˛õ€ÇæÀ^›Ò€`O#EPqÖ)%pÖ[õä>84∏tÌD?0–|£¶åŒ•$î;Å⁄&ã√/Ø™‡]˝ˆöœáÚ∏[ÂpœΩ{èNºk¥Â1 Àág^E¥]9eÓıÜKì+ƒÓµÜQ™«∞ôó]0÷ﬁ&ñy>NmÂE9«çßB!ßòVøåz∑⁄Üˆi~Íí‹¿ñ~†¸∆	R÷Óy¿≤¢ë;GBe|n¶¯ˇÊ&◊¨^£±öåqq¢4Ç`©Ê0ƒOı¯ruäºãÄ•7ƒx¸ìÁ_◊∂˙tµÂVÂ±Ú%~πk€Jx–ë"ÑhåQîÜÜˇ*˝ÿLs&,±ÕmœO&≥=3}*2B∆ÜW¸…⁄tWáÊJ[	*¿πz∂P-2»Ö”Ö˘î
+¶òòô]¯j3Ì“x9TµLá?∆7[Èı–ì= àÎqáãN(§œa%”9ó®ŒXåŸ¸ƒÿäO£À˛ò÷z‡bß1)πﬁ°ÜEå¥*íRP’óg¢<3Iÿ@ãˆ…∏!r©xkNz¯¸)√C„¬ÓVPa0™◊`ëñ˘3+Ó..“§[«MuówóØ!ó2ŸÙ8ıÜ€πOûpsâ5gD>ÍÆÛÍgtîü,Ä7äP¢èc÷⁄ÓqÖ˙ƒÍTc#QÚ°QGî^õ^Áœoó)*ù»∞':?ëMO*oSõÛH£óÓjYXv1•%í)Ÿ5πFù'Âgs+q;¿ë·vıOÑèO•É∏ÒÒ˝QÀÓlËö…ﬂ*IÑ∆‘!◊hÂmFx˙àò˛È ÃÃa†A¯+çLﬂ∞Rïö¢œ&…ﬂ¨µ9IGqZåF˝ŒÊ¬Ωdãágqh9ÎÏh{„pÛvºˇ„ˆ—6éw∑˜é◊äµÙç$ﬂãØe~ò∞qOô«A°Bø&9¶È⁄ú≤ U)!™d’"˚£ö≤QÛR»û9R9&…ﬁ0„T‰¯„ZÃ¥V.„SdsXåÍπBÑ‘2&ıcÆ6˘Í9@ÂX1í0Si6%Ï>ìÑ¿≥ÊïS≈|fIï‡Å„ê–⁄{)l“Ø‹)j∫‘}cˆÕY]^4≥Æç5∞‡Hã}Qäê~ê«Vú_R„W™!…+A9+®Ìjs^¶«g,"è<¯ÚZ&™®ôxk÷4Lb1ÔŒ(ãeóÊÌ!È,ËüCQ/øV≠µ™¶˝≈•≥nyäá—™# U^E0jçÓ¥X4È0®9‘Sc"sØ∆CÀ8=?]ûs˘†,Na≠ÕÂ ”–Åú2a¶IwY°
+Ø≤£Lb´?Â±•4äÜ4©#◊í÷‰ANé‡™u@˛r;4ˆ›Ô/„ÏÜJäô©®ÿ¸Ê÷«.–	2∂ô%√C≤J%µ(ú“>¸Nùò$”ÿÃbç…£¿]öÑE—"áµÇ·PKÀlYN—ﬁ®2RJ£†Ì‘>+50¶0X∞§H;äïvÌDàX”≥Ü—Ãﬂ"Ì»`ÿÊø´(ïèˆú-ª¨€ßÒ∏{æwﬁ›‡ﬂ‡†µ‡à”∞ﬁ•f)‘4ﬂÿ0/Êı/»]û3Î 5
+Y]xÄ∂eå˝¨Å·[u∏w	!S¯^'ãëÿZ⁄Z8{Q!d‡Prï^ºÖ`íã˙éEà‘∞Á	êbZÄºªó∂q˛äéÒ¶B^. ~ç…¬∆ƒˇÚã£°ÿsà"˙q˜!¯›ﬂØëÔx÷PÕ®€≠#|¬J%áøì•á¢ö–&∆ÂÙÒQ€§àÄ⁄ä§ÃùãÂ¡Úc∞VµÄ‚Ëëò£v€µæ@HùNß5<Ô ◊q=†°a±Ò¡§á∑FWú»ä§ÔCª‡^5∂)ñC51≥Âhrü`m/R‡ˇGôÑr÷ÄBB∂‰+¥ÑÚHS(Kç’3g˜Á’Å¡
+π∫TNlb®)Åárûh:ÿâe†·Añûeqûc“¸∑úıDc.¬æÂw¢≥ÿ¢‹∂ ¨x9[í)Ø∫˚&Ep$êvX≠∞jÙ•I<ÆÃk><óf1A§>£tè = \ª†CƒÍe,ÑAMéV[r,ƒºQî°â@7ó¯/£dX¶é»°áTRµ8Hdçû"¶HêÁSnodÛë·S“c£Ù¿!√V⁄Éå˛JdÍÈ2`É1I€Â.í5õõì(C_m’Õb%òÓ¡˙≤V`ä.ÎªÓ,„„·À:?NÁ3\”
+o∫J¢˘qıÒ˛H„J|˙∫JX£À~W:Á 3∑´Øz≥];™Åõ∆`Û ©tØûéŸ—YãzIìπ$Ω†Õn/Û#:¡›H¸!R≤K6«Çq*Ω(oÆlíÏ!‘ˆ·1	õÀeΩò˙≥X!˝°=X-∏d#Yq>?|!“ç•Q¥4õ~À3Ωˆ‘nÙÆ©t©¨,c'|Y Æ6_“«l5®i5"Ò> ôq¿
+ÚuR`, çÆ≥UJ÷”jµ˙‰%ƒYÿ±Û9ƒ¨|Ô≥X˛Û•Øìg1òõºèqâ™xÜ˝‚˘rísëü?~í¶∞x§U"ΩÃ∫ûYº{˜û/¸ª˜Œ%Œ9ìŸÂG;í;ä«œDì/Zi,,∞•é®Ñ#jr6 Jÿ1©1ü&Yn7ô:uömG›s∏Î≥F<Äg¯kMÒhRüK ŸD©◊ï˜Âñrøœ_ŸK˘Î’FîäÔ~7…èKì¬•ÄkMjjyıÆn5(5z˘Ñ°–µ›ÚiΩã˙}Nn@%S(¶û…ﬂ?˘ÔvEZŒÂ®æ≥_C#•∫(˙?ª6}ky†Y`\/≠™8ˇEi„¸¨¨}EFÄgúŸl˝†∫u†øÀ=›âzº3¡cdvﬂ]ÊÁ-óç@c˚¸#v$ã ìÇÔÀy√Y“`!+Ò·õ[ﬁ‰›ò>ÛûÎCÚ‘Xg⁄˛Ù>/**·+¯OˇxÜ»7ﬂŒ¡c°jˆÀŒÅVPÛ‘\oä„e]Lã8óﬁ¥_v^„mx›¯·(˛ËjéCµ∂6ŒbKC¸Óπ‘·ûSÎΩ∑ÆÁ‘A5ßKäåÜ¶ñn«)µ¨N©~
+0ú€o.d˜L,JK#Ô°4¬#i4’Åd·U.∑Ç⁄‹ÁQnŸ‹Â˜=ú¨~$πåäıïs$ùÖle}ám`˚Óm∫u-˚ˆû7-Ï99üfœÆ®=ª˜√¶20πwÌΩ2J∆êLaüÒ∞xˇˇT¨°˙˛∆xÁ˛S∞á≥òè8O˚WqoØ†+¯IÃÄ"ŒGíP⁄◊u"Q (À∆K*˜É∏IÂ≈OÃõ°eú]Ü1%Ã…-˜	ò
+ê`ÖN¬`!º∞ ı ≠'$ƒj		·ÃUµ¬• oà‹:Ç
+$D 	k  ıa:Ë∆ìi˚«Ùíu—ÑπáÇ≥W˝hx!*Ë&C∂ìfÉá%∫ÍuñŸçï‚±*»<y7C£kÆ:]TÆ≠ùö$YT*ÔC™Œ‚#∂º*!Xì ¯UAAdüûW18	¿9¯º’N¡ƒ%¨ÑS∑⁄x4)8„jU/VòaPà≥,Ω5áù.Äººƒ<KUí=‡l‹ß…1(‹π˛:Ù´ÖDMGt-Ëq`ƒ˛;3`π≠R˜„ä{√èRa7∆ØY
+õ∞‰e4û™(ç–/EDºW-çÔÊ·ãﬂU÷(ä¡x`GsÆ4∏∏∫“Á∫,‹;ﬁÏS˚⁄jBÔíV°”=è≤çqkåc?¡*
+âÀë‡üIGÄMD«L¡V<P’¿}ÿÅ»}ÊµËRΩúè®Ä¸aŒ˜,†'B –Å^ÒF“Éµ±Lx∆5'•ö≤¶cﬁı"–Ñçÿ≈ë…PÊÄ){*≥TÉ,ÊI÷ú&Á…ÿ¬6f≤çëiu©¡+ \#Æë,É;Á«Ê	õœi7x}ã∫<µé∫ÑÎ^ø$QÅ¬T‡ËºÚÓ∫˛c(>éxEËTeÉø˛ÌˇV~i÷ÑMYö‚∑Ôÿ≥<π«J®’bÄ≈f,ø"‘´ŸúÉûh ˘ª+-„¨î^}0"p≈ÆPé≤t	Ï70à'ƒ—êÜ]-9≥åä}Ó9§núñ◊Tè Q‚∆†ß¨TP.§∞
+˚Ô"à£sÆ™	õèÉ*‹`G¢≤€wÏPG°ıófãÄ·<e>∞†ê‘˘„¯ÔåOüS˝L‰eGbÏ,íú‘nÕ≈©§Ò]À%EÅƒJ∫ùëÅgd;ìÎÉÙEKññ°:“ıB,!@¡ô[Tñå`ˆﬂ±ä°c°0u(#ò<|≈ÔcÕßOºt/º5Ìrπ.m:û
+¨û"_s3v„>9’’ª◊©|˚”õ„›É7€ú¡€ç„Õ∂è$Ù¡—ˆõÌM([Y/Tô‰o/˚„D.KÂ¿å”°{Ÿs60_‹¡_<ÅaU¸_>YmMPá¸M·◊†Ë›?*g⁄~u.˝Ë”Ø;9IàVKªv/iËÎ;—¯<ŒÙ&ƒù?ü_Ê'êUÿZÍ+=1M˜é6‰$·tîÅj
+˘€|îˆ˚¢≥ˆﬂ∞µü ÔV¨·Svç5C#ÃºÍlê3Äı»åï≤`™9ÉFÃ∞÷ÏqBhÑ[óß#ÑZk©mMÇn»pm∆Ûqîçk“Ñl\Ö`cÆ}¡m6ΩW‰çΩ£S[ƒ”‹8 ü£¸IÿQÓ	œã≠w©∫F!#:ÑB˝‡Î/‡òœjF‚"âH@gJ#))¨„È3‚º´ëÔ ÿ8 JàcÄî‚ÌÄ¯[Ûñ‘Áôf®6lr6$ê™Ú{Küw
+.´:#‰4∏≤]hj°aCÙ<èçª«z√qú÷DÍ¶√≥Z´bKíä5pm1iWK0xhô8ëã˝êOˆÅö¬)‰o\YÙly∆∂“Óà6:èN	qË⁄L[Boü'¸ü‚‘1ÿ¬µÜu:Ï†Y
+Á•ú€eÌc9¯r¿Äæœœg2)NütX¢gì¬'¥NGCÙﬁY¬´Ì⁄%—@åµOâ Ç„µ	7˚PÍ;à©àﬂ‚G≥B˛…â31)¯Â‘≤QßI¬äJ«∫Çï†¿a∫ÑPàmËÀµıü=òD.BŒvøNnä}>Ñ∏=ˆˆwèÿ©ê˘·Nß”q¬K∫T ¿ﬂ=µΩ#Ì¥&,?≠Tﬁ)0<œ*’÷úÄ¬Ó|‰%:ôà5!äÒXWôö—O7C≠J‡LAÊXY•,+Â‡s%åyÕR€jÊ◊øˇqn4ö±ü'ÑÄf√÷)-6§∏VHÂRì‚‚©®le,`CÜ •[√Q^ÈiÄxf™›™Fqkeë√Ã—ÕéÓ±ÇÀŒ≥	DH_’ÅïäÂÍ™M±d‘<8Í`€:¥Ê8£‘§zàô-ºL∆ûT#ÃT§cYõ®()πâ¥W/·-ƒﬁ„ÏÛû0Uƒ+i˘Çá˘ƒ'ﬁVà[[tÛ6’aŒ?Üm…zg”q["j	yû∑6ˇÕ≠l≥¥^y„∂-˜çè£˙â"(5Ñ„’πZ$◊3ﬁÑ(øÈBkÄ=©–•¨7ı˚∫Ú&öí7∏^G˚QÄÀxÖ°Òd+fÒÍmÚ”`0\gW—ë2J<…Az∆’˘s®¶h´úQ“ ∆Ÿµ¬*¬ÜfâSZÇ8••	Ç–>GŸ¥°gO'=≥Ì/µ4cQºÔæblû¥–u’ùÀ5ˇ[i5i18ÍL€≠vÎù?:ÿdÖìF†˘f—}F÷QwÑÊg>KÎlØ‘4é0ÊB‘lw0 €gga'î-ü?ÆQ´Ç12Çg·f[P_d—˘„âˆæ‹¶—2Á∂Ñˇ‚+◊S^|—k#Êßπgº~ñS¥)ÇxB⁄\·l4É¨ô[…8U¬‰:t9ÃôT·
+‡€zyΩÃùxƒÑ◊m·È"“cæeG±ΩFñˆ—tc£/€¬Qü4‡©öKr
+rë∑j	≤–P&tØ5*›ˆL∏_´t†|N8∫nm‰/lÛX—/ê2√ñÕpHO¥ré4°ÄÈ=ZÿáêïÖ˝¬üÇË›ù€ÿØuq3Th5*˝ﬁÚﬂâ»ú—+£4QÑ\ Ì˙ÖÒñµnΩdæ©›≈òœXìÙÆ|ºıç~ÁÆ-ü˚r8‚ :◊Cx¿∂ôåo Ó#∫äí>T_Ú@mÂd⁄¬Ac+GÑ[MUéä+^B}çí!…[JÎDúPÇ¥FsŸÂ∞Òa"6a–{XÓ0bäfî—B/ì–I(H$†∫±tëΩB#e]∏P.h5$ÊLëÎ¸ÍOTôÀ˙’ufç‹)K$5âG&2òÍïí=wXß#éSWQÚnÑüWÀ]Hé—©}{J+’\ÒûÕÆJßË˛aﬂæù"Nö¸©›Æ[=k∆l“$ÓâûYPtÄ—éå¶éÒö¨Ï=Œ7+Æ˝⁄ I«˛8e)ÑcBCÄs.R’πPIPæN≥§‡zZ2	:¯≈∏ÓeÔíéäÏè‡¶3öπÚ≠kÉAª oÄ{ø©gﬁyÀ∏QOëc ˇÄΩ˙pwã˝ºª˝˛ü£›c∂µqº-y˜mqºØ≥§˜s¬G-h)Õ*¡ºg¸WıÉb„=Gîo.kÙåÌxiI~ƒWO∂§ƒ>≤J@§Y¿P¶j”+NG∞ÊN|´≥ÁdãS–æ¯±eoÀl*…8Ä—ÎœÛ9çEÇÉ√›Ω„πôE∂⁄™√y-¢U≈!Ìæ¿)√ZÖà»wì¬ &h3éU2•˝Ó4Õ¶øe`Ì‡¢\o?å‘·IU!39˛7uqJ≠˝K6ÁÜ(^®ƒàPÃW$Ìo◊√˜‚˘4Éx€ƒπ˚p◊((6LÄåä≈)ZXrƒ√ä'ñ)Â˝∂ú©g¯˛¶•åMò·SıÏ vì>˘Fôæ üoPkﬁ&[iµßE|ÎI≈XÈée’ÊbNÁ»z ™–H˛ä$b˝
+
+ä7ÎÍ	^À∑f\êºêéÂÖº_‹ñg√K3ì¬ [Kck›⁄ü®ãçb‹)÷nœT–°OŸ∆Åäbqæw≈)÷6ËÙ≤Õ} : »Ÿ∏PëGPé3¢Ω¸º–ΩX?§4åsXπç≤y¢≈¸8Û)´¸ÏG“…]Â”Ë*6^≈eß‰,≈sÖœÇ¸k5ƒ .ü•ΩM∑Rò*¬¢Jve¸ƒ^ò Dc∑ßÖ>˜‘÷p’Äw‡’S)bFjl€Z]îV≥..∂`m\ÇÍÏQ’…ÜOÖGÇæ&Zò4¥>â%IV%âZiêzTË«~=æ√^°¶†Â¢@MÖn·~pæ-\"«ò+˛G RñxEÑWÒwzpÄ«ÊÊÁ¯!öJ≠•˙—"“Èﬂœ0ƒ*bÓÊZo¯Õ\'∂∂‹]Ï◊ø˝OÒ^~3çSÙkeë¥≥>[˝¶ﬂâ]ãæo·ÄBû≤ dÒ\r(H1!å≤‰~ó¡ãOkÅé£å
+wq)Y9¬jcé∞Q¯!ƒ:…™¨%¨;ºóbÿm'ß®ˇ‰ KW¡(Ä$6º°∂Í| iLëù›|Î¡¿ä„ÌœSwcx8S≠·¬ÅB∏b≠K Q¡VBãÊX^ÂZ8çÔ/ï≤ÈÒ‰UTãÜ|∫hâzR<cNÉYäK(™*ÍNk≠ƒlK¥T9 à¿ÃÚ80L{´5=∏ºh¢qX∂	n≤®≈D'√˘k´ÅónfrÏØÜR]Ã˛Tl5èõ. ®<áf˛cfZp_≈Å_ …ø◊jïŸΩí´~È«®o(3rj;I54úLπl}—7∫D‡Ó•~U¥s9DÆ⁄ÃŒô»[è+ŸüÅ„©ˆƒG÷Œ!˘}œ¡úGÖÈ8÷hdt”æ#clßqÃUßÄmÊLóq≥ó.]Ω~<,∫5-qo”d´|ûïärrœ{m‡ê´·>âÉœbÌ46Œ[≠∂°=†yÆr†jèó7¥áŒfÛƒTG¨Î]´ÒXøn5·∫}EÂ}Óˇ&ªãx˛› { ¸™Æ0î∂∆?X\Õê∏H+U∞ó= ı¸ÿFﬁe‰Y·≥Q÷µñÎB€J=ƒŸç1«¨√Ry3+‚c6”·iíåπÂqO&◊?>ŒÀÿñFq+=)à7ã[!ò¢[ﬂ®Û=ké®±¶ﬂµ8≥‘e≤∆¢≈“)V∂'Ó≠Ÿî´˛\≤q"mé‰GV7ûOé~#>),-⁄í◊vcvX√j»l«@,Œµ∞qÄ'Í~Üa„›·NÜ…É)M¨cd≈<FVloÌ≥√ÌM@L+ê”¯ÕÕç7p{ˇpÎ®cqwUDA^≈J+:1•œ]˙HVÀT˛ØŸj∏V¿ı•aXƒ<ëëÄ\µ|u˛ﬁreı¸{˝dËWú
+"	´q`í≈ZPçÄ9ï3ﬁ‚äØd?:¡©äÙ≈ö™∏c7Ñí˛u¬ﬂg˜üR>v8îÈ:∑sT\Üœñ"xúøÛ?'PTB¡BlSÙ-∫—Ÿ[.'Ì±ç ~ÎJlei™ìæ\≥KTñ«ÜÖª¶¥Ñ¯OƒX“^=M¨]›€/u‰êæ∞hX"ü\·â°◊JÅ§y8?¯O|¡ä:+1kî≈y7K–Œ˝àı£Üö"ão–\/GIJq·Y !EWê˚Ù”].ﬂäà
+[%´A†Åö0;»SÎâw˙Iç,ì&‡Ñ2%xº5@ÄÑ∏X%!.™z%ü=ﬁTD@’èˇ˝„?jR¡]ãªkVÃ]u?‰|ò}Ä™ˆéÒ“'î3ùÏ&V>äqÒk[†¥’˜ˆ‘ù>„¿]{vå8*ÜæP;ºbØdi’#•‚ÿSaZé¯çí-[º¿®‡:ºlÅYë¬ØN*Î±ThÎeA	ª?‘vpqVòÄ∏óª›‘ÃbBõ“Jg5|E‘ö∏L®.‘[mB˜á˝è∑Ì√éÇâ9M≥uÆ#Î¢¢ÿ™ãt«ZﬂÎv◊˛‡Òâ}P(C¸ÃW‚â√ˇÈM÷∏ál"uJZ'≤ı¿>¡N€Æ∂ÓÉ˛¸íÅÓXÈr›
+†Eâ0]3ë"$˝Æ6@Â.Ø	Ë	√9A‘‘rN≠0√GÇ®»π¯ìW,pƒ≈0˜àO¯CﬂÒÖ·ìNqt"ü±πKY•
+“WÄóuÏ ∂O#Û˘±˘t>ŸU±"PÜB·+¬Ø4-8ÄëjëWáÊÀa!WÆ†´ îΩQ~≠’GETïû}0ü&IŸß®	N±+:8&éÏÙT∂B>ä∂Ü«k5©–˘…ß™xÂ£=˝ ø7ÆãÂí -ãíY?ÂîCÛ◊Ç¢û’x±Ê,J!`©0rØ{qÉ€àvÁ=géSd|^≥>X%DÃ◊/cœû-åœg’™VÙ[Ñ¥òe„Grß≥∂ïDg√4OÚY∂ˇÜÎ©Ω´§;”^ã ·°¯ŒÆaëÔ·ãÙV∏ZÁø¥oq"¶¸:≠W|À&=Æ‚0˘k5éµ™JÁU‘2‘ÃKøe—µÆlØ≥ñ†ﬂ_XY)YV˙mø{Ø™s_	Œ£ÊnÈe∏ÂD5n∏ÿQö’>œzqŒˇî.@á∂qÒ©¬=|êÔÇÚIœπà3î@Ì+b∆∑ﬂw‡…V+zƒNº	„¢iËŸf˙eyºŸè£aë6◊ö+˛98ãóà¢Nq<s=˝«V§ 6ã–XàZuŒ÷˚*¨'¸3'T‡«÷I”>@51P”˚‚™óìƒg;˝R√7”Ô~,Zr'«{Á#È¡ä»°Ôn…˘Â£ú}®‚˛íÌ!zxKª«Ivëx—?„IÔUÌ'ÖÀNö}AN|bÜB?KVÀÜ´è°ñy√ù˝ﬁ—",4!ÍÛëWÖv7¿÷GÕ‡ÕõäÒ3«∏g0~™L)e#u4fíè¢æ›U)ú÷Uªû/{•ÁÀ√pP‚ã˚\∂'dnäô+·W[ <ˆEê›<S¬K{yåo`†Po˚(C⁄gÇ/‹xÂ€≈à6ç¿˙¥DKW Ü÷ß⁄∑˜ÂÀX®∫ÅÆÄåÆÙT¸QÂSW`éÿ˚as˛õ€+ª)¿w<pñzDWñzDXÑ)§•+Œ´üx©ˇ’…G˝d‹ö;ûkø[|_WÎ ¬Czsﬂæ¿ºB∫¯Hò»Æd ‹àk“Ê∂Uô/g√∞·GæΩ¨|P•¨Œyî„À˛∑ôAîù®◊√W›√VÊoõﬂÖ;˛wæ—]ÊÁú?¯^tG¯0’Ô∞b|≠}á)ÉæáLŸó7ÚâélÄòYÔŸÁÛZÁ´ú›ôX ì^≥S»OB≥wäçŒXZ£JàŸ€Òp£Äòâz¡µ6∆¶˚ˆïΩÓ[=_π5ß›∞q/˝yd6¡C ?ñ_ûSzi°îﬂ∫Í‘~Cv™lV∂N©ﬂˆHqz’)ì·W8| O¯∏'õH\PyÆBteA9 R¯é˚}Dù¶Ö¸„TØ„‰:[pºÓíœ\«Ç*k©Ä˜ª9p–∫8ÕIÍë'∞˛—(>ø}rg∆Œ“eX2é˙I7 ãc/≠	ÿ™He∂Ø…Ú ?®PÖVê≈^Ä!JâW
+ÊÓl·ïŸXvÌ	Áú∫àÅ&πö5ô°K´mëLxıà%ÅFÅ{ên?¸º{…Äw¶8ÙÚõ@Á⁄Å”‡Pò¡i ˇl¬{Ô[ ﬁ[ÿ>úÓÒT:L/«	◊75î≤ê~ı£ìçﬁÙÌMtrÃïJal’˙Uπè#ÊËú´e0!t˚…p'Üê÷≠ﬂõ¸7à√†1ﬁiiáf_√|ø≈T√;‚∑∞Ü∫Q÷#{(~√ÜÏøÊç:ùéËOiFÚ4dT“,é°` sùTê¬„Aî]†ÌU˚Iª;Á\Va«¡∆}öäÃí¯≥≤g›ÉãÖ_l£É•eZä Ü0á§®?Âˇ‘˙SÔªˆB˚øbCZªNPp˚›“{˛ê[¡PUã„J_N≠}≤u·ªP#Ω”&]Ë*öR]∏∞OÃ÷Ö1&—^u¡o˚<≈F’$Wåıª‚ìﬂI*∞rÍYÒxƒCóÄ≈π’g»nœiFñ<“f«√πZ‡E¯†ñıT#¡CÄ¯FOÌz©Â[,â™…êLV3"˘ssÆq±#˝4…0ª√q*Íõ•Ÿ D<dùë"Ó`∏PÆ¨∫∫Ã¢ñ 2t•ä»®a
+k_Hkë_2≥}3ﬁö›Mñº@4
+¿]∆a@Ôû8e+î8FÔn≠≥[M@
+ñüdÆò/˝niMÑì‹Ê'ú˛zìèÀè.≥Q_+§"ñoÖ1È'õ–fÕB∆Ï§√”]¥~"FÅ©+4L]Õ0¶’’kZ]>Œ“ä^Z]F&^⁄X1” dU,âãﬂì` F1§J†Ê˜%åd–©æïpZ‹úJ∑Dß‚UÊœÀÓ˝<.„Ëëá+◊ŸØu∞CAÎ≠,‡Ü+üªOEõ¸M‰ñüÉ@{úFMïì ¡SØˆèè˜ﬂñ±Ï’d5ëœ∂≥¯∂Y{Å√7Y˚„–8vgº:]vòéT∑úr≈óìıá&	<v4é«ÁiﬁMGtyHA-Á≤ö∂ƒ∂Dårw√QNAsj8Ä⁄·këvK0NG'UÀDa√‘™ïÊ	´˜NºH•5+ﬁk’Bµ≠„õéìö‡?¸óúPoΩ¸sÛ"l€B+ÊÁù¨ZAî©†På®ÍåûN.;≥5Ë<?˘´Tmë$Ä'ïç78Åù*⁄˝∫M~‹Åõ(.UFª∫ÙéjÒª!Ó~·Ê™ı∫%®]ÈSÄGXj¿h·≤˙õD£4ÿ6{k)~“çõ3)Î1A(3%|Øi(˛¯Ê	„ˇãôıw˝Hê‚™‡A~`©]7≤⁄U§™ˇËEBußøÌr,1Ó£∏ÏËèÍ}
+R˝ÓBP˙ÑLEÉeı3W¶\B}£∫Ky“πNa¥oƒu‘n,#S‡˙≤˜ùmÁ≠+Codì3=ùî„[VÉ/àè∂ûA„QG¥£.ΩŒüﬂÆ–[…c°ÁW'æö≥∆	¥i'¡Z·§85!NL~ª—?JÓˆ–⁄◊!Jï*√¢–e	˘ Ë•SE©À.H´Ujï}]=ûàiZ⁄˘§ÏÛ^©÷œ@??ÒA68ceJÃóMu«ÒDÙVi·?•9~≤˛JÆ«¯LÚ9Ç£t'Êˇk¸xÿfØR∫v1	Ù#+Öò®úµlô“:ÂB'∞Ì8Wzsπ»Ñµ™n¨rco¶…0ßRvŸ¸R”“≈Ù¬:t_∞¡¨¶ºrvä¢‡´ãf—p´]	 >íÖ¬5ob∫còß∑.êR[“„çº≈5±ÿfﬂ±ÍSf†	∏–≠OÇ„ü˛|ÚÂØ˜RX’+ ÂÕ‡ıX¢çp≠w—Ω| …Œ”…VSﬁuB°üß@÷;Ω˙œ´ M1$3]\ÿ†9=8º‰dòt›œ¢èo0òÛ˘Ì™€m|VOD=∫ø”–hVƒæÒI7Õfù,∆^∑˛¥µpˆsVä`≈UØˇO…ñ!¥x˚û˜=û√âèÎ<eIØäB“:nø%#_CÃ÷"hIÁÜda…pË¿púı>ñyw/ÜB˝∂kÀ≥·k€©≤€øÌŒƒ›âQÇøÌŒR6˚⁄vßÏˆoªÛqwÓl±∂1˝∂E- ⁄W∑U´›ˇmÀNπeˇHW&y ƒ±jåˆ±Œ4\¶T;VÛp,≈ßt^¿%ëãÊ˚é’ß˚ﬁcà”Í<ﬂá)Œe]p"éúS7%YLm„≤∆è=0Ãmu;H˙} ËV˘¸˜^{õàsÆ§è€¯åËí=}Ê≤5 ‚+¯∞ã‡ﬂèÿ-KzÎ*1SﬂÜÈu´›~ƒrê0èêq¸àı“<:√≥ª˜°vw=ˆ◊®eQ+pa¿≤πCÖµ†`µÃ°ÚŸAˇ“4ÂM–FØ«”k?•AQÓfµˇ·Ä¿}+O¬yä´j´B:0”aA:ÿ-üIEÄ†9ºÖNÇP#úS∆ËÑ¬Ó˙ ˛˘•®p9™ëºSH<8D}§¯4x\"è?åﬂÕ ‡ˇb±˘Ç©ƒÂÉﬁ†J·KŒ7 ˛~´Ú	ËÃ[g¢ˆ.o"ÅA gRìêtÁB!#ILN¢H¯SÕùÁ^RÁˇrhMpÁT*SgœΩ—◊ı¸Ú⁄d‘U Œ3¶,÷
+øá	L[jñ¥‘H‘¿5V ;.˘ÅXdW§∫™≈ƒTgik5≠ {kÆ–8q§{gQ~æLíûc •ô¶®)=qSƒpó”z7·õl¢ƒc"µÂÑsáùü˚¬Ï„g“V€°™ä\∞}ø"UEtˇKQT‘ÃóZ
+ﬁ˘ME˘ÚTçp¶RP Å‡7˝Ñ∫>ì‰h„
+_ôvÇå„7’‰ì¿>ßb‚"¨{÷Jtû˚Î$‰‚˛¶ëXØ/J#˘dâG[)Ÿe
+kÅÌ•„ÿüq‰ÊÆ!|uÇå#Ÿ…	Úå‰õü0ªHãÅß"È'À
+˛¡Û`πUπÁ-YOÜÃcXtY•–S∏ﬁZe–[bp%ºRnEπUáEBï)m—U|tŸÌ∆yN±sª˙¨ªv=⁄•˝8Í&k_‹<èªõI÷Ì«úı°6T<ıãeÁîÕngÁ(çÊØ8@f>y˝8ã…#ÁN}=x‚pÑ3ö∂6 {0ÕdöX∑oﬁF1ªI/3~>@rŒ¯¸_≈Z\	Ú¢Z~«Ç∏¿î´<MÜI~nØë81Dâ‹‡ÚîÀ4ãpâa>¡k˙jª¶›Â1ÿ]ñK∏íJï¬Út1é„xÁN336®Qh£ÜÕhÿç˚ñ„D	Q˜7ü¸Óıc ±ù,h•Ì&òNTû‘åXﬂ/∫ üU'R∆˚õa÷,.íN2·œpO’ô¡éd·X}“–2üsÕ†@¿í≠K¶ùaı 	Î¬ïYZ÷ïÑ⁄!']9‰} ⁄6≈‚Uò®gÕ˚î0Gﬁ®¸Ÿ.†ΩAﬁ;zªqx,–Ωv˜∂Ÿõ˝Õç„˝Cˆvk„;ÿ?¯È `æTŸjˆÛÓ—Ó±&ﬁéÆé∏ê=~ìv#ÆQú∞zv’8xÚëÎÓ…ês“y¥âkÏO¯ﬂ|y{Y:Ç≠õ°G:>‰üöË˘WLﬂÑy]?Oz=ﬁáƒ@"ï)¢ZÊT%– ·_R'(R¯Ïâ°K´¶ò+åΩÔû.^ùø/æ¢{∆AE»„?ƒQ/@◊do≥∑Íî)YW¶ïèˇ,ãzÄˆ2?NÁ3v 7∑fNπJ"ÖˇÖeqSÌ∑róz≈s«n5$õÔ_œØÒÕ∂¶+_Ü·‚¬≤Ω0ıc˛”c[ÌoÉö2∞Ì◊)˚qN ï%X¢¢º—%?∆¨¨ÅR‚(ùÔ|•.˜tÆHœÈL¥6ﬁ‚Í/pìæ5&∑ª≥8π¿„À+aû∏^mf•ÆXjÖ1–‡
+]¥Ù-W”≠W¢.Ï:Á|\Óã·¸YŸŒsBwÄÿ≠XÔè(;M≤+ÛÉ%¶¨ı„≤ p—C(Î(aA¯•ú»‡X)¢7π˛ ›£Í>S≠ùMnF†E
+∑@Q©Ï	)⁄ıü«Us§&5òÈi;÷òH!}‡kK
+◊g◊øˇ[m˙l:eàŸK9O‚+âAÙyçˇßoÂãÚËà∂~bÒÚV .K)€aPJ–^mΩhÑ9‡µé ‹Ä ΩLÍ˙éy¥îâ¶‰5/l∂"†
+“,uï>‘6Ó=∞≈≤€wîÔ‘ LtÔo9çç?·k[1_˛°$‘Ù#òãiù\Dƒ‹XÓÑ√ñ~tE€…M(å™°ºz~Z©≠ Â©É◊&c›B:Ñ}}
+(ów…ÔQÚÒa1D>∞÷\Wû,sÑΩÇåÇ≥åùΩZ†6‡‰öBö¶ƒë\öœŸGâœr§§£@@lÃ≥`Ù˚u[„µe%mäÍ-U¨Õ€±∂	ÕéÂ1ã.uòsQl óêD˚„>èT•tVıêpa/˚œFøÀ
+<5˘6DVóËáJ¢Qe√≥Ì#ÕY:L/∞eî≤S0Â€JÚòøˇ‹ˆ§TîOq∂e1ÔPrU7‡√≤⁄Û—Iûˆ/9°ı„”1ﬂç„TH
+ Ê]+•ªê˛)Ì∫ˆπ≠\÷
+h∑≤!≈HÏ|&8Úß∆ÀD´¶Kõ
+ø±º. 'Gg-≤ò&¨C{«´Å]>_9ÌF˝˘ßÍ∏Ü*FX“tÌŸΩ“ µ™£”ŸSvdÀ2í@í!›„éÈ	â‰ÒZr°Á®£äY˜H·Ÿ8£jõ– q)ı÷‘={ß)õJ]’ïì‰8Ò-£j»G	J≈Mw0ºâs”ﬁô5pü∆QJC5à«M5àÍ I;[y+°r⁄´hvÜíA®4P°π∑Ô¨KvÀêãÛÛ}'ÊÑ†{˝ÀπG1|Õ˜3ø
+˜Áÿ›#œ˚õÈÂﬂ@Ï¯<K£q•â.¸–ƒÎ‹Àºççn“´¥êÛÈä∫!mºISæoS<µ*mÙí(ÀŒ„(†ëΩËíÇº#?ß¨pQiËJ›Ù7t%CﬁÃ€Àº€è+çå¯/ÏO9ˇÜó˙ÀIq◊ﬂ¬Føgg7ï˜#yœZ.ÔΩàGgéì RˇŒd®≈¡É*oÆ#;`?Ñ<e|Aï‚Æ}Ñ˙
+ª4ÿµ+R◊yËV+AŸ"≠ìŒ0Z«	·®.Ï&ÍU	HÀ•ö∂SØπ“\UÅ´π„!•ó»Cæπfó–N »4CıXÆFV8î˙3tE+GÓ¨4nC:l‘≤j]ÊªÈ“∑PÍhïâo‚öΩI¯¶∞‚Y√˝¿Â8CLé#”ÕzÇπ|îv≠¡ez’âékVŒU’!ñ≥E˙-√¨3ÍÇNÑ•Cág©æ’·~uæ»7âı&Z â¢zGÛÒÒø\∆ŸçÖe1
+Õè≥d‡*Ω'óßOÄÜm £†ú"Ã>´.ûﬂ†(†®4-J˛∂´›ówE=6ÙVK≤ô∞±n:â∆gE2‘…⁄Í•πhjs3∑E{`… ëOV'v˚óΩ8á>‹Ö°[n√ ™∑€Eyx€˘>˙ )Øxbá\Ø»«*]î-!W˚XﬁØv≤ºœgÕºÌ*”'˜ü´Zü]õÊ›Ü"kyìÚ`nˇπ°rîjÂ;∆"XÖX˜√§5ËWhŸ2”•$C`Vë%'ùÓxÎ‰õüçgŒî_N√+
+Êà2xCñ9v93V9+69=ã¸‰Ï±!k¸LlÒé"C¨'âPÌ@–˘€$Âyãûª<«îÀA78Œ?©†˝˘—£d¡vÆZ,˘‡#2;_z=(à*%
+Ÿ	/ˆÄ{J©≥ˇE˚N”LEÂk èÛªıöﬁ`AqÃô[éÃæ”Òy\|ã.GPUôÛ”,Ãì…*,©¬í!{uŸø`?·c|ù∏{ÁL¥£»œN|j)˙C„E@r<ò€ö Ò⁄¥NököˆYÆ!
+—„&∑Â¶Òú •^írcç‘c?zW>Ü∂edy6èáñqún,≠™Ω≥i»L™=Ó◊êRı∑’#($Ò◊´ñö9À´¡√cœ∏nÙ ó»2Œi2bqñ‰	Îù†¿È)9£^v\èµ}Z≥‡à˚À≤XKΩTãwz∑dí{1úiÈ«_<Ö∂iíògRÉx¸›sVÇ§B⁄˚q‘Î∏o?∆æÙTè~Zè’1•¢3»Ù2âÎEæôo£™7‹§Ï8êÃ®∫J˚Ûñd†R	9ﬂ–pGCF·Éùb~∂óIm£±V) a ]¿ûÍÉ#EE±U8UΩQaÍ2páî±yí¸„`êÆë∞V9~∆ÄD8ë…∏6Û›aŒÖCˆÛ§y» ÆÚZ√£H≥1\û-5‡3a}ùQ.≈;‡	üëÍ<a\Í¢âÆAû‡WBn∂h¶œGm™73"∂I‘Ì¿4`™õ¬k2Ë‚Î:¨Õá“‹%‚èD7ládÊ	nITKÎ°2r=oúCOO√˛ç†ƒÇãÃÂÄ;SÇŒü§Õ‹p"∆˝Û'î®dYm†Ã¿6<âO-Ï¢QZq”§í-åZ‡ÀíÊ¶’64ª$<5äyÔˇ∏Ω«vèé~⁄ñŸ†"3TÀ MÚ˝QÔ8Ωàáü-˚S¶}NõÈÈIÏuB$Ér¶/#‡ålNG‚ß±ªÁvB'—'@¢è›ô}ı‘ú@ïis4Gµ‰n∞ÖËxtæ(∂wÃws<Æû@ÙiÏù.ë“
+ÇjÅ=uM5!†ÔÊ˘e,∂l´´%8yòáôH‰OTgÒÓpÄﬂäû∞◊Òê∑Çlh+Œ/¨=˚"2wÎ&àâ#˚ÆiO™®Mµ˘¨eN¡Æü˝s˝6Àlî›UGUˆ¬«5rëç«ú@ŒŒ ;v˚cŸLg	]Âl/æ.˛ÙáÜ‡61`¢ñt6Ä1ä˜å÷Ç¥ÉF◊öãÂ∞ÏÍÉ%Q.1§n©◊…®$"j\ÈÑH“(:BH∂/Õ4Ωnà7jùÕVüZÔS{åì-∫…∆[
+˙(b⁄$eX∏ô=qè=åØˇÏTß]Îü&d°w€Iì&†›?e<˚âk´“ìù#î«Ôd\¥Œj„3Nk‚ºö1≈‰v—h‰¿Ÿ"∂,àâ k™™¥Ô àÄ◊ Ÿˆ†:®ü÷®pÇŸ„*·Íú¶·¯Ù≤\≥KÁ^Æ!ﬁï¬,ë“QNE¯l⁄éƒ˝≠m∂ƒO√ﬁ=:ﬁ›{]Ä·ÏÏæµúÅ∑NV∂*Ù!≠ze≤\
+#@æëÀ«Â”ª~b√Ÿ{ŒR]˛Rﬂ˚Â&ôTﬁ9MÜΩ÷±f;Í[8⁄w	oÆ/‹€Y(ÓÈ"*Åç
+≈-ÈYB]§vk:J›v˙¶q™˙.§#U’ä$aÖ `s˙a'\•_cYóüm7Pï=£›≠uë∫˝7>~ß´“¢^° gœÏy∫ ˘ı-ß˜óäæU<SΩœÓHá†LVQ˜ c⁄Ô	Ω†\oÖãÃy:åKoìÉªo”®·Q{sÓ¡Ñ~o„¨V\·‰‰Z˚,ˇÒèqîaîŸ‚˚c¡‘¯ÀﬂjEG⁄ìê∏ƒî}òÀHDÊ_ù)‰)∞p8˘PÈñÆ¨oÈ≈ˆ+Û&·j±ü{•@q«úy∞âDüÄÔ∆∞ó9—Ù!Xi°ex)0d8πdŒ"u8»Ë◊G7î°«Á#b\∆-û8âπzJëÀgw“>;Ö¬ßÈËÚdêåüﬂ
+O“´4Ωÿ°Ê>‡ﬂº≥∂T}”†=KΩÏÑ	ÀÈv¶.<|!,:[
+È©∏Ï-ë ‘.¿(t9¶≤¯/óIÊÃÂëY—\
+ÉéπXπ¡{Cºﬁ]1˛p¢]bﬁÀãÜ∑8ÙºıÖªL¸Rá!£ßèt°˘ ‹3!ù'ßZXÉüöB∂∆êœ¡¿©	«’Z
+ˆﬂ~˘Ã íú4kÄ`⁄$3Æ'$Ê%œìÂﬂ†√ÔC,EÂ•ßŒ≠irÄz®ãNõÉÀ-!æM≥!ﬂ}Nâ3-Ñ∂¸5⁄r °Ÿ0bÙz,ˇ8$∂}OMbS÷z∑˛˙˛As ‡Á|èirCÀ	uÊŒ¢©Ê—º¬ˆyÛÃ¢∏ì#~…¢≤C“¡W#ü- l!QGú¯¯®ƒG„h|ôcπö{é\Îvˇz‹#ÚDfB}¥tZB@bÇ«6·®¨j‘â‘À√€…fÏµ-–ÎÇÄVüﬁ€∏,ÖœHWi\ÑqBU'Ù≠x,U≥7J9»ª˙î∞—ÍóﬁCã"lyWf˙∂Nà˙Vÿ›∫+5ÂQπ˘AÕ*dj[µ}ú∫;!jÀtX∞nP+®j¢‘ÌJwj`†T¡8(˙b'éπ¬ÀÂMƒùL¡"Ê≠˘È˙êfË*Õ?öé´¿?≤€ΩKPç-l§√;ƒıÆ¨`≈Eë]÷ç˙±,‚Ÿv—WÕOº4«·Á#Æ^ÓX	|ß Íú’b‚©99N{—Mi&∏◊µ“‹Ô¬é^Qãº»Z|eGú∏⁄3Y2_!12©ò:»ÇÚÂú=öÖ∂®sø¥8ÎÎ›‚3Ÿˆjêâíç
+6JÎÑÚÀéªEvõçbª|πâùb"KE	n±«óäUcFÅ¨vFg›ƒâ˙0,˜79Vóc]√Õ‚®è<ï/|†`QEãú;ªG˚Í–È‰£~2nÕœµﬂ-æw7ô‰;óú±@Í∂Í9ÙVˇ)[7N·pòÖr¥ı∫7|/…Ûø˜¸6…Öm∂Æ∞úÚ„˙A}U·n7B±h˛œV19/Ò∂aQÊÎw—Ìãç60»Ìœœ®ï¢õÎ)ó‹ìÒM°#[êŸKoaÛ*8D† rcÉBm6⁄ØÄk…o^Gâ±V]Î¨UùiÃµW´É9Ï-€Òßäá˚X∆…À”Ò|‘Ôß◊q/§£ué‘pr*ıÿµ˘∏lS3O-%&‘¶„À‰∫?√çeKøÙßÁÜá<§„÷ã‘ÖX©ÀÍ˚Ÿx˜Ë( –S¶πÀã`ˆ|îæP
+∞RÉN!ËÛp.:ùN†¨Ìˇ
+Ì’ö	Ë®-º€UBÀx=d4p›~VﬂB"ËÍ0ÊJ{ÇaÛÏ Œ	_	å±&!LÆâáÏÜ8Ém	]fû)eÜ}+jé±£~2
+ÌK0ë=Ä.3yTV&ïœ∏ÇAI˝ˆú?_Äønu(›Oï?ïIÿ)€⁄˜v`Xæ#ûmyùÌmˇ°e˚˝Oªõ?≤√Ì◊ªG«á¸ﬁ˛^£Ë6=bïp≥zÂÀçπìf{ÒµîΩÏﬁy:˙≈mÅ5Ï¨~KV-ƒI/Î¨∫≥H Îí,ÿ¸Íß≈D˘âlØÓH[¬SAj∏CJ*¶4¢;€¢]î'›"<$û¶ÄY÷ÂjN±#YzöÙ„;>èoÿ5‘H∞D¸ë˛;â-^MêãDCd$H¿vÀ)14⁄7CõY&3∞<©X‘öÏÄDÄgˇ‰4®8M)~#ä'®#»∫"Ì*C‹Ã.‰õAeØx+‘û2°%e÷f˚j>•Ï'ˆ‡˜œEe2Ê„ˇò0oﬂ'ï5'#ÏYs:¬◊>=!›k¯–óE9õÁI|äHD˝(A#a<à≤ã¸À¢Ÿ©Ê$_¸ ò—Ã('–ZR√m°+ms“‡0√∫—,F¶âaÌ~mjÕ™k≤üOY*Ú°ä∏UíËOi7bë7?¿Y≥ãHπ∂*(∆ñ˘úà≠D¶¡ÊúeΩñ=µR∞_´ã’d≠)2òiB,ã9SÆúeÚÜn‚ı∆ﬁÓ ÁÊõç›∑Ï’Óõ7PwjÔÁ˝›ÕmÙƒ&?wØ∏Ù?=ˆƒ⁄L∞'ÄvÌ·ˇ{óBâú
+åBÄNî»©@ÊO
+FQ"†p¢Eˇ˙ä
+1˙‚¿(Ï√É∑wï+πµÆ‚‡Ø.ì>†‰ŸB£>Mp±Ç8ª˜≥3N∫8áq28·"°Ö∞∑l.+˜oPÚ∫¬9_ të¯1KOOìn¬âñ(˘+Óﬂ´4È∆KsŸ3Ω·ã¥¿∫i6JÒ+äP∫M÷ﬁ!»u˛rL\œœ)Í{ÉûIò¢Ô´ÁÖΩF∂wÃÉ⁄˜É±⁄£_)©…ÊL≤z9ögÊZX+ní’≈ÖÔ=∂Àr3˘X≠#±…)?:sU5¨N÷Bï†∂Ç•»yq€ÊÌﬂ7ò]’‘Ú¢ærz∂¶'˙Æy,N¿At£˝˘›≠;g ô+.‹†Å< Ãù∂7X:wXWÓN¯~óIe≥ò∏ò tÊÎ*C4ﬁJrÆ€ﬂ`ÀË
+?ˇváMíSG´∂(mÍÁ^	„*KÓUw%r|√ieq!]ªSæâ•ê©òï¡-∞myD÷äyrôj‹˘]+ŒÉ8◊ÔÊ˛∞q∞µ1˜àÕÌΩ>xÉˇ√!ÕŸ‚¸u]pïì–aîÙØ£õo¶}8·ÿÎÙ
+™Œm^B—ø9Yç.Õ\’Ë‡≤T§Î™√ñœ˙≠x+ﬁ™CŒ»ˇÄ %ÑéÁr˚*ßI9⁄‘ÜÖ” ˜H÷∏^÷ÇÑ?u]πí(˙¶'#…Û)$f(§\a9HO¶ A™Á˘“íÓ1î%ïƒ©(f‡◊øˇÀ¸˚ø0qBm°"Ùñﬂ7Mád‰ÀSí}¨∞ Ù\Ì$1Ápd¶Rms„w`û[åîKnU‹ô”·‰÷ÆÛ≥bß´k´À6GhFèÜ78[vV-Ê6	ﬁæ`Í‡Pjii/÷OnﬂMò6ì˚f≠Ö	ìøm’©-8E»8¨ˆ˜¬ C‚•ÑÆLz›Í…≥æm?1 .…Fûˆ1€›bﬂ¥cr6$Ü;0T∂ir‡T$>…¶“GΩ cÖ~GÌ"œÚÏ†ê˝∏{ÃΩ£F·Bæqnù≤ÅΩ”|ÁPÆ´©6N©.PÛEl èÚÙyÈRﬂ¸ØQîa4‹WGö⁄@&§M≠ÖØé8gEín÷Ωì£!ö:è.É(ª}Ù*âØGüBv@q√E‹ç À≠•'π@ Ïª˜Ìê\ó∫I√öı“A¥¸…¯º¢√;K ¬/˚c$çù8ﬁªÑÑ2œ≤Ë˚K-ø#wùMÚ•3õ]©"™H¬¡EÊo
+‚ÃÍMÌªAØw£¨gÈ	øÙ˙Wºz«È8Íã,sıù>⁄ÔÙ˛~ß}ùH‹iºg≈æ°˚«íŒæl›ûÆ@ãEâ‚Ã®öïÉrπç&pÌ*◊Ç∞Pn¯@∆ÏUG\ßë‘t$∏”>ˆˇ  ˇˇÏ}_S#IíÁ˚}äh¶ß›í@P]E/T;≈∫Î⁄j ¶)A9%)µô©öÂivÁaÌﬁ∆ŒÓÂÃˆ˘æ¬}ú˚˚.<˛dFdFDF¶R™al∫@ åàpˇπáªbS∫’™òÙMt9Â‹ˇ◊ÆÕ∆JŒ˝m·µ—5.Ñ±≠%$∞¨’u⁄º+øô+À´ÒÌÏÏˆ∞∏tù˜±Ã¥Ps(¨v™…·(Ãs,q~OÛBÆ/T;µ„I0àìõHﬂ”‰¬ëX˝‰∆«g‹¯@ú~nÛæ∂Æ˜∆#"~•éc2üòy^UâΩXQÜ¸ÅXø†gƒ»±Ûœ"CÉ∫◊t"UMî’\∆"+&i@Ÿú∆Âõ"Elô¨° ÎÎ%j'5B°%#v+2Xèx¨'uôë~Ëc%ØvDj99É•2Æ§˘E˝∆Fkâ¿ﬂù‘ª%bUÜ™&W˙çUS¸oˆ„L ßÚﬁg6–b#´≈∆.fuÃT6`(vÚÛ¥∂¸&P(&∏&ãåŒÒJ©S«⁄‰Àüc™Uú∆<SÀÖ=º»Tg‘uÌÇR+ö=¬BØ1í+©Òº÷î«ÉyÓ≥o‹eóCàíœ¿2yã∑/û°ÙeNàº*XAªûÊTt)r_oLF&€¥…Áh¥£2ÿí›éáõ*ÒAóD9j VÁ||≤xÜNˆéèNŒ–ÓˆŸ:Ÿ>|≥áN˜ﬁÌÌê‡gm°ΩwÏOªßR{ø—˚¥´Só⁄”Ö0g¢ûá=M©ΩiCòaò4¨\ˆ`ˇ4"ø†ã¿ä¯ñ/≤"°Õ”D4€◊„yÁ…e†t¯Ü`˜®N]Â.ög}=|»ã¡…tWÚàIzˆù àS÷/u‹Jûƒ“aRiAñsÄ
+◊aÇ…à}Ò`‚É;ﬁÊ¥Œãˆã∞aÖ3/ºº∂Ú»ﬂ≠Â∫£ﬂIä+}–üöø≥Üò!´¢ S«ªÈ¬Ng2Ú¥∆ï∫¨ã—3Ö∞Â•YhHC=…ˇ8m¢2<tSúÇ£â¥C÷2≈/Ïçzπè+¥.2 9fé$îºñë3Er›dˇ∞„Œ6µV ê8‚Ïf‘Å@mÅwµ0Ië|ÛÎ‚!nàƒõQpu‰ùê Ìî6±·“„¸∂ÀçF“n—18<ÿƒ\Nû"\≤?ñPµ¥Ô%›–Ç‰’jv$k‘~Oö_»›ï‚¶,Ÿi¨
+b‹⁄˘W{’‹˜´˜r4é¸++§O3·Ó_Qˆª…}ﬁª∏_`¸
+Õ¸Äj§5,∫V∞Ùi¨cqë««Cî:^†eæ-†≥•)cŒÏÏ¢dœÈzÑ€‰¨ÔÖËΩÎ™ÎS?¬mr·!lè4ß‚= Y~†Zm©Œ∑≈ûÀ>¸›zàÃÀ«ÚƒæFˆ%ãXàM¶¶¬ñ!äﬁ>∏W–Ó+¿jøEmnÎ_Ìµ'µEQ‹:≤π:¯:át†¶X'S^]3Ê;JÈﬁjûT9é“õ√ oîıe=	zÆΩ¿^ËËjVÀ◊Ïx∫Ÿ±§LeU ˚å¡[h√ËQ¶á…Äg˛¸ÿèâÀ¢Ã«•ÏÎïe=Âá
+âKÁΩ&˜VÖ˚£Bb ßL§ûou€KùÔ©RÕ
+*¶1W•ˆ∑∞OìÊ‘ôﬂ˜/§fŸ_Æº–]ÃeÊ8õ:ô∫Å{±K=ŸkÙjo	`åX√6°n$Ù>õb49êã7Íyó>´,À∂K¸ﬁãtüêíèÒ±Ü]ÊÇ≥§ÿ*ﬁâEi∞Í≈Ωﬁxjãœ°<W2:µ(∏-ÎÖ¯—E<m¸‰›*ît´ÏEî¥oHÌfM_öˇØˇ¸?ˇÌ˙›»©:ÿxèßCH„J:ŒdkIí\ßgïIÚí¬{u¥}âˇC´;◊K&yË£Ô+;vnH>ôó(O˝ëH â˘˚ù‚A∏®ñc)øRûÍÆOﬂØÿù˙1*Bˇìh*(ö»¨ÕLΩcÌÀ¢¸÷éΩ¡6@\‚óòj@ºiGO#äú(Æπ%Â_*±X¯∞bû®¢⁄ˆx\'¡Òu"z? àÍT =j°3Ó]<fô‰?âú¢⁄û¥ôIÿg¯Ò-u˛-÷.DπÈe»áµ„›◊≥<ƒ¨¬V0Æê†˘Å·–«O	2Ö11q˙∫Ûx‚êL§XÂôNÓXΩ¢6e±Z<®(Ö –è” ÕV¨RµI!*)USA9Ó8¨P:˙0?⁄íXÂ ™ÃCU}ËübôçL
+\ÚåÉ∞0ŒÂe‡^íøWP7‡%·cL9ˇœuâN+ù2E∆´¡™r[• ∆%°–k‰Áø»P·µl1],cÜ3Ã±6€lD÷ë–´6yçë–$=Ø6Óﬁ#´J≈A?˚Í„†°∞ˆ7È∞®ü'≥¨∆ìÜ˜z’è±Ñy· D± õ¿˛∞Ÿ€\‘∏êËefÂÌ—iö∑PäÍ∫Œh‰GPwƒπ vÆñR‚∆∆⁄ur»%~Ü¥4—üßﬁÁP±<Z’ª‹ª9ÿÇÁ"2’›LiRÍ(øı,eÒ∆tj–i°∑(‘Y”™M˙»|Ω8–æ¢§ y;
+&ñq˝∫H˝‹îˆ_]l˛…dWs	∆ﬂ›ﬁ˜+⁄9z«cÔY\>æØa„≤€#2D—ôsŒ ı%9:ﬂÃô◊”q˙=EÒßs‚]v”9˝¡¢Ñ…üº_˙WRWõ¸9nîHmn¸øñ‰<ósôÛ<ÊåäæH>kñÃ%N"√≠QÎ9Û«‹èé^9ñjÀ)VD’âo˝“A–§Ì¢˛ƒ'-Ç9©˙NÅö»jK&YkÌ§ël^Ê:LYæTj…â'%óó&ev‰BπôÃŒøêªIŒI0µSﬁ:!Ï>qÖäj#ﬁæ*@A'(M@ÖáB.	ß±Ü2;BÖ=°µ6´‚#=j˛(8Gˇ>(^…»÷¨Úèˇ—“ÉvÔÉO¥@Á£`ì,d˜†∏D˙Ÿs ø°„›◊¥D+¡ƒË–≠Ÿƒ•ö—AGÔÚÓ`#tD†∂q¥:\›¥¯9ª #∏±≤ØféAen1`ƒlpÃç•±ø[(ÛêÜÉN˝¡öoaù:_\‡©YHı6Z§#¨ãj,zõPoQ*É_UI{Ï–¶≤ÚO√"eÿÄñéb	ãJ ≈Ge˝ó˝Ω˜heÌÌúù†”∑˚ØœÔ˜O˜‚™∆ÃòKÎÔ∑%’¿t˛ï\j¥≤VUc=æã∏.È˜43ûÂåk#3_0`v≥ôªUIÏÑ*âå÷É[ë±0©v¨N¸[<¡ëﬁLüóÀ.‹og‹7ÈÙC©ÛR¡¥XRñ|íó//Qa^$øÃÃ=U&Ä#nxπﬂ÷~óΩÏ,;«÷r›+¸Áÿ<ø∑ôˆ9$`ò˛∏£â>Û˝VmπóÜv^tµßÌ+®»’¡•åTô´b}pïP≈ª(ï›JäÉ5"mÊ.<)W<_9È∏ÿº€îÃ0ƒÖ≠ì∞ânk”#åM¯˙Múâ+¸©¡øúß!ãÈR67óy9Kf…˜.⁄È{„“©Ã√·fÚÁ∫qókìÁM:ëëßBJ$˝ö—⁄ö=Bˆ<kG¯‚>oSe%ÓY›Rüú6lB…"|rW∆›˝àV"ér§…äg≥B∂Ù“;∏À}Ì∫˙¸U/UíœÛÅ.À˙;]û$#Ë]ñLÙw∫<4j˚¯Ë[ÈÉ,ÁB†3WS©h©4i22'¶IåÒñ*ñJ‘XÖ≈"3¬mêió™∫µ±”"ÀÑ«i[™5K¢W&¶€+∏N•V/okﬂXçí5ÅáT‡ÒÊ¿]F}ö˘`IYv‘hﬁ∑‰$Ú6∂~aªQ»«I#‚P‡v°Uöñ3Íªq¨Øê_+¢¶]#u™Q∂ÆôGR$ê\ä€DŒË¶éŒ˜{◊õhD /O]ÄÃ-)Ÿ/‹MÎ ∆∂†9mùqU’Öx öy©¡[2©	Ãò
+f⁄…d≤Sci√XV—ò[‰¬~ˇ◊?†ﬁ-Yﬂ&òM*ou=Ÿ$7´@ÉM⁄:A ﬂ¡Ω…‹>Ú≤Å+¶E®U!~k+º&£<7BËætQ&»∏"‚X®‡m≤-ºyæÔb≥ëbUÜ™åy®ïŒn'ﬂ¶¯+ﬁ◊'5q&u&iR,ìkå—ÕåAp∂È	x&PÓBEN	}	∆æj∞≥ùõıúPö ˜àπ@îÏWX‘c,¯√ãÂ®_¶5˘_ŸVd5s˚íl%´i1æL8]s¨\rlòì¢ÇÛ±
+ÍbcßÇ∆®jŒ‘Ú©€C»ÙπBvJ˜>Û˚«O∆}ªúªq_DÁêR6^œm‹ ˆãêï®8©d’9˚íâQ&:ôí1f
+∆ÿN¡I®¶1Nk)˜ûîä3Wt@√=≥–Ÿv¯–7√‡–«G]î#'µÈr@ê∆«R5ˆ“}àÉIEHH…ˆIüŒ•{á≈˛ÌíH¶™:N¡˛1	§”!\”Õ§∞ˇ2Ü÷ÿºõQﬂπ®‘¨∆ú∑Ã®_; °“ŒM>Y/ØÂÎ√ccqÁè√b¥yb[z9=ôî1=pƒo≈•Áƒ¸œπBô\ﬁ;≈JÓÀ€’ªÏZ©5Ωt‰Ñ§(Z¨N÷ÿ@ßìs≤R®f≠ΩÎ‘±¡Ÿ,Z¡›ë•MLÂv…Ù$0˘t_›31u_›ã“j∆4»©‹%/z"¢nÖ€i%1wShÜ' Ø¬í+Ù (®ö&ÄX´96r°Øñ≤;;3R≈À §Ÿ§ñém⁄HÚ¨≥ãÒ3 Ç›_´YG>)·h	ê∫°Œi¬ÿoÂGâ≤[]#ÌπˆàΩ•“Ó‘ç"‹D¯Sì⁄ò–ú≠ã«ì—_ùsÙ÷˙Æè•vﬂÎ≤,8ãÍ Ó˝ñr⁄˙rq)´ÉGCÛvØ∏!A¨;œß}g‡ù ù¯NØéﬁ8AﬂC¯√˛§éﬁ9},bùÁöAËã'‰«™io ≈Ü$%ômK*>—$Tƒê…˛MådŸqâ"G›àjPF~)—Ÿ‘≈.%XªaNœGä@F⁄ƒÉë‡¶Îf√\2Ä,|h8¿‚!¢ñé'É>M`#ëö-Mb\öô¢Ç˛¶Ÿ±}
+U%%%’\ØUê—¿sA®ÖVÕ†jZÉgà®jò)‹ÑÆ…ó) 8∞Dñ1.∏dKWçÌˆ?.lëã‹ﬂQ?†µ2µ’Zˇ„G≈L£ÎU∂}ËC÷£$Ï´lÀùoôN#Yªnÿº1-›\öÏ5ﬁ8É'i}QSÉz5Ãà⁄‚Äm=®÷BËè!˛ÎQ'˛ïÏ¡’8p9©f=S¥D◊ÓRs´-≥(W◊ı∞™ÏustmÃBBæÍÃÖ√ÀQï◊6&–®Jõ‘hùÉó˛‰O1¡]¡Ì˜Jp¬ﬂE ÿ'Æ”çöØÁí0:Åb„FõÅs≈sX∞ñµôíËènòvD'0b…Öc≈º•ÍÖ	M¢)P‚‡WF¸Zî*Bá≤Yf4€∞ ⁄°XÅ£2E2[∑◊ı)•Ò>˝Ù≠∞Äƒ•È∑í	†ôOp1O©˘*F`Ö
+«öã‹O5naà_ËÈD@•{bÇÄ&P~ë6ªd` 4Ê<åƒùú®iÔ%GÓ|IWB–%¿!'|	dπ»ÄÚf¯YRóÂN5•Åö◊Héõ±-ı,Éo9∞áŸØΩë0˙îâ®⁄4M∞›rWBπ⁄’íÑ&ôçÅ˛d2“Rõ¬“Ωd±!^,ÀzDæã¶êèFg·e¬êËŒY~fÈõQXv,˝ﬂ÷úk⁄Dˇ|G™⁄ëÀ∑¯•8Ñd⁄’˛ ïØE8ÏdârFJ±Ò›˛oª}®=˚BM•¡≥†ı)î«óî^›‡M´HÇy4©Ñ/faR5ÃîÅÁ¨±T≤Nd¶xK∑üb∆sño∂„ì uÂçF%!∂1éÏ'◊tc}•ËÒ§MÅäh∫íØp›JU¬ËË·O6ãÓ®ÒÊ’‚“ùÚ¡3o»¸±énQﬂüÿîh7zﬁ•-÷—–M†õ¯#tß‹9æ©è0±›I‡Éø~jB˝4ÓyëæxÁ_z£ÿ'≥Ω{∞∏ò∑íπ™Pûï†ΩâﬁúÏÔ6»g€ØﬁÌ°Ôóß˜∞≠€{ÿJ:“tí¢n4›qÜ∑ûµ«,„0”z«L˛U$Z&S=À\£=ÃÚ¡WÏãYMe‡–8ÓÙ†}é;&rÏπ''Ã‘îÃÕı¢pòh
+e&Xò54N’≈ê8Œü
+ˆJ*˙Ì.¥áˇä…Ìª¨Vê%íﬂÀhŸéJ)®r,?XQdúÁ_‡x¯∫aÁÉ	Ω èB1Ü$nå<n®ˇf´6Ò5âïÕòbHÖŸÃ∞B9Áì	(Rﬂ…πs%{Õs‘¢◊Å§ï_ÿ⁄èπÂ
+w∞”tXÔ
+±Ã∂∏®1€à¬0À.ÄÌôv9QgòÖ4À·=ÒŸüÂÛŸTN˚>˜`f˜÷™ÌŸE.„VÏé'◊}úÔèbg<˛ç∏êÛΩÓ‹Såﬂ`nV„≈'%≤òS+ZÊ™Y≈Éƒ¶⁄ª}nkÊJÒ…-ß0éBÙÒI‡ÿ∫j‚T≠¿Øã|ﬂ—ï©êhÕ	pu„˜?¥?ﬁ5Ëo≠¯∑ïèÕprRßΩt˜)üú|ÁÎñ6Ø…ª•<◊ƒµ^Y≤$¬ùC™€7ùÒò;íÁ€qüà˜‘3úî˜”5\›∏üû…µâ9u-≤À´ô⁄@"P-RHÔÕur\jŒéÁø	‚ûÁø	x◊ÛﬂºÁáª	8Ö3€Ì}iEÄ˙1’øMÃSzn D‰ç‘Ï∂4π"ßSª∑∞“-Ø…¶«KRÛÎ ’ã≤aE]«E◊>@i–3·>◊#∏¸'/Æ%wMÔ.„5=F≤aaŸA√.⁄ê˘˜LiëC‚æI-r™‹3≠Eé°{&µ–π5Z∞âı 
+msüpv ?· S˙†ÖCä‘-dZ¥pêI}§¬AƒåÑC[7ÖﬁK®é°—1}xﬁ\À◊à£ΩL≤Ç“±Rêß ?Áåó…G	Ë7	3:Ù”Ò®mÚ˙~'£Ø˛"{YÂî&[ºÍHÎ≈rø£√Òs$4◊ºÄÖÒg^˛>À‹}&ØN“∑ökZÿ˙Xx≈?EÓ•‹‰%D+ﬁ∂dœ≥òÑ˜¬¬f⁄ãÏÈ∑Òrö¸ˆÊ$r∂G;+•ú6æßb”§ÙRP7mEGÉr›Ô◊z,J“tVﬂjÅâ°-Ck™Õ–ú8ê˚ÒŒFıüé	ÁFSµ\hOˆ√`CÎÒ0ÿp6f›î|87¢*fD{∫'≤ê†¡à≥±Ÿß„√π—T-⁄ì˝ ∏êáç=6ú3Œè®j± ›πúhÈ®ì/tfÔ˘pãñò»tÕª9¨M∑yﬂ8~yÚÊÇ$…+áÄf0¡È˘‹òæ”ê∫S_⁄‚!ÄrÌ'PïÂﬁ˛d<{∏Ï	î”}˜ª Â–wh.¿à·>eù˚¡⁄ù≈QñÊ•∞ôÓÑf‡<”≤∏À|∆`´ﬂö∆ˇL√L£4ñÉ|f	ÅiÊòáëlΩ7(¬`ø;¿|xª#Y;¸QÓè¸Å¶Ìˆ«¥Cû˜'√˝…p2‹ü˜ÈwÕ«Ecu:I¨N´eêSwÖòØ¸Ú“M—5]⁄&M&ØL“'}‚‹»xÎ¯dÔx˚doΩ˙’∂wvé~><€><[RVk–N[uÙlˇºªF»π7
+éèOé~)AÇöwT)¢ƒÿ≤‘˜“ü…5(DΩstÄWÎÌﬁ·È˛/{Ë¯dˇÌÓùmÔøCxèNŒ–¡—Óˆ;°<ı≠Ó∫ﬁét¯=gp4vG‰jF˙fÍÚ2:‹±ÉOüÅFê?æG^¶9ã‚ÁËM’¿πzOΩD5¨;aw{q>{º©?|\bu£ÃÿÅ°Ò/¥F4~ùUãf/—∆j_‡%/<≈+…ö≠}i≤ﬂˆwÎx	ìøñ§€±p6Ê/û{u ”AÎ¸√=ñA(u76°à˝&ëíæGK'°O;AH2°ù˘˚ßGro0°§ﬁ/n¿	…-hrœ5sïWM0^°zÅ2_,Ò{≥Xàf.Õäm±q“ñ∂≤√7µ√æãÇIÍ´;â|ÈñY÷ÌÒò,*∂N}oE~`ÛÈdó÷—.-PÔ4ÒË£Iàæ!wö+YlF'˘W"¨»B;ÕÌdòª_˝⁄Óèæ¯^◊%ÎÎÒﬂÂµ≈gWh\_Ú [bºSxí˘
+W[†<˛=ErëuzY3_ı™„a«é'PòÀu√?‡-~4&u7˘>¬g¿§Î÷j·dXGë˚¯WlÉ◊…ö‚ÉﬂÈ;¡%√£VñÍ¯ˇ"±ıÉ=ß€WI_Ë¸Ìóµ˚•πÉók2¿<ÑN¸m\(Ã‰7‰=<LFü∏C'¯fÛ$–Â˜ú®€«˝»è„ì\[>:ﬁÖ ÃË¯O'øØ˝π˜√“≤G∫V?/YËEËH~V≈&î⁄•‘‹–O?¥>¶ﬁë„€Èx˚NàR\“–∫T0fÑI1!ûu∞ïıWBó+íÙ	Àˇ¬Éw˝í|,q)n(≈çê>Ú¿ÌÖîxiÈ·k^öVÒØõ˙ í°_âYôKLã◊ıFº‡¢ä!	]‚ªØ)ë∫gªR?îjÚ¨ÙahË&<èÛ…¢¿®Wå-∫«üÌ&à´ß√ÏK\∫Ù#iﬁ^JÕ|FX2ì'ÑtëÙ}aÍõZWtyA∫Êˆ¬‹_7ÈÔ≥q¨Pã]—ﬂg:ƒ§øœö˛RõN‡YÃÂßº^úkÒóÚ7úi·5√Œ†c"êR≤9í#Pÿ¯TSàl8Î›àVf“»l⁄1Ëi¬Êïôå(ÅDﬁè©Ûõ/n0Ñ¢m§&@jÎí‰˘òP‹e+≠(˝õ\HOÛ:%˚K¢ÒHΩ”@≠èÚ¥bïÖT) æƒ-?5ΩQw0Èπamë>”^TwÒ1Ê°≈è˝Ñ⁄h”$m∞ì◊‡!¿5§πnÆ%üÒ»≈
+ù$"‰ıS$åó<
+ôÄ‚a∑¥äõY~2úFÅ`V	~2Õºp≤lÇ“x‚^bÉ3 ß'W¸ã*F¸Ïé—™>k¶Nœ»À>kR`ë>ÑNò&ïR1©FÑ÷•/ƒIêø·d÷ï3Æ¯îî⁄÷üø-<ûEE∞àR_∂·KŒZ0 r”Ò^≠´DO]%u≤O≤”h3ªøÎ:âó† “”D≈ä»k…öKÚÀã◊D©GÁ7t&Ä…{Bxó=Éô!~Ñ	}éÅﬁH:Ç›bhIﬁ8RS…±…πCb&AEi≈4=€˜N3\ÈM◊	∞⁄äIén∆nO?Ú\3
+ºamI›IˇÇ^*&70Ø‹`«	IíwÚ˙èÖá/k&0lqÛ`ºT_±Ä˚êπ-ÏÔ⁄ø_ìË˚#˜¿?Î•∫Ôƒ3-≤™‰]æŸ%Ñßµ+L•-ËÚ‹4
+«¸˙©&l&Ûòx–Vò;°P+ÌL+#.Ö⁄Ëàõó6rÈí&®è ÄÄ"7	«x$<êïRôî˚⁄$p&Ú≤lÒ«=ˆm¨	a=àjAXÑyÕD8Ç⁄£{Ê·òmÇKCs¢ÃÃ4ÀMsíxÕ4í∏eÃ≠pQ-hƒqfA%O^PiÅkˇÍ∏RÛ¶¿≥jN‘ºsiÊ-H2Èö˜÷ìOR$SÇ˙Ó`Ï©FIÉûŒ0ØÏ{b&]y£û’Ù«Ó®∂∏XGã98£œã8Ï˛G2Üq@∫=Û¢hÊãª€˚Ô~E;GÔﬁÌÌúÌr◊AÌx˚lÔΩﬂ?›[ZL˜”ì›‘¯_$ª˘/W^Ë..Ywt˙vˇu±n˙7ÁÅ◊+–Ö8®⁄˜àŒéŒ∂ﬂ--ff)L€3˜:Jü{¬aü÷∫®Ñı ÙÜ®äŸΩ—Å7à¬ñ<ø∏=–øBiÍà˙ÇuÃgtÈ2˙ï dI$.3Oﬁa•%ü≥áIÅK¯ïVS¡îBŸtB’fß‹∂;˛(¬GÍ€h8Äï“3;â9Á…B?€ÓßîÕˇBó®Au™çÍ¡ØlùË˙XWxÇ©#h◊Ó9–|ÃO3-ì 	Ê's VC–o›x»π3.Gõà∏˚\ÿbgÈ˜	BÛÇ#∞t¬T∫15]‰(¿“ÂO'K∫6‘°
+⁄xf}äÎoo*.»ãœ„ﬁ59>“<Õ€3(Ë©∆F‡æΩ≈M„cæe∆¿≠lΩ¿V∏?∫Ñ7î:7îf°O‰µ§n∏?óˆ™h^ﬂ°ﬁËÏ+Ærﬂ-Y∂%‘ÚÕy√ƒ$¨±XsT’
+õ∂qA´úEÛÇ∆9ãÊEe¥¬ˆidÕïl"àø√]‚Ωäb~†⁄kë.uëGüñöı=–ÕyÇ¥!I/¢ﬂWV4ú/$˚<‘8zπ∞∂PpÙD€A5IñP;ËÒhç•M√KŒ∑§Jc-∂WhŒ+Èîoë˘˜Ãwœ¸{é7÷å∫~æ≤¬>	Ωﬂ‹M‘ÍåØ5§\k%™i—ûù™]£Ì˚§Åπ-¨ó˚÷!	Ãì´˜O8˛äîjüJÂ;ÛzÚ§ˆ—&»⁄eÁ£öŒÑX˚Øˇ¸ˇééN˜ﬂP;◊B˘ WS7_Äü ä.‰&´<‘=T~ ®ª©\⁄´ªôµh'ß
+h~∞â˛–r[Á´ÁR™Ìˆ<˛w¥˜À^≈<û∫UèÀMŒÇ«≥ó≥f¬„©πôè+nÏ‹èÀ§T…„ﬂﬁ
+x4Â3ÊàVŸ∂;‚oËpˇÕ€≥
+˜CÜ iWWlp{Alf;AöïYÌ±ì{›"!UÓÄégn*«dÁË‡’˛·ﬁ.≈˚O7ßﬁ J,c˘M≥kûÃÈﬂΩ9ΩäÕÈxgÆ¨Ø]¨Æ?bÛ:ˆ⁄©¢Ó ÀÍå$¢yâj¯ı6-3WGœùFÖÒWív™ƒ∆!µ[ì°\z£F‰è7Q{Êõ}rÓG‘N_áœ“ΩêG /B©ÚÕ‰Êû(I€œ;Á?∆9jX{ÌÒ5
+˝Å◊√+z—z÷v~Dcß◊Éª~¸ëUÇ¢dVÊ€[2!wÄﬂE¢ÄI†ªÃ¢e≥˝¸û|]≥vd-x∆|›XÉ'ñÈ’*XOÓ®iörG)f„éZ-ÍéäO¥”ü_≈|ÆßhÆJr4Ì8öøZ›ì>‹ı·î•›≥"\–]É®Çñ°@iU∏∂HA})º¨.Ü˙÷”:Ø ∏é!-Àˇé‰¥∫\ó£1u=∆¡ï˝˝â¡mı$|∏.∆oÚû“´πT*=1°òÇÕ9Ë‹È~æ†N:f£ãçÁ¢À’tI?ÔtV[kk±8=oÇÕåµzû1*6ÒXW‡i§2ÎÙƒ¬çc|s≤}» , ∂O #«ªw‚;E”XR'ıd	=ì≤¢"ﬂd‰®aπ1eˆÆ mà
+}nö…*‹îU)ˆï®ˆπçºÅà]—ai∞t~}NΩÆüßΩoI"≠ÑbU⁄A9Â‹úîssSŒœQY^5ôﬁ5©ﬂπ¸,ò”Òs1g‰<‹ëssHŒÕ%9?ßdy~ûﬁi‚ÁbÆ»\˛∏È∏øàÎqˆŒ«9πÁ‰Äúó≤<œOÎt4qºŒÒhÄEL¿à-@©¨† %ø¸ñ©ƒyOÓ»˚tHﬁßKÚ^ùí”¡0kí[rıŸ∆⁄≥
+›íF#DΩïòReZ¸§MQ¡ÔM6{~w˘röWÅπ5˘ |—èÜÉL?:'Äõ[«ì—_ùsDçB‘ ¥∑ÔéBÔããËUP∑'ÜìR«)y?€.Y7’˝”ÿπt3	|Ë]ªÌUmé˝®|åC≠ï·m‡ˇÛ_Tè´ƒË˜uÙ˝ÊÊπ{ÅŸí¸Í\¿F5QÁ˛50¡fb?ÈµmW∞uÇµiöøÚzQ∆≤ÚGıh˚å≈ıOƒPé˙ÎY“|/CM‰}„aúëf	‚ùE‹√πèìùy·Ω¡Õ&
+o¬»6&^5úÒx‡6Ë'uÙ
+ÛﬂÁß{J˛~ç_™£ÖS˜“w—œ˚ut‚ü˚ë_Gê∫∫ÅwaËé	ó+¬}πçxrõù5ıcXƒúˆ¢Ÿ{2ÓÜ”˚Î¸¸Óµ”’å∏–„*∆Y˛Ωız.˘£ÜÜx≥{Œ Or.ÕP9>ª(ÏxSû;AXG›ö]<z¸aàæ_V¥{>â"ôì∆<Ω°;∫éö#ü±é67˘ò„∆5º€Û¬Ò¿¡Käâtsò@5F√∂ê‡P‘ZWØ¢™—&Ωp›ÄipÎàœŸx ¶ªD@6à–”4+ÚûÜjî=ªîOÈ·W5CªQ)É«Nónw®bo≥}s§
+˛ﬂ*àmgiàœãú7⁄πèÁb‡jHÑ-„]‹êe$Iäh-™s7∫r›ë˙¢ 4HÊ_⁄t√ıL£ã√YËnbƒ¯…›Éπ14e¶o¨ô@æ8m›¬$kÃ<˘|∏Æ„Cqj⁄à·‰‹v√hWA"tCGh Ì6˝¶Rã∫,JÊåI0°g‚!ÛﬂrèP—9¢Â¡4WØÍπ˙Ô•¿u>7<¨‰ı0%Œ$Ú≠Á@∑±UÌ~Ò=Õ&û&XA"`è‰	≤Zl75@À[7zº]Ûd·Ê˚uÈ»ÁéæV"DûØ:ùÛç\6âœMŸ¯¸…}A¥¨†8^ÆxÆ;V‘£‘ç0V:r0¢µÍi©©äîÎv√‘mgπ•g>=dgÔ¢u±vÒ‹n:DìΩ»ÇÙ/°Êı;˘“ÇÔù∞P0lﬂÖòyùh∏·|’Q$w¥∫W »czsÑW~ O¡„ıŸ⁄⁄˙sÀ’,ø{ÌÜÇ;•»q†Z·∫=œ°∆îVTjmà|”W’'Ê´ÑlCÀÒ»(éÄG6∏rnB˚éTQoJÿ‰≈≤
+ºy°	êã+äº\H[BÍêä~ã?/ö7[«?˛Ûˆ+¥Ûnˇp}áéﬂnülÔ¸ä…i)ztX]—MEÕ∏	ò±êQÎN[YÖ¥3ﬁ:vœÔ!ídj%A¥RÊ©$v˝+OOI<D‚©l[bº≠≤‡ä€ìFho{¡Ì°£ëH‹»Ω"°Êê⁄2bÊJ¶÷Ò}¸}öÚ±'ˆ¢ÎKOÉæÒ∑∑©Ë¥L0U<âåM2GÅâÌÙıÉå∂ıÀﬁ…˛Î}ˆﬁ¡ˆ·ˆõΩì‹óvèvŒéN–2ﬂHßg€«ysbıÒãÂ¨¿õ3Ö˛~íKd ‰Ó¿á4£ á.C°¸]ËFê"ÕüD¨O¸0˘•∂TGk+b™m1Ω"KxY⁄KW@∫Æ1w„”¬ç+I1∫Á++Àœ÷à‚”¸1îÓ
+PiüË¥÷/[ü‰Ùœﬂ†⁄◊∏—A·ps‹X'/˛U„¶∆rFﬁ:∏¿≤jî‚öLy¶À∆U˜ÜàÓÂˆÌku·Èˆ 
+
+˚N˜èùÎ∆Ucˇ∆äU≤	BÅO]ÚuøÒ·y˚KˇcB`ﬂÎı‹4E¥™)äÑﬁRå )ùd ;Uèéb‹X•”≤&t8cıå2eàîÎhÍZoêÅcN¯‹P’ À¨vf˘®ﬁu›ËXU7⁄Õ5‡o‘Û.˝∆∫<@æLx‚Ÿj{:¡ qu$°–<^3‘o¨/†Â{’t∂ΩË∑3”œ°ò^Ú«‡“¢ÿöÇÎaMtı¡¿3vF)/è…´C7µï≠˙.T˙ÑB|∞,„õ∆
+˛á/≠“/ñÀ∂ZÏ#ÿ5Únb_¨“gÖBÉ‚ˆ∞…!©}Ã.ih®`ﬁI¯#dâ'ïæ2˜Üï¡íø≠˘f¨Z.°^_Rs´€ì°vvcñ°Ñë]yÿƒÁ◊‚ﬁ{°[gŸüÈÔ◊π„œ±ˆŸc_0ÌA3ÜÈk◊ÅfL|äÜ¸f˛ÓÁó∑ÙË¬gÃæ∫ÿ\ç‘#R\LA)È#N#‘†ÏÉ¯ﬁDP,{7‚o„èû·èEÏ*è˙p&AËRª´–2î≥Ùﬂe—µÜE◊öRta≈ÅÃê∆≠>p\tÊúCÅÎÓ_*~˛¥VÑ≥xUsÑÄ(~ Kd|
+*7HñlÕÒ§!#¶wy∆’®j©œ0-{™4≈ûn-ïHV-*í1‹~À¢rÒ1#âÌ§¸Øñ	á?´°Âouñ≤E6\≠˝	-jœvv†_á˙◊7—¢∞=üe7 |ÀÎ+ÍÓ>©¶V#a› î∑_ß	ˇW£=Sy*œfaT•Íí^ÚÎ63˘nJV≥Õ=RFÜ¯Ÿlg‡c≠∞Z6KéÎ{b2ûs·ë2#ˇÒ3◊(]ä∑DI©Îcé‚óùä≥ïN∑É≥úÇp†älV.pñ+]m7•ﬂ\<›ﬁWg?≤6Í	L´âXÒP£\nƒXä|bÀÍgöÏhÿ≤äPÕ>´*“ü1∂'›>ﬁnrA˜–g0¡˚,[=Ggè‡Ì›ÔoWµ¡È€5∑AU≈®I:–lt§2Rb¿E≤tıãÅÒ äô‹Ùl…≥æAlúÓ$‹Ù'â˝"AKÙ#@J±./¸ë©¢eÑÆ´´ÍŸ3!äoÄèYôÅÂ´Ùh“ç–Rˆ©ZØ•VOsÓí%rz©ÂÀ‘π´ñZó,Ç .Îµ∏¢Âñ0%ˇcd.T≠•fˇ˘crî∞9_π€JÍZºX¶_ZΩŸ∫€ ﬁïFµ÷R°V⁄w[Ÿ˚œ®÷.÷JÁn+}´’:∆6∞0'©Âj‚†@Øà\◊Ò¥ç∆ê©Bc√vÓ<=rŒ∆Á$ˇY
+˝º∆&hé6aÑ·Q≈0ÎÒAükŸk˘è:~˘ÄY≈«ÀjﬁÈL$⁄À=äï*†ZˆÎÜ\PVùÃYwU@üØIkîF¯Sx%H#ˇ=ƒ[?n&v–‡R¯sù°|q@‘mD”BsL}%dâômyM’æA˝ ±”J¨¿zP
+2ÙlÅÖî€Œ∞æ N	ˆ,pzå∞
+ã∞∞•s¸)ª“ÅuèkZYÍ≠™'îã"‹Ωçbw1Èkûi!üA’≥›ΩqF⁄©6]∆˙öÁ;ï˘°“	O∏œ°õr”¥Øy ≈$ïŒ∑˙πv∫ç◊Ó¶ùo.…ÅM—o„Ñzûq5É…=µ„ø4xy˘•ƒ-_»2BÛç‰a neˇ¨F∫∑5bæjX`EÙ⁄Cıé˜ãÁ^°WóØÉG+«¨'ﬁºzT±Ωi¨k|-Gª{®µâ§äÜ¨Ã°  ∏µpÄ∑¶Z•ºMÄF'	–¿Í`^ÃÖ∫/°	≠HcëLÔL¯S∏¬¸Zfgæ≤ÖMÉ´\Âµ Ö$«V13Îåò-º‹êú√®¶™Íƒ™-‡g“è—˜mé¥Ü/ı5·q˝,”{“‰ê*\l)« ï|©√4„ÜÙU¸â ≈ŒâÁTÌ.M·)œ8b•äTr®dî*‚lXí±¨øñ™[î˘Æ0±9IwÀu≥`ï®w⁄∂Õ…}À∂ŒˇπSs“óÌ#7≈YôfÈ⁄í¿TãåƒÙaëµ∏Ç^¨†M›ì]ä4C7IcÇÓaï9nVõkÑ}kK4}öH™^Î à˝íyÌ•Lˆ, ?§ˆQı"=Ü—GH“◊SH˙z€ZπìguCX)ﬂåM$TÚsà’$&8∫…È–#ù®€|6§ﬁ!?†Uõ≠0ØéÇFa»é?aú»EiûLs…VÛªÙº˙Ïﬁºº˝‘√Ê_‘–¶ßnêT◊wü§ïHπ2˚ãUãπ'ã,ácŸQ¬ä'ûXçøæ∂¨só$%Òs§zNåX @óÁ{6Ù§î’X´’Píõ/|Zò∑M d=GñUÇrMƒ™‰pßüÙE≥ögìöõTTa»ïOå’Ë”#%!me Æ<*eQ!ˇ$eàÒ%ïÊÒ¶¶ËDãÔ=˙'>†*|ˆ≠∂)ø∆˛fÔ¡eäü`√cd3ïúïÑÀ6po¸ë—àTëŒ≤TV}urª≤ÌìÑdç≈Ylw[™Öt˝)∫çâ¸ ÂB%ÄÂ∆Är±»@äts˝Å©i◊SHq7ÒÑZ[¡©ÂΩï.X Pñ£\aı*]ŒF˙R/1â¸¯§ê‡9P@î¨sJQ'„—ë´KKöÙ⁄ù—<I!:D"˜, Z5dîœ”éÛÙÁÛ)Æ,¬ª°ìΩ;Øb¢àõÀí¢r)KëïÀ6ÑïÀOXä∞X±°´dÓ¬RÑ	1a7îÆNïp/òiÕEÙŸEë.∑!ˇ≤ÿU◊%≈]ﬂÿ´–ﬁ§ÈHÀ˙ÑhπzbüâNèˇÍ|äPu¡∑¿ÂË¥Œ!‘¯$c¿≥?zr#<`7B«d·“’,âøZ±ü§éf®…®\û€ì ñü@rÙ…L∆#¿Âı@¶ÏeZ∏‹∂ü©¿Úé*ß?e.õ#¨ıâôß6v†RùfçDWXc®ıƒ¥JÛã_÷,p≥B"ÅHcà∂ÉNËÛG'á˚áoò.¿Æ0µ¨–πJõ•dQ¡∫ÿî.Zı•,FÉûhãSñäôaïö(ïSW©ùR9u’Z+Yy™bÑ†lQ≈HLınÖD&óè±·ÙhÂ„ﬂã»«Ω_ˆ≤Ú±˝0Âc—*Beâ»ﬂJSñöaM>VQ‰h^‘= ˘òà¢X@VQ@âëò' 5≈î4Xà8vµ`e _A¡˙ D´ \ˇfÌ∑#èÓøy{&◊é•kÿ ÌP≠Ä-V®™<˘{q™˙VÛ"lÒ:{Í¶Ø≥ßn*ÒZïÄMDR,`ßØ÷ìòo5üü¨Û
+>◊\rI:∂Ò £Å[º»/Ø&6K7¥ùëi U.ø(/(
+ó"´:Ÿßπ√W)•o∂UJ≈◊Ω*•cäkP≥“˘¬a∆—!¯s~øºŒ&z˚Î´ì˝]Óº´I∑Ñæ›{DÇ,qÔ±\<∂Æ=”E¶Ñjj|ıÓhÁOö¨(F:“’‰⁄ı<Ô/©˙c~∆ƒ%û>eûÆ»«H»∞˜3Ê)Ú	ÇúZ+∆XßV®Göm‹d<YpÒq]
+måï¶8¨RÜÄï,˘‘Y<ëôMY>ÜXW;ùúì`®MTì3woÃ¿^ﬁqJﬁùÖÛî6úÁ@•Ou¢¶ú99Q≈ÂB›Ø[7±ävRÏ.V˘÷Ìº¡≈€Á˜±Ïnbï[Ç¢ó¶¶Í•¿µ©©˙)Ë	û™Ø"ﬁ`MG”_û"ÁFÇÊ:Ñ)}3q
+√èt»î∏»#^ÂNqì'vˇ¨ºÃ3≈uûÏ˝ù‘ùÆ¬◊y™∫–√TÖÈÔÛî&®ÍÀ<^ÁQ›’—]ªôi*;nnó$*§u.W#*§w."*§wN◊ 
+^ÑP_◊[ì]k^Ü∞9·BÑ˘öT.J'BÑ∆∑…¿Í ‹qà±O˛ãÄ	Â´˘ñóT¯-à’Ù-µñëVˆcªq!¿t˙Û+[¥4¶≈˙¬L<I¬YT]8–ÃËôŒ3#¢¶ÛæÃà®)ù.E©Jq∆F∏hTqº°ŒFı6ÅõÏ=¿I0’ë”©;·†C9
+':d1 è:úoè;¸{j±fÜ&W|bP(~§D≥úqÔËaëÄï'Ù	=|Bü–√'Ù–¸ƒ˝¢á‚!3%zËNÅ&¡ëO·uï˘Äû√'¸	?|¬≠CÒ∂Ã◊ &â•Ïƒ$è˜√ÅÛq!u…g>¢x Uwgfv›äòC’=¡à9T›éò.˝â’›ã!‰=Z Qºoí#íH˜«"≤H‚«"˛MZ®ôAà|Æë}§Ö”\qÔ ¢˝Öå'¯	>|Çü‡√'¯–¸ƒ˝¬á…3%x8ö<L.˛=ÅáâR>Åá≥£ı	<ú-Ωè<3B|=‡aísﬁ<Ø∆>01§ÛÅ≈„®∫l≥!Áû`C#M˜i∫7»0aÂdX]¶á«∆ÿ]Î◊GGg{'x£lü¸äv∂Ovµ¢TÊ†Ä‚ê9 ·œ–CÍK^Œÿÿë›´˙T∫f®ßøöÅ†¥»W“Ö ÒÌ¡Ä¶—Ωî/&fEÕ_,˜W$åE
+4ÊÄúAe«û{#Ô5¬≤»È~¢A[G{GêˇêÏâê“x·PJ> î¢áõF°ÀhmæXó`ßÏ¬Î—ıx}≈¬ÇS&`U¥à´Cˇ!∂Ùí¥æeÒJöæP©s´iù€ÔN3v⁄M• ÷¸HâíßùßäKã?¨ô≤,n;WïWX≥eS›€v™*/Ë]`™RáæP‡çØpGµw‘‡2uÊÛ÷V Ä+Ê}KÀªπGÇ‡Üﬂ9Ωs!—.Ö:ﬁâ´¢zﬁVb*DP<OÓsôèR,˝»~Ω[™≈ÌÅû˘˛ÌˆŸÈˆÒ1:ÿ;=›~≥áéOˆ~Ÿﬂ{π~∂ﬂ	*ÊÌïs‡˜ú¡—´yí;:£ux◊XÚF°5V–oçœ·Á£¡›À˛ı‘Âg+Ë/g/«xa'Ë*†∞¶*úKLöÎ
+oc5ó˘º€ç8fË`]∂Û¶KÅ8#oœz#t·Ù»øø˘˛ˇã˜ÍM‘∏F+ì¥ç§#ÇYDo]∫N´Ü]ºæBvÒÏ‚U…«^ÿçnØ'∂ï%B“Ô_56Pˇ?ÌÁ&Ù-∑UI>Â•WäöÔ˚Nnè«˚]$w∑Üª[É
+¨ÉW°ì	YPï#—Ï-›Û¢ﬂ1ÿ"L¢Äá¢˚ã∆ï◊s∂8Ω¯$	CÁ“E«Å˚≈sØ∞Õ—Qvíµ6>¥Z /%÷Jõ'§U4‹∞xcbﬁ–lZ!:w/‡,Û«‘Í‡$)-
+Âú®?<üDë? ¥›åÅI…óôo˝VC∫ü_ﬁ÷à	ÀÉ˜â©]`˘Î*–æÙîP&⁄XA‘K$0~Ï6¢è¥V~}Ü9„ôÃàπr'q4ÅA˙AcÏ{IïY,íS*EnvRˇﬂˇ˛üô•§îÿ∆›?∆LŒ3úe≠j&‹Õ˝ È]Çj|‹˜G.zÌπòK≥Ä¿
+Ç $IEôË˙Xñ7…ÔÅ≈f8åú ÇœsaÇéF∞(wäR€` Ö.MA™ÄH˚5©#£?ËÂj ŒWãüî¢sÃ®©Jå∂j©ˆ{q’Z˚m¨“d7‡•π“áŒº@ù‘‚3-V’£s=<á–ßÖ≠ˇ¨∂√	Ë≈/ñI˚ ûΩ—x)&*e†ü¨åÅü/Œ`‚æ‰≥F;T#cX"ıù—%~∏Ê¶d}≠Ê61_∫Qì4™qFåÒ∏}Ãnr¡m^6—
+÷x[ÌŒÍ⁄˙3®˛ºù¸≠¶9)÷$«z+ã h]±Ò˘™Ó‘¸ø;	7AØm¥≈?Öü}ÏO"lÃπ\”°L£ÇÌ´ísLbß$^,¿&Á´≈NLçÏ gÚ\]¯RW˜L√¸Ÿ*”Bxñæ∏öÆLŸ»Ø˝ kê÷ì”JÉA6èÊ|ÜÛ?©sZW4z‰|Ò.l¿ÇΩ?>˜π
+‡œú‘¯Ó££àÌçÙŸp;˛ÿs{µ(ò<ÛÜ.Ê«ö†>∞7©ÓPG¯DZ—¥pßﬁ∫ÖKÉ°¡jáT;TøÚi-‚\‹hâ÷"ÍwähQçmN,⁄$2F1Hﬂ·©ªëœÉ÷ï:Jmôº@¯KU:ÁP€õ˝˘hás¿7§§7iÿ`—`5´ı ˙çrsgüÉUp◊Q¥û:(™x¿t–∑l¨ÒÑ/o[-’wŸC4™Û‡R≈‹í–ƒπlP9ˇ·ÓÖÎ∏Ìèπ≤ko•e=6'ºﬂ ñåY»ﬁhÑª`C^‹ÅÉÌ˙,√eÿGOhl·◊æ€dõ8?Bõ8	§Âq'„øOÈ¨ C¡ıA‚˜dı TGıÅvr»«RC)¨cçÏ&0ã÷Ù…7tvúQ◊hmùYÃ•Íd∏´Á%í4¿f‡=≠∂¸Á›ÂÀ:Z\Tûﬁ™ë˜õƒt	ﬂ{Qø∂∏“Y\îã~√.b@ÇÍVkIs@r"ü∑—ÏÕìÔ÷Z ûÔêãyAG¿=Ù/v≥íÙ.íÖß•Hˇ nUNoX≈+ÁÁ` ,◊)3-[@Æé*ﬁËß~ç√ÕÂÂ+ß9tóøΩ%M‹˝ª„Â∑∑Ó®Î˜‹üOˆw¸·1 (4wüshŸ∑3ˆöW†Ô9„q≥ÎóC,Ä¶&A5üÄˇpÕQ#§‘ëV„RJ©ÏÉ
+•J\âÿaÀå ÛLDêDTb`räI√kã˝çMAÇ`Ã¬“Õ >“"»Ö¿G¢‰<V˜	(ßRïåpëˆÈOvæƒü·ïº˚oˇ  ˇˇ =√∑9

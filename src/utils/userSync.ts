@@ -13,6 +13,16 @@ export interface UserSyncEventPayload {
   userId?: string;
   user?: Partial<User>;
   timestamp: number;
+  sourceTabId?: string;
+}
+
+// Unique identifier for the current browser tab session to avoid self-processing loops
+const CURRENT_TAB_ID = typeof window !== 'undefined' 
+  ? (window.name || `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`)
+  : 'server_tab';
+
+if (typeof window !== 'undefined' && !window.name) {
+  window.name = CURRENT_TAB_ID;
 }
 
 /**
@@ -23,7 +33,8 @@ export function broadcastUserSync(action: UserSyncEventPayload['action'], user?:
     action,
     userId: userId || user?.UserID,
     user,
-    timestamp: Date.now()
+    timestamp: Date.now(),
+    sourceTabId: CURRENT_TAB_ID
   };
 
   // 1. BroadcastChannel API for instantaneous tab-to-tab sync
@@ -47,14 +58,14 @@ export function broadcastUserSync(action: UserSyncEventPayload['action'], user?:
   // 3. Dispatch in-memory custom DOM events for same-window listeners
   try {
     if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('phc_user_permissions_updated', { detail: payload }));
+      window.dispatchEvent(new CustomEvent('phc_local_user_updated', { detail: payload }));
       window.dispatchEvent(new CustomEvent('phc_db_updated'));
     }
   } catch (e) {}
 }
 
 /**
- * Subscribes to user sync events across BroadcastChannel and Storage events.
+ * Subscribes to user sync events across BroadcastChannel and Storage events from OTHER tabs.
  * Returns an unsubscription function for React useEffect cleanup.
  */
 export function subscribeToUserSync(onSync: (payload?: UserSyncEventPayload) => void): () => void {
@@ -69,7 +80,7 @@ export function subscribeToUserSync(onSync: (payload?: UserSyncEventPayload) => 
     if ('BroadcastChannel' in window) {
       channel = new BroadcastChannel(USER_SYNC_CHANNEL_NAME);
       channel.onmessage = (event: MessageEvent) => {
-        if (event.data) {
+        if (event.data && event.data.sourceTabId !== CURRENT_TAB_ID) {
           onSync(event.data);
         }
       };
@@ -81,21 +92,16 @@ export function subscribeToUserSync(onSync: (payload?: UserSyncEventPayload) => 
     if (event.key === USER_SYNC_STORAGE_KEY && event.newValue) {
       try {
         const parsed = JSON.parse(event.newValue);
-        onSync(parsed);
+        if (parsed && parsed.sourceTabId !== CURRENT_TAB_ID) {
+          onSync(parsed);
+        }
       } catch (e) {
         onSync();
       }
     }
   };
 
-  // Window custom event listener
-  const handleCustomEvent = (event: Event) => {
-    const customEvt = event as CustomEvent;
-    onSync(customEvt.detail);
-  };
-
   window.addEventListener('storage', handleStorage);
-  window.addEventListener('phc_user_permissions_updated', handleCustomEvent);
 
   return () => {
     if (channel) {
@@ -104,7 +110,6 @@ export function subscribeToUserSync(onSync: (payload?: UserSyncEventPayload) => 
       } catch (e) {}
     }
     window.removeEventListener('storage', handleStorage);
-    window.removeEventListener('phc_user_permissions_updated', handleCustomEvent);
   };
 }
 
@@ -112,13 +117,14 @@ export function subscribeToUserSync(onSync: (payload?: UserSyncEventPayload) => 
  * Compares two User objects to check if any critical security/permission/identity properties changed.
  */
 export function haveUserPermissionsChanged(u1: User | null | undefined, u2: User | null | undefined): boolean {
-  if (!u1 || !u2) return true;
+  if (!u1 || !u2) return false;
   if (u1.UserID !== u2.UserID) return true;
   if (u1.Role !== u2.Role) return true;
   if (u1.FullName !== u2.FullName) return true;
   if (u1.AssignedShift !== u2.AssignedShift) return true;
   if (u1.PasswordHash !== u2.PasswordHash) return true;
   if (u1.Status !== u2.Status) return true;
+  if (u1.AccessApprovalStatus !== u2.AccessApprovalStatus) return true;
 
   // Compare AllowedUserIDs
   const a1 = JSON.stringify(u1.AllowedUserIDs || []);
@@ -137,3 +143,4 @@ export function haveUserPermissionsChanged(u1: User | null | undefined, u2: User
 
   return false;
 }
+

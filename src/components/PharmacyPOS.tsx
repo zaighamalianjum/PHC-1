@@ -53,7 +53,8 @@ import {
   Clock,
   CheckCheck,
   Layers3,
-  Smartphone
+  Smartphone,
+  FlaskConical
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
@@ -100,6 +101,8 @@ import PharmacyLabelPrintModal from './pharmacy/PharmacyLabelPrintModal';
 import PharmacyInvoiceLogsTab from './pharmacy/PharmacyInvoiceLogsTab';
 import PharmacyReturnsTab from './pharmacy/PharmacyReturnsTab';
 import PharmacyClinicalLabelsTab from './pharmacy/PharmacyClinicalLabelsTab';
+import PharmacyBulkExpiryModal from './pharmacy/PharmacyBulkExpiryModal';
+import { ClinicalMedicinePrescriptionTab } from './pharmacy/ClinicalMedicinePrescriptionTab';
 
 export { isBatchExpired, isBatchNearExpiry, getItemExpirySummary };
 
@@ -895,9 +898,74 @@ export default function PharmacyPOS({
 
   // Add Medicine Popup Modal & Grid Filters States
   const [isAddMedicineModalOpen, setIsAddMedicineModalOpen] = useState(false);
+  const [isBulkExpiryModalOpen, setIsBulkExpiryModalOpen] = useState(false);
   const [invCategoryFilter, setInvCategoryFilter] = useState<string>('BM Drops');
   const [invLowStockFilter, setInvLowStockFilter] = useState<boolean>(false);
   const [categorySidebarSearch, setCategorySidebarSearch] = useState<string>('');
+
+  // Bulk Expiry Date Update Handler across multiple items
+  const handleBulkUpdateExpiry = async (
+    updates: { itemId: string; newExpDate: string; updateBatches: boolean }[]
+  ) => {
+    if (!setItems || updates.length === 0) return;
+
+    const updatesMap = new Map<string, { newExpDate: string; updateBatches: boolean }>();
+    updates.forEach((u) => updatesMap.set(u.itemId, u));
+
+    const updatedItemsList: Item[] = [];
+
+    setItems((prev) => {
+      return prev.map((itm) => {
+        const up = updatesMap.get(itm.ItemID);
+        if (!up) return itm;
+
+        let updatedBatches = itm.Batches;
+        if (up.updateBatches) {
+          if (Array.isArray(itm.Batches) && itm.Batches.length > 0) {
+            updatedBatches = itm.Batches.map((b) => ({
+              ...b,
+              ExpDate: up.newExpDate,
+              Status: isBatchExpired(up.newExpDate) ? ('EXPIRED' as const) : ('ACTIVE' as const)
+            }));
+          } else {
+            updatedBatches = [
+              {
+                BatchID: `${itm.ItemID}-B-initial`,
+                ItemID: itm.ItemID,
+                ItemName: itm.ItemName,
+                BatchNo: itm.BatchNo || `B-${new Date().getFullYear()}-001`,
+                MfgDate: itm.MfgDate || new Date().toISOString().slice(0, 7),
+                ExpDate: up.newExpDate,
+                PurchasePrice: itm.PurchasePrice,
+                SalePrice: itm.Price,
+                Qty: itm.CStock,
+                InitialQty: itm.CStock,
+                Status: isBatchExpired(up.newExpDate) ? ('EXPIRED' as const) : ('ACTIVE' as const),
+                CreatedAt: new Date().toISOString()
+              }
+            ];
+          }
+        }
+
+        const updatedItem: Item = {
+          ...itm,
+          ExpDate: up.newExpDate,
+          Batches: updatedBatches
+        };
+
+        updatedItemsList.push(updatedItem);
+        return updatedItem;
+      });
+    });
+
+    // Synchronize each item with the backend API
+    for (const updatedItem of updatedItemsList) {
+      syncItemToBackend('UPDATE', updatedItem);
+    }
+
+    setInvSuccessMsg(`✅ Expiry date successfully updated for ${updates.length} selected medicines!`);
+    setTimeout(() => setInvSuccessMsg(''), 6000);
+  };
 
   // Custom Category Add & Edit States
   const [categories, setCategories] = useState<string[]>(() => {
@@ -2894,94 +2962,114 @@ export default function PharmacyPOS({
   };
 
   return (
-    <div className="p-8 space-y-6 overflow-y-auto flex-1 bg-slate-50 text-slate-800 relative" id="pharmacy-pos">
+    <div className="p-3 sm:p-4 md:p-5 space-y-3.5 overflow-y-auto flex-1 bg-slate-50 text-slate-800 relative" id="pharmacy-pos">
       <TopProgressBar active={isSubTabLoading} />
 
-      {/* Upper Header */}
-      <div className="flex flex-col md:flex-row md:items-center md:justify-end space-y-4 md:space-y-0">
+      {/* Upper Header Sub-Navigation Bar */}
+      <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+        <div className="flex items-center space-x-2">
+          <div className="p-1.5 bg-blue-50 text-blue-600 rounded-lg border border-blue-200 shrink-0">
+            <ShoppingCart className="w-4 h-4" />
+          </div>
+          <div>
+            <h2 className="text-xs font-black text-slate-900 uppercase tracking-wider">
+              Store & Dispensary
+            </h2>
+            <span className="text-[10px] text-slate-500 font-medium hidden sm:inline">
+              Formulations, Stock & Sales Counter
+            </span>
+          </div>
+        </div>
+
         {/* Sub Navigation */}
-        <div className="flex flex-wrap gap-1.5 bg-slate-100 p-1 rounded-lg border border-slate-200">
+        <div className="flex flex-wrap gap-1 bg-slate-200/80 p-0.5 rounded-lg border border-slate-300/80 shadow-2xs">
           {(currentUser.Permissions?.canAccessClinicalMedicine !== false) && (
             <button
-              onClick={() => handleSubTabSwitch('checkout', 'Clinical Medicine')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                activeSubTab === 'checkout' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              onClick={() => handleSubTabSwitch('checkout', 'Clinical Med')}
+              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                activeSubTab === 'checkout' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
               }`}
+              title="Clinical Medicine Formulation & Doctor Rx Slip"
             >
-              <ShoppingCart className="w-3.5 h-3.5" />
-              <span>Clinical Medicine</span>
+              <FlaskConical className="w-3 h-3 text-emerald-600" />
+              <span>Clinical Med</span>
             </button>
           )}
 
           {(currentUser.Permissions?.canAccessStoreMedicine !== false) && (
             <button
-              onClick={() => handleSubTabSwitch('store_sales', 'Store Medicine')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                activeSubTab === 'store_sales' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              onClick={() => handleSubTabSwitch('store_sales', 'Store Med')}
+              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                activeSubTab === 'store_sales' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
               }`}
+              title="Store Medicine OTC & Pharmacy Point of Sale"
             >
-              <ShoppingCart className="w-3.5 h-3.5 text-emerald-500" />
-              <span>Store Medicine</span>
+              <ShoppingCart className="w-3 h-3 text-emerald-500" />
+              <span>Store Med</span>
             </button>
           )}
 
           {(currentUser.Permissions?.canAccessSalesReturns !== false) && (
             <button
-              onClick={() => handleSubTabSwitch('return', 'Sales Returns')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                activeSubTab === 'return' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              onClick={() => handleSubTabSwitch('return', 'Returns')}
+              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                activeSubTab === 'return' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
               }`}
+              title="Sales Returns & Inward Adjustments"
             >
-              <Undo2 className="w-3.5 h-3.5" />
-              <span>Sales Returns</span>
+              <Undo2 className="w-3 h-3 text-amber-500" />
+              <span>Returns</span>
             </button>
           )}
 
           {(currentUser.Permissions?.canAccessStockManager !== false) && (
             <button
-              onClick={() => handleSubTabSwitch('inventory_manager', 'Stock Grid & Manager')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                activeSubTab === 'inventory_manager' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              onClick={() => handleSubTabSwitch('inventory_manager', 'Stock & Manager')}
+              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                activeSubTab === 'inventory_manager' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
               }`}
+              title="Inventory Stock Management & Goods Receipt"
             >
-              <Database className="w-3.5 h-3.5" />
-              <span>Stock Grid & Manager</span>
-              {!canViewStock && <Lock className="w-3 h-3 text-amber-500 ml-1" />}
+              <Database className="w-3 h-3 text-indigo-500" />
+              <span>Stock Grid</span>
+              {!canViewStock && <Lock className="w-2.5 h-2.5 text-amber-500 ml-0.5" />}
             </button>
           )}
 
           {(currentUser.Permissions?.canAccessInvoiceLogs !== false) && (
             <button
-              onClick={() => handleSubTabSwitch('invoice_logs', 'Invoice Logs')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                activeSubTab === 'invoice_logs' ? 'bg-white text-blue-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              onClick={() => handleSubTabSwitch('invoice_logs', 'Invoices')}
+              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                activeSubTab === 'invoice_logs' ? 'bg-white text-blue-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
               }`}
+              title="Invoice History and Audit Logs"
             >
-              <History className="w-3.5 h-3.5 text-blue-500" />
-              <span>Invoice logs</span>
+              <History className="w-3 h-3 text-blue-500" />
+              <span>Invoices</span>
             </button>
           )}
 
           {(currentUser.Permissions?.canAccessMedicineLabels !== false) && (
             <button
-              onClick={() => handleSubTabSwitch('clinical_labels', 'Clinic Medicine Label Printer')}
-              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-semibold transition cursor-pointer ${
-                activeSubTab === 'clinical_labels' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-600 hover:text-slate-900'
+              onClick={() => handleSubTabSwitch('clinical_labels', 'Labels')}
+              className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+                activeSubTab === 'clinical_labels' ? 'bg-white text-indigo-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100/60'
               }`}
+              title="Clinic Medicine Label & Sticker Printer"
             >
-              <Tag className="w-3.5 h-3.5 text-indigo-500" />
-              <span>Clinic Medicine Label Printer</span>
+              <Tag className="w-3 h-3 text-indigo-500" />
+              <span>Labels</span>
             </button>
           )}
 
           {(currentUser.Permissions?.canViewPwaInstall !== false) && (
             <button
               onClick={() => setIsPwaModalOpen(true)}
-              className="flex items-center space-x-1.5 px-3 py-1.5 rounded-md text-xs font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-sm transition cursor-pointer"
+              className="flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-bold bg-blue-600 hover:bg-blue-500 text-white shadow-2xs transition cursor-pointer"
               title="Install Store Medicine Android App on Mobile"
             >
-              <Smartphone className="w-3.5 h-3.5 text-white" />
-              <span>📱 Install Mobile App</span>
+              <Smartphone className="w-3 h-3 text-white" />
+              <span>App</span>
             </button>
           )}
         </div>
@@ -3077,471 +3165,25 @@ export default function PharmacyPOS({
           </button>
         </div>
       )}
+      {/* Clinical Medicine Formulation & Prescription Desk */}
       {activeSubTab === 'checkout' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fadeIn" id="pos-billing-tab">
-          
-          {/* POS Bill Builder */}
-          <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-sm space-y-4">
-            <h3 className="text-sm font-bold text-slate-950 flex items-center border-b border-slate-100 pb-3">
-              <ShoppingCart className="w-4 h-4 text-emerald-500 mr-2" />
-              Clinical Medicine
-            </h3>
-
-            {billingSuccess && (
-              <div className="p-4 bg-emerald-50 text-emerald-800 text-xs rounded-xl font-medium border border-emerald-200 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-3 animate-fadeIn">
-                <div className="flex items-center space-x-2.5">
-                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                  <div>
-                    <span className="font-bold text-sm text-emerald-950 block">{billingSuccess}</span>
-                    <span className="text-[11px] text-emerald-700">Customer receipt & A4 Invoice ready for immediate printing</span>
-                  </div>
-                </div>
-                {lastPostedInvoiceData && (
-                  <div className="flex flex-wrap items-center gap-1.5 shrink-0">
-                    <button
-                      type="button"
-                      onClick={() => handlePrintThermalReceipt(lastPostedInvoiceData)}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
-                    >
-                      <Printer className="w-3.5 h-3.5" />
-                      <span>🖨️ Print Customer Receipt (Thermal)</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handlePrintA4Invoice(lastPostedInvoiceData)}
-                      className="px-3 py-1.5 bg-white border border-emerald-300 hover:bg-emerald-100 text-emerald-800 font-bold text-xs rounded-lg shadow-sm flex items-center space-x-1.5 transition cursor-pointer"
-                    >
-                      <FileText className="w-3.5 h-3.5" />
-                      <span>📄 Print A4 Invoice</span>
-                    </button>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {stockValidationError && (
-              <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg font-semibold border border-red-100 flex items-center">
-                <AlertCircle className="w-4 h-4 mr-2 shrink-0 text-red-500" />
-                {stockValidationError}
-              </div>
-            )}
-
-            {/* Patient Selection & Doctor Prescription Lookup */}
-            <div className="bg-emerald-50/70 p-3.5 sm:p-4 rounded-xl border border-emerald-200 space-y-3">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
-                <div>
-                  <label className="block text-xxs font-bold text-emerald-800 uppercase tracking-wider">
-                    Select Patient / Lookup Prescription
-                  </label>
-                  <p className="text-[11px] text-emerald-700">
-                    Loads Prescribed Clinical Compounding Medicines recorded in Patient Visit sub-tab.
-                  </p>
-                </div>
-                {selectedPatientId && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setLabelPatientId(selectedPatientId);
-                      if (latestVisit) setLabelVisitId(latestVisit.VisitID);
-                      setActiveSubTab('clinical_labels');
-                    }}
-                    className="px-3 py-2 sm:py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg flex items-center justify-center space-x-1 transition cursor-pointer self-stretch sm:self-auto shadow-xs min-h-[38px] sm:min-h-0"
-                  >
-                    <Tag className="w-3.5 h-3.5 mr-1" />
-                    <span>Print Usage Label Stickers</span>
-                  </button>
-                )}
-              </div>
-
-              <select
-                value={selectedPatientId}
-                onChange={(e) => setSelectedPatientId(e.target.value)}
-                className="w-full text-xs font-bold border border-emerald-300 rounded-xl p-3 sm:p-2.5 bg-white text-slate-800 focus:outline-none focus:ring-2 focus:ring-emerald-500 min-h-[44px]"
-              >
-                <option value="">-- Choose Patient / Issued Token --</option>
-                {(() => {
-                  const list = patients.filter((p) => {
-                    const hasTok = (tokens || []).some((t) => t.PatientID === p.PatientID);
-                    const hasVisTok = (visits || []).some((v) => v.PatientID === p.PatientID && v.TokenNo);
-                    const hasVisit = (visits || []).some((v) => v.PatientID === p.PatientID);
-                    return hasTok || hasVisTok || hasVisit || p.PatientID === selectedPatientId;
-                  });
-
-                  if (list.length === 0) {
-                    return <option disabled value="">No patients with visits or tokens found</option>;
-                  }
-
-                  return list.map((p, idx) => {
-                    const tokenNo = getPatientTokenNo(p.PatientID);
-                    const pVisits = visits.filter(v => v.PatientID === p.PatientID);
-                    const hasPrescription = pVisits.some(v => getVisitMedicinesList(v).length > 0);
-                    return (
-                      <option key={`pos-sel-${p.PatientID}-${idx}`} value={p.PatientID}>
-                        {p.PatientName} (ID: {p.PatientID}) {tokenNo ? `[Token #${tokenNo}]` : ''} {hasPrescription ? '• [Rx Prescribed]' : ''}
-                      </option>
-                    );
-                  });
-                })()}
-              </select>
-
-              {/* Prescribed Medicines Box */}
-              {selectedPatientId && (
-                <div className="bg-white p-3.5 rounded-lg border border-emerald-200 space-y-2.5 mt-2">
-                  <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                    <span className="text-xs font-black text-slate-900 flex items-center">
-                      <Stethoscope className="w-4 h-4 text-emerald-600 mr-1.5" />
-                      Doctor's Prescribed Medicines (Rx) for {patients.find(p => p.PatientID === selectedPatientId)?.PatientName}
-                    </span>
-                    {latestVisit && (
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full font-mono">
-                        Visit Date: {latestVisit.VisitDate}
-                      </span>
-                    )}
-                  </div>
-
-                  {prescribedMedicinesList.length === 0 ? (
-                    <p className="text-xs text-slate-400 italic py-2">
-                      No prescription items recorded for this patient's latest visit. You can search and dispense clinical medicines manually below.
-                    </p>
-                  ) : (
-                    <div className="space-y-2">
-                      <div className="divide-y divide-slate-100 max-h-[180px] overflow-y-auto pr-1">
-                        {prescribedMedicinesList.map((pm, idx) => (
-                          <div key={idx} className="py-2 flex items-center justify-between text-xs">
-                            <div className="min-w-0 pr-2">
-                              <span className="font-bold text-slate-800 block truncate">
-                                {pm.MedicineDetail || pm.ItemID}
-                              </span>
-                              <span className="text-[10px] text-slate-500 font-mono block">
-                                Dosage: {pm.Dosage || 'As directed'} • Type: {pm.MedicineType === 'C' ? 'Clinical Compounding' : 'Patent Medicine'}
-                              </span>
-                            </div>
-                            <button
-                              type="button"
-                              onClick={() => handleAddPrescribedToBasket(pm)}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xxs rounded-lg transition shrink-0 cursor-pointer"
-                            >
-                              + Add to Basket
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          prescribedMedicinesList.forEach((pm) => handleAddPrescribedToBasket(pm));
-                        }}
-                        className="w-full py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-lg transition shadow-xs flex items-center justify-center space-x-1 cursor-pointer"
-                      >
-                        <ShoppingCart className="w-3.5 h-3.5" />
-                        <span>Add All Prescribed Medicines to Dispense Basket</span>
-                      </button>
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* In-Grid Item selector */}
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-150 space-y-3.5">
-              <span className="text-xxs font-bold text-slate-400 uppercase">Search & Dispense Clinical Medicine</span>
-              
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 items-end">
-                <div className="sm:col-span-2">
-                  <div className="flex justify-between items-center">
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Search Clinical Medicine</label>
-                    <button
-                      type="button"
-                      onClick={() => setIsQRScannerOpen(true)}
-                      className="text-[10px] font-bold text-emerald-700 hover:text-emerald-800 flex items-center bg-emerald-50 hover:bg-emerald-100 px-2 py-0.5 rounded cursor-pointer transition border border-emerald-200"
-                    >
-                      <QrCode className="w-3 h-3 mr-1" />
-                      <span>Scan QR Code</span>
-                    </button>
-                  </div>
-                  <div className="relative mt-1">
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={posSearchQuery}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setPosSearchQuery(val);
-                        setPosSearchDropdownOpen(true);
-                        // find if there's an exact match, otherwise clear rowItemId
-                        const exact = items.find(i => i.ItemName.toLowerCase() === val.toLowerCase());
-                        if (exact) {
-                          setRowItemId(exact.ItemID);
-                        } else {
-                          setRowItemId('');
-                        }
-                      }}
-                      onFocus={() => setPosSearchDropdownOpen(true)}
-                      onBlur={() => {
-                        // Delay closing slightly so onMouseDown click registers
-                        setTimeout(() => setPosSearchDropdownOpen(false), 200);
-                      }}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2 pr-8 focus:outline-none focus:border-blue-500 font-medium"
-                    />
-                    
-                    {posSearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPosSearchQuery('');
-                          setRowItemId('');
-                        }}
-                        className="absolute right-2 top-[12px] text-slate-400 hover:text-slate-600"
-                      >
-                        <span className="text-xs font-bold font-mono">✕</span>
-                      </button>
-                    )}
-
-                    {posSearchDropdownOpen && (
-                      <div className="absolute z-50 mt-1 w-full max-h-60 overflow-y-auto bg-white border border-slate-200 rounded-lg shadow-lg divide-y divide-slate-100">
-                        {(() => {
-                          const query = posSearchQuery.toLowerCase().trim();
-                          const list = items.filter(itm => 
-                            itm.ItemName.toLowerCase().includes(query) || 
-                            itm.ItemID.toLowerCase().includes(query)
-                          );
-                          
-                          if (list.length === 0) {
-                            return <div className="p-3 text-xs text-slate-400 text-center">No matching pharmaceutical items found</div>;
-                          }
-                          
-                          return list.slice(0, 15).map((itm, idx) => {
-                            const isClinical = itm.MedicineType === 'C';
-                            return (
-                              <div
-                                key={`${itm.ItemID}-${idx}`}
-                                onMouseDown={() => {
-                                  setRowItemId(itm.ItemID);
-                                  setPosSearchQuery(itm.ItemName);
-                                  setPosSearchDropdownOpen(false);
-                                }}
-                                className="p-2.5 hover:bg-blue-50 cursor-pointer text-left transition flex justify-between items-center"
-                              >
-                                <div>
-                                  <span className="font-semibold text-xs text-slate-800">{itm.ItemName}</span>
-                                  <span className="ml-1.5 text-[10px] text-slate-400 font-mono">({itm.ItemID})</span>
-                                </div>
-                                <div className="text-right text-xxs font-mono">
-                                  {isClinical ? (
-                                    <span className="bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded font-bold">Clinical Medicine</span>
-                                  ) : (
-                                    <span className="text-slate-600">Rs. {itm.Price}</span>
-                                  )}
-                                  <span className="ml-2 bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded font-bold">Stock: {itm.CStock}</span>
-                                </div>
-                              </div>
-                            );
-                          });
-                        })()}
-                      </div>
-                    )}
-                  </div>
-
-                  {rowItemId && (() => {
-                    const sel = items.find(i => i.ItemID === rowItemId);
-                    if (!sel) return null;
-                    if (sel.MedicineType === 'C') {
-                      return (
-                        <div className="mt-1.5 space-y-2">
-                          <div className="flex items-center justify-between text-xxs bg-emerald-50 border border-emerald-100 text-emerald-800 p-1.5 rounded-md">
-                            <span>Selected Ingredient: <strong>{sel.ItemName}</strong> ({sel.ItemID})</span>
-                            <span>
-                              <span className="text-emerald-700 font-bold">Clinical Medicine (Pre-Paid)</span>
-                              <span className="ml-2">| Stock: <strong>{sel.CStock} {sel.Unit}s</strong></span>
-                            </span>
-                          </div>
-                          
-                          {/* Formula compounding inputs */}
-                          <div className="bg-emerald-50/50 border border-emerald-100 p-3 rounded-lg space-y-2 text-xs">
-                            <span className="text-xxs font-black text-emerald-700 uppercase tracking-wider block">🧪 Clinical Box Formula Compounding Wizard</span>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase">Dose per Day ({sel.Unit}s)</label>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={compoundingDose}
-                                  onChange={(e) => {
-                                    const d = Math.max(1, parseInt(e.target.value) || 1);
-                                    setCompoundingDose(d);
-                                    setRowQty(d * compoundingDays);
-                                  }}
-                                  className="mt-1 w-full text-xs border border-emerald-200 bg-white rounded p-1.5 focus:outline-none focus:border-emerald-500 font-mono"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase">Duration (Days)</label>
-                                <input
-                                  type="number"
-                                  min="1"
-                                  value={compoundingDays}
-                                  onChange={(e) => {
-                                    const days = Math.max(1, parseInt(e.target.value) || 1);
-                                    setCompoundingDays(days);
-                                    setRowQty(compoundingDose * days);
-                                  }}
-                                  className="mt-1 w-full text-xs border border-emerald-200 bg-white rounded p-1.5 focus:outline-none focus:border-emerald-500 font-mono"
-                                />
-                              </div>
-                              <div>
-                                <label className="block text-[10px] font-bold text-slate-500 uppercase">Formula / Take Notes</label>
-                                <input
-                                  type="text"
-                                  value={compoundingInstructions}
-                                  onChange={(e) => setCompoundingInstructions(e.target.value)}
-                                  className="mt-1 w-full text-xs border border-emerald-200 bg-white rounded p-1.5 focus:outline-none focus:border-emerald-500 font-medium"
-                                  placeholder=""
-                                />
-                              </div>
-                            </div>
-                            
-                            <div className="bg-white border border-emerald-150 p-2.5 rounded-md flex flex-col sm:flex-row sm:justify-between sm:items-center space-y-1 sm:space-y-0 text-xxs text-slate-600 font-medium">
-                              <div>
-                                <p className="font-semibold text-slate-800">
-                                  Calculated Compounded Quantity: <strong className="text-emerald-700 text-xs font-mono">{compoundingDose * compoundingDays}</strong> {sel.Unit}s
-                                </p>
-                                <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                                  Formula: {compoundingDose} {sel.Unit}(s) for {compoundingDays} Days ({compoundingInstructions})
-                                </p>
-                              </div>
-                              <div className="text-right sm:border-l sm:pl-3 border-slate-150">
-                                <p className="text-slate-500">
-                                  Cost Price: <strong className="text-slate-700 font-mono">Rs. {(compoundingDose * compoundingDays * sel.PurchasePrice).toFixed(1)}</strong>
-                                </p>
-                                <p className="text-emerald-600 font-bold">
-                                  Payment Status: <strong className="font-mono">Pre-Paid (Free Dispense)</strong>
-                                </p>
-                              </div>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    }
-                    return (
-                      <div className="mt-1.5 flex items-center justify-between text-xxs bg-blue-50 border border-blue-100 text-blue-800 p-1.5 rounded-md font-medium">
-                        <span>Selected Item: <strong>{sel.ItemName}</strong> ({sel.ItemID})</span>
-                        <span>
-                          <span>Price: <strong>Rs. {sel.Price}</strong></span>
-                          <span className="ml-2">| Stock: <strong>{sel.CStock} {sel.Unit}s</strong></span>
-                        </span>
-                      </div>
-                    );
-                  })()}
-                </div>
-
-                <div className="flex space-x-2">
-                  <div className="w-1/2">
-                    <label className="block text-xxs font-bold text-slate-500 uppercase">Qty</label>
-                    <input
-                      type="number"
-                      min="1"
-                      value={rowQty}
-                      onChange={(e) => setRowQty(parseInt(e.target.value) || 1)}
-                      className="mt-1 w-full text-xs border border-slate-200 bg-white rounded-lg p-2 focus:outline-none font-mono"
-                    />
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleAddToBasket}
-                    className="w-1/2 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center transition self-end"
-                  >
-                    <Plus className="w-4 h-4 mr-1" />
-                    Add
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Checkout basket list */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="border-b border-slate-200 text-slate-400 uppercase text-xxs font-bold">
-                    <th className="py-2.5 font-bold">Item ID</th>
-                    <th className="py-2.5 font-bold">Product</th>
-                    <th className="py-2.5 text-center font-bold">Qty</th>
-                    <th className="py-2.5 text-right font-bold">Dispense Rate</th>
-                    <th className="py-2.5 text-right font-bold">Action</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {checkoutBasket.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="py-6 text-center text-slate-400 font-semibold">Dispensing list is currently empty. Search and add clinical medicines above.</td>
-                    </tr>
-                  ) : (
-                    checkoutBasket.map((b, idx) => {
-                      const item = items.find((i) => i.ItemID === b.ItemID);
-                      return (
-                        <tr key={`${b.ItemID}-${idx}`} className="hover:bg-slate-50/50">
-                          <td className="py-2 font-mono text-xxs font-bold text-slate-400">{b.ItemID}</td>
-                          <td className="py-2 font-bold text-slate-800">{item ? item.ItemName : 'Unknown'}</td>
-                          <td className="py-2 text-center font-bold font-mono">{b.Qty}</td>
-                          <td className="py-2 text-right font-mono text-slate-600">
-                            <span className="text-emerald-600 font-bold">Pre-paid (Rs. 0)</span>
-                          </td>
-                          <td className="py-2 text-right">
-                            <button
-                              type="button"
-                              onClick={() => handleRemoveFromBasket(b.ItemID)}
-                              className="text-red-500 hover:text-red-700 p-1"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
-
-          {/* Checkout Totals & Calculations Card */}
-          <div className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-[420px]">
-            <div>
-              <h3 className="text-sm font-bold text-slate-900 border-b border-slate-100 pb-3">Clinical Medicine Dispensing</h3>
-              
-              <div className="mt-4 space-y-3 text-xs text-slate-600">
-                <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg text-emerald-900 space-y-1">
-                  <span className="font-extrabold block text-xxs uppercase tracking-wider text-emerald-700">Payment Status:</span>
-                  <p className="font-semibold text-xs text-emerald-800">
-                    Doctor/Visit desk has already collected clinical medicine payment. No cash collection required.
-                  </p>
-                </div>
-
-                <div className="border-t border-slate-100 pt-3 flex justify-between items-center text-sm font-bold text-slate-900">
-                  <span>Items to Dispense:</span>
-                  <span className="font-mono text-emerald-600 font-bold">{checkoutBasket.length} item(s)</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 gap-2 pt-4">
-              <button
-                type="button"
-                onClick={() => handleCheckoutInvoice(true)}
-                disabled={checkoutBasket.length === 0}
-                className={`w-full py-3 rounded-lg text-xs font-bold text-white shadow-md transition flex items-center justify-center ${
-                  checkoutBasket.length > 0
-                    ? 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/10'
-                    : 'bg-slate-400 cursor-not-allowed'
-                }`}
-              >
-                <Check className="w-4 h-4 mr-1 shrink-0" />
-                <span>Dispense Clinical Medicine & Deduct Stock</span>
-              </button>
-            </div>
-          </div>
-
-        </div>
+        <ClinicalMedicinePrescriptionTab
+          activeSubTab={activeSubTab}
+          patients={allKnownPatients}
+          visits={visits}
+          visitMedicines={visitMedicines}
+          tokens={tokens}
+          items={items}
+          clinicSettings={clinicSettings}
+          currentUser={currentUser}
+          selectedPatientId={selectedPatientId}
+          setSelectedPatientId={setSelectedPatientId}
+          getVisitMedicinesList={getVisitMedicinesList}
+          onOpenLabelPrintModal={(labelData) => {
+            setLabelPrintData(labelData);
+            setIsLabelPrintModalOpen(true);
+          }}
+        />
       )}
 
       {/* Invoice logs Tab */}
@@ -4272,6 +3914,16 @@ export default function PharmacyPOS({
               <div className="flex items-center space-x-2 shrink-0 self-end md:self-auto">
                 <button
                   type="button"
+                  onClick={() => setIsBulkExpiryModalOpen(true)}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl flex items-center transition cursor-pointer font-bold text-xs shadow-sm"
+                  title="Bulk Update Medicine Expiry Dates (Month-Year)"
+                >
+                  <Calendar className="w-4 h-4 mr-1.5" />
+                  <span>Change Expire Date</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={handleOpenAddMedicineModal}
                   className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center transition cursor-pointer font-bold text-xs shadow-sm"
                 >
@@ -4412,6 +4064,16 @@ export default function PharmacyPOS({
                       <span>Print Low Stock</span>
                     </button>
                   )}
+
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkExpiryModalOpen(true)}
+                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white border border-amber-500 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
+                    title="Open Bulk Expiry Date Updater for medicines"
+                  >
+                    <Calendar className="w-3.5 h-3.5 mr-1.5" />
+                    <span>Change Expire Date</span>
+                  </button>
 
                   <button
                     type="button"
@@ -5348,6 +5010,9 @@ export default function PharmacyPOS({
         invoices={invoices}
         invoiceDetails={invoiceDetails}
         onAddSalesReturn={onAddSalesReturn}
+        patients={allKnownPatients}
+        clinicSettings={clinicSettings}
+        setItems={setItems}
         currentUser={currentUser}
       />
 
@@ -5553,6 +5218,15 @@ export default function PharmacyPOS({
         isOpen={isPwaModalOpen}
         onClose={() => setIsPwaModalOpen(false)}
         onLaunchStoreMode={() => handleSubTabSwitch("store_sales", "Store Medicine")}
+      />
+
+      {/* Bulk Medicine Expiry Date Updater Modal */}
+      <PharmacyBulkExpiryModal
+        isOpen={isBulkExpiryModalOpen}
+        onClose={() => setIsBulkExpiryModalOpen(false)}
+        items={items}
+        categories={categories}
+        onBulkUpdateExpiry={handleBulkUpdateExpiry}
       />
     </div>
   );

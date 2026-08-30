@@ -30,7 +30,8 @@ import {
   UserPlus,
   CreditCard,
   Building,
-  MessageCircle
+  MessageCircle,
+  Coins
 } from 'lucide-react';
 import {
   Patient,
@@ -4183,6 +4184,8 @@ export default function EMRDesk({
                       VisitDate: v.VisitDate,
                       SymptomsDiagnosis: v.SymptomsDiagnosis,
                       LabTestAdvice: v.LabTestAdvice,
+                      appointmentFee: Number(v.ConsultationFee) || Number((v as any).FileFee) || 0,
+                      clinicalMedicineFee: Number(v.ClinicalMedicinePayment) || 0,
                       IsNhc: false,
                       Medicines: visitMedicines
                         .filter(m => m.VisitID === v.VisitID)
@@ -4356,6 +4359,30 @@ export default function EMRDesk({
                                 )}
                               </div>
                             ) : null}
+
+                            {/* DOCTOR PREVIOUS VISIT PAYMENT BREAKDOWN BADGE */}
+                            <div className="bg-slate-900 text-white rounded-lg p-2.5 flex flex-wrap items-center justify-between gap-2 shadow-2xs border border-slate-800">
+                              <div className="flex items-center space-x-2">
+                                <div className="p-1.5 bg-emerald-500/20 text-emerald-300 rounded-md shrink-0">
+                                  <Coins className="w-3.5 h-3.5 text-emerald-300" />
+                                </div>
+                                <div className="text-[11px] font-mono">
+                                  <span className="text-slate-400 font-extrabold uppercase text-[8.5px] block">
+                                    Payment Received on Last Visit ({formatShortDate(vis.VisitDate)}):
+                                  </span>
+                                  <span className="text-blue-300 font-bold">
+                                    Appointment Fee: <strong className="text-white">PKR {Number((vis as any).appointmentFee || 0).toLocaleString()}</strong>
+                                  </span>
+                                  <span className="text-slate-500 mx-1.5">•</span>
+                                  <span className="text-amber-300 font-bold">
+                                    Clinical Meds: <strong className="text-white">PKR {Number((vis as any).clinicalMedicineFee || 0).toLocaleString()}</strong>
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="bg-emerald-600/90 text-white px-2.5 py-1 rounded-md text-xs font-mono font-black border border-emerald-400/40 shrink-0">
+                                Total Paid: PKR {(Number((vis as any).appointmentFee || 0) + Number((vis as any).clinicalMedicineFee || 0)).toLocaleString()}
+                              </div>
+                            </div>
 
                             <div className="pt-2 border-t border-slate-100 flex justify-end">
                               <button

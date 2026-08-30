@@ -5378,6 +5378,131 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     setTimeout(() => setSyncMessage(null), 3000);
   };
 
+  // CASH BOOK LEDGER DELETE HANDLER
+  const handleDeleteCashBookEntry = async (entry: any) => {
+    if (!entry) return;
+    const confirmMsg = `Are you sure you want to delete this Cash Book entry?\n\nRef: ${entry.ref || entry.id}\nParticulars: ${entry.particulars}\nAmount: PKR ${(entry.amount || 0).toLocaleString()}\n\nThis will remove the transaction record from the database and update all Cash Book & P&L calculations.`;
+    if (!window.confirm(confirmMsg)) return;
+
+    setIsSubmitting(true);
+    try {
+      const entryId = (entry.id || '').toString();
+      const entryRef = (entry.ref || '').toString();
+      const rawExpId = entryId.replace(/^EXP-/, '');
+      const rawPayId = entryId.replace(/^PAY-/, '');
+      const rawTxId = entryId.replace(/^TXN-/, '');
+      const rawAppId = entryId.replace(/^APP-/, '').replace(/^TOKEN-/, '');
+      const rawVisId = entryId.replace(/^VIS-(CONS|CLIN|FILE|CARD)-/, '').replace(/^VISIT-/, '').replace(/^PV-/, '').replace(/^FILE-/, '').replace(/^CARD-/, '');
+      const rawSaleId = entryId.replace(/^SALE-/, '').replace(/^INV-/, '');
+
+      let deletedSomething = false;
+
+      // 1. If Expense entry or source === 'Expenses'
+      const matchedExpense = expenses.find(e => {
+        const expId = (e.ExpenseID || e._id || '').toString();
+        return expId === entryId || expId === entryRef || expId === rawExpId || entryId === `EXP-${expId}`;
+      });
+      if (matchedExpense) {
+        const targetId = matchedExpense._id || matchedExpense.ExpenseID;
+        await deleteFromDatabase('erp_expenses', targetId);
+        setExpenses(prev => prev.filter(e => (e._id ? e._id !== targetId : e.ExpenseID !== targetId)));
+        deletedSomething = true;
+      }
+
+      // 2. If Payroll entry or source === 'Payroll'
+      const matchedPayroll = payrolls.find(p => {
+        const pId = (p.PayrollID || p._id || '').toString();
+        return pId === entryId || pId === entryRef || pId === rawPayId || entryId === `PAY-${pId}`;
+      });
+      if (matchedPayroll) {
+        const targetId = matchedPayroll._id || matchedPayroll.PayrollID;
+        await deleteFromDatabase('erp_payroll', targetId);
+        setPayrolls(prev => prev.filter(p => (p._id ? p._id !== targetId : p.PayrollID !== targetId)));
+        deletedSomething = true;
+      }
+
+      // 3. If ERP Transaction entry or linked to transaction
+      const matchedTxn = transactions.find(t => {
+        const tId = (t.TransactionID || t._id || '').toString();
+        const refNo = (t.ReferenceNo || '').toString();
+        return tId === entryId || tId === entryRef || tId === rawTxId || refNo === entryId || refNo === entryRef || refNo === rawExpId || refNo === rawPayId;
+      });
+      if (matchedTxn) {
+        const targetId = matchedTxn._id || matchedTxn.TransactionID;
+        await deleteFromDatabase('erp_transactions', targetId);
+        setTransactions(prev => prev.filter(t => (t._id ? t._id !== targetId : t.TransactionID !== targetId)));
+        deletedSomething = true;
+      }
+
+      // 4. If Appointment entry
+      const matchedApp = appointments.find(a => {
+        const aId = (a.AppointmentID || a._id || '').toString();
+        return aId === entryId || aId === entryRef || aId === rawAppId;
+      });
+      if (matchedApp) {
+        const targetId = matchedApp._id || matchedApp.AppointmentID;
+        await deleteFromDatabase('appointments', targetId);
+        try {
+          await fetch(`/api/appointments/${targetId}`, { method: 'DELETE' });
+        } catch (e) {}
+        setAppointments(prev => prev.filter(a => (a._id ? a._id !== targetId : a.AppointmentID !== targetId)));
+        deletedSomething = true;
+      }
+
+      // 5. If Patient Visit entry
+      const matchedVis = patientVisits.find(v => {
+        const vId = (v.VisitID || v._id || '').toString();
+        return vId === entryId || vId === rawVisId;
+      });
+      if (matchedVis) {
+        const targetId = matchedVis._id || matchedVis.VisitID;
+        await deleteFromDatabase('visits', targetId);
+        try {
+          await fetch(`/api/visits/${targetId}`, { method: 'DELETE' });
+        } catch (e) {}
+        setPatientVisits(prev => prev.filter(v => (v._id ? v._id !== targetId : v.VisitID !== targetId)));
+        deletedSomething = true;
+      }
+
+      // 6. If POS Sale entry
+      const matchedSale = posSales.find(s => {
+        const sId = (s.InvoiceNo || s.SaleID || s._id || '').toString();
+        return sId === entryId || sId === rawSaleId || sId === entryRef;
+      });
+      if (matchedSale) {
+        const targetId = matchedSale._id || matchedSale.InvoiceNo || matchedSale.SaleID;
+        await deleteFromDatabase('invoices', targetId);
+        try {
+          await fetch(`/api/billing/invoices/${targetId}`, { method: 'DELETE' });
+        } catch (e) {}
+        setPosSales(prev => prev.filter(s => (s._id ? s._id !== targetId : (s.InvoiceNo !== targetId && s.SaleID !== targetId))));
+        deletedSomething = true;
+      }
+
+      // If generic fallback or ID wasn't matched above
+      if (!deletedSomething) {
+        if (entryId.startsWith('EXP-') || entry.source === 'Expenses') {
+          await deleteFromDatabase('erp_expenses', entryId);
+          setExpenses(prev => prev.filter(e => (e.ExpenseID !== entryId && e._id !== entryId)));
+        } else if (entryId.startsWith('PAY-') || entry.source === 'Payroll') {
+          await deleteFromDatabase('erp_payroll', entryId);
+          setPayrolls(prev => prev.filter(p => (p.PayrollID !== entryId && p._id !== entryId)));
+        } else {
+          await deleteFromDatabase('erp_transactions', entryId);
+          setTransactions(prev => prev.filter(t => (t.TransactionID !== entryId && t._id !== entryId)));
+        }
+      }
+
+      window.dispatchEvent(new CustomEvent('phc_db_updated'));
+      setSyncMessage(`Cash Book record "${entry.ref || entry.id}" deleted successfully.`);
+      setTimeout(() => setSyncMessage(null), 3500);
+    } catch (err: any) {
+      alert('Error deleting cash book entry: ' + (err.message || err));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
   // HANDLERS FOR EMPLOYEES & PAYROLL
   const handleAddEmployee = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -6584,6 +6709,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             isSubmitting={isSubmitting}
             handlePrintCashBookReport={handlePrintCashBookReport}
             customExpenseCategories={customExpenseCategories}
+            handleDeleteCashBookEntry={handleDeleteCashBookEntry}
           />
         )}
 

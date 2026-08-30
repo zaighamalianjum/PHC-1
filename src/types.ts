@@ -379,6 +379,9 @@ export interface User {
   };
   UserRights?: UserRight[];
   AllowedUserIDs?: string[]; // Allowed User-to-User Access Control Matrix (Array of UserIDs/LoginNames or ['ALL'] / ['*'])
+  AccessApprovalStatus?: 'Pending' | 'Approved' | 'Rejected'; // Official Administrator Approval Status
+  AccessApprovedBy?: string; // Administrator who approved access
+  AccessApprovedAt?: string; // Timestamp of administrator approval
   CreatedAt?: string;
 }
 

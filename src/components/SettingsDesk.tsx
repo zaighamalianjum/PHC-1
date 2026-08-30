@@ -5,6 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { BackupProgressModal } from './BackupProgressModal';
+import { MainMenuConfigModal, MainMenuDefinition } from './MainMenuConfigModal';
 import { 
   Building, 
   UserCheck, 
@@ -14,59 +15,62 @@ import {
   ShieldCheck, 
   Settings, 
   Lock, 
-  Briefcase,
-  MessageSquare,
-  Database,
-  Server,
-  Wifi,
-  Globe,
-  Key,
-  RefreshCw,
-  CheckCircle2,
-  Sliders,
-  Download,
-  Image,
-  Upload,
-  Printer,
-  FileText,
-  Users,
-  Shield,
-  ShieldAlert,
-  Eye,
-  EyeOff,
-  CheckSquare,
-  Square,
-  UserCog,
-  Unlock,
-  FolderLock,
-  UserPlus,
-  ListOrdered,
-  Ticket,
-  Stethoscope,
-  CalendarPlus,
-  LayoutGrid,
-  Edit3,
-  Calendar,
-  Ban,
-  Zap,
-  Boxes,
-  MapPin,
-  Search,
-  Edit2,
-  Check,
-  Building2,
-  PieChart,
-  Landmark,
-  ShoppingCart,
-  Receipt,
-  BarChart3,
-  Undo2,
-  History,
-  Tag,
-  Smartphone,
-  Menu,
-  X,
-  ChevronRight
+  Briefcase, 
+  MessageSquare, 
+  Database, 
+  Server, 
+  Wifi, 
+  Globe, 
+  Key, 
+  RefreshCw, 
+  CheckCircle2, 
+  Sliders, 
+  Download, 
+  Image, 
+  Upload, 
+  Printer, 
+  FileText, 
+  Users, 
+  Shield, 
+  ShieldAlert, 
+  Eye, 
+  EyeOff, 
+  CheckSquare, 
+  Square, 
+  UserCog, 
+  Unlock, 
+  FolderLock, 
+  UserPlus, 
+  ListOrdered, 
+  Ticket, 
+  Stethoscope, 
+  LayoutGrid, 
+  Edit3, 
+  CalendarPlus, 
+  Calendar, 
+  Ban, 
+  Zap, 
+  Boxes, 
+  MapPin, 
+  Search, 
+  Edit2, 
+  Check, 
+  Building2, 
+  PieChart, 
+  Landmark, 
+  ShoppingCart, 
+  Receipt, 
+  BarChart3, 
+  Undo2, 
+  History, 
+  Tag, 
+  Smartphone, 
+  Menu, 
+  X, 
+  ChevronRight,
+  Layers,
+  BadgeCheck,
+  AlertCircle
 } from 'lucide-react';
 import { User, ClinicSettings, SmsSettings, MongoDbSettings, UserRight, City, Patient } from '../types';
 import { ROLE_RIGHTS, INITIAL_CITIES } from '../data/initialData';
@@ -181,11 +185,206 @@ export default function SettingsDesk({
     canExportCSVExcel: true
   };
 
+  // Main Menus with their sub-menus, item privileges, and descriptions definition
+  const MAIN_MENU_CONFIGS: MainMenuDefinition[] = [
+    {
+      id: 'patients',
+      name: 'Patient Intake & OPD Queue Desk',
+      permKey: 'canViewPatientDesk',
+      menuRightId: 'patients',
+      icon: Users,
+      color: 'teal',
+      desc: 'Token booking, patient registration, OPD waiting queue, clinical visits & appointments',
+      subMenus: [
+        { key: 'canAccessWaitingQueue', label: 'Waiting Queue Desk', icon: ListOrdered, desc: 'View OPD waiting queue list & live token status' },
+        { key: 'canAccessPatientRegistration', label: 'Patient Registration Form', icon: UserPlus, desc: 'Register new patient profiles & manage directory' },
+        { key: 'canAccessTokenIssue', label: 'Token Issue Counter', icon: Ticket, desc: 'Generate & issue clinic OPD shift tokens' },
+        { key: 'canAccessPatientVisitDesk', label: 'Patient Clinical Visit', icon: Stethoscope, desc: 'Examine patient, record symptoms & clinical diagnosis' },
+        { key: 'canAccessGridView', label: 'Patient Master Grid View', icon: LayoutGrid, desc: 'View comprehensive searchable patient master records grid' },
+        { key: 'canAccessAppointmentsDesk', label: 'Book Appointment & Calendar', icon: CalendarPlus, desc: 'Schedule future patient appointments & doctor timings' },
+        { key: 'canAccessLargeScreenDisplay', label: 'Large Screen Queue Display', icon: Users, desc: 'Full-screen waiting room queue display for TV screens' },
+      ],
+      actionItems: [
+        { key: 'canAddPatient', label: 'Add / Register New Patient Form', icon: UserPlus, desc: 'Allow submitting new patient registration' },
+        { key: 'canEditPatient', label: 'Edit Existing Patient Record', icon: Edit3, desc: 'Allow editing patient demographics, age & contact data' },
+        { key: 'canIssueToken', label: 'Issue / Generate Tokens', icon: Ticket, desc: 'Allow generating new queue token numbers' },
+        { key: 'canCallServeToken', label: 'Call / Serve / Cancel Token', icon: CheckCircle2, desc: 'Allow updating queue token status (Calling / Served / Cancelled)' },
+        { key: 'canBookAppointment', label: 'Book / Reschedule Appointment', icon: Calendar, desc: 'Allow scheduling and moving patient appointments' },
+        { key: 'canCancelAppointment', label: 'Cancel / Delete Appointment', icon: Ban, desc: 'Allow cancelling or deleting booked appointments' },
+        { key: 'canDeleteToken', label: 'Delete Issued Token', icon: Trash2, desc: 'Allow deleting or voiding mistakenly generated tokens' },
+        { key: 'canPrintTokenSlip', label: 'Print OPD Queue Token Ticket', icon: Ticket, desc: 'Allow printing thermal token tickets' },
+        { key: 'canPrintVisitSlip', label: 'Print A5 Patient Visit Receipt', icon: Printer, desc: 'Allow printing consultation visit receipt' },
+        { key: 'canExportCSVExcel', label: 'Export Patients Directory to CSV/Excel', icon: Upload, desc: 'Allow exporting patient records to spreadsheet' }
+      ]
+    },
+    {
+      id: 'emr',
+      name: 'EMR & Clinical Consultations Desk',
+      permKey: 'canViewEMRDesk',
+      menuRightId: 'emr',
+      icon: Briefcase,
+      color: 'blue',
+      desc: 'Doctor clinical consultations, prescriptions, lab investigations & history',
+      subMenus: [
+        { key: 'canAccessPatientVisitDesk', label: 'Doctor Consultation Desk', icon: Stethoscope, desc: 'Record symptoms, diagnoses & prescribe medication' },
+        { key: 'canViewNhcHistoryDesk', label: 'Historical Consultations Archive', icon: UserCheck, desc: 'Access past patient clinical visits & prescription history' }
+      ],
+      actionItems: [
+        { key: 'canPrintPrescription', label: 'Print A4 Prescription Letterhead', icon: Printer, desc: 'Allow printing doctor prescription with clinic letterhead' },
+        { key: 'canPrintLabAdvice', label: 'Print Lab Test Investigation Advice', icon: Printer, desc: 'Allow printing laboratory test advice slips' },
+        { key: 'canPrintVisitSlip', label: 'Print A5 Consultation Visit Slip', icon: Printer, desc: 'Allow printing patient visit receipt' }
+      ]
+    },
+    {
+      id: 'erp_system',
+      name: 'Mini ERP System & Financial Accounting',
+      permKey: 'canViewErpDesk',
+      menuRightId: 'accounts',
+      icon: Building2,
+      color: 'indigo',
+      desc: 'Comprehensive clinic accounting, fiscal calendar, cash book, vendors, PO/GRN, payroll & expenses',
+      subMenus: [
+        { key: 'canAccessErpOverview', label: 'ERP Dashboard & KPI Overview', icon: PieChart, desc: 'Financial summaries, gross margins, cash position & revenue stats' },
+        { key: 'canAccessErpFiscalCalendar', label: 'Fiscal Year & Calendar Setup', icon: Calendar, desc: 'Financial accounting periods, quarterly reviews & fiscal year closing' },
+        { key: 'canAccessErpCashBook', label: 'Clinic Cash Book & P&L Log', icon: Landmark, desc: 'Real-time cash inflows, patient fees, expenses & profit/loss tracking' },
+        { key: 'canAccessErpVendors', label: 'Vendors & Suppliers Management', icon: Building2, desc: 'Vendor directory, supplier profiles, contact numbers & tax details' },
+        { key: 'canAccessErpVendorStatement', label: 'Vendor Payments & Statements', icon: FileText, desc: 'Pay supplier bills, issue payment vouchers & print vendor ledger statements' },
+        { key: 'canAccessErpPoGrn', label: 'Purchase Orders & GRN Receiving', icon: ShoppingCart, desc: 'Draft PO requisitions, record Goods Received Notes (GRN) & partial receiving' },
+        { key: 'canAccessErpLedger', label: 'Financial Ledger & Journal', icon: Receipt, desc: 'Double-entry transaction audit trails & general ledger journals' },
+        { key: 'canAccessErpHrPayroll', label: 'HR & Staff Payroll Management', icon: Users, desc: 'Employee records, monthly salaries, advances & payroll disbursement' },
+        { key: 'canAccessErpExpensesAssets', label: 'Clinic Expenses & Fixed Assets', icon: Boxes, desc: 'Track clinic operating expenses & maintain fixed asset register' },
+        { key: 'canAccessErpReporting', label: 'ERP Reporting & Performance Analytics', icon: BarChart3, desc: 'Comprehensive financial statements & income performance reports' }
+      ],
+      actionItems: [
+        { key: 'canPrintVouchers', label: 'Print Payment & Journal Vouchers', icon: Printer, desc: 'Allow printing Cash Payment Vouchers & Journal Vouchers' },
+        { key: 'canPrintFinancialReports', label: 'Print Financial Statements & Ledgers', icon: Printer, desc: 'Allow printing P&L, Ledgers & Balance Sheets' },
+        { key: 'canExportCSVExcel', label: 'Export ERP Ledgers to CSV/Excel', icon: Upload, desc: 'Allow exporting accounting transactions to spreadsheet' }
+      ]
+    },
+    {
+      id: 'pharmacy',
+      name: 'Pharmacy POS & Medicine Inventory',
+      permKey: 'canViewPharmacyPOS',
+      menuRightId: 'pharmacy',
+      icon: ShoppingCart,
+      color: 'emerald',
+      desc: 'Dispensary sales counter, store medicine POS, stock manager, returns & medicine labels',
+      subMenus: [
+        { key: 'canAccessClinicalMedicine', label: 'Clinical Medicine POS Counter', icon: ShoppingCart, desc: 'Doctor prescription dispensing checkout counter' },
+        { key: 'canAccessStoreMedicine', label: 'Store Medicine Retail Sales Counter', icon: ShoppingCart, desc: 'Direct retail store medicine billing & barcode POS' },
+        { key: 'canAccessSalesReturns', label: 'Sales Returns & Customer Refunds', icon: Undo2, desc: 'Customer return processing & bill adjustment vouchers' },
+        { key: 'canAccessStockManager', label: 'Stock Grid & Medicine Inventory Manager', icon: Database, desc: 'Inventory catalog, batches, expiry alerts & pricing overview' },
+        { key: 'canAccessInvoiceLogs', label: 'Invoice Logs & Past Receipts History', icon: History, desc: 'View past transaction receipts & reprint customer bills' },
+        { key: 'canAccessMedicineLabels', label: 'Clinic Medicine Bottle Label Printer', icon: Tag, desc: 'Print thermal bottle & strip dosage instruction labels' },
+        { key: 'canViewPwaInstall', label: '📱 Install Mobile / Android App Button', icon: Smartphone, desc: 'Show/Hide the Store Medicine APK / PWA install modal and header button' }
+      ],
+      actionItems: [
+        { key: 'canEditStockLevel', label: 'Edit Current Stock Level & Rates', icon: Boxes, desc: 'Allow editing medicine stock quantities & thresholds in Inventory' },
+        { key: 'canPrintPOSInvoice', label: 'Print Pharmacy POS Thermal Invoice', icon: Printer, desc: 'Allow printing customer receipts on POS thermal printer' },
+        { key: 'canPrintFinancialReports', label: 'Print Inventory Stock Valuation Reports', icon: Printer, desc: 'Allow printing inventory stock balance reports' },
+        { key: 'canExportCSVExcel', label: 'Export Medicine Catalog to CSV/Excel', icon: Upload, desc: 'Allow downloading medicine stock inventory list' }
+      ]
+    },
+    {
+      id: 'reports',
+      name: 'Financial & Executive Reports Desk',
+      permKey: 'canViewReportingDesk',
+      menuRightId: 'reports',
+      icon: Printer,
+      color: 'purple',
+      desc: 'General ledger, Income statements, Trial balance, Patient directories & audits',
+      subMenus: [
+        { key: 'canAccessErpReporting', label: 'ERP & Financial Statements', icon: BarChart3, desc: 'Trial balance, profit and loss & cash flow reports' },
+        { key: 'canAccessGridView', label: 'Patient Master Directory Report', icon: LayoutGrid, desc: 'Full patient master roster and clinical history logs' }
+      ],
+      actionItems: [
+        { key: 'canPrintFinancialReports', label: 'Print Reports & Statements', icon: Printer, desc: 'Allow generating printable report documents' },
+        { key: 'canExportCSVExcel', label: 'Export Reports Data to CSV/Excel', icon: Upload, desc: 'Allow exporting generated report datasets' }
+      ]
+    },
+    {
+      id: 'uploads',
+      name: 'CSV Imports & Bulk Uploads Desk',
+      permKey: 'canViewUploadingDesk',
+      menuRightId: 'uploads',
+      icon: Upload,
+      color: 'amber',
+      desc: 'Bulk import patient directories and medicine catalog spreadsheets',
+      subMenus: [
+        { key: 'canViewUploadingDesk', label: 'Bulk Data CSV Uploader', icon: Upload, desc: 'Import CSV records into database' }
+      ],
+      actionItems: [
+        { key: 'canExportCSVExcel', label: 'Download Template Samples', icon: Download, desc: 'Download sample CSV template files' }
+      ]
+    },
+    {
+      id: 'settings',
+      name: 'System Setup & Settings Desk',
+      permKey: 'canViewSettingsDesk',
+      menuRightId: 'settings',
+      icon: Settings,
+      color: 'slate',
+      desc: 'Clinic profile setup, SMS gateway, Google Drive backups & user access management',
+      subMenus: [
+        { key: 'canViewSettingsDesk', label: 'Clinic Configuration Panel', icon: Settings, desc: 'Configure clinic branding, SMS & database connections' }
+      ],
+      actionItems: [
+        { key: 'canExportCSVExcel', label: 'Export System Backup Archive', icon: Download, desc: 'Export full database backup archives' }
+      ]
+    },
+    {
+      id: 'query_handler',
+      name: 'Query Handler & System Audit Desk',
+      permKey: 'canViewQueryHandlerDesk',
+      menuRightId: 'query_handler',
+      icon: Database,
+      color: 'cyan',
+      desc: 'Live database query inspection, collections browser & audit log trails',
+      subMenus: [
+        { key: 'canViewQueryHandlerDesk', label: 'Live Database Query Console', icon: Database, desc: 'Inspect database tables and collections' }
+      ],
+      actionItems: []
+    },
+    {
+      id: 'nhc_history',
+      name: 'NHC Patient Clinical History Desk',
+      permKey: 'canViewNhcHistoryDesk',
+      menuRightId: 'nhc_history',
+      icon: UserCheck,
+      color: 'rose',
+      desc: 'Search historical patient clinical consultations and archive prescription logs',
+      subMenus: [
+        { key: 'canViewNhcHistoryDesk', label: 'NHC Archive Consultations Browser', icon: UserCheck, desc: 'Browse historical clinic consultations' }
+      ],
+      actionItems: [
+        { key: 'canPrintPrescription', label: 'Reprint Historical Prescriptions', icon: Printer, desc: 'Print past prescription archive' }
+      ]
+    },
+    {
+      id: 'dashboard',
+      name: 'Executive Dashboard & Analytics',
+      permKey: 'canViewDashboard',
+      menuRightId: 'dashboard',
+      icon: Shield,
+      color: 'violet',
+      desc: 'Clinic revenue analytics, patient footfall & executive KPIs (Admin Only)',
+      subMenus: [
+        { key: 'canViewDashboard', label: 'Executive Analytics Overview', icon: Shield, desc: 'View top-level revenue and performance stats' }
+      ],
+      actionItems: []
+    }
+  ];
+
   // Selected User's Permissions & Access Controls
   const [accessPermissions, setAccessPermissions] = useState<NonNullable<User['Permissions']>>(defaultPermissionTemplate);
-
   const [accessUserRights, setAccessUserRights] = useState<UserRight[]>(ROLE_RIGHTS['Administrator']);
   const [accessAllowedUserIDs, setAccessAllowedUserIDs] = useState<string[]>(['ALL']);
+  const [accessApprovalStatus, setAccessApprovalStatus] = useState<'Pending' | 'Approved' | 'Rejected'>('Approved');
+  const [accessApprovedBy, setAccessApprovedBy] = useState<string>('Administrator');
+  const [accessApprovedAt, setAccessApprovedAt] = useState<string>('');
+
+  // Active Main Menu being configured in Pop-up Modal
+  const [configuringMainMenuId, setConfiguringMainMenuId] = useState<string | null>(null);
 
   // Synchronize state whenever selectedAccessUserId changes
   useEffect(() => {
@@ -196,6 +395,9 @@ export default function SettingsDesk({
       });
       setAccessUserRights(selectedAccessUser.UserRights || ROLE_RIGHTS[selectedAccessUser.Role] || ROLE_RIGHTS['Administrator']);
       setAccessAllowedUserIDs(selectedAccessUser.AllowedUserIDs || ['ALL']);
+      setAccessApprovalStatus(selectedAccessUser.AccessApprovalStatus || (selectedAccessUser.Role === 'Administrator' ? 'Approved' : 'Approved'));
+      setAccessApprovedBy(selectedAccessUser.AccessApprovedBy || (selectedAccessUser.Role === 'Administrator' ? 'System Administrator' : 'Administrator'));
+      setAccessApprovedAt(selectedAccessUser.AccessApprovedAt || selectedAccessUser.CreatedAt || '');
     }
   }, [selectedAccessUserId, usersList]);
 
@@ -207,8 +409,26 @@ export default function SettingsDesk({
     }));
   };
 
+  const handleToggleMainMenu = (menuId: string) => {
+    const config = MAIN_MENU_CONFIGS.find(m => m.id === menuId);
+    if (!config) return;
+
+    const currentVal = !!accessPermissions[config.permKey];
+    if (!currentVal) {
+      // If enabling, set main menu switch ON and open pop-up modal to configure sub-menus & items
+      setAccessPermissions(prev => ({ ...prev, [config.permKey]: true }));
+      setConfiguringMainMenuId(menuId);
+    } else {
+      // If disabling, turn off main menu
+      setAccessPermissions(prev => ({ ...prev, [config.permKey]: false }));
+    }
+  };
+
+  const handleOpenMainMenuConfig = (menuId: string) => {
+    setConfiguringMainMenuId(menuId);
+  };
+
   const handleToggleUserRight = (menuId: string, field: 'Status' | 'AddRec' | 'PostRec' | 'CancelPosted' | 'PrintRec' | 'ExportRec') => {
-    if (selectedAccessUser?.Role === 'Administrator') return;
     setAccessUserRights(prev => prev.map(r => {
       if (r.MenuID === menuId) {
         return { ...r, [field]: !r[field] };
@@ -520,7 +740,7 @@ export default function SettingsDesk({
     }
   };
 
-  const handleSaveAccessPermissions = () => {
+  const handleSaveAccessPermissions = (status?: 'Pending' | 'Approved' | 'Rejected') => {
     if (!selectedAccessUser) return;
     if (selectedAccessUser.Role === 'Administrator') {
       setErrorMsg('Administrator access profile is locked and cannot be modified. Admin accounts maintain full system permissions by default.');
@@ -529,30 +749,55 @@ export default function SettingsDesk({
     setSuccessMsg('');
     setErrorMsg('');
 
+    const newApprovalStatus = status || accessApprovalStatus;
+    const adminName = currentUser.FullName || currentUser.LoginName || 'Administrator';
+    const approvedTimestamp = newApprovalStatus === 'Approved' ? (accessApprovedAt || new Date().toISOString()) : '';
+
     const updatedUser: User = {
       ...selectedAccessUser,
       Permissions: accessPermissions,
       UserRights: accessUserRights,
-      AllowedUserIDs: accessAllowedUserIDs
+      AllowedUserIDs: accessAllowedUserIDs,
+      AccessApprovalStatus: newApprovalStatus,
+      AccessApprovedBy: newApprovalStatus === 'Approved' ? (accessApprovedBy || adminName) : undefined,
+      AccessApprovedAt: approvedTimestamp
     };
+
+    setAccessApprovalStatus(newApprovalStatus);
+    if (newApprovalStatus === 'Approved') {
+      setAccessApprovedBy(adminName);
+      setAccessApprovedAt(approvedTimestamp);
+    }
 
     setUsersList(prev => prev.map(u => u.UserID === selectedAccessUser.UserID ? updatedUser : u));
     broadcastUserSync('PERMISSIONS_UPDATED', updatedUser, selectedAccessUser.UserID);
 
-    const bridgeUrl = mongoDbSettings.BridgeUrl || window.location.origin;
-    fetch(`${bridgeUrl}/api/users/${selectedAccessUser.UserID}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedUser)
-    })
-      .then(res => res.json())
-      .then(() => {
-        broadcastUserSync('PERMISSIONS_UPDATED', updatedUser, selectedAccessUser.UserID);
-        setSuccessMsg(`Custom Access Rights & User-to-User permissions for "${selectedAccessUser.FullName}" saved to database successfully!`);
+    const bridgeUrl = mongoDbSettings.BridgeUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+    if (bridgeUrl && typeof navigator !== 'undefined' && navigator.onLine) {
+      fetch(`${bridgeUrl}/api/users/${selectedAccessUser.UserID}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedUser)
       })
-      .catch(err => {
-        setErrorMsg(`Saved locally, but failed to sync permissions to MongoDB: ${err.message}`);
-      });
+        .then(res => res.json())
+        .then(() => {
+          broadcastUserSync('PERMISSIONS_UPDATED', updatedUser, selectedAccessUser.UserID);
+          setSuccessMsg(`Access Profile & Permissions for "${selectedAccessUser.FullName}" (${newApprovalStatus.toUpperCase()}) saved & synced successfully!`);
+        })
+        .catch(err => {
+          setSuccessMsg(`Saved locally! (Database sync pending network reconnection: ${err.message})`);
+        });
+    } else {
+      setSuccessMsg(`Access Profile & Permissions for "${selectedAccessUser.FullName}" saved locally and applied successfully!`);
+    }
+  };
+
+  const handleApproveAndGrantAccess = () => {
+    handleSaveAccessPermissions('Approved');
+  };
+
+  const handleRejectOrSuspendAccess = () => {
+    handleSaveAccessPermissions('Rejected');
   };
 
   // SMS settings form states
@@ -1751,6 +1996,106 @@ export default function SettingsDesk({
             </div>
           )}
 
+          {/* Administrator Authorization & Approval Control Center */}
+          <div className={`p-5 rounded-2xl border transition-all shadow-sm ${
+            accessApprovalStatus === 'Approved'
+              ? 'bg-emerald-950/20 border-emerald-500/30 text-slate-800'
+              : accessApprovalStatus === 'Pending'
+              ? 'bg-amber-950/20 border-amber-500/30 text-slate-800'
+              : 'bg-rose-950/20 border-rose-500/30 text-slate-800'
+          }`}>
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="flex items-start space-x-3">
+                <div className={`p-2.5 rounded-xl mt-0.5 shrink-0 ${
+                  accessApprovalStatus === 'Approved'
+                    ? 'bg-emerald-500/20 text-emerald-600 border border-emerald-500/30'
+                    : accessApprovalStatus === 'Pending'
+                    ? 'bg-amber-500/20 text-amber-600 border border-amber-500/30'
+                    : 'bg-rose-500/20 text-rose-600 border border-rose-500/30'
+                }`}>
+                  {accessApprovalStatus === 'Approved' ? (
+                    <CheckCircle2 className="w-6 h-6" />
+                  ) : accessApprovalStatus === 'Pending' ? (
+                    <RefreshCw className="w-6 h-6 animate-spin-slow" />
+                  ) : (
+                    <Ban className="w-6 h-6" />
+                  )}
+                </div>
+                <div>
+                  <div className="flex items-center space-x-2">
+                    <h4 className="text-sm font-black text-slate-900">
+                      Access Approval Status for {selectedAccessUser?.FullName}:
+                    </h4>
+                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-black uppercase tracking-wide border ${
+                      accessApprovalStatus === 'Approved'
+                        ? 'bg-emerald-100 text-emerald-800 border-emerald-300'
+                        : accessApprovalStatus === 'Pending'
+                        ? 'bg-amber-100 text-amber-800 border-amber-300'
+                        : 'bg-rose-100 text-rose-800 border-rose-300'
+                    }`}>
+                      {accessApprovalStatus === 'Approved' ? '✅ Approved & Active' : accessApprovalStatus === 'Pending' ? '⏳ Pending Approval' : '🚫 Suspended / Denied'}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-600 mt-1">
+                    {accessApprovalStatus === 'Approved'
+                      ? `Access officially approved by ${accessApprovedBy || 'Administrator'}${accessApprovedAt ? ` on ${new Date(accessApprovedAt).toLocaleDateString()} ${new Date(accessApprovedAt).toLocaleTimeString()}` : ''}. User has full access to approved modules.`
+                      : accessApprovalStatus === 'Pending'
+                      ? 'Permissions have been customized and are awaiting final Administrator review and authorization before activation.'
+                      : 'User account access has been revoked/suspended. The user will be blocked from accessing protected menus until approved.'}
+                  </p>
+                </div>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={selectedAccessUser?.Role === 'Administrator'}
+                  onClick={handleApproveAndGrantAccess}
+                  className={`px-3.5 py-2 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 shadow-xs ${
+                    accessApprovalStatus === 'Approved'
+                      ? 'bg-emerald-600 text-white cursor-default ring-2 ring-emerald-400'
+                      : 'bg-emerald-50 text-emerald-700 border border-emerald-300 hover:bg-emerald-600 hover:text-white cursor-pointer'
+                  }`}
+                  title="Approve permissions and immediately grant access to user"
+                >
+                  <CheckCircle2 className="w-4 h-4" />
+                  <span>Approve & Grant Access</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={selectedAccessUser?.Role === 'Administrator'}
+                  onClick={() => handleSaveAccessPermissions('Pending')}
+                  className={`px-3 py-2 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 shadow-xs ${
+                    accessApprovalStatus === 'Pending'
+                      ? 'bg-amber-600 text-white cursor-default ring-2 ring-amber-400'
+                      : 'bg-amber-50 text-amber-700 border border-amber-300 hover:bg-amber-600 hover:text-white cursor-pointer'
+                  }`}
+                  title="Set status to Pending"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Mark Pending</span>
+                </button>
+
+                <button
+                  type="button"
+                  disabled={selectedAccessUser?.Role === 'Administrator'}
+                  onClick={handleRejectOrSuspendAccess}
+                  className={`px-3 py-2 text-xs font-bold rounded-xl transition flex items-center space-x-1.5 shadow-xs ${
+                    accessApprovalStatus === 'Rejected'
+                      ? 'bg-rose-600 text-white cursor-default ring-2 ring-rose-400'
+                      : 'bg-rose-50 text-rose-700 border border-rose-300 hover:bg-rose-600 hover:text-white cursor-pointer'
+                  }`}
+                  title="Suspend or reject user access"
+                >
+                  <Ban className="w-3.5 h-3.5" />
+                  <span>Suspend Access</span>
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* Section 1: User-to-User Access Control Matrix */}
           <div className="bg-white p-6 rounded-2xl border border-purple-200 shadow-sm space-y-5">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-3 gap-2">
@@ -1852,323 +2197,177 @@ export default function SettingsDesk({
             </div>
           </div>
 
-          {/* Section 2: Module & Desk Visibility Switches */}
-          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-4">
-            <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
+          {/* Section 2: 3-Step Hierarchical Main Menu & Pop-up Sub-Menu Access Control */}
+          <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-sm space-y-5">
+            <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-slate-100 pb-4 gap-3">
               <div>
-                <h4 className="text-sm font-black text-slate-800 flex items-center space-x-2">
-                  <Sliders className="w-4 h-4 text-blue-600" />
-                  <span>Module & Desk Visibility Switches</span>
-                </h4>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Toggle main navigation bar desk tabs accessible for <strong className="text-slate-800">{selectedAccessUser?.FullName}</strong>.
+                <div className="flex items-center space-x-2">
+                  <h4 className="text-sm font-black text-slate-900 flex items-center space-x-2">
+                    <Sliders className="w-4 h-4 text-blue-600" />
+                    <span>Main Menu & Sub-Menu Hierarchical Access Control</span>
+                  </h4>
+                  <span className="text-[10px] bg-blue-100 text-blue-800 font-extrabold px-2 py-0.5 rounded-md border border-blue-200 uppercase">
+                    3-Step Workflow
+                  </span>
+                </div>
+                <p className="text-xs text-slate-500 mt-1">
+                  <strong>Step 1:</strong> Toggle Main Menu Desk ➔ <strong>Step 2:</strong> Configure Pop-up Sub-Menus ➔ <strong>Step 3:</strong> Show/Hide Items & Transaction Rights ➔ <strong>Step 4:</strong> Administrator Approval.
                 </p>
+              </div>
+
+              {/* Quick Bulk Main Menu Switch */}
+              <div className="flex items-center space-x-2 shrink-0">
+                <button
+                  type="button"
+                  disabled={selectedAccessUser?.Role === 'Administrator'}
+                  onClick={() => {
+                    const updated = { ...accessPermissions };
+                    MAIN_MENU_CONFIGS.forEach(m => {
+                      updated[m.permKey] = true;
+                    });
+                    setAccessPermissions(updated);
+                  }}
+                  className="px-3 py-1.5 bg-blue-50 text-blue-700 hover:bg-blue-600 hover:text-white rounded-xl text-xs font-bold transition border border-blue-200 cursor-pointer disabled:opacity-50"
+                >
+                  Allow All Menus
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedAccessUser?.Role === 'Administrator'}
+                  onClick={() => {
+                    const updated = { ...accessPermissions };
+                    MAIN_MENU_CONFIGS.forEach(m => {
+                      updated[m.permKey] = false;
+                    });
+                    setAccessPermissions(updated);
+                  }}
+                  className="px-3 py-1.5 bg-slate-100 text-slate-700 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300 rounded-xl text-xs font-bold transition border border-slate-200 cursor-pointer disabled:opacity-50"
+                >
+                  Restrict All
+                </button>
               </div>
             </div>
 
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 text-xs pt-1">
-              {[
-                { key: 'canViewDashboard', label: 'Dashboard & Executive Stats (Admin Only)', icon: Shield, desc: 'Overall patient & income analytics (Restricted to Admin)' },
-                { key: 'canViewPatientDesk', label: 'Patient Intake & OPD Queue', icon: Users, desc: 'Token booking, patient registration' },
-                { key: 'canViewEMRDesk', label: 'EMR & Clinical Desk', icon: Briefcase, desc: 'Clinical consultations, prescriptions' },
-                { key: 'canViewErpDesk', label: 'Mini ERP System', icon: Building2, desc: 'Complete enterprise accounting, vendors, PO/GRN, HR & Cash Book' },
-                { key: 'canViewPharmacyPOS', label: 'Pharmacy POS & Medicine Inventory', icon: Building, desc: 'Medicine sales counter & GRN stock' },
-                { key: 'canViewReportingDesk', label: 'Financial & Executive Reports', icon: Printer, desc: 'Ledgers, Income statement, Trial balance' },
-                { key: 'canViewUploadingDesk', label: 'CSV Imports & Uploads Desk', icon: Upload, desc: 'Bulk medicine & patient data imports' },
-                { key: 'canViewSettingsDesk', label: 'System Setup & Settings Desk', icon: Settings, desc: 'Clinic setup, SMS & access control' },
-                { key: 'canViewQueryHandlerDesk', label: 'Query Handler & System Audit', icon: Database, desc: 'Database query & audit log inspection' },
-                { key: 'canViewNhcHistoryDesk', label: 'NHC Patient Clinical History', icon: UserCheck, desc: 'Historical EMR & consultation logs' }
-              ].map((item) => {
-                const isEnabled = !!(accessPermissions as any)[item.key];
+            {/* Main Menu Cards Grid */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {MAIN_MENU_CONFIGS.map((menu) => {
+                const isMainAllowed = !!accessPermissions[menu.permKey];
+                
+                // Count enabled sub-menus
+                const allowedSubCount = menu.subMenus.filter(sub => accessPermissions[sub.key] !== false).length;
+                const totalSubCount = menu.subMenus.length;
+
+                // Count enabled action items
+                const allowedActionCount = menu.actionItems.filter(item => accessPermissions[item.key] !== false).length;
+                const totalActionCount = menu.actionItems.length;
+
+                // Menu color classes
+                const colorMap: Record<string, { bg: string; border: string; text: string; badge: string }> = {
+                  teal: { bg: 'bg-teal-50/60', border: 'border-teal-300', text: 'text-teal-700', badge: 'bg-teal-100 text-teal-800' },
+                  blue: { bg: 'bg-blue-50/60', border: 'border-blue-300', text: 'text-blue-700', badge: 'bg-blue-100 text-blue-800' },
+                  indigo: { bg: 'bg-indigo-50/60', border: 'border-indigo-300', text: 'text-indigo-700', badge: 'bg-indigo-100 text-indigo-800' },
+                  emerald: { bg: 'bg-emerald-50/60', border: 'border-emerald-300', text: 'text-emerald-700', badge: 'bg-emerald-100 text-emerald-800' },
+                  purple: { bg: 'bg-purple-50/60', border: 'border-purple-300', text: 'text-purple-700', badge: 'bg-purple-100 text-purple-800' },
+                  amber: { bg: 'bg-amber-50/60', border: 'border-amber-300', text: 'text-amber-700', badge: 'bg-amber-100 text-amber-800' },
+                  slate: { bg: 'bg-slate-50/80', border: 'border-slate-300', text: 'text-slate-700', badge: 'bg-slate-200 text-slate-800' },
+                  cyan: { bg: 'bg-cyan-50/60', border: 'border-cyan-300', text: 'text-cyan-700', badge: 'bg-cyan-100 text-cyan-800' },
+                  rose: { bg: 'bg-rose-50/60', border: 'border-rose-300', text: 'text-rose-700', badge: 'bg-rose-100 text-rose-800' },
+                  violet: { bg: 'bg-violet-50/60', border: 'border-violet-300', text: 'text-violet-700', badge: 'bg-violet-100 text-violet-800' },
+                };
+                const colors = colorMap[menu.color] || colorMap.blue;
+
                 return (
-                  <label
-                    key={item.key}
-                    onClick={() => handleToggleDeskPermission(item.key as any)}
-                    className={`p-3.5 rounded-xl border transition-all flex items-start justify-between cursor-pointer select-none ${
-                      isEnabled 
-                        ? 'bg-blue-50/60 border-blue-200 text-slate-900 shadow-2xs' 
-                        : 'bg-slate-50 border-slate-200 text-slate-500 opacity-60 hover:opacity-100'
+                  <div
+                    key={menu.id}
+                    className={`p-5 rounded-2xl border transition-all space-y-4 shadow-2xs ${
+                      isMainAllowed
+                        ? `${colors.bg} ${colors.border} ring-1 ring-${menu.color}-300/30`
+                        : 'bg-slate-50/60 border-slate-200 opacity-70 hover:opacity-100'
                     }`}
                   >
-                    <div className="space-y-0.5 pr-2">
-                      <div className="flex items-center space-x-1.5 font-extrabold text-xs">
-                        <item.icon className={`w-3.5 h-3.5 ${isEnabled ? 'text-blue-600' : 'text-slate-400'}`} />
-                        <span>{item.label}</span>
+                    {/* Top Row: Icon, Menu Title, Toggle Switch */}
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-center space-x-3">
+                        <div className={`p-3 rounded-xl border shrink-0 ${
+                          isMainAllowed
+                            ? `bg-white shadow-2xs ${colors.text} ${colors.border}`
+                            : 'bg-slate-200 text-slate-500 border-slate-300'
+                        }`}>
+                          <menu.icon className="w-5 h-5" />
+                        </div>
+                        <div>
+                          <div className="flex items-center space-x-2">
+                            <h5 className="font-extrabold text-slate-900 text-sm">{menu.name}</h5>
+                          </div>
+                          <p className="text-[11px] text-slate-500 font-medium line-clamp-2 mt-0.5">
+                            {menu.desc}
+                          </p>
+                        </div>
                       </div>
-                      <p className="text-[10px] text-slate-500 font-medium">{item.desc}</p>
+
+                      {/* Main Menu Toggle Switch */}
+                      <button
+                        type="button"
+                        disabled={selectedAccessUser?.Role === 'Administrator'}
+                        onClick={() => handleToggleMainMenu(menu.id)}
+                        className={`w-11 h-6 rounded-full transition-colors relative shrink-0 cursor-pointer disabled:opacity-50 ${
+                          isMainAllowed ? 'bg-blue-600' : 'bg-slate-300'
+                        }`}
+                        title={isMainAllowed ? 'Click to Restrict Main Menu' : 'Click to Allow Main Menu & Configure Sub-Menus in Pop-up'}
+                      >
+                        <div className={`w-5 h-5 rounded-full bg-white shadow-xs absolute top-0.5 transition-transform ${
+                          isMainAllowed ? 'left-5.5' : 'left-0.5'
+                        }`} />
+                      </button>
                     </div>
 
-                    <div className="mt-0.5 shrink-0">
-                      <div className={`w-9 h-5 rounded-full transition-colors relative ${isEnabled ? 'bg-blue-600' : 'bg-slate-300'}`}>
-                        <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${isEnabled ? 'left-4.5' : 'left-0.5'}`} />
-                      </div>
+                    {/* Middle Row: Sub-menu and Action Items Statistics Badges */}
+                    <div className="flex flex-wrap items-center gap-2 pt-1">
+                      <span className={`px-2.5 py-1 rounded-lg text-xxs font-bold border ${
+                        isMainAllowed 
+                          ? 'bg-emerald-100 text-emerald-800 border-emerald-200' 
+                          : 'bg-slate-200 text-slate-600 border-slate-300'
+                      }`}>
+                        {isMainAllowed ? '🟢 Main Menu Allowed' : '⚪ Main Menu Restricted'}
+                      </span>
+
+                      {totalSubCount > 0 && (
+                        <span className="px-2.5 py-1 rounded-lg text-xxs font-semibold bg-white/90 text-slate-700 border border-slate-200 shadow-2xs">
+                          📑 Sub-Menus: <strong className={isMainAllowed ? 'text-blue-700' : 'text-slate-500'}>{isMainAllowed ? allowedSubCount : 0}/{totalSubCount}</strong>
+                        </span>
+                      )}
+
+                      {totalActionCount > 0 && (
+                        <span className="px-2.5 py-1 rounded-lg text-xxs font-semibold bg-white/90 text-slate-700 border border-slate-200 shadow-2xs">
+                          ⚡ Action Items: <strong className={isMainAllowed ? 'text-purple-700' : 'text-slate-500'}>{isMainAllowed ? allowedActionCount : 0}/{totalActionCount}</strong>
+                        </span>
+                      )}
                     </div>
-                  </label>
+
+                    {/* Bottom Row: Pop-up Sub-Menu & Item Configuration Button */}
+                    <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between gap-2">
+                      <span className="text-[10px] text-slate-500 italic">
+                        {isMainAllowed
+                          ? 'Click configure to manage individual sub-menus, buttons & actions in pop-up'
+                          : 'Turn switch ON to configure sub-menus & specific buttons'}
+                      </span>
+
+                      <button
+                        type="button"
+                        onClick={() => handleOpenMainMenuConfig(menu.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center space-x-1.5 shrink-0 ${
+                          isMainAllowed
+                            ? 'bg-slate-900 text-white hover:bg-blue-600 shadow-xs cursor-pointer'
+                            : 'bg-slate-200 text-slate-700 hover:bg-slate-300 cursor-pointer'
+                        }`}
+                      >
+                        <Sliders className="w-3.5 h-3.5 text-blue-400" />
+                        <span>⚙️ Configure Sub-Menus (Pop-up)</span>
+                      </button>
+                    </div>
+                  </div>
                 );
               })}
-            </div>
-          </div>
-
-          {/* Section 2.2: Mini ERP System Sub-Desk & Feature Granular Controls */}
-          <div className="bg-white p-6 rounded-2xl border border-indigo-200 shadow-sm space-y-5">
-            <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
-              <div>
-                <h4 className="text-sm font-black text-slate-800 flex items-center space-x-2">
-                  <Building2 className="w-4 h-4 text-indigo-600" />
-                  <span>Mini ERP System Sub-Desk & Feature Controls</span>
-                </h4>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Administer individual sub-modules inside Mini ERP System for <strong className="text-slate-800">{selectedAccessUser?.FullName}</strong>.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-              {[
-                { key: 'canAccessErpOverview', label: 'ERP Dashboard & Overview', icon: PieChart, desc: 'Overall financial KPIs, revenue, cash position' },
-                { key: 'canAccessErpFiscalCalendar', label: 'Fiscal Year & Calendar', icon: Calendar, desc: 'Financial periods, closing & quarterly reviews' },
-                { key: 'canAccessErpCashBook', label: 'Clinic Cash Book & P&L', icon: Landmark, desc: 'Cash inflows, patient fees, expenses & profit/loss' },
-                { key: 'canAccessErpVendors', label: 'Vendors & Suppliers Management', icon: Building2, desc: 'Vendor directory, profiles, contact & tax info' },
-                { key: 'canAccessErpVendorStatement', label: 'Vendor Payments & Statements', icon: FileText, desc: 'Pay vendor invoices, issue payment vouchers & statements' },
-                { key: 'canAccessErpPoGrn', label: 'Purchase Orders & GRN Stock', icon: ShoppingCart, desc: 'Create PO, Goods Received Notes & partial receiving' },
-                { key: 'canAccessErpLedger', label: 'Financial Ledger & Journal', icon: Receipt, desc: 'Double-entry transaction logs & audit postings' },
-                { key: 'canAccessErpHrPayroll', label: 'HR & Staff Payroll', icon: Users, desc: 'Employee records, monthly salaries & payroll disbursement' },
-                { key: 'canAccessErpExpensesAssets', label: 'Clinic Expenses & Assets', icon: Boxes, desc: 'Track clinic operating expenses & fixed asset register' },
-                { key: 'canAccessErpReporting', label: 'ERP Reporting & Analytics', icon: BarChart3, desc: 'Comprehensive financial statements & performance analytics' }
-              ].map((item) => {
-                const isEnabled = accessPermissions[item.key as keyof typeof accessPermissions] !== false;
-                return (
-                  <label
-                    key={item.key}
-                    onClick={() => handleToggleDeskPermission(item.key as any)}
-                    className={`p-3 rounded-xl border transition-all flex items-start justify-between cursor-pointer select-none ${
-                      isEnabled 
-                        ? 'bg-indigo-50/70 border-indigo-300 text-slate-900 shadow-2xs' 
-                        : 'bg-slate-50 border-slate-200 text-slate-500 opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    <div className="space-y-0.5 pr-2">
-                      <div className="flex items-center space-x-1.5 font-extrabold text-xs">
-                        <item.icon className={`w-3.5 h-3.5 ${isEnabled ? 'text-indigo-600' : 'text-slate-400'}`} />
-                        <span>{item.label}</span>
-                      </div>
-                      <p className="text-[10px] text-slate-500 font-medium">{item.desc}</p>
-                    </div>
-
-                    <div className="mt-0.5 shrink-0">
-                      <div className={`w-9 h-5 rounded-full transition-colors relative ${isEnabled ? 'bg-indigo-600' : 'bg-slate-300'}`}>
-                        <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${isEnabled ? 'left-4.5' : 'left-0.5'}`} />
-                      </div>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Section 2.3: Pharmacy POS & Dispensary Sub-Desk & Feature Controls */}
-          <div className="bg-white p-6 rounded-2xl border border-emerald-200 shadow-sm space-y-5">
-            <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
-              <div>
-                <h4 className="text-sm font-black text-slate-800 flex items-center space-x-2">
-                  <ShoppingCart className="w-4 h-4 text-emerald-600" />
-                  <span>Pharmacy POS & Dispensary Sub-Desk Controls</span>
-                </h4>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Configure specific dispensary counters, sales screens, and mobile app installation buttons for <strong className="text-slate-800">{selectedAccessUser?.FullName}</strong>.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-              {[
-                { key: 'canAccessClinicalMedicine', label: 'Clinical Medicine POS Counter', icon: ShoppingCart, desc: 'Doctor prescription dispensing checkout' },
-                { key: 'canAccessStoreMedicine', label: 'Store Medicine Sales Counter', icon: ShoppingCart, desc: 'Direct retail store medicine POS billing' },
-                { key: 'canAccessSalesReturns', label: 'Sales Returns & Refunds', icon: Undo2, desc: 'Customer return processing & bill adjustment' },
-                { key: 'canAccessStockManager', label: 'Stock Grid & Medicine Manager', icon: Database, desc: 'Inventory catalog, batches & pricing overview' },
-                { key: 'canAccessInvoiceLogs', label: 'Invoice Logs & Past Receipts', icon: History, desc: 'View past transaction receipts & reprint bills' },
-                { key: 'canAccessMedicineLabels', label: 'Clinic Medicine Label Printer', icon: Tag, desc: 'Print thermal bottle & strip dosage labels' },
-                { key: 'canViewPwaInstall', label: '📱 Install Mobile / Android App Button', icon: Smartphone, desc: 'Show/Hide the Store Medicine APK / PWA install modal and header button' }
-              ].map((item) => {
-                const isEnabled = accessPermissions[item.key as keyof typeof accessPermissions] !== false;
-                return (
-                  <label
-                    key={item.key}
-                    onClick={() => handleToggleDeskPermission(item.key as any)}
-                    className={`p-3 rounded-xl border transition-all flex items-start justify-between cursor-pointer select-none ${
-                      isEnabled 
-                        ? 'bg-emerald-50/70 border-emerald-300 text-slate-900 shadow-2xs' 
-                        : 'bg-slate-50 border-slate-200 text-slate-500 opacity-60 hover:opacity-100'
-                    }`}
-                  >
-                    <div className="space-y-0.5 pr-2">
-                      <div className="flex items-center space-x-1.5 font-extrabold text-xs">
-                        <item.icon className={`w-3.5 h-3.5 ${isEnabled ? 'text-emerald-600' : 'text-slate-400'}`} />
-                        <span>{item.label}</span>
-                      </div>
-                      <p className="text-[10px] text-slate-500 font-medium">{item.desc}</p>
-                    </div>
-
-                    <div className="mt-0.5 shrink-0">
-                      <div className={`w-9 h-5 rounded-full transition-colors relative ${isEnabled ? 'bg-emerald-600' : 'bg-slate-300'}`}>
-                        <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${isEnabled ? 'left-4.5' : 'left-0.5'}`} />
-                      </div>
-                    </div>
-                  </label>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* Section 2.5: Patient Intake, Registration & Queue Granular Access Controls */}
-          <div className="bg-white p-6 rounded-2xl border border-teal-200 shadow-sm space-y-5">
-            <div className="border-b border-slate-100 pb-3 flex justify-between items-center">
-              <div>
-                <h4 className="text-sm font-black text-slate-800 flex items-center space-x-2">
-                  <UserPlus className="w-4 h-4 text-teal-600" />
-                  <span>Patient Intake & Appointment Desk Granular Controls</span>
-                </h4>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  Specify exact sub-desk tabs and action permissions (Waiting Queue, Registration Form, Token Issue, Appointments) for <strong className="text-slate-800">{selectedAccessUser?.FullName}</strong>.
-                </p>
-              </div>
-            </div>
-
-            {/* Sub-Desk Tabs Permissions */}
-            <div className="space-y-2">
-              <span className="text-xs font-bold text-slate-700 block">Accessible Sub-Desk Tabs & Views:</span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-                {[
-                  { key: 'canAccessWaitingQueue', label: 'Waiting Queue Desk', icon: ListOrdered, desc: 'View OPD queue list & token status' },
-                  { key: 'canAccessPatientRegistration', label: 'Registration Form', icon: UserPlus, desc: 'Register new patients & view directory' },
-                  { key: 'canAccessTokenIssue', label: 'Token Issue Counter', icon: Ticket, desc: 'Generate & print OPD shift tokens' },
-                  { key: 'canAccessPatientVisitDesk', label: 'Patient Clinical Visit', icon: Stethoscope, desc: 'Prescribe medicine & symptom details' },
-                  { key: 'canAccessGridView', label: 'Patient Master Grid View', icon: LayoutGrid, desc: 'View comprehensive searchable patient master records grid' },
-                  { key: 'canAccessAppointmentsDesk', label: 'Book Appointment & List', icon: CalendarPlus, desc: 'Schedule future patient appointments' },
-                  { key: 'canAccessLargeScreenDisplay', label: 'Large Screen Queue Display', icon: Users, desc: 'Full-screen waiting queue for TV' }
-                ].map((item) => {
-                  const isEnabled = accessPermissions[item.key as keyof typeof accessPermissions] !== false;
-                  return (
-                    <label
-                      key={item.key}
-                      onClick={() => handleToggleDeskPermission(item.key as any)}
-                      className={`p-3 rounded-xl border transition-all flex items-start justify-between cursor-pointer select-none ${
-                        isEnabled 
-                          ? 'bg-teal-50/70 border-teal-300 text-slate-900 shadow-2xs' 
-                          : 'bg-slate-50 border-slate-200 text-slate-500 opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      <div className="space-y-0.5 pr-2">
-                        <div className="flex items-center space-x-1.5 font-extrabold text-xs">
-                          <item.icon className={`w-3.5 h-3.5 ${isEnabled ? 'text-teal-600' : 'text-slate-400'}`} />
-                          <span>{item.label}</span>
-                        </div>
-                        <p className="text-[10px] text-slate-500 font-medium">{item.desc}</p>
-                      </div>
-
-                      <div className="mt-0.5 shrink-0">
-                        <div className={`w-9 h-5 rounded-full transition-colors relative ${isEnabled ? 'bg-teal-600' : 'bg-slate-300'}`}>
-                          <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${isEnabled ? 'left-4.5' : 'left-0.5'}`} />
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Specific Action Permissions */}
-            <div className="space-y-2 pt-2 border-t border-slate-100">
-              <span className="text-xs font-bold text-slate-700 block">Specific Action & Form Privileges:</span>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
-                {[
-                  { key: 'canAddPatient', label: 'Add / Save New Patient', icon: UserPlus, desc: 'Submit patient intake form' },
-                  { key: 'canEditPatient', label: 'Edit Existing Patient', icon: Edit3, desc: 'Modify demographic & phone data' },
-                  { key: 'canIssueToken', label: 'Issue / Generate Token', icon: Ticket, desc: 'Print & issue queue token tickets' },
-                  { key: 'canCallServeToken', label: 'Call / Serve / Cancel Token', icon: CheckCircle2, desc: 'Update token status in waiting queue' },
-                  { key: 'canBookAppointment', label: 'Book / Reschedule Appointment', icon: Calendar, desc: 'Schedule future appointments' },
-                  { key: 'canCancelAppointment', label: 'Cancel / Delete Appointment', icon: Ban, desc: 'Remove appointments from system (Admin only)' },
-                  { key: 'canDeleteToken', label: 'Delete Issued Token', icon: Trash2, desc: 'Delete or cancel mistakenly issued queue tokens (Admin only)' },
-                  { key: 'canEditStockLevel', label: 'Edit Current Stock Level', icon: Boxes, desc: 'Allow editing current medicine stock quantities & thresholds in Inventory' }
-                ].map((item) => {
-                  const isEnabled = accessPermissions[item.key as keyof typeof accessPermissions] !== false;
-                  return (
-                    <label
-                      key={item.key}
-                      onClick={() => handleToggleDeskPermission(item.key as any)}
-                      className={`p-3 rounded-xl border transition-all flex items-start justify-between cursor-pointer select-none ${
-                        isEnabled 
-                          ? 'bg-purple-50/70 border-purple-300 text-slate-900 shadow-2xs' 
-                          : 'bg-slate-50 border-slate-200 text-slate-500 opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      <div className="space-y-0.5 pr-2">
-                        <div className="flex items-center space-x-1.5 font-extrabold text-xs">
-                          <item.icon className={`w-3.5 h-3.5 ${isEnabled ? 'text-purple-600' : 'text-slate-400'}`} />
-                          <span>{item.label}</span>
-                        </div>
-                        <p className="text-[10px] text-slate-500 font-medium">{item.desc}</p>
-                      </div>
-
-                      <div className="mt-0.5 shrink-0">
-                        <div className={`w-9 h-5 rounded-full transition-colors relative ${isEnabled ? 'bg-purple-600' : 'bg-slate-300'}`}>
-                          <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${isEnabled ? 'left-4.5' : 'left-0.5'}`} />
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
-            </div>
-
-            {/* Printing & Document Generation Permissions (Admin Controlled) */}
-            <div className="space-y-2 pt-3 border-t border-slate-100">
-              <div className="flex justify-between items-center">
-                <span className="text-xs font-black text-amber-900 uppercase tracking-wider flex items-center space-x-1.5">
-                  <Printer className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Printing & Document Export Privileges (Admin Master Control):</span>
-                </span>
-                <span className="text-[10px] text-slate-500 italic">Toggle printing rights for {selectedAccessUser?.FullName}</span>
-              </div>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
-                {[
-                  { key: 'canPrintPrescription', label: 'A4 Prescription Letterhead', icon: Printer, desc: 'Print doctor prescription & advice' },
-                  { key: 'canPrintLabAdvice', label: 'Lab Test Advice Slip', icon: Printer, desc: 'Print laboratory investigation advice' },
-                  { key: 'canPrintVisitSlip', label: 'A5 Patient Visit Receipt', icon: Printer, desc: 'Print consultation visit receipt' },
-                  { key: 'canPrintTokenSlip', label: 'OPD Queue Token Ticket', icon: Ticket, desc: 'Print waiting token slip' },
-                  { key: 'canPrintPOSInvoice', label: 'Pharmacy Sales Bill POS', icon: Printer, desc: 'Print medicine cash & credit bills' },
-                  { key: 'canPrintVouchers', label: 'Accounting Vouchers', icon: Printer, desc: 'Print Cash Payment & Journal Vouchers' },
-                  { key: 'canPrintFinancialReports', label: 'Financial & Grid Reports', icon: Printer, desc: 'Print P&L, Ledgers & Patients Grid' },
-                  { key: 'canExportCSVExcel', label: 'CSV & Excel Data Export', icon: Upload, desc: 'Export system lists to CSV/Excel' }
-                ].map((item) => {
-                  const isEnabled = accessPermissions[item.key as keyof typeof accessPermissions] !== false;
-                  return (
-                    <label
-                      key={item.key}
-                      onClick={() => handleToggleDeskPermission(item.key as any)}
-                      className={`p-3 rounded-xl border transition-all flex items-start justify-between cursor-pointer select-none ${
-                        isEnabled 
-                          ? 'bg-amber-50/80 border-amber-300 text-slate-900 shadow-2xs' 
-                          : 'bg-slate-50 border-slate-200 text-slate-500 opacity-60 hover:opacity-100'
-                      }`}
-                    >
-                      <div className="space-y-0.5 pr-2">
-                        <div className="flex items-center space-x-1.5 font-extrabold text-xs">
-                          <item.icon className={`w-3.5 h-3.5 ${isEnabled ? 'text-amber-600' : 'text-slate-400'}`} />
-                          <span>{item.label}</span>
-                        </div>
-                        <p className="text-[10px] text-slate-500 font-medium">{item.desc}</p>
-                      </div>
-
-                      <div className="mt-0.5 shrink-0">
-                        <div className={`w-9 h-5 rounded-full transition-colors relative ${isEnabled ? 'bg-amber-600' : 'bg-slate-300'}`}>
-                          <div className={`w-4 h-4 rounded-full bg-white absolute top-0.5 transition-transform ${isEnabled ? 'left-4.5' : 'left-0.5'}`} />
-                        </div>
-                      </div>
-                    </label>
-                  );
-                })}
-              </div>
             </div>
           </div>
 
@@ -2292,40 +2491,72 @@ export default function SettingsDesk({
           </div>
 
           {/* Bottom Save Action Floating Bar */}
-          <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-md">
+          <div className="bg-slate-900 text-white p-4 rounded-2xl border border-slate-800 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-lg">
             <div className="flex items-center space-x-3">
-              <ShieldCheck className="w-5 h-5 text-purple-400 shrink-0" />
+              <div className={`p-2 rounded-xl shrink-0 ${
+                accessApprovalStatus === 'Approved'
+                  ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                  : accessApprovalStatus === 'Pending'
+                  ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
+                  : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+              }`}>
+                <ShieldCheck className="w-5 h-5" />
+              </div>
               <div>
-                <span className="text-xs font-bold block">
-                  {selectedAccessUser?.Role === 'Administrator'
-                    ? 'Administrator Access Locked (Full Privileges)'
-                    : `Save Custom Access Profile for ${selectedAccessUser?.FullName}`}
-                </span>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-bold block text-white">
+                    {selectedAccessUser?.Role === 'Administrator'
+                      ? 'Administrator Access Locked (Full Privileges)'
+                      : `Save Access Profile for ${selectedAccessUser?.FullName}`}
+                  </span>
+                  <span className={`text-[10px] font-black uppercase px-2 py-0.2 rounded-md border ${
+                    accessApprovalStatus === 'Approved'
+                      ? 'bg-emerald-950/80 text-emerald-300 border-emerald-500/40'
+                      : accessApprovalStatus === 'Pending'
+                      ? 'bg-amber-950/80 text-amber-300 border-amber-500/40'
+                      : 'bg-rose-950/80 text-rose-300 border-rose-500/40'
+                  }`}>
+                    {accessApprovalStatus}
+                  </span>
+                </div>
                 <span className="text-[10px] text-slate-400">
                   {selectedAccessUser?.Role === 'Administrator'
                     ? 'Admin accounts maintain full system permissions by default.'
-                    : 'All modified desk permissions, action rights, and user visibility rules will instantly apply.'}
+                    : 'Modifications broadcast instantly across open windows without requiring page refresh.'}
                 </span>
               </div>
             </div>
 
-            <button
-              type="button"
-              disabled={selectedAccessUser?.Role === 'Administrator'}
-              onClick={handleSaveAccessPermissions}
-              className={`w-full sm:w-auto px-6 py-2.5 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center space-x-2 ${
-                selectedAccessUser?.Role === 'Administrator'
-                  ? 'bg-slate-700 opacity-60 cursor-not-allowed'
-                  : 'bg-purple-600 hover:bg-purple-500 cursor-pointer'
-              }`}
-            >
-              <Save className="w-4 h-4" />
-              <span>
-                {selectedAccessUser?.Role === 'Administrator'
-                  ? 'Admin Self-Access Profile Locked'
-                  : 'Save & Apply Access Matrix'}
-              </span>
-            </button>
+            <div className="flex items-center space-x-2 w-full sm:w-auto">
+              <button
+                type="button"
+                disabled={selectedAccessUser?.Role === 'Administrator'}
+                onClick={handleApproveAndGrantAccess}
+                className={`flex-1 sm:flex-initial px-4 py-2.5 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center space-x-2 ${
+                  selectedAccessUser?.Role === 'Administrator'
+                    ? 'bg-slate-700 opacity-50 cursor-not-allowed'
+                    : 'bg-emerald-600 hover:bg-emerald-500 cursor-pointer shadow-emerald-900/30'
+                }`}
+                title="Approve permissions and grant immediate access"
+              >
+                <CheckCircle2 className="w-4 h-4 text-emerald-200" />
+                <span>Approve & Grant Access</span>
+              </button>
+
+              <button
+                type="button"
+                disabled={selectedAccessUser?.Role === 'Administrator'}
+                onClick={() => handleSaveAccessPermissions()}
+                className={`flex-1 sm:flex-initial px-5 py-2.5 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center space-x-2 ${
+                  selectedAccessUser?.Role === 'Administrator'
+                    ? 'bg-slate-700 opacity-60 cursor-not-allowed'
+                    : 'bg-purple-600 hover:bg-purple-500 cursor-pointer shadow-purple-900/30'
+                }`}
+              >
+                <Save className="w-4 h-4" />
+                <span>Save Matrix</span>
+              </button>
+            </div>
           </div>
 
         </div>
@@ -3149,6 +3380,28 @@ export default function SettingsDesk({
         onClose={() => setIsBackupModalOpen(false)}
         targetDbName={mongoDatabase || 'PharmacyPOSDB'}
         bridgeUrl={mongoDbSettings.BridgeUrl || ''}
+      />
+
+      {/* 3-Step Main Menu Granular Pop-up Configuration Modal */}
+      <MainMenuConfigModal
+        isOpen={!!configuringMainMenuId}
+        onClose={() => setConfiguringMainMenuId(null)}
+        mainMenu={MAIN_MENU_CONFIGS.find(m => m.id === configuringMainMenuId) || null}
+        menu={MAIN_MENU_CONFIGS.find(m => m.id === configuringMainMenuId) || null}
+        targetUser={selectedAccessUser}
+        user={selectedAccessUser}
+        currentUser={currentUser}
+        accessPermissions={accessPermissions}
+        permissions={accessPermissions}
+        onTogglePermission={handleToggleDeskPermission}
+        onSetPermissions={setAccessPermissions}
+        accessUserRights={accessUserRights}
+        userRights={accessUserRights}
+        onToggleUserRight={handleToggleUserRight}
+        onApproveAndSave={() => {
+          setConfiguringMainMenuId(null);
+          handleSaveAccessPermissions('Approved');
+        }}
       />
 
     </div>
