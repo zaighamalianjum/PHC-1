@@ -1,186 +1,114 @@
 {
-  "system_init": [
+  "ac_ledger": [
     {
-      "_id": "INIT_FLAG",
-      "seeded": true,
-      "initializedAt": "2026-08-12T14:11:06.151Z"
+      "ACLedgerID": "LG-CRV-OPD-WALK-0001-1",
+      "VchNo": "CRV-OPD-WALK-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 101001,
+      "Debit": 2222,
+      "Credit": 0,
+      "Remarks": "Walk-in Consultation Ticket cash collected",
+      "_id": "5mhdcslqo"
+    },
+    {
+      "ACLedgerID": "LG-CRV-OPD-WALK-0001-2",
+      "VchNo": "CRV-OPD-WALK-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 401101,
+      "Debit": 0,
+      "Credit": 2222,
+      "Remarks": "Walk-in OPD Ticket Revenue posted",
+      "_id": "7iojw8r89"
+    },
+    {
+      "ACLedgerID": "LG-CRV-EMR-CLIN-0001-1",
+      "VchNo": "CRV-EMR-CLIN-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 101001,
+      "Debit": 1500,
+      "Credit": 0,
+      "Remarks": "Clinical compounding medicine payment cash collected (Shift 1)",
+      "_id": "iscqx6pvn"
+    },
+    {
+      "ACLedgerID": "LG-CRV-EMR-CLIN-0001-2",
+      "VchNo": "CRV-EMR-CLIN-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 401102,
+      "Debit": 0,
+      "Credit": 1500,
+      "Remarks": "Clinical compounding medicine revenue mapped",
+      "_id": "7vmep88zy"
+    },
+    {
+      "ACLedgerID": "LG-CRV-EMR-CARD-0001-1",
+      "VchNo": "CRV-EMR-CARD-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 101001,
+      "Debit": 244,
+      "Credit": 0,
+      "Remarks": "File & Card fee cash collected (Shift 1)",
+      "_id": "59dowaegv"
+    },
+    {
+      "ACLedgerID": "LG-CRV-EMR-CARD-0001-2",
+      "VchNo": "CRV-EMR-CARD-0001",
+      "TxDate": "2026-08-12",
+      "TLID": 401105,
+      "Debit": 0,
+      "Credit": 244,
+      "Remarks": "File & Card fee revenue mapped (File PKR 22, Card PKR 222)",
+      "_id": "pgp248ag2"
+    },
+    {
+      "ACLedgerID": "GL-POST-BHNH003LM",
+      "_id": "s66uy7pfg"
+    },
+    {
+      "ACLedgerID": "GL-POST-E8SL7ZX0C",
+      "_id": "82y5s47x6"
+    },
+    {
+      "ACLedgerID": "GL-POST-A2UXAP1T3",
+      "_id": "ica41hmfa"
+    },
+    {
+      "ACLedgerID": "GL-POST-5ZFT0Y3W0",
+      "_id": "um9chbret"
+    },
+    {
+      "ACLedgerID": "GL-POST-ABVGJAAGM",
+      "_id": "qpaq4wplt"
+    },
+    {
+      "ACLedgerID": "GL-POST-OISHRPOR4",
+      "_id": "48ng8av4c"
+    },
+    {
+      "ACLedgerID": "GL-POST-8G3ZYU0KV",
+      "_id": "qe8q7r9is"
+    },
+    {
+      "ACLedgerID": "GL-POST-EE50OL01M",
+      "_id": "fel2lxvnr"
+    },
+    {
+      "ACLedgerID": "GL-POST-ZW1157KEW",
+      "_id": "v5m1aums7"
+    },
+    {
+      "ACLedgerID": "GL-POST-47RSGW403",
+      "_id": "ti0hg9b0k"
+    },
+    {
+      "ACLedgerID": "GL-POST-DCN0JMEIA",
+      "_id": "kv3v17mfp"
+    },
+    {
+      "ACLedgerID": "GL-POST-EUI6BX8MW",
+      "_id": "b1ryg74mh"
     }
   ],
-  "users": [
-    {
-      "UserID": "USR-001",
-      "LoginName": "admin",
-      "FullName": "Dr. Zaigham Ali Anjum",
-      "PasswordHash": "123456",
-      "Role": "Administrator",
-      "AssignedShift": "Both",
-      "_id": "h2zooslml"
-    },
-    {
-      "UserID": "USR-002",
-      "LoginName": "doctor",
-      "FullName": "Dr. Amna Malik",
-      "PasswordHash": "doctor123",
-      "Role": "Doctor",
-      "AssignedShift": 1,
-      "_id": "5ev8nnzw7"
-    },
-    {
-      "UserID": "USR-003",
-      "LoginName": "pharmacist",
-      "FullName": "M. Kashif Qadri",
-      "PasswordHash": "pharmacy123",
-      "Role": "Pharmacist",
-      "AssignedShift": "Both",
-      "_id": "akjd9bn56"
-    },
-    {
-      "UserID": "USR-004",
-      "LoginName": "reception",
-      "FullName": "Ayesha Bibi",
-      "PasswordHash": "rec123",
-      "Role": "Receptionist",
-      "AssignedShift": 1,
-      "_id": "2phqemfly"
-    },
-    {
-      "UserID": "USR-005",
-      "LoginName": "accountant",
-      "FullName": "Naveed Ahmad Sheikh",
-      "PasswordHash": "acct123",
-      "Role": "Accountant",
-      "AssignedShift": "Both",
-      "_id": "5x8hdr2it"
-    }
-  ],
-  "patients": [],
-  "items": [],
-  "cities": [
-    {
-      "CityID": 1,
-      "CityName": "Lahore",
-      "_id": "n2bf0dpxn"
-    },
-    {
-      "CityID": 2,
-      "CityName": "Faisalabad",
-      "_id": "g9ld5g9xr"
-    },
-    {
-      "CityID": 3,
-      "CityName": "Rawalpindi",
-      "_id": "ny1k66e1a"
-    },
-    {
-      "CityID": 4,
-      "CityName": "Multan",
-      "_id": "izjq8hhmw"
-    },
-    {
-      "CityID": 5,
-      "CityName": "Gujranwala",
-      "_id": "n6ov75hrf"
-    },
-    {
-      "CityID": 6,
-      "CityName": "Sialkot",
-      "_id": "7u03ml2ne"
-    },
-    {
-      "CityID": 7,
-      "CityName": "Sargodha",
-      "_id": "7362ih0vp"
-    },
-    {
-      "CityID": 8,
-      "CityName": "Bahawalpur",
-      "_id": "jx9p5qz2n"
-    },
-    {
-      "CityID": 9,
-      "CityName": "Sahiwal",
-      "_id": "ivndi9wv0"
-    },
-    {
-      "CityID": 10,
-      "CityName": "Islamabad",
-      "_id": "b107d9yju"
-    }
-  ],
-  "appointments": [],
-  "tokens": [],
-  "visits": [
-    {
-      "VisitID": "VIS-1786546304881",
-      "PatientID": "PAT-003",
-      "VisitDate": "2026-08-12",
-      "SymptomsDiagnosis": "ADSADS",
-      "MedicalReportResult": "ADSASDASD",
-      "LabTestAdvice": "None",
-      "PatientAdvice": "Take medicines regularly.",
-      "VisitRemarks": "Clinical: ASDADS - ASDAD (EXP: 2026-09-02) | Patent: ASDADS - ASDASDSD | Medical Reports: ADSASDASD | Lab Tests: None | Charges: OPD Fee PKR 2222, Clinical Meds PKR 1500, File PKR 022, Card PKR 222 (Total PKR 3966)",
-      "Status": 2,
-      "FocWaivedOpdFee": 0,
-      "FocWaivedClinicalFee": 0,
-      "FocWaivedFileCardFee": 0,
-      "FocReason": "",
-      "ConsultationFee": 2222,
-      "ClinicalMedicinePayment": "1500",
-      "FileFee": "022",
-      "CardFee": "222",
-      "CardsPayment": "244",
-      "ConsultationPaymentOption": "Cash Paid",
-      "_id": "yhm4hj6w0"
-    }
-  ],
-  "visit_medicines": [
-    {
-      "VisitID": "VIS-1786546304881",
-      "ItemID": "CLIN-1",
-      "MedicineType": "C",
-      "MedicineDetail": "ASDADS",
-      "Dosage": "ASDAD",
-      "Qty": 1,
-      "ExpireDate": "2026-09-02",
-      "_id": "60716ad6c"
-    },
-    {
-      "VisitID": "VIS-1786546304881",
-      "ItemID": "PAT-1",
-      "MedicineType": "P",
-      "MedicineDetail": "ASDADS",
-      "Dosage": "ASDASDSD",
-      "Qty": 1,
-      "_id": "j2fasae3u"
-    }
-  ],
-  "lab_tests": [
-    {
-      "TID": "TST-001",
-      "TestName": "Complete Blood Count (CBC)",
-      "Cost": 650,
-      "_id": "p4g5lcge0"
-    },
-    {
-      "TID": "TST-002",
-      "TestName": "Blood Sugar Fasting / Random",
-      "Cost": 150,
-      "_id": "u8kka6fh8"
-    },
-    {
-      "TID": "TST-003",
-      "TestName": "Urine Routine Examination",
-      "Cost": 300,
-      "_id": "2x5oef7rn"
-    }
-  ],
-  "med_certs": [],
-  "sbp_certs": [],
-  "invoice_headers": [],
-  "invoice_details": [],
-  "sales_returns": [],
-  "grns": [],
-  "grn_details": [],
   "accounts": [
     {
       "FLID": 1,
@@ -399,68 +327,70 @@
       "_id": "mdg1tcb3x"
     }
   ],
-  "vouchers": [
+  "appointments": [],
+  "cities": [
     {
-      "VchNo": "CRV-OPD-WALK-0001",
-      "_id": "vhnpkn2l3"
+      "CityID": 1,
+      "CityName": "Lahore",
+      "_id": "n2bf0dpxn"
     },
     {
-      "VchNo": "CRV-EMR-CLIN-0001",
-      "_id": "vwut3l1km"
+      "CityID": 2,
+      "CityName": "Faisalabad",
+      "_id": "g9ld5g9xr"
     },
     {
-      "VchNo": "CRV-EMR-CARD-0001",
-      "_id": "isqi9f3kr"
+      "CityID": 3,
+      "CityName": "Rawalpindi",
+      "_id": "ny1k66e1a"
+    },
+    {
+      "CityID": 4,
+      "CityName": "Multan",
+      "_id": "izjq8hhmw"
+    },
+    {
+      "CityID": 5,
+      "CityName": "Gujranwala",
+      "_id": "n6ov75hrf"
+    },
+    {
+      "CityID": 6,
+      "CityName": "Sialkot",
+      "_id": "7u03ml2ne"
+    },
+    {
+      "CityID": 7,
+      "CityName": "Sargodha",
+      "_id": "7362ih0vp"
+    },
+    {
+      "CityID": 8,
+      "CityName": "Bahawalpur",
+      "_id": "jx9p5qz2n"
+    },
+    {
+      "CityID": 9,
+      "CityName": "Sahiwal",
+      "_id": "ivndi9wv0"
+    },
+    {
+      "CityID": 10,
+      "CityName": "Islamabad",
+      "_id": "b107d9yju"
     }
   ],
-  "voucher_details": [
+  "clinic": [
     {
-      "VchNo": "CRV-OPD-WALK-0001",
-      "TLID": 101001,
-      "Debit": 2222,
-      "Credit": 0,
-      "Description": "Walk-in Consultation Ticket cash collected",
-      "_id": "4fo469d69"
-    },
-    {
-      "VchNo": "CRV-OPD-WALK-0001",
-      "TLID": 401101,
-      "Debit": 0,
-      "Credit": 2222,
-      "Description": "Walk-in OPD Ticket Revenue posted",
-      "_id": "8dj8d42tc"
-    },
-    {
-      "VchNo": "CRV-EMR-CLIN-0001",
-      "TLID": 101001,
-      "Debit": 1500,
-      "Credit": 0,
-      "Description": "Clinical compounding medicine payment cash collected (Shift 1)",
-      "_id": "0wa9ctai4"
-    },
-    {
-      "VchNo": "CRV-EMR-CLIN-0001",
-      "TLID": 401102,
-      "Debit": 0,
-      "Credit": 1500,
-      "Description": "Clinical compounding medicine revenue mapped",
-      "_id": "5enxh597n"
-    },
-    {
-      "VchNo": "CRV-EMR-CARD-0001",
-      "TLID": 101001,
-      "Debit": 244,
-      "Credit": 0,
-      "Description": "File & Card fee cash collected (Shift 1)",
-      "_id": "zzg73vkfq"
-    },
-    {
-      "VchNo": "CRV-EMR-CARD-0001",
-      "TLID": 401105,
-      "Debit": 0,
-      "Credit": 244,
-      "Description": "File & Card fee revenue mapped (File PKR 22, Card PKR 222)",
-      "_id": "chbk34xtp"
+      "ClinicName": "Punjab Homeopathic Clinic",
+      "ClinicLogoText": "PHC",
+      "DoctorName": "Dr. Ejaz Ahmad, D.H.M.S (Pak)",
+      "DoctorSignatureText": "Dr. Ejaz Ahmad, D.H.M.S (Pak) • Registered Homeopathic Medical Practitioner No: 48776",
+      "ClinicAddress": "10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan",
+      "PhoneMobile": "+92-300-4208323",
+      "RegistrationNo": "Registered Homeopathic Medical Practitioner No: 48776",
+      "OPDFee": 1500,
+      "_id": "jw0h14kb4"
     }
   ],
   "config": [
@@ -477,211 +407,15 @@
       "_id": "0477ktp3f"
     }
   ],
-  "clinic": [
-    {
-      "ClinicName": "Punjab Homeopathic Clinic",
-      "ClinicLogoText": "PHC",
-      "DoctorName": "Dr. Ejaz Ahmad, D.H.M.S (Pak)",
-      "DoctorSignatureText": "Dr. Ejaz Ahmad, D.H.M.S (Pak) • Registered Homeopathic Medical Practitioner No: 48776",
-      "ClinicAddress": "10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan",
-      "PhoneMobile": "+92-300-4208323",
-      "RegistrationNo": "Registered Homeopathic Medical Practitioner No: 48776",
-      "OPDFee": 1500,
-      "_id": "jw0h14kb4"
-    }
-  ],
-  "sms": [
-    {
-      "Provider": "twilio",
-      "Enabled": false,
-      "ApiUrl": "https://api.twilio.com",
-      "ApiKey": "AC-DEMO-API-KEY-FOR-SMS",
-      "SenderID": "PK-CLINIC",
-      "BookingTemplate": "Dear {name}, your appointment is booked. Token: {token}.",
-      "RepeatTemplate": "Dear {name}, follow-up is scheduled.",
-      "_id": "alqaca8me"
-    }
-  ],
-  "ac_ledger": [
-    {
-      "ACLedgerID": "LG-CRV-OPD-WALK-0001-1",
-      "VchNo": "CRV-OPD-WALK-0001",
-      "TxDate": "2026-08-12",
-      "TLID": 101001,
-      "Debit": 2222,
-      "Credit": 0,
-      "Remarks": "Walk-in Consultation Ticket cash collected",
-      "_id": "5mhdcslqo"
-    },
-    {
-      "ACLedgerID": "LG-CRV-OPD-WALK-0001-2",
-      "VchNo": "CRV-OPD-WALK-0001",
-      "TxDate": "2026-08-12",
-      "TLID": 401101,
-      "Debit": 0,
-      "Credit": 2222,
-      "Remarks": "Walk-in OPD Ticket Revenue posted",
-      "_id": "7iojw8r89"
-    },
-    {
-      "ACLedgerID": "LG-CRV-EMR-CLIN-0001-1",
-      "VchNo": "CRV-EMR-CLIN-0001",
-      "TxDate": "2026-08-12",
-      "TLID": 101001,
-      "Debit": 1500,
-      "Credit": 0,
-      "Remarks": "Clinical compounding medicine payment cash collected (Shift 1)",
-      "_id": "iscqx6pvn"
-    },
-    {
-      "ACLedgerID": "LG-CRV-EMR-CLIN-0001-2",
-      "VchNo": "CRV-EMR-CLIN-0001",
-      "TxDate": "2026-08-12",
-      "TLID": 401102,
-      "Debit": 0,
-      "Credit": 1500,
-      "Remarks": "Clinical compounding medicine revenue mapped",
-      "_id": "7vmep88zy"
-    },
-    {
-      "ACLedgerID": "LG-CRV-EMR-CARD-0001-1",
-      "VchNo": "CRV-EMR-CARD-0001",
-      "TxDate": "2026-08-12",
-      "TLID": 101001,
-      "Debit": 244,
-      "Credit": 0,
-      "Remarks": "File & Card fee cash collected (Shift 1)",
-      "_id": "59dowaegv"
-    },
-    {
-      "ACLedgerID": "LG-CRV-EMR-CARD-0001-2",
-      "VchNo": "CRV-EMR-CARD-0001",
-      "TxDate": "2026-08-12",
-      "TLID": 401105,
-      "Debit": 0,
-      "Credit": 244,
-      "Remarks": "File & Card fee revenue mapped (File PKR 22, Card PKR 222)",
-      "_id": "pgp248ag2"
-    },
-    {
-      "ACLedgerID": "GL-POST-BHNH003LM",
-      "_id": "s66uy7pfg"
-    },
-    {
-      "ACLedgerID": "GL-POST-E8SL7ZX0C",
-      "_id": "82y5s47x6"
-    },
-    {
-      "ACLedgerID": "GL-POST-A2UXAP1T3",
-      "_id": "ica41hmfa"
-    },
-    {
-      "ACLedgerID": "GL-POST-5ZFT0Y3W0",
-      "_id": "um9chbret"
-    },
-    {
-      "ACLedgerID": "GL-POST-ABVGJAAGM",
-      "_id": "qpaq4wplt"
-    },
-    {
-      "ACLedgerID": "GL-POST-OISHRPOR4",
-      "_id": "48ng8av4c"
-    },
-    {
-      "ACLedgerID": "GL-POST-8G3ZYU0KV",
-      "_id": "qe8q7r9is"
-    },
-    {
-      "ACLedgerID": "GL-POST-EE50OL01M",
-      "_id": "fel2lxvnr"
-    },
-    {
-      "ACLedgerID": "GL-POST-ZW1157KEW",
-      "_id": "v5m1aums7"
-    },
-    {
-      "ACLedgerID": "GL-POST-47RSGW403",
-      "_id": "ti0hg9b0k"
-    },
-    {
-      "ACLedgerID": "GL-POST-DCN0JMEIA",
-      "_id": "kv3v17mfp"
-    },
-    {
-      "ACLedgerID": "GL-POST-EUI6BX8MW",
-      "_id": "b1ryg74mh"
-    }
-  ],
-  "nhc_patient_history": [],
-  "financial_grid_reports": [],
-  "suppliers": [],
-  "smart_locator_medicines": [
-    {
-      "Symptoms": "fever, headache, body ache, high temperature, pain",
-      "MedicineName": "Paracetamol",
-      "Dosage": "1-0-1",
-      "Composition": "Paracetamol 500mg",
-      "_id": "axcklx7k8"
-    },
-    {
-      "Symptoms": "throat infection, cough, dry cough, sore throat, bronchitis",
-      "MedicineName": "Acefyl Cough Syrup",
-      "Dosage": "1-1-1",
-      "Composition": "Acefylline Piperazine",
-      "_id": "gn1gq8dcb"
-    },
-    {
-      "Symptoms": "heartburn, acidity, GERD, gastric, stomach pain, reflux",
-      "MedicineName": "Omeprazole",
-      "Dosage": "1-0-0",
-      "Composition": "Omeprazole 20mg",
-      "_id": "acqzjq8xz"
-    },
-    {
-      "Symptoms": "allergic rhinitis, sneezing, runny nose, allergy, itching",
-      "MedicineName": "Loratadine",
-      "Dosage": "0-0-1",
-      "Composition": "Loratadine 10mg",
-      "_id": "fy0p4dwb1"
-    },
-    {
-      "Symptoms": "bacterial infection, fever, throat infection, tonsillitis",
-      "MedicineName": "Co-Amoxiclav",
-      "Dosage": "1-0-1",
-      "Composition": "Amoxicillin + Clavulanic Acid",
-      "_id": "k6jv5xcjm"
-    },
-    {
-      "Symptoms": "diarrhea, loose motions, dehydration, stomach bug",
-      "MedicineName": "Flagyl",
-      "Dosage": "1-1-1",
-      "Composition": "Metronidazole 400mg",
-      "_id": "zzrpnx01z"
-    },
-    {
-      "Symptoms": "vomiting, nausea, motion sickness, stomach upset",
-      "MedicineName": "Gravinate",
-      "Dosage": "1-0-1",
-      "Composition": "Dimenhydrinate 50mg",
-      "_id": "k7atwzehg"
-    },
-    {
-      "Symptoms": "muscle spasm, pain, backache, neck pain, stiffness",
-      "MedicineName": "Nuberol Forte",
-      "Dosage": "1-0-1",
-      "Composition": "Paracetamol + Orphenadrine",
-      "_id": "iu9vn7rpn"
-    }
-  ],
-  "medicine_barcode_mappings": [],
-  "erp_vendors": [],
+  "erp_assets": [],
+  "erp_employees": [],
+  "erp_expenses": [],
+  "erp_grn": [],
+  "erp_payroll": [],
   "erp_purchase_orders": [],
   "erp_transactions": [],
-  "erp_employees": [],
-  "erp_payroll": [],
-  "erp_expenses": [],
-  "erp_assets": [],
-  "erp_grn": [],
+  "erp_vendors": [],
+  "financial_grid_reports": [],
   "fl_accounts": [
     {
       "FLID": 1,
@@ -709,6 +443,54 @@
       "_id": "hs0ey580i"
     }
   ],
+  "grn_details": [],
+  "grns": [],
+  "invoice_details": [],
+  "invoice_headers": [],
+  "items": [],
+  "lab_tests": [
+    {
+      "TID": "TST-001",
+      "TestName": "Complete Blood Count (CBC)",
+      "Cost": 650,
+      "_id": "p4g5lcge0"
+    },
+    {
+      "TID": "TST-002",
+      "TestName": "Blood Sugar Fasting / Random",
+      "Cost": 150,
+      "_id": "u8kka6fh8"
+    },
+    {
+      "TID": "TST-003",
+      "TestName": "Urine Routine Examination",
+      "Cost": 300,
+      "_id": "2x5oef7rn"
+    }
+  ],
+  "med_certs": [],
+  "medicine_barcode_mappings": [],
+  "nhc_patient_history": [],
+  "patients": [
+    {
+      "PatientID": "PUN-000001",
+      "PatientName": "zaigham",
+      "Father_husband": "N/A",
+      "AgeYears": 30,
+      "Sex": "Male",
+      "MaritalStatus": "Single",
+      "Occupation": "N/A",
+      "Address": "Fazal Street No.43 Garhi Shahu",
+      "CityID": 1,
+      "Country": "Pakistan",
+      "PhoneMobile": "03114000608",
+      "Email": "zaigham.ali.anjum@gmail.com",
+      "RegistrationDate": "2026-08-31T00:00:00.000Z",
+      "_id": "olrx41qty"
+    }
+  ],
+  "sales_returns": [],
+  "sbp_certs": [],
   "sl_accounts": [
     {
       "FLID": 1,
@@ -769,6 +551,241 @@
       "SLID": 502,
       "SLName": "Operating & Admin Expenses",
       "_id": "fp8ux5c4u"
+    }
+  ],
+  "smart_locator_medicines": [
+    {
+      "Symptoms": "fever, headache, body ache, high temperature, pain",
+      "MedicineName": "Paracetamol",
+      "Dosage": "1-0-1",
+      "Composition": "Paracetamol 500mg",
+      "_id": "axcklx7k8"
+    },
+    {
+      "Symptoms": "throat infection, cough, dry cough, sore throat, bronchitis",
+      "MedicineName": "Acefyl Cough Syrup",
+      "Dosage": "1-1-1",
+      "Composition": "Acefylline Piperazine",
+      "_id": "gn1gq8dcb"
+    },
+    {
+      "Symptoms": "heartburn, acidity, GERD, gastric, stomach pain, reflux",
+      "MedicineName": "Omeprazole",
+      "Dosage": "1-0-0",
+      "Composition": "Omeprazole 20mg",
+      "_id": "acqzjq8xz"
+    },
+    {
+      "Symptoms": "allergic rhinitis, sneezing, runny nose, allergy, itching",
+      "MedicineName": "Loratadine",
+      "Dosage": "0-0-1",
+      "Composition": "Loratadine 10mg",
+      "_id": "fy0p4dwb1"
+    },
+    {
+      "Symptoms": "bacterial infection, fever, throat infection, tonsillitis",
+      "MedicineName": "Co-Amoxiclav",
+      "Dosage": "1-0-1",
+      "Composition": "Amoxicillin + Clavulanic Acid",
+      "_id": "k6jv5xcjm"
+    },
+    {
+      "Symptoms": "diarrhea, loose motions, dehydration, stomach bug",
+      "MedicineName": "Flagyl",
+      "Dosage": "1-1-1",
+      "Composition": "Metronidazole 400mg",
+      "_id": "zzrpnx01z"
+    },
+    {
+      "Symptoms": "vomiting, nausea, motion sickness, stomach upset",
+      "MedicineName": "Gravinate",
+      "Dosage": "1-0-1",
+      "Composition": "Dimenhydrinate 50mg",
+      "_id": "k7atwzehg"
+    },
+    {
+      "Symptoms": "muscle spasm, pain, backache, neck pain, stiffness",
+      "MedicineName": "Nuberol Forte",
+      "Dosage": "1-0-1",
+      "Composition": "Paracetamol + Orphenadrine",
+      "_id": "iu9vn7rpn"
+    }
+  ],
+  "sms": [
+    {
+      "Provider": "twilio",
+      "Enabled": false,
+      "ApiUrl": "https://api.twilio.com",
+      "ApiKey": "AC-DEMO-API-KEY-FOR-SMS",
+      "SenderID": "PK-CLINIC",
+      "BookingTemplate": "Dear {name}, your appointment is booked. Token: {token}.",
+      "RepeatTemplate": "Dear {name}, follow-up is scheduled.",
+      "_id": "alqaca8me"
+    }
+  ],
+  "suppliers": [],
+  "system_init": [
+    {
+      "_id": "INIT_FLAG",
+      "seeded": true,
+      "initializedAt": "2026-08-12T14:11:06.151Z"
+    }
+  ],
+  "tokens": [],
+  "users": [
+    {
+      "UserID": "USR-001",
+      "LoginName": "admin",
+      "FullName": "Dr. Zaigham Ali Anjum",
+      "PasswordHash": "123456",
+      "Role": "Administrator",
+      "AssignedShift": "Both",
+      "_id": "h2zooslml"
+    },
+    {
+      "UserID": "USR-002",
+      "LoginName": "doctor",
+      "FullName": "Dr. Amna Malik",
+      "PasswordHash": "doctor123",
+      "Role": "Doctor",
+      "AssignedShift": 1,
+      "_id": "5ev8nnzw7"
+    },
+    {
+      "UserID": "USR-003",
+      "LoginName": "pharmacist",
+      "FullName": "M. Kashif Qadri",
+      "PasswordHash": "pharmacy123",
+      "Role": "Pharmacist",
+      "AssignedShift": "Both",
+      "_id": "akjd9bn56"
+    },
+    {
+      "UserID": "USR-004",
+      "LoginName": "reception",
+      "FullName": "Ayesha Bibi",
+      "PasswordHash": "rec123",
+      "Role": "Receptionist",
+      "AssignedShift": 1,
+      "_id": "2phqemfly"
+    },
+    {
+      "UserID": "USR-005",
+      "LoginName": "accountant",
+      "FullName": "Naveed Ahmad Sheikh",
+      "PasswordHash": "acct123",
+      "Role": "Accountant",
+      "AssignedShift": "Both",
+      "_id": "5x8hdr2it"
+    }
+  ],
+  "visit_medicines": [
+    {
+      "VisitID": "VIS-1786546304881",
+      "ItemID": "CLIN-1",
+      "MedicineType": "C",
+      "MedicineDetail": "ASDADS",
+      "Dosage": "ASDAD",
+      "Qty": 1,
+      "ExpireDate": "2026-09-02",
+      "_id": "60716ad6c"
+    },
+    {
+      "VisitID": "VIS-1786546304881",
+      "ItemID": "PAT-1",
+      "MedicineType": "P",
+      "MedicineDetail": "ASDADS",
+      "Dosage": "ASDASDSD",
+      "Qty": 1,
+      "_id": "j2fasae3u"
+    }
+  ],
+  "visits": [
+    {
+      "VisitID": "VIS-1786546304881",
+      "PatientID": "PAT-003",
+      "VisitDate": "2026-08-12",
+      "SymptomsDiagnosis": "ADSADS",
+      "MedicalReportResult": "ADSASDASD",
+      "LabTestAdvice": "None",
+      "PatientAdvice": "Take medicines regularly.",
+      "VisitRemarks": "Clinical: ASDADS - ASDAD (EXP: 2026-09-02) | Patent: ASDADS - ASDASDSD | Medical Reports: ADSASDASD | Lab Tests: None | Charges: OPD Fee PKR 2222, Clinical Meds PKR 1500, File PKR 022, Card PKR 222 (Total PKR 3966)",
+      "Status": 2,
+      "FocWaivedOpdFee": 0,
+      "FocWaivedClinicalFee": 0,
+      "FocWaivedFileCardFee": 0,
+      "FocReason": "",
+      "ConsultationFee": 2222,
+      "ClinicalMedicinePayment": "1500",
+      "FileFee": "022",
+      "CardFee": "222",
+      "CardsPayment": "244",
+      "ConsultationPaymentOption": "Cash Paid",
+      "_id": "yhm4hj6w0"
+    }
+  ],
+  "voucher_details": [
+    {
+      "VchNo": "CRV-OPD-WALK-0001",
+      "TLID": 101001,
+      "Debit": 2222,
+      "Credit": 0,
+      "Description": "Walk-in Consultation Ticket cash collected",
+      "_id": "4fo469d69"
+    },
+    {
+      "VchNo": "CRV-OPD-WALK-0001",
+      "TLID": 401101,
+      "Debit": 0,
+      "Credit": 2222,
+      "Description": "Walk-in OPD Ticket Revenue posted",
+      "_id": "8dj8d42tc"
+    },
+    {
+      "VchNo": "CRV-EMR-CLIN-0001",
+      "TLID": 101001,
+      "Debit": 1500,
+      "Credit": 0,
+      "Description": "Clinical compounding medicine payment cash collected (Shift 1)",
+      "_id": "0wa9ctai4"
+    },
+    {
+      "VchNo": "CRV-EMR-CLIN-0001",
+      "TLID": 401102,
+      "Debit": 0,
+      "Credit": 1500,
+      "Description": "Clinical compounding medicine revenue mapped",
+      "_id": "5enxh597n"
+    },
+    {
+      "VchNo": "CRV-EMR-CARD-0001",
+      "TLID": 101001,
+      "Debit": 244,
+      "Credit": 0,
+      "Description": "File & Card fee cash collected (Shift 1)",
+      "_id": "zzg73vkfq"
+    },
+    {
+      "VchNo": "CRV-EMR-CARD-0001",
+      "TLID": 401105,
+      "Debit": 0,
+      "Credit": 244,
+      "Description": "File & Card fee revenue mapped (File PKR 22, Card PKR 222)",
+      "_id": "chbk34xtp"
+    }
+  ],
+  "vouchers": [
+    {
+      "VchNo": "CRV-OPD-WALK-0001",
+      "_id": "vhnpkn2l3"
+    },
+    {
+      "VchNo": "CRV-EMR-CLIN-0001",
+      "_id": "vwut3l1km"
+    },
+    {
+      "VchNo": "CRV-EMR-CARD-0001",
+      "_id": "isqi9f3kr"
     }
   ]
 }

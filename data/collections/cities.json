@@ -1,0 +1,52 @@
+[
+  {
+    "CityID": 1,
+    "CityName": "Lahore",
+    "_id": "n2bf0dpxn"
+  },
+  {
+    "CityID": 2,
+    "CityName": "Faisalabad",
+    "_id": "g9ld5g9xr"
+  },
+  {
+    "CityID": 3,
+    "CityName": "Rawalpindi",
+    "_id": "ny1k66e1a"
+  },
+  {
+    "CityID": 4,
+    "CityName": "Multan",
+    "_id": "izjq8hhmw"
+  },
+  {
+    "CityID": 5,
+    "CityName": "Gujranwala",
+    "_id": "n6ov75hrf"
+  },
+  {
+    "CityID": 6,
+    "CityName": "Sialkot",
+    "_id": "7u03ml2ne"
+  },
+  {
+    "CityID": 7,
+    "CityName": "Sargodha",
+    "_id": "7362ih0vp"
+  },
+  {
+    "CityID": 8,
+    "CityName": "Bahawalpur",
+    "_id": "jx9p5qz2n"
+  },
+  {
+    "CityID": 9,
+    "CityName": "Sahiwal",
+    "_id": "ivndi9wv0"
+  },
+  {
+    "CityID": 10,
+    "CityName": "Islamabad",
+    "_id": "b107d9yju"
+  }
+]

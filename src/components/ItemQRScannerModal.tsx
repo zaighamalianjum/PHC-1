@@ -39,11 +39,13 @@ export const ItemQRScannerModal: React.FC<ItemQRScannerModalProps> = ({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const img = new Image();
+    const img = document.createElement('img');
+    const objectUrl = URL.createObjectURL(file);
     img.onload = () => {
+      URL.revokeObjectURL(objectUrl);
       const canvas = document.createElement('canvas');
-      canvas.width = img.width;
-      canvas.height = img.height;
+      canvas.width = img.width || img.naturalWidth || 300;
+      canvas.height = img.height || img.naturalHeight || 300;
       const ctx = canvas.getContext('2d');
       if (ctx) {
         ctx.drawImage(img, 0, 0);
@@ -63,9 +65,10 @@ export const ItemQRScannerModal: React.FC<ItemQRScannerModalProps> = ({
       }
     };
     img.onerror = () => {
+      URL.revokeObjectURL(objectUrl);
       setUploadError('Failed to load image file.');
     };
-    img.src = URL.createObjectURL(file);
+    img.src = objectUrl;
   };
 
   // Handle manual submit

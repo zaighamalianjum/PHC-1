@@ -1,0 +1,110 @@
+[
+  {
+    "ACLedgerID": "LG-CRV-OPD-WALK-0001-1",
+    "VchNo": "CRV-OPD-WALK-0001",
+    "TxDate": "2026-08-12",
+    "TLID": 101001,
+    "Debit": 2222,
+    "Credit": 0,
+    "Remarks": "Walk-in Consultation Ticket cash collected",
+    "_id": "5mhdcslqo"
+  },
+  {
+    "ACLedgerID": "LG-CRV-OPD-WALK-0001-2",
+    "VchNo": "CRV-OPD-WALK-0001",
+    "TxDate": "2026-08-12",
+    "TLID": 401101,
+    "Debit": 0,
+    "Credit": 2222,
+    "Remarks": "Walk-in OPD Ticket Revenue posted",
+    "_id": "7iojw8r89"
+  },
+  {
+    "ACLedgerID": "LG-CRV-EMR-CLIN-0001-1",
+    "VchNo": "CRV-EMR-CLIN-0001",
+    "TxDate": "2026-08-12",
+    "TLID": 101001,
+    "Debit": 1500,
+    "Credit": 0,
+    "Remarks": "Clinical compounding medicine payment cash collected (Shift 1)",
+    "_id": "iscqx6pvn"
+  },
+  {
+    "ACLedgerID": "LG-CRV-EMR-CLIN-0001-2",
+    "VchNo": "CRV-EMR-CLIN-0001",
+    "TxDate": "2026-08-12",
+    "TLID": 401102,
+    "Debit": 0,
+    "Credit": 1500,
+    "Remarks": "Clinical compounding medicine revenue mapped",
+    "_id": "7vmep88zy"
+  },
+  {
+    "ACLedgerID": "LG-CRV-EMR-CARD-0001-1",
+    "VchNo": "CRV-EMR-CARD-0001",
+    "TxDate": "2026-08-12",
+    "TLID": 101001,
+    "Debit": 244,
+    "Credit": 0,
+    "Remarks": "File & Card fee cash collected (Shift 1)",
+    "_id": "59dowaegv"
+  },
+  {
+    "ACLedgerID": "LG-CRV-EMR-CARD-0001-2",
+    "VchNo": "CRV-EMR-CARD-0001",
+    "TxDate": "2026-08-12",
+    "TLID": 401105,
+    "Debit": 0,
+    "Credit": 244,
+    "Remarks": "File & Card fee revenue mapped (File PKR 22, Card PKR 222)",
+    "_id": "pgp248ag2"
+  },
+  {
+    "ACLedgerID": "GL-POST-BHNH003LM",
+    "_id": "s66uy7pfg"
+  },
+  {
+    "ACLedgerID": "GL-POST-E8SL7ZX0C",
+    "_id": "82y5s47x6"
+  },
+  {
+    "ACLedgerID": "GL-POST-A2UXAP1T3",
+    "_id": "ica41hmfa"
+  },
+  {
+    "ACLedgerID": "GL-POST-5ZFT0Y3W0",
+    "_id": "um9chbret"
+  },
+  {
+    "ACLedgerID": "GL-POST-ABVGJAAGM",
+    "_id": "qpaq4wplt"
+  },
+  {
+    "ACLedgerID": "GL-POST-OISHRPOR4",
+    "_id": "48ng8av4c"
+  },
+  {
+    "ACLedgerID": "GL-POST-8G3ZYU0KV",
+    "_id": "qe8q7r9is"
+  },
+  {
+    "ACLedgerID": "GL-POST-EE50OL01M",
+    "_id": "fel2lxvnr"
+  },
+  {
+    "ACLedgerID": "GL-POST-ZW1157KEW",
+    "_id": "v5m1aums7"
+  },
+  {
+    "ACLedgerID": "GL-POST-47RSGW403",
+    "_id": "ti0hg9b0k"
+  },
+  {
+    "ACLedgerID": "GL-POST-DCN0JMEIA",
+    "_id": "kv3v17mfp"
+  },
+  {
+    "ACLedgerID": "GL-POST-EUI6BX8MW",
+    "_id": "b1ryg74mh"
+  }
+]

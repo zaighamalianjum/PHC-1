@@ -1,0 +1,12 @@
+[
+  {
+    "Provider": "twilio",
+    "Enabled": false,
+    "ApiUrl": "https://api.twilio.com",
+    "ApiKey": "AC-DEMO-API-KEY-FOR-SMS",
+    "SenderID": "PK-CLINIC",
+    "BookingTemplate": "Dear {name}, your appointment is booked. Token: {token}.",
+    "RepeatTemplate": "Dear {name}, follow-up is scheduled.",
+    "_id": "alqaca8me"
+  }
+]

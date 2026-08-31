@@ -79,6 +79,9 @@ export default function UploadingDesk({
   const [dragActiveMed, setDragActiveMed] = useState(false);
   const [dragActiveApp, setDragActiveApp] = useState(false);
   const [uploadModeApp, setUploadModeApp] = useState<'wipe' | 'merge'>('merge');
+  const [dropUnmatchedAppPatients, setDropUnmatchedAppPatients] = useState<boolean>(true);
+  const [droppedAppRecords, setDroppedAppRecords] = useState<Array<{ rowNum: number; rawId: string; rawName: string; fee: number; reason: string }>>([]);
+  const [showDroppedAppDetails, setShowDroppedAppDetails] = useState<boolean>(false);
   const fileInputMedRef = React.useRef<HTMLInputElement>(null);
   const fileInputAppRef = React.useRef<HTMLInputElement>(null);
   
@@ -1241,6 +1244,64 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
     });
   };
 
+  // Helper to build fast patient lookup dictionary
+  const getPatientLookupMaps = () => {
+    const normalize = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+    const patById = new Map<string, Patient>();
+    const patByName = new Map<string, Patient>();
+
+    (patients || []).forEach(p => {
+      if (p.PatientID) {
+        patById.set(normalize(p.PatientID), p);
+        patById.set(String(p.PatientID).trim().toLowerCase(), p);
+      }
+      if (p.PatientName) {
+        patByName.set(normalize(p.PatientName), p);
+        patByName.set(String(p.PatientName).trim().toLowerCase(), p);
+      }
+    });
+
+    (nhcPatients || []).forEach(nhc => {
+      if (nhc.PatientID && !patById.has(normalize(nhc.PatientID))) {
+        const syntheticPat: Patient = {
+          PatientID: nhc.PatientID,
+          PatientName: nhc.PatientName || `Patient ${nhc.PatientID}`,
+          Father_husband: 'N/A',
+          AgeYears: 30,
+          Sex: 'Male',
+          MaritalStatus: 'Single',
+          Occupation: 'N/A',
+          Address: 'N/A',
+          CityID: 1,
+          Country: 'Pakistan',
+          PhoneMobile: '03000000000',
+          RegistrationDate: new Date().toISOString().split('T')[0]
+        };
+        patById.set(normalize(nhc.PatientID), syntheticPat);
+        patById.set(String(nhc.PatientID).trim().toLowerCase(), syntheticPat);
+      }
+      if (nhc.PatientName && !patByName.has(normalize(nhc.PatientName))) {
+        const syntheticPat: Patient = {
+          PatientID: nhc.PatientID || `PAT-${Date.now()}`,
+          PatientName: nhc.PatientName,
+          Father_husband: 'N/A',
+          AgeYears: 30,
+          Sex: 'Male',
+          MaritalStatus: 'Single',
+          Occupation: 'N/A',
+          Address: 'N/A',
+          CityID: 1,
+          Country: 'Pakistan',
+          PhoneMobile: '03000000000',
+          RegistrationDate: new Date().toISOString().split('T')[0]
+        };
+        patByName.set(normalize(nhc.PatientName), syntheticPat);
+      }
+    });
+
+    return { patById, patByName, normalize };
+  };
+
   const handleAppointmentFileRead = (file: File) => {
     if (!file) return;
     const fileExt = file.name.split('.').pop()?.toLowerCase();
@@ -1250,6 +1311,7 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
     }
     setErrorMsg('');
     setSuccessMsg('');
+    setDroppedAppRecords([]);
 
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -1266,69 +1328,158 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
             return;
           }
 
-          const headers = (rawData[0] || []).map((h: any) => String(h || '').toLowerCase().trim());
-          
-          let idIdx = headers.findIndex((h: string) => 
-            h.includes('patientid') || h.includes('patient id') || h.includes('patient_id') || 
-            h.includes('mr#') || h.includes('mr no') || h.includes('mrno') || h.includes('patid') || 
-            h.includes('pat id') || h.includes('regno') || h.includes('reg no') || h === 'id' || h.includes('patient_no') || h.includes('mr')
+          const rawHeaders = (rawData[0] || []).map((h: any) => String(h || '').trim());
+          const cleanHeaders = rawHeaders.map(h => 
+            h.toLowerCase()
+              .replace(/[\r\n\t_#-]/g, ' ')
+              .replace(/\s+/g, ' ')
+              .trim()
           );
-          let nameIdx = headers.findIndex((h: string) => 
-            h.includes('patientname') || h.includes('patient name') || h.includes('patient_name') || 
-            h.includes('patname') || h.includes('pat name') || h === 'name' || h.includes('full name') || h.includes('patient')
+
+          // 1. Precise Name Column Detection (Must NOT match ID headers)
+          let nameIdx = cleanHeaders.findIndex(h => 
+            h === 'patient name' || h === 'patientname' || h === 'pat name' || h === 'patname' ||
+            h === 'full name' || h === 'fullname' || h === 'customer name' || h === 'client name' ||
+            h === 'p name' || h === 'pname'
           );
-          let payIdx = headers.findIndex((h: string) => 
+          if (nameIdx === -1) {
+            nameIdx = cleanHeaders.findIndex(h => 
+              (h.includes('name') || h === 'patient' || h === 'pat') &&
+              !h.includes('id') && !h.includes('no') && !h.includes('code') && !h.includes('fee') && 
+              !h.includes('pay') && !h.includes('date') && !h.includes('shift') && !h.includes('remark') &&
+              !h.includes('amount') && !h.includes('file') && !h.includes('user')
+            );
+          }
+
+          // 2. Precise ID Column Detection
+          let idIdx = cleanHeaders.findIndex(h => 
+            h === 'patient id' || h === 'patientid' || h === 'pat id' || h === 'patid' ||
+            h === 'mr no' || h === 'mrno' || h === 'mr' || h === 'mr#' || h === 'reg no' || 
+            h === 'regno' || h === 'reg' || h === 'patient no' || h === 'patient code' || 
+            h === 'mr number' || h === 'reg number' || h === 'pid' || h === 'p id' || h === 'id'
+          );
+          if (idIdx === -1) {
+            idIdx = cleanHeaders.findIndex((h, idx) => 
+              idx !== nameIdx && (
+                h.includes('patient id') || h.includes('pat id') || h.includes('patientid') || 
+                h.includes('mr no') || h.includes('mrno') || h.includes('mr#') || h.includes('reg no') || 
+                h.includes('regno') || h.includes('patient no') || h.includes('patient code') ||
+                (h.includes('id') && !h.includes('valid') && !h.includes('guid') && !h.includes('paid'))
+              )
+            );
+          }
+
+          // 3. Payment / Fee Column Detection
+          let payIdx = cleanHeaders.findIndex(h => 
             h.includes('payment') || h.includes('fee') || h.includes('feecharged') || h.includes('amount') || 
-            h.includes('paid') || h.includes('charges') || h.includes('price') || h.includes('total') || h.includes('cost') || h.includes('rupees')
+            h.includes('paid') || h.includes('charges') || h.includes('price') || h.includes('total') || 
+            h.includes('cost') || h.includes('rupees') || h.includes('pkr') || h.includes('rs')
           );
-          let dateIdx = headers.findIndex((h: string) => 
-            h.includes('date') || h.includes('appointmentdate') || h.includes('visitdate') || h.includes('app_date') || h.includes('created')
+
+          // 4. Date Column Detection
+          let dateIdx = cleanHeaders.findIndex(h => 
+            (h.includes('date') || h.includes('appointmentdate') || h.includes('visitdate') || h.includes('app date') || h.includes('created')) &&
+            !h.includes('fee') && !h.includes('pay')
           );
-          let shiftIdx = headers.findIndex((h: string) => 
+
+          // 5. Shift Column Detection
+          let shiftIdx = cleanHeaders.findIndex(h => 
             h.includes('shift') || h.includes('session') || h.includes('slot') || h.includes('time')
           );
-          let remarksIdx = headers.findIndex((h: string) => 
-            h.includes('remark') || h.includes('note') || h.includes('description') || h.includes('status')
+
+          // 6. Remarks Column Detection
+          let remarksIdx = cleanHeaders.findIndex(h => 
+            h.includes('remark') || h.includes('note') || h.includes('description') || h.includes('status') || h.includes('comment') || h.includes('reason')
           );
 
           let startIndex = 1;
-          // If no recognized headers, fallback to column positional mapping
+          // Fallback if no recognizable headers found
           if (idIdx === -1 && nameIdx === -1 && payIdx === -1) {
-            idIdx = 0;
-            nameIdx = 1;
-            payIdx = 2;
-            dateIdx = 3;
-            shiftIdx = 4;
-            remarksIdx = 5;
             startIndex = 0;
-          } else {
-            if (idIdx === -1) idIdx = 0;
-            if (nameIdx === -1) nameIdx = 1;
-            if (payIdx === -1) payIdx = 2;
+            if (rawData[0] && rawData[0].length >= 3) {
+              idIdx = 0;
+              nameIdx = 1;
+              payIdx = 2;
+              dateIdx = rawData[0].length > 3 ? 3 : -1;
+              shiftIdx = rawData[0].length > 4 ? 4 : -1;
+              remarksIdx = rawData[0].length > 5 ? 5 : -1;
+            } else if (rawData[0] && rawData[0].length === 2) {
+              nameIdx = 0;
+              payIdx = 1;
+              idIdx = -1;
+            } else {
+              idIdx = 0;
+              nameIdx = 1;
+              payIdx = 2;
+            }
           }
 
           const parsedList: Array<Appointment & { PatientName?: string; PhoneMobile?: string; isNewPatient?: boolean }> = [];
-          const existingPatIds = new Set((patients || []).map(p => String(p.PatientID).trim().toLowerCase()));
+          const droppedList: Array<{ rowNum: number; rawId: string; rawName: string; fee: number; reason: string }> = [];
+          const { patById, patByName, normalize } = getPatientLookupMaps();
 
           for (let i = startIndex; i < rawData.length; i++) {
             const row = rawData[i];
             if (!row || row.length === 0) continue;
 
-            const rawId = row[idIdx] !== undefined ? String(row[idIdx]).trim() : '';
-            const rawName = row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : '';
-            const rawPay = row[payIdx] !== undefined ? String(row[payIdx]).trim() : '';
-            const rawDate = dateIdx !== -1 && row[dateIdx] !== undefined ? String(row[dateIdx]).trim() : '';
-            const rawShift = shiftIdx !== -1 && row[shiftIdx] !== undefined ? String(row[shiftIdx]).trim() : '';
-            const rawRem = remarksIdx !== -1 && row[remarksIdx] !== undefined ? String(row[remarksIdx]).trim() : '';
+            const rawId = (idIdx !== -1 && row[idIdx] !== undefined) ? String(row[idIdx]).trim() : '';
+            const rawName = (nameIdx !== -1 && row[nameIdx] !== undefined) ? String(row[nameIdx]).trim() : '';
+            const rawPay = (payIdx !== -1 && row[payIdx] !== undefined) ? String(row[payIdx]).trim() : '';
+            const rawDate = (dateIdx !== -1 && row[dateIdx] !== undefined) ? String(row[dateIdx]).trim() : '';
+            const rawShift = (shiftIdx !== -1 && row[shiftIdx] !== undefined) ? String(row[shiftIdx]).trim() : '';
+            const rawRem = (remarksIdx !== -1 && row[remarksIdx] !== undefined) ? String(row[remarksIdx]).trim() : '';
 
             if (!rawId && !rawName && !rawPay) continue;
 
-            const patId = rawId || (rawName ? `PAT-${Math.floor(1000 + Math.random() * 9000)}` : `PAT-${i}`);
-            const patName = rawName || `Patient ${patId}`;
-            
-            // Clean fee/payment
             const cleanedPay = Number(rawPay.replace(/[^0-9.]/g, '')) || 0;
-            
+
+            // Resolve Patient from existing database
+            let matchedPat: Patient | undefined = undefined;
+
+            // 1. Try ID lookup
+            if (rawId) {
+              matchedPat = patById.get(normalize(rawId)) || patById.get(rawId.toLowerCase());
+            }
+
+            // 2. Try Name lookup
+            if (!matchedPat && rawName) {
+              matchedPat = patByName.get(normalize(rawName)) || patByName.get(rawName.toLowerCase());
+            }
+
+            // 3. If rawId is text and no rawName was present, check if rawId is actually a patient name
+            if (!matchedPat && rawId && !rawName) {
+              matchedPat = patByName.get(normalize(rawId)) || patByName.get(rawId.toLowerCase());
+            }
+
+            // 4. Fuzzy Substring Match on Patient Name
+            if (!matchedPat && rawName) {
+              const normName = normalize(rawName);
+              if (normName.length >= 3) {
+                for (const [k, p] of patByName.entries()) {
+                  if (k.length >= 3 && (k.includes(normName) || normName.includes(k))) {
+                    matchedPat = p;
+                    break;
+                  }
+                }
+              }
+            }
+
+            // 🛑 DROP ROW IF PATIENT NOT FOUND AND DROP TOGGLE IS ACTIVE
+            if (!matchedPat && dropUnmatchedAppPatients) {
+              droppedList.push({
+                rowNum: i + 1,
+                rawId: rawId || 'N/A',
+                rawName: rawName || 'N/A',
+                fee: cleanedPay,
+                reason: 'Patient ID or Name not found in system database'
+              });
+              continue; // Drop this row
+            }
+
+            // Resolve final Patient ID and Patient Name
+            const finalPatientId = matchedPat ? matchedPat.PatientID : (rawId || `PAT-${Date.now().toString().slice(-4)}-${i}`);
+            const finalPatientName = rawName ? rawName : (matchedPat ? matchedPat.PatientName : `Patient ${finalPatientId}`);
+
             // Parse date
             let appDateStr = new Date().toISOString().split('T')[0];
             if (rawDate) {
@@ -1352,25 +1503,37 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
 
             parsedList.push({
               AppointmentID: `APP-IMP-${Date.now().toString().slice(-4)}-${i}`,
-              PatientID: patId,
-              PatientName: patName,
+              PatientID: finalPatientId,
+              PatientName: finalPatientName,
+              PhoneMobile: matchedPat?.PhoneMobile || '',
               FeeCharged: cleanedPay,
               AppointmentDate: appDateStr,
               Shift: shiftVal,
               Status: 2,
               Remarks: rawRem || 'Excel Uploaded Appointment',
-              isNewPatient: !existingPatIds.has(patId.toLowerCase())
+              isNewPatient: !matchedPat
             });
           }
 
+          setDroppedAppRecords(droppedList);
+
           if (parsedList.length === 0) {
-            setErrorMsg('Could not find any valid appointment records in the uploaded file.');
+            if (droppedList.length > 0) {
+              setErrorMsg(`All ${droppedList.length} rows were dropped because none of the patient records matched registered patients in the database. Please verify your patient names/IDs or uncheck 'Drop Unmatched Patients'.`);
+            } else {
+              setErrorMsg('Could not find any valid appointment records in the uploaded file.');
+            }
             return;
           }
 
           setAppointmentPreview(parsedList);
           const totalFee = parsedList.reduce((acc, a) => acc + (a.FeeCharged || 0), 0);
-          setSuccessMsg(`Successfully parsed ${parsedList.length} appointment records from "${file.name}" (Total Fee: PKR ${totalFee.toLocaleString()}). Please review the preview table below and click Save!`);
+          
+          let msg = `Successfully parsed ${parsedList.length} appointment records from "${file.name}" (Total Fee: PKR ${totalFee.toLocaleString()}).`;
+          if (droppedList.length > 0) {
+            msg += ` ⚠️ Note: ${droppedList.length} unmatched rows were dropped.`;
+          }
+          setSuccessMsg(msg);
         });
       } catch (err: any) {
         console.error('Failed to parse appointment spreadsheet:', err);
@@ -1387,10 +1550,12 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
     }
     setErrorMsg('');
     setSuccessMsg('');
+    setDroppedAppRecords([]);
 
     const lines = appointmentPasteText.trim().split(/\r?\n/);
     const parsedList: Array<Appointment & { PatientName?: string; PhoneMobile?: string; isNewPatient?: boolean }> = [];
-    const existingPatIds = new Set((patients || []).map(p => String(p.PatientID).trim().toLowerCase()));
+    const droppedList: Array<{ rowNum: number; rawId: string; rawName: string; fee: number; reason: string }> = [];
+    const { patById, patByName, normalize } = getPatientLookupMaps();
 
     let startIdx = 0;
     const firstLineLower = lines[0].toLowerCase();
@@ -1416,16 +1581,74 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
       parts = parts.map(p => p.trim());
       if (parts.length < 2) continue;
 
-      const rawId = parts[0];
-      const rawName = parts[1];
-      const rawPay = parts[2] || '0';
-      const rawDate = parts[3] || '';
-      const rawShift = parts[4] || '';
-      const rawRem = parts[5] || '';
+      // Detect whether Col 0 is ID and Col 1 is Name or Col 0 is Name and Col 1 is Fee
+      let rawId = '';
+      let rawName = '';
+      let rawPay = '0';
+      let rawDate = '';
+      let rawShift = '';
+      let rawRem = '';
 
-      const patId = rawId;
-      const patName = rawName || `Patient ${patId}`;
+      if (parts.length >= 3) {
+        rawId = parts[0];
+        rawName = parts[1];
+        rawPay = parts[2] || '0';
+        rawDate = parts[3] || '';
+        rawShift = parts[4] || '';
+        rawRem = parts[5] || '';
+      } else {
+        // 2 parts: check if part 0 is numeric/ID or Name
+        rawName = parts[0];
+        rawPay = parts[1] || '0';
+      }
+
       const cleanedPay = Number(rawPay.replace(/[^0-9.]/g, '')) || 0;
+
+      // Resolve Patient from existing database
+      let matchedPat: Patient | undefined = undefined;
+
+      // 1. Try ID lookup
+      if (rawId) {
+        matchedPat = patById.get(normalize(rawId)) || patById.get(rawId.toLowerCase());
+      }
+
+      // 2. Try Name lookup
+      if (!matchedPat && rawName) {
+        matchedPat = patByName.get(normalize(rawName)) || patByName.get(rawName.toLowerCase());
+      }
+
+      // 3. If rawId is text and no rawName was present, check if rawId is actually a patient name
+      if (!matchedPat && rawId && !rawName) {
+        matchedPat = patByName.get(normalize(rawId)) || patByName.get(rawId.toLowerCase());
+      }
+
+      // 4. Fuzzy Substring Match on Patient Name
+      if (!matchedPat && rawName) {
+        const normName = normalize(rawName);
+        if (normName.length >= 3) {
+          for (const [k, p] of patByName.entries()) {
+            if (k.length >= 3 && (k.includes(normName) || normName.includes(k))) {
+              matchedPat = p;
+              break;
+            }
+          }
+        }
+      }
+
+      // 🛑 DROP ROW IF PATIENT NOT FOUND AND DROP TOGGLE IS ACTIVE
+      if (!matchedPat && dropUnmatchedAppPatients) {
+        droppedList.push({
+          rowNum: i + 1,
+          rawId: rawId || 'N/A',
+          rawName: rawName || 'N/A',
+          fee: cleanedPay,
+          reason: 'Patient ID or Name not found in system database'
+        });
+        continue; // Drop this row
+      }
+
+      const finalPatientId = matchedPat ? matchedPat.PatientID : (rawId || `PAT-${Date.now().toString().slice(-4)}-${i}`);
+      const finalPatientName = rawName ? rawName : (matchedPat ? matchedPat.PatientName : `Patient ${finalPatientId}`);
 
       let appDateStr = new Date().toISOString().split('T')[0];
       if (rawDate) {
@@ -1439,25 +1662,36 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
 
       parsedList.push({
         AppointmentID: `APP-IMP-${Date.now().toString().slice(-4)}-${i}`,
-        PatientID: patId,
-        PatientName: patName,
+        PatientID: finalPatientId,
+        PatientName: finalPatientName,
+        PhoneMobile: matchedPat?.PhoneMobile || '',
         FeeCharged: cleanedPay,
         AppointmentDate: appDateStr,
         Shift: shiftVal,
         Status: 2,
         Remarks: rawRem || 'Pasted Appointment Entry',
-        isNewPatient: !existingPatIds.has(patId.toLowerCase())
+        isNewPatient: !matchedPat
       });
     }
 
+    setDroppedAppRecords(droppedList);
+
     if (parsedList.length === 0) {
-      setErrorMsg('Could not parse any appointment records. Ensure columns are separated by Tabs, Commas, or Pipes.');
+      if (droppedList.length > 0) {
+        setErrorMsg(`All ${droppedList.length} rows were dropped because none of the patient records matched registered patients in the database. Please verify your patient names/IDs or uncheck 'Drop Unmatched Patients'.`);
+      } else {
+        setErrorMsg('Could not parse any appointment records. Ensure columns are separated by Tabs, Commas, or Pipes.');
+      }
       return;
     }
 
     setAppointmentPreview(parsedList);
     const totalFee = parsedList.reduce((acc, a) => acc + (a.FeeCharged || 0), 0);
-    setSuccessMsg(`Successfully parsed ${parsedList.length} appointment records from pasted text (Total Fee: PKR ${totalFee.toLocaleString()}). Click Save to import.`);
+    let msg = `Successfully parsed ${parsedList.length} appointment records from pasted text (Total Fee: PKR ${totalFee.toLocaleString()}).`;
+    if (droppedList.length > 0) {
+      msg += ` ⚠️ Note: ${droppedList.length} unmatched rows were dropped.`;
+    }
+    setSuccessMsg(msg);
   };
 
   const handleAppointmentSave = async (append: boolean) => {
@@ -1912,10 +2146,39 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                 PatientID | PatientName | AppointmentPayment | Date | Shift | Remarks
               </p>
               <div className="text-[9px] text-emerald-800/80 space-y-0.5">
-                <div>• <span className="font-bold">PatientID:</span> e.g. MR-1001 or 105 (Used to link with patient history)</div>
-                <div>• <span className="font-bold">AppointmentPayment:</span> e.g. 1000 or 500 (Last consultation fee)</div>
+                <div>• <span className="font-bold">PatientID & PatientName:</span> Matched with your registered patient database</div>
+                <div>• <span className="font-bold">AppointmentPayment:</span> e.g. 1000 or 500 (Consultation / Appointment fee)</div>
                 <div>• <span className="font-bold">Date & Shift:</span> Optional (Defaults to today & morning shift)</div>
               </div>
+            </div>
+
+            {/* Validation & Drop Options */}
+            <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center space-x-2 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={dropUnmatchedAppPatients}
+                    onChange={(e) => setDropUnmatchedAppPatients(e.target.checked)}
+                    className="w-4 h-4 text-emerald-600 rounded border-slate-300 focus:ring-emerald-500 cursor-pointer"
+                  />
+                  <span className="text-[11px] font-bold text-slate-800">
+                    Drop Unmatched Patients (Match Check)
+                  </span>
+                </label>
+                <span className={`text-[9px] font-extrabold px-1.5 py-0.5 rounded border ${
+                  dropUnmatchedAppPatients 
+                    ? 'bg-emerald-100 text-emerald-800 border-emerald-300' 
+                    : 'bg-amber-100 text-amber-800 border-amber-300'
+                }`}>
+                  {dropUnmatchedAppPatients ? 'Drop If Not In DB' : 'Create New'}
+                </span>
+              </div>
+              <p className="text-[9.5px] text-slate-500">
+                {dropUnmatchedAppPatients
+                  ? '✅ Active: Rows whose Patient ID or Patient Name does NOT exist in your Patient database will be automatically dropped.'
+                  : '⚠️ Off: Rows with unknown patients will create new patient placeholder entries.'}
+              </p>
             </div>
 
             {/* Drag & Drop File Upload Area */}
@@ -2084,6 +2347,39 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                     </div>
                   </div>
                 </div>
+              </div>
+            )}
+
+            {/* Dropped Unmatched Records Notification */}
+            {droppedAppRecords.length > 0 && (
+              <div className="bg-amber-50/90 border border-amber-300 p-2.5 rounded-lg text-amber-950 text-xs mb-3 space-y-1 shrink-0">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-1.5 font-bold text-amber-900">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                    <span>{droppedAppRecords.length} Row{droppedAppRecords.length > 1 ? 's' : ''} Dropped (Patient ID / Name not found in system)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowDroppedAppDetails(!showDroppedAppDetails)}
+                    className="text-[10px] font-bold text-amber-800 underline hover:text-amber-950 cursor-pointer"
+                  >
+                    {showDroppedAppDetails ? 'Hide Dropped Rows' : `View ${droppedAppRecords.length} Dropped Rows`}
+                  </button>
+                </div>
+                {showDroppedAppDetails && (
+                  <div className="max-h-32 overflow-y-auto mt-2 bg-white rounded border border-amber-200 divide-y divide-amber-100 text-[10px]">
+                    {droppedAppRecords.map((d, dIdx) => (
+                      <div key={dIdx} className="p-1.5 flex items-center justify-between text-slate-700">
+                        <span>
+                          Row #{d.rowNum}: ID <strong className="font-mono text-slate-900">{d.rawId}</strong> | Name <strong className="text-slate-900">{d.rawName}</strong>
+                        </span>
+                        <span className="font-mono text-rose-600 font-bold">
+                          Fee: PKR {d.fee.toLocaleString()} (Dropped)
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
 

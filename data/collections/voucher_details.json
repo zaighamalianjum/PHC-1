@@ -1,0 +1,50 @@
+[
+  {
+    "VchNo": "CRV-OPD-WALK-0001",
+    "TLID": 101001,
+    "Debit": 2222,
+    "Credit": 0,
+    "Description": "Walk-in Consultation Ticket cash collected",
+    "_id": "4fo469d69"
+  },
+  {
+    "VchNo": "CRV-OPD-WALK-0001",
+    "TLID": 401101,
+    "Debit": 0,
+    "Credit": 2222,
+    "Description": "Walk-in OPD Ticket Revenue posted",
+    "_id": "8dj8d42tc"
+  },
+  {
+    "VchNo": "CRV-EMR-CLIN-0001",
+    "TLID": 101001,
+    "Debit": 1500,
+    "Credit": 0,
+    "Description": "Clinical compounding medicine payment cash collected (Shift 1)",
+    "_id": "0wa9ctai4"
+  },
+  {
+    "VchNo": "CRV-EMR-CLIN-0001",
+    "TLID": 401102,
+    "Debit": 0,
+    "Credit": 1500,
+    "Description": "Clinical compounding medicine revenue mapped",
+    "_id": "5enxh597n"
+  },
+  {
+    "VchNo": "CRV-EMR-CARD-0001",
+    "TLID": 101001,
+    "Debit": 244,
+    "Credit": 0,
+    "Description": "File & Card fee cash collected (Shift 1)",
+    "_id": "zzg73vkfq"
+  },
+  {
+    "VchNo": "CRV-EMR-CARD-0001",
+    "TLID": 401105,
+    "Debit": 0,
+    "Credit": 244,
+    "Description": "File & Card fee revenue mapped (File PKR 22, Card PKR 222)",
+    "_id": "chbk34xtp"
+  }
+]

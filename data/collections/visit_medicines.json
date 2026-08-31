@@ -1,0 +1,21 @@
+[
+  {
+    "VisitID": "VIS-1786546304881",
+    "ItemID": "CLIN-1",
+    "MedicineType": "C",
+    "MedicineDetail": "ASDADS",
+    "Dosage": "ASDAD",
+    "Qty": 1,
+    "ExpireDate": "2026-09-02",
+    "_id": "60716ad6c"
+  },
+  {
+    "VisitID": "VIS-1786546304881",
+    "ItemID": "PAT-1",
+    "MedicineType": "P",
+    "MedicineDetail": "ASDADS",
+    "Dosage": "ASDASDSD",
+    "Qty": 1,
+    "_id": "j2fasae3u"
+  }
+]

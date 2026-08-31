@@ -26,6 +26,24 @@ if (typeof window !== 'undefined' && !window.name) {
 }
 
 /**
+ * Safely dispatches a custom event across all browsers without constructor errors
+ */
+export function dispatchSafeCustomEvent(eventName: string, detail?: any) {
+  try {
+    if (typeof window === 'undefined') return;
+    if (typeof CustomEvent === 'function') {
+      window.dispatchEvent(new CustomEvent(eventName, { detail }));
+    } else if (typeof document !== 'undefined' && typeof document.createEvent === 'function') {
+      const evt = document.createEvent('CustomEvent');
+      evt.initCustomEvent(eventName, false, false, detail);
+      window.dispatchEvent(evt);
+    }
+  } catch (e) {
+    // Graceful fallback
+  }
+}
+
+/**
  * Broadcasts a user/permission update across all tabs, windows, and triggers cross-session sync.
  */
 export function broadcastUserSync(action: UserSyncEventPayload['action'], user?: Partial<User>, userId?: string) {
@@ -39,7 +57,7 @@ export function broadcastUserSync(action: UserSyncEventPayload['action'], user?:
 
   // 1. BroadcastChannel API for instantaneous tab-to-tab sync
   try {
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
+    if (typeof window !== 'undefined' && 'BroadcastChannel' in window && typeof BroadcastChannel === 'function') {
       const channel = new BroadcastChannel(USER_SYNC_CHANNEL_NAME);
       channel.postMessage(payload);
       channel.close();
@@ -56,12 +74,8 @@ export function broadcastUserSync(action: UserSyncEventPayload['action'], user?:
   } catch (e) {}
 
   // 3. Dispatch in-memory custom DOM events for same-window listeners
-  try {
-    if (typeof window !== 'undefined') {
-      window.dispatchEvent(new CustomEvent('phc_local_user_updated', { detail: payload }));
-      window.dispatchEvent(new CustomEvent('phc_db_updated'));
-    }
-  } catch (e) {}
+  dispatchSafeCustomEvent('phc_local_user_updated', payload);
+  dispatchSafeCustomEvent('phc_db_updated');
 }
 
 /**

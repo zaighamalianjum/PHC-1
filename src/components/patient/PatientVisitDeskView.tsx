@@ -57,7 +57,9 @@ import {
   matchPatientIdOrNameOnly,
   isPakistaniMobilePrefix,
   getWeeksLabel,
-  WhatsAppIcon
+  WhatsAppIcon,
+  isSamePatient,
+  parseCleanVisitDate
 } from './patientDeskUtils';
 
 export default function PatientVisitDeskView(props: any) {
@@ -167,20 +169,24 @@ export default function PatientVisitDeskView(props: any) {
   // 📅 MATCHED APPOINTMENT HISTORY & LAST FEE FOR SELECTED PATIENT
   // ------------------------------------------------------------------------------------------
   const patientAppointments: Appointment[] = React.useMemo(() => {
-    if (!selectedPvPatient?.PatientID) return [];
-    const pid = String(selectedPvPatient.PatientID).trim().toLowerCase();
+    if (!selectedPvPatient?.PatientID && !selectedPvPatient?.PatientName) return [];
     return (props.appointments || [])
-      .filter((a: Appointment) => String(a.PatientID).trim().toLowerCase() === pid)
+      .filter((a: Appointment) => 
+        isSamePatient(a.PatientID, selectedPvPatient?.PatientID) || 
+        (selectedPvPatient?.PatientName && (a as any).PatientName && String((a as any).PatientName).trim().toLowerCase() === String(selectedPvPatient.PatientName).trim().toLowerCase())
+      )
       .sort((a: Appointment, b: Appointment) => {
-        const da = new Date(a.AppointmentDate || '').getTime() || 0;
-        const db = new Date(b.AppointmentDate || '').getTime() || 0;
+        const da = new Date(parseCleanVisitDate(a.AppointmentDate) || '').getTime() || 0;
+        const db = new Date(parseCleanVisitDate(b.AppointmentDate) || '').getTime() || 0;
         return db - da; // Most recent first
       });
-  }, [selectedPvPatient?.PatientID, props.appointments]);
+  }, [selectedPvPatient?.PatientID, selectedPvPatient?.PatientName, props.appointments]);
 
   const lastAppointmentFee: number = React.useMemo(() => {
-    const validApp = patientAppointments.find(a => Number(a.FeeCharged) > 0);
-    return validApp ? Number(validApp.FeeCharged) : 0;
+    const validApp = patientAppointments.find(a => 
+      Number(a.FeeCharged) > 0 || Number((a as any).PaidAmount) > 0 || Number((a as any).ConsultationFee) > 0 || Number((a as any).Fee) > 0
+    );
+    return validApp ? Number((validApp as any).PaidAmount || (validApp as any).ConsultationFee || validApp.FeeCharged || (validApp as any).Fee || 0) : 0;
   }, [patientAppointments]);
 
   return (
@@ -958,28 +964,62 @@ export default function PatientVisitDeskView(props: any) {
                             )}
 
                             {/* DOCTOR VISIT PAYMENT BREAKDOWN BADGE */}
-                            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-lg p-2 flex flex-wrap items-center justify-between gap-1.5 shadow-2xs border border-indigo-900/40">
-                              <div className="flex items-center space-x-1.5">
-                                <div className="p-1 bg-emerald-500/20 text-emerald-300 rounded shrink-0">
-                                  <Coins className="w-3 h-3 text-emerald-300" />
+                            {(() => {
+                              const visitDateClean = parseCleanVisitDate(group.date);
+                              let resolvedFilePkr = Number(group.filePkr || 0);
+
+                              if (!resolvedFilePkr) {
+                                const matchedApp = (props.appointments || []).find((a: Appointment) =>
+                                  (isSamePatient(a.PatientID, selectedPvPatient?.PatientID) || (selectedPvPatient?.PatientName && (a as any).PatientName && String((a as any).PatientName).trim().toLowerCase() === String(selectedPvPatient.PatientName).trim().toLowerCase())) &&
+                                  parseCleanVisitDate(a.AppointmentDate) === visitDateClean
+                                );
+                                if (matchedApp) {
+                                  resolvedFilePkr = Number((matchedApp as any).PaidAmount || (matchedApp as any).ConsultationFee || matchedApp.FeeCharged || (matchedApp as any).Fee || 0);
+                                }
+                              }
+
+                              if (!resolvedFilePkr) {
+                                const matchedTok = (props.tokens || []).find((t: Token) =>
+                                  (isSamePatient(t.PatientID, selectedPvPatient?.PatientID) || (selectedPvPatient?.PatientName && (t as any).PatientName && String((t as any).PatientName).trim().toLowerCase() === String(selectedPvPatient.PatientName).trim().toLowerCase())) &&
+                                  parseCleanVisitDate(t.Date) === visitDateClean
+                                );
+                                if (matchedTok) {
+                                  resolvedFilePkr = Number((matchedTok as any).Fee || (matchedTok as any).PaidAmount || 0);
+                                }
+                              }
+
+                              if (!resolvedFilePkr && lastAppointmentFee > 0 && props.groupedRxByDate?.length <= 1) {
+                                resolvedFilePkr = lastAppointmentFee;
+                              }
+
+                              const resolvedClinPkr = Number(group.clinicalMedicinePkr || 0);
+                              const totalPaidPkr = resolvedFilePkr + resolvedClinPkr;
+
+                              return (
+                                <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-lg p-2 flex flex-wrap items-center justify-between gap-1.5 shadow-2xs border border-indigo-900/40">
+                                  <div className="flex items-center space-x-1.5">
+                                    <div className="p-1 bg-emerald-500/20 text-emerald-300 rounded shrink-0">
+                                      <Coins className="w-3 h-3 text-emerald-300" />
+                                    </div>
+                                    <div className="text-[10px] font-mono">
+                                      <span className="text-slate-300 font-extrabold uppercase text-[8.5px] block">
+                                        Payment Received on this Visit:
+                                      </span>
+                                      <span className="text-blue-300 font-bold">
+                                        Appointment: <strong className="text-white">PKR {resolvedFilePkr.toLocaleString()}</strong>
+                                      </span>
+                                      <span className="text-slate-500 mx-1.5">•</span>
+                                      <span className="text-amber-300 font-bold">
+                                        Clinical Meds: <strong className="text-white">PKR {resolvedClinPkr.toLocaleString()}</strong>
+                                      </span>
+                                    </div>
+                                  </div>
+                                  <div className="bg-emerald-600/90 text-white px-2 py-0.5 rounded text-[10px] font-mono font-black border border-emerald-400/40 shrink-0">
+                                    Total Paid: PKR {totalPaidPkr.toLocaleString()}
+                                  </div>
                                 </div>
-                                <div className="text-[10px] font-mono">
-                                  <span className="text-slate-300 font-extrabold uppercase text-[8.5px] block">
-                                    Payment Received on this Visit:
-                                  </span>
-                                  <span className="text-blue-300 font-bold">
-                                    Appointment: <strong className="text-white">PKR {Number(group.filePkr || 0).toLocaleString()}</strong>
-                                  </span>
-                                  <span className="text-slate-500 mx-1.5">•</span>
-                                  <span className="text-amber-300 font-bold">
-                                    Clinical Meds: <strong className="text-white">PKR {Number(group.clinicalMedicinePkr || 0).toLocaleString()}</strong>
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="bg-emerald-600/90 text-white px-2 py-0.5 rounded text-[10px] font-mono font-black border border-emerald-400/40 shrink-0">
-                                Total Paid: PKR {(Number(group.filePkr || 0) + Number(group.clinicalMedicinePkr || 0)).toLocaleString()}
-                              </div>
-                            </div>
+                              );
+                            })()}
                           </div>
                         ))}
                       </div>

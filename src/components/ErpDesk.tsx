@@ -61,6 +61,7 @@ import {
   generateWhatsAppPurchaseOrderText,
   formatWhatsAppPhone
 } from '../utils/whatsappUtils';
+import { dispatchSafeCustomEvent } from '../utils/userSync';
 import {
   ErpVendor,
   ErpPurchaseOrder,
@@ -1221,7 +1222,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
       setSyncMessage(`Outflow of Rs. ${amt.toLocaleString()} recorded in Cash Book & P&L!`);
       setTimeout(() => setSyncMessage(null), 3000);
-      window.dispatchEvent(new CustomEvent('phc_db_updated'));
+      dispatchSafeCustomEvent('phc_db_updated');
     } catch (err: any) {
       console.error('Failed to submit quick outflow:', err);
       alert('Error recording outflow: ' + err.message);
@@ -1984,7 +1985,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       });
       const ct = res.headers.get('content-type') || '';
       const result = ct.includes('application/json') ? await res.json() : { success: false };
-      window.dispatchEvent(new CustomEvent('phc_db_updated'));
+      dispatchSafeCustomEvent('phc_db_updated');
       return result;
     } catch (e) {
       console.error(`Failed to save to ${collection}:`, e);
@@ -1999,7 +2000,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       });
       const ct = res.headers.get('content-type') || '';
       const result = ct.includes('application/json') ? await res.json() : { success: false };
-      window.dispatchEvent(new CustomEvent('phc_db_updated'));
+      dispatchSafeCustomEvent('phc_db_updated');
       return result;
     } catch (e) {
       console.error(`Failed to delete from ${collection}:`, e);
@@ -3247,7 +3248,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           return prev;
         });
 
-        window.dispatchEvent(new CustomEvent('phc_db_updated'));
+        dispatchSafeCustomEvent('phc_db_updated');
         setShowQuickAddMedModal(false);
         setEditingQuickMed(null);
         setSyncMessage(`Medicine "${cleanName}" (${targetItemId}) successfully updated in stock & PO!`);
@@ -3337,7 +3338,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           });
         }
 
-        window.dispatchEvent(new CustomEvent('phc_db_updated'));
+        dispatchSafeCustomEvent('phc_db_updated');
         setShowQuickAddMedModal(false);
         setEditingQuickMed(null);
         setSyncMessage(`Medicine "${cleanName}" (${nextItemId}) created & added to stock list!`);
@@ -3557,7 +3558,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     setSyncMessage('Purchase Order and linked GRNs deleted successfully!');
     setTimeout(() => setSyncMessage(null), 3000);
-    window.dispatchEvent(new CustomEvent('phc_db_updated'));
+    dispatchSafeCustomEvent('phc_db_updated');
   };
 
   const calculatePoStatus = (po: ErpPurchaseOrder, grnsList: ErpGrn[], extraReceivingItems?: any[]): 'Received' | 'Partially Received' | 'Approved' | 'Sent' | 'Draft' => {
@@ -4190,7 +4191,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           ? `GRN ${payload.GRNID} approved as CASH purchase! Rs. ${totalAmount.toLocaleString()} expensed in Clinic Cash Book & stock updated.`
           : `GRN ${payload.GRNID} approved as CREDIT purchase! Rs. ${totalAmount.toLocaleString()} added to Vendor Payable ledger & stock updated.`);
         setTimeout(() => setSyncMessage(null), 3500);
-        window.dispatchEvent(new CustomEvent('phc_db_updated'));
+        dispatchSafeCustomEvent('phc_db_updated');
       } else {
         alert(data.error || 'Failed to approve GRN.');
       }
@@ -4267,7 +4268,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
       setSyncMessage(`GRN ${grn.GRNID} deleted! Inventory stock level reverted and vendor balance updated.`);
       setTimeout(() => setSyncMessage(null), 3000);
-      window.dispatchEvent(new CustomEvent('phc_db_updated'));
+      dispatchSafeCustomEvent('phc_db_updated');
     } catch (err: any) {
       console.error('Error deleting GRN:', err);
       alert(`Error deleting GRN: ${err.message || 'Unknown error'}`);
@@ -5493,7 +5494,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         }
       }
 
-      window.dispatchEvent(new CustomEvent('phc_db_updated'));
+      dispatchSafeCustomEvent('phc_db_updated');
       setSyncMessage(`Cash Book record "${entry.ref || entry.id}" deleted successfully.`);
       setTimeout(() => setSyncMessage(null), 3500);
     } catch (err: any) {

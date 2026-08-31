@@ -1,0 +1,27 @@
+[
+  {
+    "FLID": 1,
+    "FLName": "Assets",
+    "_id": "xny6800mp"
+  },
+  {
+    "FLID": 2,
+    "FLName": "Liabilities",
+    "_id": "yv9u5bu5n"
+  },
+  {
+    "FLID": 3,
+    "FLName": "Equity",
+    "_id": "sqdj553b2"
+  },
+  {
+    "FLID": 4,
+    "FLName": "Revenue",
+    "_id": "kmkrksp7r"
+  },
+  {
+    "FLID": 5,
+    "FLName": "Expenses",
+    "_id": "hs0ey580i"
+  }
+]

@@ -168,8 +168,9 @@ export function parseScannedItemQR(scannedText: string): ParsedQRResult {
  */
 export function playBeepSound(type: 'success' | 'error' = 'success') {
   try {
+    if (typeof window === 'undefined') return;
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-    if (!AudioCtx) return;
+    if (!AudioCtx || typeof AudioCtx !== 'function') return;
     const ctx = new AudioCtx();
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();

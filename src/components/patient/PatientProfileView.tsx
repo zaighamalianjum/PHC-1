@@ -40,7 +40,7 @@ import {
   ClinicSettings,
   User as UserType
 } from '../../types';
-import { formatDisplayDate } from './patientDeskUtils';
+import { formatDisplayDate, parseCleanVisitDate, isSamePatient } from './patientDeskUtils';
 import { generateWhatsAppPrescriptionUrl, openWhatsAppUrl } from '../../utils/whatsappUtils';
 
 interface PatientProfileViewProps {
@@ -216,24 +216,23 @@ export default function PatientProfileView({
       let cFee = Number(v.CardsPayment) || Number((v as any).CardFee) || 0;
 
       // Look in appointments / tokens for this date
+      const cleanVDate = parseCleanVisitDate(v.VisitDate);
       if (appFee === 0) {
         const matchingApp = appointments.find(
           (a) =>
-            String(a.PatientID).trim().toLowerCase() === patId &&
-            a.AppointmentDate &&
-            a.AppointmentDate.split('T')[0] === vDate
+            (isSamePatient(a.PatientID, patId) || (selectedPatient?.PatientName && (a as any).PatientName && String((a as any).PatientName).trim().toLowerCase() === String(selectedPatient.PatientName).trim().toLowerCase())) &&
+            parseCleanVisitDate(a.AppointmentDate) === cleanVDate
         );
         if (matchingApp) {
-          appFee = Number((matchingApp as any).PaidAmount || (matchingApp as any).ConsultationFee || matchingApp.FeeCharged || 0);
+          appFee = Number((matchingApp as any).PaidAmount || (matchingApp as any).ConsultationFee || matchingApp.FeeCharged || (matchingApp as any).Fee || 0);
         }
       }
 
       if (appFee === 0) {
         const matchingTok = tokens.find(
           (t) =>
-            String(t.PatientID).trim().toLowerCase() === patId &&
-            t.Date &&
-            t.Date.split('T')[0] === vDate
+            (isSamePatient(t.PatientID, patId) || (selectedPatient?.PatientName && (t as any).PatientName && String((t as any).PatientName).trim().toLowerCase() === String(selectedPatient.PatientName).trim().toLowerCase())) &&
+            parseCleanVisitDate(t.Date) === cleanVDate
         );
         if (matchingTok) {
           appFee = Number(matchingTok.Fee || matchingTok.PaidAmount || 0);

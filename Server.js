@@ -32,45 +32,84 @@ class InMemoryDB {
     this.collections = {};
     this.indexes = {}; // name -> { by_id: Map, by_composite: Map }
     this.dbFilePath = path.join(__dirname, 'data', 'db_store.json');
+    this.collectionsDir = path.join(__dirname, 'data', 'collections');
     this.loadFromDisk();
   }
 
   loadFromDisk() {
     try {
-      if (fs.existsSync(this.dbFilePath)) {
+      // 1. Try loading modular collection files first
+      if (fs.existsSync(this.collectionsDir)) {
+        const files = fs.readdirSync(this.collectionsDir).filter(f => f.endsWith('.json'));
+        if (files.length > 0) {
+          for (const file of files) {
+            const colName = file.replace(/\.json$/, '');
+            try {
+              const content = fs.readFileSync(path.join(this.collectionsDir, file), 'utf8');
+              const parsed = JSON.parse(content);
+              if (Array.isArray(parsed)) {
+                this.collections[colName] = parsed;
+              }
+            } catch (err) {
+              console.error(`Error loading collection ${colName}:`, err.message);
+            }
+          }
+          console.log(`💾 InMemoryDB: Loaded ${Object.keys(this.collections).length} modular collections from ${this.collectionsDir}`);
+        }
+      }
+
+      // 2. Fallback to single db_store.json if collectionsDir was empty
+      if (Object.keys(this.collections).length === 0 && fs.existsSync(this.dbFilePath)) {
         const raw = fs.readFileSync(this.dbFilePath, 'utf8');
         const parsed = JSON.parse(raw);
         if (parsed && typeof parsed === 'object') {
           this.collections = parsed;
           console.log(`💾 InMemoryDB: Restored ${Object.keys(parsed).length} collections from disk (${this.dbFilePath}).`);
-          // Warm up indexes
-          for (const [colName, store] of Object.entries(this.collections)) {
-            if (!Array.isArray(store)) continue;
-            this.indexes[colName] = {
-              by_id: new Map(),
-              by_composite: new Map()
-            };
-            store.forEach(doc => {
-              if (doc && doc._id) this.indexes[colName].by_id.set(doc._id, doc);
-              if (colName === 'nhc_patient_history' && doc) {
-                const key = `${doc.PatientID || ''}_${doc.VisitDate || ''}_${doc.MedicineDetail || ''}`;
-                this.indexes[colName].by_composite.set(key, doc);
-              }
-            });
-          }
         }
+      }
+
+      // 3. Warm up fast indexes
+      for (const [colName, store] of Object.entries(this.collections)) {
+        if (!Array.isArray(store)) continue;
+        this.indexes[colName] = {
+          by_id: new Map(),
+          by_composite: new Map()
+        };
+        store.forEach(doc => {
+          if (doc && doc._id) this.indexes[colName].by_id.set(doc._id, doc);
+          if (colName === 'nhc_patient_history' && doc) {
+            const key = `${doc.PatientID || ''}_${doc.VisitDate || ''}_${doc.MedicineDetail || ''}`;
+            this.indexes[colName].by_composite.set(key, doc);
+          }
+        });
       }
     } catch (e) {
       console.error('Failed to load DB store from disk:', e.message);
     }
   }
 
-  saveToDisk() {
+  saveToDisk(specificColName = null) {
     try {
       const dataDir = path.dirname(this.dbFilePath);
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
       }
+      if (!fs.existsSync(this.collectionsDir)) {
+        fs.mkdirSync(this.collectionsDir, { recursive: true });
+      }
+
+      // Save individual collection files (lightweight & modular)
+      if (specificColName && this.collections[specificColName]) {
+        const filePath = path.join(this.collectionsDir, `${specificColName}.json`);
+        fs.writeFileSync(filePath, JSON.stringify(this.collections[specificColName], null, 2), 'utf8');
+      } else {
+        for (const [colName, store] of Object.entries(this.collections)) {
+          const filePath = path.join(this.collectionsDir, `${colName}.json`);
+          fs.writeFileSync(filePath, JSON.stringify(store, null, 2), 'utf8');
+        }
+      }
+
+      // Also maintain consolidated db_store.json
       fs.writeFileSync(this.dbFilePath, JSON.stringify(this.collections, null, 2), 'utf8');
     } catch (e) {
       console.error('Failed to save DB store to disk:', e.message);

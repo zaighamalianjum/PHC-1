@@ -1,0 +1,218 @@
+[
+  {
+    "FLID": 1,
+    "SLID": 101,
+    "TLID": 101001,
+    "TLName": "Dr. Cash-in-Hand (Morning Shift)",
+    "AcBalance": 48966,
+    "_id": "n7r64edsh"
+  },
+  {
+    "FLID": 1,
+    "SLID": 101,
+    "TLID": 101002,
+    "TLName": "Dr. Cash-in-Hand (Evening Shift)",
+    "AcBalance": 125000,
+    "_id": "ir39gm7cy"
+  },
+  {
+    "FLID": 1,
+    "SLID": 101,
+    "TLID": 101003,
+    "TLName": "Appointment Cash Desk",
+    "AcBalance": 15000,
+    "_id": "kxvii2uas"
+  },
+  {
+    "FLID": 1,
+    "SLID": 101,
+    "TLID": 101004,
+    "TLName": "Bank Al-Falah (Current Account)",
+    "AcBalance": 450000,
+    "_id": "tzwhoeosw"
+  },
+  {
+    "FLID": 1,
+    "SLID": 102,
+    "TLID": 102001,
+    "TLName": "SBP Panel Employee Receivables",
+    "AcBalance": 68000,
+    "_id": "rnr1tlcyq"
+  },
+  {
+    "FLID": 1,
+    "SLID": 103,
+    "TLID": 103001,
+    "TLName": "Pharmacy Pharmacy Stock Ledger",
+    "AcBalance": 245000,
+    "_id": "abm6vdd69"
+  },
+  {
+    "FLID": 2,
+    "SLID": 201,
+    "TLID": 201001,
+    "TLName": "Payable to Standipharm Pakistan",
+    "AcBalance": -15000,
+    "_id": "d7xrno8sa"
+  },
+  {
+    "FLID": 2,
+    "SLID": 201,
+    "TLID": 201002,
+    "TLName": "Payable to Getz Pharma",
+    "AcBalance": -28000,
+    "_id": "tw5g6zle3"
+  },
+  {
+    "FLID": 3,
+    "SLID": 301,
+    "TLID": 301001,
+    "TLName": "Owner Capital Equity Account",
+    "AcBalance": -800000,
+    "_id": "0pwjkrgvu"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "TLID": 401001,
+    "TLName": "Appointment OPD Ticket Revenue",
+    "AcBalance": -35000,
+    "_id": "2g9k65kkw"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "TLID": 401002,
+    "TLName": "Lab & Diagnostics Revenue",
+    "AcBalance": -18000,
+    "_id": "jk6amxhln"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "TLID": 401101,
+    "TLName": "Morning Shift: Appointment Revenue",
+    "AcBalance": 2222,
+    "_id": "z23finf0e"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "TLID": 401102,
+    "TLName": "Morning Shift: Clinical Medicine Revenue",
+    "AcBalance": 1500,
+    "_id": "ujtm6c0ol"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "TLID": 401103,
+    "TLName": "Morning Shift: Patent Medicine Revenue",
+    "AcBalance": 0,
+    "_id": "wc1478urk"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "TLID": 401104,
+    "TLName": "Morning Shift: Store Medicine Revenue",
+    "AcBalance": 0,
+    "_id": "ktx3qdr3y"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "TLID": 401201,
+    "TLName": "Evening Shift: Appointment Revenue",
+    "AcBalance": 0,
+    "_id": "7yq8z6u9s"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "TLID": 401202,
+    "TLName": "Evening Shift: Clinical Medicine Revenue",
+    "AcBalance": 0,
+    "_id": "jg7gxytwx"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "TLID": 401203,
+    "TLName": "Evening Shift: Patent Medicine Revenue",
+    "AcBalance": 0,
+    "_id": "hmvue2prz"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "TLID": 401204,
+    "TLName": "Evening Shift: Store Medicine Revenue",
+    "AcBalance": 0,
+    "_id": "2v28trkr1"
+  },
+  {
+    "FLID": 4,
+    "SLID": 402,
+    "TLID": 402001,
+    "TLName": "Pharmacy Store Cash Sales",
+    "AcBalance": -185000,
+    "_id": "7xw1r9la6"
+  },
+  {
+    "FLID": 5,
+    "SLID": 501,
+    "TLID": 501001,
+    "TLName": "Pharmacy Cost of Goods Sold (COGS)",
+    "AcBalance": 110000,
+    "_id": "zier1twkv"
+  },
+  {
+    "FLID": 5,
+    "SLID": 501,
+    "TLID": 501002,
+    "TLName": "Pharmacy Customer Discounts Allowed",
+    "AcBalance": 7500,
+    "_id": "p23xqc9m2"
+  },
+  {
+    "FLID": 5,
+    "SLID": 501,
+    "TLID": 501003,
+    "TLName": "Pharmacy Sales Return Debit A/C",
+    "AcBalance": 4000,
+    "_id": "ygqws62r8"
+  },
+  {
+    "FLID": 5,
+    "SLID": 501,
+    "TLID": 501004,
+    "TLName": "Pharmacy Sales Return Disc Reversal",
+    "AcBalance": -500,
+    "_id": "eutklln2a"
+  },
+  {
+    "FLID": 5,
+    "SLID": 502,
+    "TLID": 502001,
+    "TLName": "Clinic Rent & Lease Expense",
+    "AcBalance": 30000,
+    "_id": "fdhyur8nm"
+  },
+  {
+    "FLID": 5,
+    "SLID": 502,
+    "TLID": 502002,
+    "TLName": "Electricity & Water Utility Bills",
+    "AcBalance": 12000,
+    "_id": "oiyldrjgx"
+  },
+  {
+    "FLID": 5,
+    "SLID": 502,
+    "TLID": 502003,
+    "TLName": "Doctor Consultation Sharing Pay",
+    "AcBalance": 15000,
+    "_id": "mdg1tcb3x"
+  }
+]

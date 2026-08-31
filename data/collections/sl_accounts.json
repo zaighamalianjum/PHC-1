@@ -1,0 +1,62 @@
+[
+  {
+    "FLID": 1,
+    "SLID": 101,
+    "SLName": "Cash & Bank Balances",
+    "_id": "cy4loutor"
+  },
+  {
+    "FLID": 1,
+    "SLID": 102,
+    "SLName": "Receivables & Advances",
+    "_id": "efv7k37h5"
+  },
+  {
+    "FLID": 1,
+    "SLID": 103,
+    "SLName": "Inventory Accounts",
+    "_id": "fq4ds6qou"
+  },
+  {
+    "FLID": 2,
+    "SLID": 201,
+    "SLName": "Accounts Payable",
+    "_id": "9j5v2hq1c"
+  },
+  {
+    "FLID": 2,
+    "SLID": 202,
+    "SLName": "Accrued Liabilities",
+    "_id": "4fvrjm5i1"
+  },
+  {
+    "FLID": 3,
+    "SLID": 301,
+    "SLName": "Capital Accounts",
+    "_id": "tms7uye2t"
+  },
+  {
+    "FLID": 4,
+    "SLID": 401,
+    "SLName": "Clinical Services Income",
+    "_id": "nfjdia7kt"
+  },
+  {
+    "FLID": 4,
+    "SLID": 402,
+    "SLName": "Pharmacy Sales Income",
+    "_id": "nn972qp3n"
+  },
+  {
+    "FLID": 5,
+    "SLID": 501,
+    "SLName": "Pharmacy Costs & Discounts",
+    "_id": "o58wqdjh5"
+  },
+  {
+    "FLID": 5,
+    "SLID": 502,
+    "SLName": "Operating & Admin Expenses",
+    "_id": "fp8ux5c4u"
+  }
+]

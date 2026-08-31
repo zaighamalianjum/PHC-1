@@ -1,0 +1,58 @@
+[
+  {
+    "Symptoms": "fever, headache, body ache, high temperature, pain",
+    "MedicineName": "Paracetamol",
+    "Dosage": "1-0-1",
+    "Composition": "Paracetamol 500mg",
+    "_id": "axcklx7k8"
+  },
+  {
+    "Symptoms": "throat infection, cough, dry cough, sore throat, bronchitis",
+    "MedicineName": "Acefyl Cough Syrup",
+    "Dosage": "1-1-1",
+    "Composition": "Acefylline Piperazine",
+    "_id": "gn1gq8dcb"
+  },
+  {
+    "Symptoms": "heartburn, acidity, GERD, gastric, stomach pain, reflux",
+    "MedicineName": "Omeprazole",
+    "Dosage": "1-0-0",
+    "Composition": "Omeprazole 20mg",
+    "_id": "acqzjq8xz"
+  },
+  {
+    "Symptoms": "allergic rhinitis, sneezing, runny nose, allergy, itching",
+    "MedicineName": "Loratadine",
+    "Dosage": "0-0-1",
+    "Composition": "Loratadine 10mg",
+    "_id": "fy0p4dwb1"
+  },
+  {
+    "Symptoms": "bacterial infection, fever, throat infection, tonsillitis",
+    "MedicineName": "Co-Amoxiclav",
+    "Dosage": "1-0-1",
+    "Composition": "Amoxicillin + Clavulanic Acid",
+    "_id": "k6jv5xcjm"
+  },
+  {
+    "Symptoms": "diarrhea, loose motions, dehydration, stomach bug",
+    "MedicineName": "Flagyl",
+    "Dosage": "1-1-1",
+    "Composition": "Metronidazole 400mg",
+    "_id": "zzrpnx01z"
+  },
+  {
+    "Symptoms": "vomiting, nausea, motion sickness, stomach upset",
+    "MedicineName": "Gravinate",
+    "Dosage": "1-0-1",
+    "Composition": "Dimenhydrinate 50mg",
+    "_id": "k7atwzehg"
+  },
+  {
+    "Symptoms": "muscle spasm, pain, backache, neck pain, stiffness",
+    "MedicineName": "Nuberol Forte",
+    "Dosage": "1-0-1",
+    "Composition": "Paracetamol + Orphenadrine",
+    "_id": "iu9vn7rpn"
+  }
+]

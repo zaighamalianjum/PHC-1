@@ -1,0 +1,24 @@
+[
+  {
+    "VisitID": "VIS-1786546304881",
+    "PatientID": "PAT-003",
+    "VisitDate": "2026-08-12",
+    "SymptomsDiagnosis": "ADSADS",
+    "MedicalReportResult": "ADSASDASD",
+    "LabTestAdvice": "None",
+    "PatientAdvice": "Take medicines regularly.",
+    "VisitRemarks": "Clinical: ASDADS - ASDAD (EXP: 2026-09-02) | Patent: ASDADS - ASDASDSD | Medical Reports: ADSASDASD | Lab Tests: None | Charges: OPD Fee PKR 2222, Clinical Meds PKR 1500, File PKR 022, Card PKR 222 (Total PKR 3966)",
+    "Status": 2,
+    "FocWaivedOpdFee": 0,
+    "FocWaivedClinicalFee": 0,
+    "FocWaivedFileCardFee": 0,
+    "FocReason": "",
+    "ConsultationFee": 2222,
+    "ClinicalMedicinePayment": "1500",
+    "FileFee": "022",
+    "CardFee": "222",
+    "CardsPayment": "244",
+    "ConsultationPaymentOption": "Cash Paid",
+    "_id": "yhm4hj6w0"
+  }
+]

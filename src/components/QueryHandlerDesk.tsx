@@ -15,6 +15,7 @@ import {
   Info,
   ChevronDown
 } from 'lucide-react';
+import { dispatchSafeCustomEvent } from '../utils/userSync';
 
 interface QueryHandlerDeskProps {
   bridgeUrl: string;
@@ -166,7 +167,7 @@ export default function QueryHandlerDesk({ bridgeUrl }: QueryHandlerDeskProps) {
       if (data.success) {
         setSuccess('Record deleted successfully from database.');
         fetchRecords();
-        window.dispatchEvent(new CustomEvent('phc_db_updated'));
+        dispatchSafeCustomEvent('phc_db_updated');
       } else {
         throw new Error(data.error || 'Failed to delete record.');
       }
@@ -195,7 +196,7 @@ export default function QueryHandlerDesk({ bridgeUrl }: QueryHandlerDeskProps) {
         setSuccess(`Database table/collection "${targetColl}" deleted successfully!`);
         setRecords([]);
         fetchRecords();
-        window.dispatchEvent(new CustomEvent('phc_db_updated'));
+        dispatchSafeCustomEvent('phc_db_updated');
       } else {
         throw new Error(data.error || 'Failed to delete table.');
       }

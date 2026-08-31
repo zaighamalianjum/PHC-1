@@ -82,7 +82,10 @@ import {
   formatDisplayDate,
   getPatientType as getPatientTypeUtil,
   matchPatientRecord,
-  getResolvedNhcPatientName
+  getResolvedNhcPatientName,
+  isSamePatient,
+  isSamePatientOrName,
+  parseCleanVisitDate
 } from './patient/patientDeskUtils';
 import PatientDeskSubNav, { PatientDeskSubTab } from './patient/PatientDeskSubNav';
 import LargeScreenTokenDisplay from './patient/LargeScreenTokenDisplay';
@@ -675,15 +678,24 @@ export default function PatientDesk({
     let initialOpdFee = '';
     const patId = targetPatId || pvSelectedPatientId;
     if (patId) {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const matchedAppt = (appointments || []).find(a => a.PatientID === patId && a.AppointmentDate === todayStr);
-      if (matchedAppt?.FeeCharged !== undefined && matchedAppt.FeeCharged !== null && matchedAppt.FeeCharged > 0) {
-        initialOpdFee = String(matchedAppt.FeeCharged);
+      const todayStr = parseCleanVisitDate(pvVisitDate || new Date().toISOString().split('T')[0]);
+      const matchedAppt = (appointments || []).find(a => 
+        isSamePatient(a.PatientID, patId) && parseCleanVisitDate(a.AppointmentDate) === todayStr
+      );
+      if (matchedAppt) {
+        const fee = (matchedAppt as any).PaidAmount || (matchedAppt as any).ConsultationFee || matchedAppt.FeeCharged || 0;
+        if (fee) initialOpdFee = String(fee);
       } else {
-        initialOpdFee = '';
+        // Check most recent appointment for this patient with fee
+        const recentAppt = (appointments || []).find(a => 
+          isSamePatient(a.PatientID, patId) && 
+          (Number(a.FeeCharged) > 0 || Number((a as any).PaidAmount) > 0 || Number((a as any).ConsultationFee) > 0)
+        );
+        if (recentAppt) {
+          const fee = (recentAppt as any).PaidAmount || (recentAppt as any).ConsultationFee || recentAppt.FeeCharged || 0;
+          if (fee) initialOpdFee = String(fee);
+        }
       }
-    } else {
-      initialOpdFee = '';
     }
     setPvOpdFeePkr(initialOpdFee);
     setPvSaveError('');
@@ -1781,14 +1793,6 @@ Healing Naturally. Restoring Balance.`;
       });
   };
 
-  const isSamePatient = (id1?: any, id2?: any): boolean => {
-    if (!id1 || !id2) return false;
-    const s1 = String(id1).trim().toLowerCase();
-    const s2 = String(id2).trim().toLowerCase();
-    if (s1 === s2) return true;
-    return s1.replace(/[^0-9a-zA-Z]/g, '') === s2.replace(/[^0-9a-zA-Z]/g, '');
-  };
-
   const getPatientLastFee = (pid?: string): number => {
     if (!pid) return 500;
     // 1. Check appointments for this patient
@@ -1988,34 +1992,6 @@ Healing Naturally. Restoring Balance.`;
     return undefined;
   })();
 
-  const parseCleanVisitDate = (raw: any): string => {
-    if (!raw || raw === 'N/A' || String(raw).trim() === '') {
-      return pvVisitDate || new Date().toISOString().split('T')[0];
-    }
-    const str = String(raw).trim();
-    if (/^\d{4}-\d{2}-\d{2}/.test(str)) {
-      return str.slice(0, 10);
-    }
-    const parts = str.split(/[\/\-\s]/);
-    if (parts.length >= 3 && parts[0].length <= 2 && parts[1].length <= 2 && parts[2].length === 4) {
-      const p1 = parseInt(parts[0], 10);
-      const p2 = parseInt(parts[1], 10);
-      const yr = parts[2];
-      if (!isNaN(p1) && !isNaN(p2) && yr) {
-        if (p1 > 12) {
-          return `${yr}-${String(p2).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
-        } else {
-          return `${yr}-${String(p2).padStart(2, '0')}-${String(p1).padStart(2, '0')}`;
-        }
-      }
-    }
-    const parsedDate = new Date(str);
-    if (!isNaN(parsedDate.getTime())) {
-      return parsedDate.toISOString().split('T')[0];
-    }
-    return str.split(' ')[0].split('T')[0];
-  };
-
   const combinedPreviousHistory = (() => {
     if (!pvSelectedPatientId) return [];
 
@@ -2029,9 +2005,12 @@ Healing Naturally. Restoring Balance.`;
       labTestAdvice?: string;
     }[] = [];
 
+    const selPat = (patients || []).find(p => isSamePatient(p.PatientID, pvSelectedPatientId));
+    const selPatName = selPat?.PatientName;
+
     // 1. From local EMR visits
     (visits || [])
-      .filter((v) => isSamePatient(v.PatientID, pvSelectedPatientId))
+      .filter((v) => isSamePatient(v.PatientID, pvSelectedPatientId) || (selPatName && (v as any).PatientName && String((v as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
       .forEach((v) => {
         const vMeds = (visitMedicines || []).filter((m) => m.VisitID === v.VisitID);
         const clinicalList = vMeds.filter((m) => m.MedicineType === 'C').map((m) => `${m.ItemID} - ${m.Dosage} (${m.MedicineDetail})`).join('\n');
@@ -2047,20 +2026,23 @@ Healing Naturally. Restoring Balance.`;
           if (pPart) pText = pPart.replace('Patent:', '').trim();
         }
 
-        historyItems.push({
-          date: parseCleanVisitDate(v.VisitDate),
-          source: 'Clinical EMR Visit',
-          symptoms: v.SymptomsDiagnosis || 'N/A',
-          clinicalMedication: cText || 'None prescribed',
-          patientMedication: pText || 'None prescribed',
-          medicalReportResult: v.MedicalReportResult && v.MedicalReportResult !== 'N/A' ? v.MedicalReportResult : 'N/A',
-          labTestAdvice: v.LabTestAdvice && v.LabTestAdvice !== 'N/A' ? v.LabTestAdvice : 'N/A'
-        });
+        const vDate = parseCleanVisitDate(v.VisitDate);
+        if (vDate) {
+          historyItems.push({
+            date: vDate,
+            source: 'Clinical EMR Visit',
+            symptoms: v.SymptomsDiagnosis || 'N/A',
+            clinicalMedication: cText || 'None prescribed',
+            patientMedication: pText || 'None prescribed',
+            medicalReportResult: v.MedicalReportResult && v.MedicalReportResult !== 'N/A' ? v.MedicalReportResult : 'N/A',
+            labTestAdvice: v.LabTestAdvice && v.LabTestAdvice !== 'N/A' ? v.LabTestAdvice : 'N/A'
+          });
+        }
       });
 
     // 2. From NHC Patient History archive
     pvNhcHistory
-      .filter((nhc) => isSamePatient(nhc.PatientID, pvSelectedPatientId) || !nhc.PatientID)
+      .filter((nhc) => isSamePatient(nhc.PatientID, pvSelectedPatientId) || !nhc.PatientID || (selPatName && (nhc.PatientName || (nhc as any).patientName) && String(nhc.PatientName || (nhc as any).patientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
       .forEach((nhc) => {
         let cMed = nhc.clinicalMedication || nhc.ClinicalMedication || '';
         let pMed = nhc.patientMedication || nhc.PatientMedication || '';
@@ -2081,16 +2063,55 @@ Healing Naturally. Restoring Balance.`;
         const labAdv = nhc.LabTestAdvice || nhc.LabTests || 'N/A';
 
         const rawNhcDate = nhc.VisitDate || nhc.RegistrationDate || nhc.Date || nhc.CreatedAt || nhc.date;
+        const cleanNhcDate = parseCleanVisitDate(rawNhcDate);
 
-        historyItems.push({
-          date: parseCleanVisitDate(rawNhcDate),
-          source: 'NHC Archive',
-          symptoms: nhc.SymptomsDiagnosis || nhc.Diagnosis || nhc.Symptoms || nhc.symptoms || nhc.MedicalCondition || 'N/A',
-          clinicalMedication: cMed || 'None recorded',
-          patientMedication: pMed || 'None recorded',
-          medicalReportResult: mrRes !== 'N/A' ? mrRes : 'N/A',
-          labTestAdvice: labAdv !== 'N/A' ? labAdv : 'N/A'
-        });
+        if (cleanNhcDate) {
+          historyItems.push({
+            date: cleanNhcDate,
+            source: 'NHC Archive',
+            symptoms: nhc.SymptomsDiagnosis || nhc.Diagnosis || nhc.Symptoms || nhc.symptoms || nhc.MedicalCondition || 'N/A',
+            clinicalMedication: cMed || 'None recorded',
+            patientMedication: pMed || 'None recorded',
+            medicalReportResult: mrRes !== 'N/A' ? mrRes : 'N/A',
+            labTestAdvice: labAdv !== 'N/A' ? labAdv : 'N/A'
+          });
+        }
+      });
+
+    // 3. From Appointments
+    (appointments || [])
+      .filter((a) => isSamePatient(a.PatientID, pvSelectedPatientId) || (selPatName && (a as any).PatientName && String((a as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
+      .forEach((a) => {
+        const appDate = parseCleanVisitDate(a.AppointmentDate);
+        if (appDate) {
+          historyItems.push({
+            date: appDate,
+            source: 'Appointment Record',
+            symptoms: a.Remarks || 'OPD Appointment Scheduled / Visited',
+            clinicalMedication: 'None recorded',
+            patientMedication: 'None recorded',
+            medicalReportResult: 'N/A',
+            labTestAdvice: 'N/A'
+          });
+        }
+      });
+
+    // 4. From Tokens
+    (tokens || [])
+      .filter((t) => isSamePatient(t.PatientID, pvSelectedPatientId) || (selPatName && (t as any).PatientName && String((t as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
+      .forEach((t) => {
+        const tokDate = parseCleanVisitDate(t.Date);
+        if (tokDate) {
+          historyItems.push({
+            date: tokDate,
+            source: 'OPD Token Queue',
+            symptoms: 'OPD Token Issued',
+            clinicalMedication: 'None recorded',
+            patientMedication: 'None recorded',
+            medicalReportResult: 'N/A',
+            labTestAdvice: 'N/A'
+          });
+        }
       });
 
     return historyItems;
@@ -2105,37 +2126,64 @@ Healing Naturally. Restoring Balance.`;
       symptoms: string;
       visitObj?: Visit;
       nhcObj?: NhcPatientHistory;
+      appObj?: Appointment;
     }[] = [];
 
     const seenIds = new Set<string>();
+    const selPat = (patients || []).find(p => isSamePatient(p.PatientID, pvSelectedPatientId));
+    const selPatName = selPat?.PatientName;
 
     (visits || [])
-      .filter((v) => isSamePatient(v.PatientID, pvSelectedPatientId))
+      .filter((v) => isSamePatient(v.PatientID, pvSelectedPatientId) || (selPatName && (v as any).PatientName && String((v as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
       .forEach((v) => {
         if (!seenIds.has(v.VisitID)) {
           seenIds.add(v.VisitID);
-          list.push({
-            id: v.VisitID,
-            date: parseCleanVisitDate(v.VisitDate),
-            symptoms: v.SymptomsDiagnosis || 'Routine Consultation',
-            visitObj: v,
-          });
+          const vDate = parseCleanVisitDate(v.VisitDate);
+          if (vDate) {
+            list.push({
+              id: v.VisitID,
+              date: vDate,
+              symptoms: v.SymptomsDiagnosis || 'Routine Consultation',
+              visitObj: v,
+            });
+          }
         }
       });
 
     pvNhcHistory
-      .filter((nhc) => isSamePatient(nhc.PatientID, pvSelectedPatientId) || !nhc.PatientID)
+      .filter((nhc) => isSamePatient(nhc.PatientID, pvSelectedPatientId) || !nhc.PatientID || (selPatName && (nhc.PatientName || (nhc as any).patientName) && String(nhc.PatientName || (nhc as any).patientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
       .forEach((nhc, idx) => {
         const vId = ('VisitID' in nhc && nhc.VisitID) ? nhc.VisitID : ('date' in nhc ? `NHC-${nhc.date}` : `NHC-${idx}`);
         if (!seenIds.has(vId)) {
           seenIds.add(vId);
           const rawNhcDate = nhc.VisitDate || nhc.RegistrationDate || nhc.Date || nhc.CreatedAt || nhc.date;
-          list.push({
-            id: vId,
-            date: parseCleanVisitDate(rawNhcDate),
-            symptoms: nhc.SymptomsDiagnosis || nhc.Diagnosis || nhc.Symptoms || nhc.symptoms || 'Routine Consultation',
-            nhcObj: nhc,
-          });
+          const cleanNhcDate = parseCleanVisitDate(rawNhcDate);
+          if (cleanNhcDate) {
+            list.push({
+              id: vId,
+              date: cleanNhcDate,
+              symptoms: nhc.SymptomsDiagnosis || nhc.Diagnosis || nhc.Symptoms || nhc.symptoms || 'Routine Consultation',
+              nhcObj: nhc,
+            });
+          }
+        }
+      });
+
+    (appointments || [])
+      .filter((a) => isSamePatient(a.PatientID, pvSelectedPatientId) || (selPatName && (a as any).PatientName && String((a as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
+      .forEach((a, idx) => {
+        const aId = a.AppointmentID || `APP-${a.PatientID}-${idx}`;
+        if (!seenIds.has(aId)) {
+          seenIds.add(aId);
+          const aDate = parseCleanVisitDate(a.AppointmentDate);
+          if (aDate) {
+            list.push({
+              id: aId,
+              date: aDate,
+              symptoms: a.Remarks || 'OPD Appointment Scheduled',
+              appObj: a,
+            });
+          }
         }
       });
 
@@ -2511,26 +2559,41 @@ Healing Naturally. Restoring Balance.`;
         (item, index, self) => index === self.findIndex((t) => t.medicineName === item.medicineName && t.dosage === item.dosage)
       );
 
+      const selPat = (patients || []).find(p => isSamePatient(p.PatientID, pvSelectedPatientId));
+      const selPatName = selPat?.PatientName;
+
       if (!dateFilePkr || dateFilePkr === '0') {
         const appMatch = (appointments || []).find(
           (a) =>
-            isSamePatient(a.PatientID, pvSelectedPatientId) &&
+            (isSamePatient(a.PatientID, pvSelectedPatientId) || (selPatName && (a as any).PatientName && String((a as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase())) &&
             parseCleanVisitDate(a.AppointmentDate) === dateStr
         );
         if (appMatch) {
-          const appFee = (appMatch as any).PaidAmount || (appMatch as any).ConsultationFee || appMatch.FeeCharged || 0;
+          const appFee = (appMatch as any).PaidAmount || (appMatch as any).ConsultationFee || appMatch.FeeCharged || (appMatch as any).Fee || 0;
           if (appFee) dateFilePkr = String(appFee);
         }
       }
       if (!dateFilePkr || dateFilePkr === '0') {
         const tokMatch = (tokens || []).find(
           (t) =>
-            isSamePatient(t.PatientID, pvSelectedPatientId) &&
+            (isSamePatient(t.PatientID, pvSelectedPatientId) || (selPatName && (t as any).PatientName && String((t as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase())) &&
             parseCleanVisitDate(t.Date) === dateStr
         );
         if (tokMatch) {
           const tokFee = (tokMatch as any).Fee || (tokMatch as any).PaidAmount || 0;
           if (tokFee) dateFilePkr = String(tokFee);
+        }
+      }
+      // If still 0, check if this patient has a single appointment or if this date matches the patient's most recent appointment
+      if (!dateFilePkr || dateFilePkr === '0') {
+        const anyApp = (appointments || []).find(
+          (a) =>
+            (isSamePatient(a.PatientID, pvSelectedPatientId) || (selPatName && (a as any).PatientName && String((a as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase())) &&
+            (Number(a.FeeCharged) > 0 || Number((a as any).PaidAmount) > 0 || Number((a as any).ConsultationFee) > 0)
+        );
+        if (anyApp && (filteredDates.length <= 1 || dateStr === parseCleanVisitDate(anyApp.AppointmentDate))) {
+          const fallbackFee = (anyApp as any).PaidAmount || (anyApp as any).ConsultationFee || anyApp.FeeCharged || 0;
+          if (fallbackFee) dateFilePkr = String(fallbackFee);
         }
       }
 
@@ -5979,13 +6042,17 @@ Healing Naturally. Restoring Balance.`;
 
   // Advanced Token queue handlers
   const speakVoice = (tok: Token) => {
-    if ('speechSynthesis' in window) {
-      const name = getPatientName(tok.PatientID);
-      const text = `Attention please, Token number ${tok.TokenNo}, patient ${name}, please proceed to the doctor's room.`;
-      const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.95; // clear and slightly slower for readability
-      utterance.pitch = 1.0;
-      window.speechSynthesis.speak(utterance);
+    try {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window && typeof (window as any).SpeechSynthesisUtterance === 'function') {
+        const name = getPatientName(tok.PatientID);
+        const text = `Attention please, Token number ${tok.TokenNo}, patient ${name}, please proceed to the doctor's room.`;
+        const utterance = new (window as any).SpeechSynthesisUtterance(text);
+        utterance.rate = 0.95; // clear and slightly slower for readability
+        utterance.pitch = 1.0;
+        window.speechSynthesis.speak(utterance);
+      }
+    } catch (e) {
+      console.warn('Voice announcement error:', e);
     }
   };
 

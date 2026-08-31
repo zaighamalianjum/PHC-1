@@ -98,7 +98,7 @@ import {
   GenericModuleSkeleton
 } from './components/ModuleSkeletons';
 import { ClinicSettings, SmsSettings, MongoDbSettings } from './types';
-import { subscribeToUserSync, haveUserPermissionsChanged, broadcastUserSync } from './utils/userSync';
+import { subscribeToUserSync, haveUserPermissionsChanged, broadcastUserSync, dispatchSafeCustomEvent } from './utils/userSync';
 import { ShieldAlert, BellRing } from 'lucide-react';
 
 const MENU_ITEMS = [
@@ -267,8 +267,8 @@ export default function App() {
                   timestamp: Date.now()
                 });
               }
-              window.dispatchEvent(new CustomEvent('phc_local_user_updated', { detail: freshSelf }));
-              window.dispatchEvent(new CustomEvent('phc_db_updated'));
+              dispatchSafeCustomEvent('phc_local_user_updated', freshSelf);
+              dispatchSafeCustomEvent('phc_db_updated');
             }
           }
         }

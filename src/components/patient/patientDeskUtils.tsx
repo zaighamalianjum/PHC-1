@@ -28,12 +28,64 @@ export function isSamePatient(id1?: any, id2?: any): boolean {
   const s1 = String(id1).trim().toLowerCase();
   const s2 = String(id2).trim().toLowerCase();
   if (s1 === s2) return true;
-  return s1.replace(/[^0-9a-zA-Z]/g, '') === s2.replace(/[^0-9a-zA-Z]/g, '');
+
+  const clean1 = s1.replace(/[^0-9a-zA-Z]/g, '');
+  const clean2 = s2.replace(/[^0-9a-zA-Z]/g, '');
+  if (clean1 && clean2 && clean1 === clean2) return true;
+
+  // Strip common prefixes (mr, pat, patient, p, nhc, dr)
+  const stripPrefix = (s: string) => s.replace(/^(mr|pat|patient|p|nhc|dr)[\s\-_#]*/i, '').trim();
+  const stripped1 = stripPrefix(s1);
+  const stripped2 = stripPrefix(s2);
+  if (stripped1 && stripped2 && stripped1 === stripped2) return true;
+
+  // Pure numeric check if both have numbers (e.g. "MR-1001" vs "1001")
+  const num1 = s1.replace(/\D/g, '');
+  const num2 = s2.replace(/\D/g, '');
+  if (num1 && num2 && num1 === num2 && num1.length >= 1) return true;
+
+  return false;
+}
+
+export function isSamePatientOrName(
+  patA?: { PatientID?: any; PatientName?: any; PhoneMobile?: any } | string | null,
+  patB?: { PatientID?: any; PatientName?: any; PhoneMobile?: any } | string | null
+): boolean {
+  if (!patA || !patB) return false;
+  const idA = typeof patA === 'string' ? patA : patA.PatientID;
+  const nameA = typeof patA === 'object' ? patA.PatientName : undefined;
+  const phoneA = typeof patA === 'object' ? patA.PhoneMobile : undefined;
+
+  const idB = typeof patB === 'string' ? patB : patB.PatientID;
+  const nameB = typeof patB === 'object' ? patB.PatientName : undefined;
+  const phoneB = typeof patB === 'object' ? patB.PhoneMobile : undefined;
+
+  if (idA && idB && isSamePatient(idA, idB)) return true;
+
+  if (nameA && nameB) {
+    const nA = String(nameA).trim().toLowerCase();
+    const nB = String(nameB).trim().toLowerCase();
+    if (nA && nB && (nA === nB || nA.replace(/[^a-z0-9]/g, '') === nB.replace(/[^a-z0-9]/g, ''))) return true;
+  }
+
+  if (phoneA && phoneB) {
+    const pA = String(phoneA).replace(/\D/g, '');
+    const pB = String(phoneB).replace(/\D/g, '');
+    if (pA && pB && pA.length >= 10 && pA === pB) return true;
+  }
+
+  // Check if one's ID matches the other's Name or vice versa
+  if (idA && nameB && String(idA).trim().toLowerCase() === String(nameB).trim().toLowerCase()) return true;
+  if (idB && nameA && String(idB).trim().toLowerCase() === String(nameA).trim().toLowerCase()) return true;
+
+  return false;
 }
 
 export function formatReportDate(dateStr: string): string {
   if (!dateStr) return '';
-  const pts = dateStr.split('-');
+  const clean = parseCleanVisitDate(dateStr);
+  if (!clean) return dateStr;
+  const pts = clean.split('-');
   if (pts.length !== 3) return dateStr;
   const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   const monthIdx = parseInt(pts[1], 10) - 1;
@@ -41,23 +93,96 @@ export function formatReportDate(dateStr: string): string {
   return `${pts[2]}-${monthStr}-${pts[0]}`;
 }
 
-export function parseCleanVisitDate(dateStr?: string | null): string {
-  if (!dateStr || dateStr === 'N/A' || dateStr === '—') return '';
+export function parseCleanVisitDate(dateStr?: string | number | null): string {
+  if (dateStr === undefined || dateStr === null || dateStr === '' || dateStr === 'N/A' || dateStr === '—') return '';
   try {
-    const cleanStr = String(dateStr).trim().split('T')[0].split(' ')[0];
-    const parts = cleanStr.split('-');
-    if (parts.length === 3 && parts[0].length === 4) {
-      return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
+    const raw = String(dateStr).trim();
+    if (!raw) return '';
+
+    // Check for Excel serial number (e.g. 44927 or "44927")
+    const num = Number(raw);
+    if (!isNaN(num) && num > 30000 && num < 70000 && !raw.includes('-') && !raw.includes('/')) {
+      const parsedExcelDate = new Date(Math.round((num - 25569) * 86400 * 1000));
+      if (!isNaN(parsedExcelDate.getTime())) {
+        return parsedExcelDate.toISOString().split('T')[0];
+      }
     }
-    if (parts.length === 3 && parts[2].length === 4) {
-      return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+
+    // Standard ISO YYYY-MM-DD or YYYY-MM-DDTHH:mm:ss
+    if (/^\d{4}-\d{2}-\d{2}/.test(raw)) {
+      return raw.slice(0, 10);
     }
-    const d = new Date(String(dateStr).trim());
-    if (isNaN(d.getTime())) return '';
-    const yyyy = d.getFullYear();
-    const mm = String(d.getMonth() + 1).padStart(2, '0');
-    const dd = String(d.getDate()).padStart(2, '0');
-    return `${yyyy}-${mm}-${dd}`;
+    if (/^\d{4}\/\d{2}\/\d{2}/.test(raw)) {
+      return raw.slice(0, 10).replace(/\//g, '-');
+    }
+
+    // Handle DD-MM-YYYY, DD/MM/YYYY, MM/DD/YYYY, DD.MM.YYYY
+    const parts = raw.split(/[\/\-\.\s]/).filter(Boolean);
+    if (parts.length >= 3) {
+      const monthMap: Record<string, string> = {
+        jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
+        jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12',
+        january: '01', february: '02', march: '03', april: '04', june: '06',
+        july: '07', august: '08', september: '09', october: '10', november: '11', december: '12'
+      };
+
+      // Check for Month name (e.g., 31-Aug-2026 or Aug-31-2026)
+      const p0Low = parts[0].toLowerCase();
+      const p1Low = parts[1].toLowerCase();
+
+      if (monthMap[p1Low] && parts[2].length === 4) {
+        // DD-MMM-YYYY (e.g. 31-Aug-2026)
+        const dd = parts[0].padStart(2, '0');
+        const mm = monthMap[p1Low];
+        const yr = parts[2];
+        return `${yr}-${mm}-${dd}`;
+      } else if (monthMap[p0Low] && parts[2].length === 4) {
+        // MMM-DD-YYYY (e.g. Aug-31-2026)
+        const mm = monthMap[p0Low];
+        const dd = parts[1].padStart(2, '0');
+        const yr = parts[2];
+        return `${yr}-${mm}-${dd}`;
+      }
+
+      // Check numeric components:
+      // DD-MM-YYYY or MM-DD-YYYY where parts[2] is 4 digits
+      if (parts[2].length === 4 && parts[0].length <= 2 && parts[1].length <= 2) {
+        const v1 = parseInt(parts[0], 10);
+        const v2 = parseInt(parts[1], 10);
+        const yr = parts[2];
+        if (!isNaN(v1) && !isNaN(v2)) {
+          if (v1 > 12) {
+            // Definitely DD-MM-YYYY
+            return `${yr}-${String(v2).padStart(2, '0')}-${String(v1).padStart(2, '0')}`;
+          } else if (v2 > 12) {
+            // Definitely MM-DD-YYYY
+            return `${yr}-${String(v1).padStart(2, '0')}-${String(v2).padStart(2, '0')}`;
+          } else {
+            // Ambiguous (both <= 12). Default to DD-MM-YYYY in Pakistani medical context
+            return `${yr}-${String(v2).padStart(2, '0')}-${String(v1).padStart(2, '0')}`;
+          }
+        }
+      }
+
+      // YYYY-MM-DD where parts[0] is 4 digits
+      if (parts[0].length === 4 && parts[1].length <= 2 && parts[2].length <= 2) {
+        const yr = parts[0];
+        const mm = String(parseInt(parts[1], 10)).padStart(2, '0');
+        const dd = String(parseInt(parts[2], 10)).padStart(2, '0');
+        return `${yr}-${mm}-${dd}`;
+      }
+    }
+
+    // Fallback using native Date
+    const d = new Date(raw);
+    if (!isNaN(d.getTime())) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, '0');
+      const dd = String(d.getDate()).padStart(2, '0');
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    return '';
   } catch {
     return '';
   }
