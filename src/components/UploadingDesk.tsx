@@ -17,9 +17,17 @@ import {
   RefreshCw, 
   Check,
   Sparkles,
-  Search
+  Search,
+  Calendar,
+  Coins,
+  Download,
+  CreditCard,
+  Users,
+  ArrowUpDown,
+  History,
+  FileText
 } from 'lucide-react';
-import { Item, LabTest, MongoDbSettings, NhcPatientHistory, SmartLocatorMedicine } from '../types';
+import { Item, LabTest, MongoDbSettings, NhcPatientHistory, SmartLocatorMedicine, Appointment, Patient } from '../types';
 
 interface UploadingDeskProps {
   items: Item[];
@@ -32,6 +40,10 @@ interface UploadingDeskProps {
   setNhcPatients?: React.Dispatch<React.SetStateAction<NhcPatientHistory[]>>;
   smartLocatorMedicines: SmartLocatorMedicine[];
   setSmartLocatorMedicines: React.Dispatch<React.SetStateAction<SmartLocatorMedicine[]>>;
+  appointments?: Appointment[];
+  setAppointments?: React.Dispatch<React.SetStateAction<Appointment[]>>;
+  patients?: Patient[];
+  setPatients?: React.Dispatch<React.SetStateAction<Patient[]>>;
 }
 
 export default function UploadingDesk({
@@ -43,22 +55,32 @@ export default function UploadingDesk({
   nhcPatients,
   setNhcPatients,
   smartLocatorMedicines,
-  setSmartLocatorMedicines
+  setSmartLocatorMedicines,
+  appointments,
+  setAppointments,
+  patients,
+  setPatients
 }: UploadingDeskProps) {
-  const [activeUploadTab, setActiveUploadTab] = useState<'medicines' | 'labtests' | 'nhcpatienthistory' | 'barcode' | 'smartlocator' | 'master_backup'>('medicines');
+  const [activeUploadTab, setActiveUploadTab] = useState<'medicines' | 'appointments' | 'labtests' | 'nhcpatienthistory' | 'barcode' | 'smartlocator' | 'master_backup'>('medicines');
   
   // Paste inputs
   const [medicinePasteText, setMedicinePasteText] = useState('');
+  const [appointmentPasteText, setAppointmentPasteText] = useState('');
   const [labTestPasteText, setLabTestPasteText] = useState('');
   const [nhcPasteText, setNhcPasteText] = useState('');
   
   // Previews
   const [medicinePreview, setMedicinePreview] = useState<Item[]>([]);
+  const [appointmentPreview, setAppointmentPreview] = useState<Array<Appointment & { PatientName?: string; PhoneMobile?: string; isNewPatient?: boolean }>>([]);
   const [labTestPreview, setLabTestPreview] = useState<LabTest[]>([]);
   const [nhcPreview, setNhcPreview] = useState<NhcPatientHistory[]>([]);
   const [medPreviewCategoryFilter, setMedPreviewCategoryFilter] = useState<string>('ALL');
+  const [appPreviewSearch, setAppPreviewSearch] = useState('');
   const [dragActiveMed, setDragActiveMed] = useState(false);
+  const [dragActiveApp, setDragActiveApp] = useState(false);
+  const [uploadModeApp, setUploadModeApp] = useState<'wipe' | 'merge'>('merge');
   const fileInputMedRef = React.useRef<HTMLInputElement>(null);
+  const fileInputAppRef = React.useRef<HTMLInputElement>(null);
   
   // Statuses
   const [errorMsg, setErrorMsg] = useState('');
@@ -1163,6 +1185,378 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
     setBarcodeInput('');
   };
 
+  // ------------------------------------------------------------------------------------------
+  // 📅 APPOINTMENT PAYMENT UPLOAD HANDLERS
+  // ------------------------------------------------------------------------------------------
+  const handleDownloadAppointmentSample = () => {
+    import('xlsx').then((XLSX) => {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const sampleData = [
+        {
+          "Patient ID": "MR-1001",
+          "Patient Name": "Muhammad Ali",
+          "Appointment Payment": 1000,
+          "Appointment Date": todayStr,
+          "Shift": 1,
+          "Remarks": "Routine Checkup"
+        },
+        {
+          "Patient ID": "MR-1002",
+          "Patient Name": "Fatima Bibi",
+          "Appointment Payment": 500,
+          "Appointment Date": todayStr,
+          "Shift": 2,
+          "Remarks": "Follow-up Visit"
+        },
+        {
+          "Patient ID": "MR-1003",
+          "Patient Name": "Dr. Tariq Mahmood",
+          "Appointment Payment": 1500,
+          "Appointment Date": todayStr,
+          "Shift": 1,
+          "Remarks": "Specialist Consultation"
+        },
+        {
+          "Patient ID": "MR-1004",
+          "Patient Name": "Zainab Tariq",
+          "Appointment Payment": 1000,
+          "Appointment Date": todayStr,
+          "Shift": 2,
+          "Remarks": "Regular Follow-up"
+        },
+        {
+          "Patient ID": "MR-1005",
+          "Patient Name": "Bilal Ahmed",
+          "Appointment Payment": 500,
+          "Appointment Date": todayStr,
+          "Shift": 1,
+          "Remarks": "General OPD"
+        }
+      ];
+
+      const ws = XLSX.utils.json_to_sheet(sampleData);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Appointment_History");
+      XLSX.writeFile(wb, "Patient_Appointment_Payment_Template.xlsx");
+    });
+  };
+
+  const handleAppointmentFileRead = (file: File) => {
+    if (!file) return;
+    const fileExt = file.name.split('.').pop()?.toLowerCase();
+    if (fileExt !== 'xlsx' && fileExt !== 'xls' && fileExt !== 'csv') {
+      setErrorMsg('Invalid file format. Please upload an Excel (.xlsx, .xls) or CSV (.csv) spreadsheet.');
+      return;
+    }
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      try {
+        const data = new Uint8Array(e.target?.result as ArrayBuffer);
+        import('xlsx').then((XLSX) => {
+          const workbook = XLSX.read(data, { type: 'array' });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+          if (rawData.length === 0) {
+            setErrorMsg('The Excel sheet appears to be empty.');
+            return;
+          }
+
+          const headers = (rawData[0] || []).map((h: any) => String(h || '').toLowerCase().trim());
+          
+          let idIdx = headers.findIndex((h: string) => 
+            h.includes('patientid') || h.includes('patient id') || h.includes('patient_id') || 
+            h.includes('mr#') || h.includes('mr no') || h.includes('mrno') || h.includes('patid') || 
+            h.includes('pat id') || h.includes('regno') || h.includes('reg no') || h === 'id' || h.includes('patient_no') || h.includes('mr')
+          );
+          let nameIdx = headers.findIndex((h: string) => 
+            h.includes('patientname') || h.includes('patient name') || h.includes('patient_name') || 
+            h.includes('patname') || h.includes('pat name') || h === 'name' || h.includes('full name') || h.includes('patient')
+          );
+          let payIdx = headers.findIndex((h: string) => 
+            h.includes('payment') || h.includes('fee') || h.includes('feecharged') || h.includes('amount') || 
+            h.includes('paid') || h.includes('charges') || h.includes('price') || h.includes('total') || h.includes('cost') || h.includes('rupees')
+          );
+          let dateIdx = headers.findIndex((h: string) => 
+            h.includes('date') || h.includes('appointmentdate') || h.includes('visitdate') || h.includes('app_date') || h.includes('created')
+          );
+          let shiftIdx = headers.findIndex((h: string) => 
+            h.includes('shift') || h.includes('session') || h.includes('slot') || h.includes('time')
+          );
+          let remarksIdx = headers.findIndex((h: string) => 
+            h.includes('remark') || h.includes('note') || h.includes('description') || h.includes('status')
+          );
+
+          let startIndex = 1;
+          // If no recognized headers, fallback to column positional mapping
+          if (idIdx === -1 && nameIdx === -1 && payIdx === -1) {
+            idIdx = 0;
+            nameIdx = 1;
+            payIdx = 2;
+            dateIdx = 3;
+            shiftIdx = 4;
+            remarksIdx = 5;
+            startIndex = 0;
+          } else {
+            if (idIdx === -1) idIdx = 0;
+            if (nameIdx === -1) nameIdx = 1;
+            if (payIdx === -1) payIdx = 2;
+          }
+
+          const parsedList: Array<Appointment & { PatientName?: string; PhoneMobile?: string; isNewPatient?: boolean }> = [];
+          const existingPatIds = new Set((patients || []).map(p => String(p.PatientID).trim().toLowerCase()));
+
+          for (let i = startIndex; i < rawData.length; i++) {
+            const row = rawData[i];
+            if (!row || row.length === 0) continue;
+
+            const rawId = row[idIdx] !== undefined ? String(row[idIdx]).trim() : '';
+            const rawName = row[nameIdx] !== undefined ? String(row[nameIdx]).trim() : '';
+            const rawPay = row[payIdx] !== undefined ? String(row[payIdx]).trim() : '';
+            const rawDate = dateIdx !== -1 && row[dateIdx] !== undefined ? String(row[dateIdx]).trim() : '';
+            const rawShift = shiftIdx !== -1 && row[shiftIdx] !== undefined ? String(row[shiftIdx]).trim() : '';
+            const rawRem = remarksIdx !== -1 && row[remarksIdx] !== undefined ? String(row[remarksIdx]).trim() : '';
+
+            if (!rawId && !rawName && !rawPay) continue;
+
+            const patId = rawId || (rawName ? `PAT-${Math.floor(1000 + Math.random() * 9000)}` : `PAT-${i}`);
+            const patName = rawName || `Patient ${patId}`;
+            
+            // Clean fee/payment
+            const cleanedPay = Number(rawPay.replace(/[^0-9.]/g, '')) || 0;
+            
+            // Parse date
+            let appDateStr = new Date().toISOString().split('T')[0];
+            if (rawDate) {
+              if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
+                appDateStr = rawDate.slice(0, 10);
+              } else if (!isNaN(Number(rawDate)) && Number(rawDate) > 30000) {
+                // Excel serial date number
+                const parsedExcelDate = new Date(Math.round((Number(rawDate) - 25569) * 86400 * 1000));
+                if (!isNaN(parsedExcelDate.getTime())) {
+                  appDateStr = parsedExcelDate.toISOString().split('T')[0];
+                }
+              } else {
+                const d = new Date(rawDate);
+                if (!isNaN(d.getTime())) {
+                  appDateStr = d.toISOString().split('T')[0];
+                }
+              }
+            }
+
+            const shiftVal: 1 | 2 = (rawShift.includes('2') || rawShift.toLowerCase().includes('eve')) ? 2 : 1;
+
+            parsedList.push({
+              AppointmentID: `APP-IMP-${Date.now().toString().slice(-4)}-${i}`,
+              PatientID: patId,
+              PatientName: patName,
+              FeeCharged: cleanedPay,
+              AppointmentDate: appDateStr,
+              Shift: shiftVal,
+              Status: 2,
+              Remarks: rawRem || 'Excel Uploaded Appointment',
+              isNewPatient: !existingPatIds.has(patId.toLowerCase())
+            });
+          }
+
+          if (parsedList.length === 0) {
+            setErrorMsg('Could not find any valid appointment records in the uploaded file.');
+            return;
+          }
+
+          setAppointmentPreview(parsedList);
+          const totalFee = parsedList.reduce((acc, a) => acc + (a.FeeCharged || 0), 0);
+          setSuccessMsg(`Successfully parsed ${parsedList.length} appointment records from "${file.name}" (Total Fee: PKR ${totalFee.toLocaleString()}). Please review the preview table below and click Save!`);
+        });
+      } catch (err: any) {
+        console.error('Failed to parse appointment spreadsheet:', err);
+        setErrorMsg(`Error reading spreadsheet: ${err.message}`);
+      }
+    };
+    reader.readAsArrayBuffer(file);
+  };
+
+  const handleAppointmentProcess = () => {
+    if (!appointmentPasteText.trim()) {
+      setErrorMsg('Please paste text or rows into the box before parsing.');
+      return;
+    }
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    const lines = appointmentPasteText.trim().split(/\r?\n/);
+    const parsedList: Array<Appointment & { PatientName?: string; PhoneMobile?: string; isNewPatient?: boolean }> = [];
+    const existingPatIds = new Set((patients || []).map(p => String(p.PatientID).trim().toLowerCase()));
+
+    let startIdx = 0;
+    const firstLineLower = lines[0].toLowerCase();
+    if (firstLineLower.includes('patient') || firstLineLower.includes('name') || firstLineLower.includes('fee') || firstLineLower.includes('payment') || firstLineLower.includes('mr#')) {
+      startIdx = 1;
+    }
+
+    for (let i = startIdx; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+
+      let parts: string[] = [];
+      if (line.includes('\t')) {
+        parts = line.split('\t');
+      } else if (line.includes(',')) {
+        parts = line.split(',');
+      } else if (line.includes('|')) {
+        parts = line.split('|');
+      } else {
+        parts = line.split(/\s{2,}/);
+      }
+
+      parts = parts.map(p => p.trim());
+      if (parts.length < 2) continue;
+
+      const rawId = parts[0];
+      const rawName = parts[1];
+      const rawPay = parts[2] || '0';
+      const rawDate = parts[3] || '';
+      const rawShift = parts[4] || '';
+      const rawRem = parts[5] || '';
+
+      const patId = rawId;
+      const patName = rawName || `Patient ${patId}`;
+      const cleanedPay = Number(rawPay.replace(/[^0-9.]/g, '')) || 0;
+
+      let appDateStr = new Date().toISOString().split('T')[0];
+      if (rawDate) {
+        const d = new Date(rawDate);
+        if (!isNaN(d.getTime())) {
+          appDateStr = d.toISOString().split('T')[0];
+        }
+      }
+
+      const shiftVal: 1 | 2 = (rawShift.includes('2') || rawShift.toLowerCase().includes('eve')) ? 2 : 1;
+
+      parsedList.push({
+        AppointmentID: `APP-IMP-${Date.now().toString().slice(-4)}-${i}`,
+        PatientID: patId,
+        PatientName: patName,
+        FeeCharged: cleanedPay,
+        AppointmentDate: appDateStr,
+        Shift: shiftVal,
+        Status: 2,
+        Remarks: rawRem || 'Pasted Appointment Entry',
+        isNewPatient: !existingPatIds.has(patId.toLowerCase())
+      });
+    }
+
+    if (parsedList.length === 0) {
+      setErrorMsg('Could not parse any appointment records. Ensure columns are separated by Tabs, Commas, or Pipes.');
+      return;
+    }
+
+    setAppointmentPreview(parsedList);
+    const totalFee = parsedList.reduce((acc, a) => acc + (a.FeeCharged || 0), 0);
+    setSuccessMsg(`Successfully parsed ${parsedList.length} appointment records from pasted text (Total Fee: PKR ${totalFee.toLocaleString()}). Click Save to import.`);
+  };
+
+  const handleAppointmentSave = async (append: boolean) => {
+    if (appointmentPreview.length === 0) {
+      setErrorMsg('No appointment records to save.');
+      return;
+    }
+    setErrorMsg('');
+    setSuccessMsg('');
+
+    try {
+      const cleanAppointments: Appointment[] = appointmentPreview.map((item, idx) => ({
+        AppointmentID: item.AppointmentID || `APP-IMP-${Date.now()}-${idx + 1}`,
+        PatientID: String(item.PatientID).trim(),
+        AppointmentDate: item.AppointmentDate || new Date().toISOString().split('T')[0],
+        Shift: item.Shift || 1,
+        Status: item.Status || 2,
+        Remarks: item.Remarks || 'Imported Appointment History',
+        FeeCharged: Number(item.FeeCharged || 0),
+        PaymentStatus: 'Paid'
+      }));
+
+      // 1. Update global appointments state
+      let updatedAppointments: Appointment[] = [];
+      if (append) {
+        const existingMap = new Map<string, Appointment>();
+        (appointments || []).forEach(a => existingMap.set(a.AppointmentID, a));
+        cleanAppointments.forEach(a => existingMap.set(a.AppointmentID, a));
+        updatedAppointments = Array.from(existingMap.values());
+      } else {
+        updatedAppointments = cleanAppointments;
+      }
+
+      if (setAppointments) {
+        setAppointments(updatedAppointments);
+      }
+      localStorage.setItem('cms_appointments', JSON.stringify(updatedAppointments));
+
+      // 2. Auto-seed / register any new patients so they appear in patient search across the app
+      if (setPatients) {
+        const existingPatientIds = new Set((patients || []).map(p => String(p.PatientID).trim().toLowerCase()));
+        const newPatientsToAdd: Patient[] = [];
+
+        appointmentPreview.forEach(app => {
+          const pid = String(app.PatientID).trim();
+          const cleanPid = pid.toLowerCase();
+          if (!existingPatientIds.has(cleanPid)) {
+            existingPatientIds.add(cleanPid);
+            newPatientsToAdd.push({
+              PatientID: pid,
+              PatientName: app.PatientName || `Patient ${pid}`,
+              Father_husband: 'N/A',
+              AgeYears: 30,
+              Sex: 'Male',
+              MaritalStatus: 'Single',
+              Occupation: 'N/A',
+              Address: 'N/A',
+              CityID: 1,
+              Country: 'Pakistan',
+              PhoneMobile: app.PhoneMobile || '03000000000',
+              RegistrationDate: app.AppointmentDate || new Date().toISOString().split('T')[0]
+            });
+          }
+        });
+
+        if (newPatientsToAdd.length > 0) {
+          setPatients(prev => {
+            const merged = [...prev, ...newPatientsToAdd];
+            localStorage.setItem('cms_patients', JSON.stringify(merged));
+            return merged;
+          });
+        }
+      }
+
+      // 3. Persist to backend MongoDB via /api/appointments/bulk
+      const bridgeUrl = mongoDbSettings.BridgeUrl || window.location.origin;
+      try {
+        const resp = await fetch(`${bridgeUrl}/api/appointments/bulk?wipe=${!append}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(cleanAppointments)
+        });
+
+        if (!resp.ok) {
+          console.warn('Backend sync response:', resp.status);
+        }
+      } catch (err: any) {
+        console.warn('Backend MongoDB offline, data persisted in local state & browser storage:', err.message);
+      }
+
+      const totalFee = cleanAppointments.reduce((acc, a) => acc + (a.FeeCharged || 0), 0);
+      setSuccessMsg(`✅ Successfully ${append ? 'merged' : 'saved'} ${cleanAppointments.length} appointment records (Total Fees: PKR ${totalFee.toLocaleString()})! Patients and their appointment payment history are now immediately accessible in Appointment Booking and Doctor Clinical Desk.`);
+      setAppointmentPasteText('');
+    } catch (err: any) {
+      console.error('Error saving appointment records:', err);
+      setErrorMsg(`Failed to save appointments: ${err.message}`);
+    }
+  };
+
   return (
     <div className="flex-1 overflow-y-auto p-6 space-y-6" id="uploading-desk-root">
       
@@ -1181,6 +1575,19 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
             }`}
           >
             Medicine Inventory Upload
+          </button>
+          <button
+            onClick={() => {
+              setActiveUploadTab('appointments');
+              setErrorMsg('');
+              setSuccessMsg('');
+            }}
+            className={`px-3 py-1.5 rounded-md text-xs font-semibold transition flex items-center space-x-1 ${
+              activeUploadTab === 'appointments' ? 'bg-white text-emerald-700 shadow-xs font-bold' : 'text-slate-600 hover:text-slate-900'
+            }`}
+          >
+            <Calendar className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+            <span>Appointment Payment Upload</span>
           </button>
           <button
             onClick={() => {
@@ -1460,6 +1867,313 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                           </tr>
                         );
                       })}
+                  </tbody>
+                </table>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Uploading Appointment Payments Section */}
+      {activeUploadTab === 'appointments' && (
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 animate-fadeIn">
+          
+          {/* Paste & Excel Upload Card */}
+          <div className="lg:col-span-5 bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
+            <div className="border-b border-slate-100 pb-2 flex justify-between items-center">
+              <div>
+                <span className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center space-x-1.5">
+                  <Calendar className="w-4 h-4 text-emerald-600" />
+                  <span>Upload Patient Appointment Payments</span>
+                </span>
+                <p className="text-[10px] text-slate-400 mt-0.5">Import Excel spreadsheet containing Patient ID, Name, and Appointment Fee.</p>
+              </div>
+            </div>
+
+            {/* Template Column Structure Guide */}
+            <div className="bg-emerald-50/60 p-3 rounded-lg border border-emerald-150 font-mono text-[9.5px] text-emerald-950 space-y-1.5">
+              <div className="flex items-center justify-between">
+                <span className="font-extrabold text-emerald-800 flex items-center">
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+                  EXPECTED EXCEL / CSV COLUMNS:
+                </span>
+                <button
+                  type="button"
+                  onClick={handleDownloadAppointmentSample}
+                  className="px-2 py-0.5 bg-white hover:bg-emerald-100 text-emerald-800 border border-emerald-300 rounded text-[9px] font-bold transition flex items-center space-x-1 shadow-2xs cursor-pointer"
+                  title="Download sample Excel template with 5 demo appointments"
+                >
+                  <Download className="w-3 h-3 text-emerald-600" />
+                  <span>Sample .XLSX</span>
+                </button>
+              </div>
+              <p className="font-bold text-slate-700 bg-white/80 p-1.5 rounded border border-emerald-200">
+                PatientID | PatientName | AppointmentPayment | Date | Shift | Remarks
+              </p>
+              <div className="text-[9px] text-emerald-800/80 space-y-0.5">
+                <div>• <span className="font-bold">PatientID:</span> e.g. MR-1001 or 105 (Used to link with patient history)</div>
+                <div>• <span className="font-bold">AppointmentPayment:</span> e.g. 1000 or 500 (Last consultation fee)</div>
+                <div>• <span className="font-bold">Date & Shift:</span> Optional (Defaults to today & morning shift)</div>
+              </div>
+            </div>
+
+            {/* Drag & Drop File Upload Area */}
+            <div
+              onDragOver={(e) => { e.preventDefault(); setDragActiveApp(true); }}
+              onDragLeave={() => setDragActiveApp(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragActiveApp(false);
+                if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                  handleAppointmentFileRead(e.dataTransfer.files[0]);
+                }
+              }}
+              onClick={() => fileInputAppRef.current?.click()}
+              className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-all duration-200 ${
+                dragActiveApp
+                  ? 'border-emerald-500 bg-emerald-50 scale-[0.99]'
+                  : 'border-slate-300 hover:border-emerald-400 hover:bg-emerald-50/30'
+              }`}
+            >
+              <input
+                ref={fileInputAppRef}
+                type="file"
+                accept=".xlsx, .xls, .csv"
+                className="hidden"
+                onChange={(e) => {
+                  if (e.target.files && e.target.files[0]) {
+                    handleAppointmentFileRead(e.target.files[0]);
+                  }
+                }}
+              />
+              <div className="flex flex-col items-center justify-center space-y-1.5">
+                <div className="w-10 h-10 rounded-full bg-emerald-100 text-emerald-600 flex items-center justify-center shadow-2xs">
+                  <UploadCloud className="w-5 h-5" />
+                </div>
+                <div className="text-xs font-bold text-slate-800">
+                  Click to select or drag & drop Excel / CSV file
+                </div>
+                <div className="text-[10px] text-slate-400">
+                  Supports Microsoft Excel (.xlsx, .xls) and CSV (.csv) spreadsheets
+                </div>
+              </div>
+            </div>
+
+            {/* Paste Alternative */}
+            <div className="space-y-1.5">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center justify-between">
+                <span>Or Paste Rows (Tab / Comma Delimited):</span>
+                {appointmentPasteText && (
+                  <button
+                    type="button"
+                    onClick={() => setAppointmentPasteText('')}
+                    className="text-rose-500 hover:text-rose-700 text-[9px] font-bold"
+                  >
+                    Clear Text
+                  </button>
+                )}
+              </label>
+              <textarea
+                value={appointmentPasteText}
+                onChange={(e) => setAppointmentPasteText(e.target.value)}
+                placeholder="MR-1001	Muhammad Ali	1000	2026-08-30	1	Routine Visit&#10;MR-1002	Fatima Bibi	500	2026-08-30	2	Follow-up"
+                rows={5}
+                className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-mono text-[10px] focus:ring-1 focus:ring-emerald-500 focus:outline-none placeholder:text-slate-300"
+              />
+
+              <button
+                type="button"
+                onClick={handleAppointmentProcess}
+                className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center justify-center space-x-1.5 transition shadow-xs cursor-pointer"
+              >
+                <UploadCloud className="w-4 h-4" />
+                <span>Parse & Validate Pasted Rows</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Preview & Save Card */}
+          <div className="lg:col-span-7 bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col h-[620px]">
+            <div className="border-b border-slate-100 pb-3 mb-3 flex flex-wrap gap-2 justify-between items-center shrink-0">
+              <div>
+                <div className="flex items-center space-x-2">
+                  <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                    Appointment Import Preview
+                  </span>
+                  {appointmentPreview.length > 0 && (
+                    <span className="text-[10px] font-mono font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                      {appointmentPreview.length} Records
+                    </span>
+                  )}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Review parsed appointment history and fee details before writing to database.
+                </p>
+              </div>
+
+              {appointmentPreview.length > 0 && (
+                <div className="flex items-center space-x-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleAppointmentSave(true)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center shadow-xs cursor-pointer transition"
+                    title="Merge and append these appointments without deleting existing records"
+                  >
+                    <Check className="w-3.5 h-3.5 mr-1" />
+                    <span>Merge Appointments</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (window.confirm("Are you sure you want to REPLACE all existing appointments with these uploaded records?")) {
+                        handleAppointmentSave(false);
+                      }
+                    }}
+                    className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold rounded-lg flex items-center cursor-pointer transition"
+                    title="Replace all existing appointments with this uploaded sheet"
+                  >
+                    <RefreshCw className="w-3 h-3 mr-1" />
+                    <span>Replace All</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAppointmentPreview([])}
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                    title="Clear preview"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Summary KPI Strip */}
+            {appointmentPreview.length > 0 && (
+              <div className="grid grid-cols-3 gap-2 mb-3 shrink-0">
+                <div className="bg-slate-50 border border-slate-200 p-2 rounded-lg flex items-center space-x-2">
+                  <div className="p-1.5 bg-emerald-100 text-emerald-700 rounded-md">
+                    <Calendar className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-slate-500 font-bold uppercase">Total Records</div>
+                    <div className="text-sm font-black text-slate-900 font-mono">{appointmentPreview.length}</div>
+                  </div>
+                </div>
+
+                <div className="bg-emerald-50 border border-emerald-200 p-2 rounded-lg flex items-center space-x-2">
+                  <div className="p-1.5 bg-emerald-200 text-emerald-900 rounded-md">
+                    <Coins className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-emerald-700 font-bold uppercase">Total Fee Amount</div>
+                    <div className="text-sm font-black text-emerald-950 font-mono">
+                      PKR {appointmentPreview.reduce((acc, a) => acc + (a.FeeCharged || 0), 0).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="bg-indigo-50 border border-indigo-200 p-2 rounded-lg flex items-center space-x-2">
+                  <div className="p-1.5 bg-indigo-100 text-indigo-700 rounded-md">
+                    <Users className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <div className="text-[10px] text-indigo-700 font-bold uppercase">Unique Patients</div>
+                    <div className="text-sm font-black text-indigo-950 font-mono">
+                      {new Set(appointmentPreview.map(a => a.PatientID)).size}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Search Filter Inside Preview */}
+            {appointmentPreview.length > 0 && (
+              <div className="mb-2 shrink-0 relative">
+                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2.5 text-slate-400" />
+                <input
+                  type="text"
+                  value={appPreviewSearch}
+                  onChange={(e) => setAppPreviewSearch(e.target.value)}
+                  placeholder="Filter preview by Patient ID, Name, or Payment Amount..."
+                  className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-8 pr-3 py-1.5 text-xs focus:ring-1 focus:ring-emerald-500 focus:outline-none"
+                />
+              </div>
+            )}
+
+            {/* Preview table */}
+            <div className="flex-1 overflow-auto border border-slate-200 rounded-lg">
+              {appointmentPreview.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center text-slate-400 p-8 space-y-2">
+                  <Calendar className="w-10 h-10 text-slate-300 animate-pulse" />
+                  <span className="text-xs font-bold text-slate-600">No Appointment Records Parsed Yet</span>
+                  <p className="text-[10px] max-w-xs text-slate-400">
+                    Upload an Excel spreadsheet or paste rows in the left panel to populate and verify the appointment payment preview table.
+                  </p>
+                </div>
+              ) : (
+                <table className="min-w-full divide-y divide-slate-100 text-xs">
+                  <thead className="bg-slate-50 sticky top-0 text-slate-500 text-[10px] font-bold text-left uppercase tracking-wider z-10">
+                    <tr>
+                      <th className="px-3 py-2">#</th>
+                      <th className="px-3 py-2">Patient ID</th>
+                      <th className="px-3 py-2">Patient Name</th>
+                      <th className="px-3 py-2 text-right">Payment / Fee</th>
+                      <th className="px-3 py-2">Appt Date</th>
+                      <th className="px-3 py-2">Shift</th>
+                      <th className="px-3 py-2">Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 bg-white">
+                    {appointmentPreview
+                      .filter(item => {
+                        if (!appPreviewSearch.trim()) return true;
+                        const q = appPreviewSearch.toLowerCase();
+                        return (
+                          String(item.PatientID || '').toLowerCase().includes(q) ||
+                          String(item.PatientName || '').toLowerCase().includes(q) ||
+                          String(item.FeeCharged || '').includes(q) ||
+                          String(item.Remarks || '').toLowerCase().includes(q)
+                        );
+                      })
+                      .map((item, index) => (
+                        <tr key={index} className="hover:bg-emerald-50/50 transition">
+                          <td className="px-3 py-2 font-mono text-[10px] text-slate-400">{index + 1}</td>
+                          <td className="px-3 py-2 font-mono font-bold text-slate-900">
+                            <span className="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded border border-slate-200">
+                              {item.PatientID}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 font-bold text-slate-900">
+                            <div className="flex items-center space-x-1.5">
+                              <span>{item.PatientName || 'N/A'}</span>
+                              {item.isNewPatient && (
+                                <span className="text-[9px] font-extrabold px-1 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                  New Patient
+                                </span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-3 py-2 text-right font-mono font-black text-emerald-800">
+                            <span className="bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                              PKR {(item.FeeCharged || 0).toLocaleString()}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 font-mono text-slate-600 text-[11px]">
+                            {item.AppointmentDate || 'Today'}
+                          </td>
+                          <td className="px-3 py-2">
+                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
+                              item.Shift === 1 ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-indigo-50 text-indigo-800 border border-indigo-200'
+                            }`}>
+                              {item.Shift === 1 ? 'Morning' : 'Evening'}
+                            </span>
+                          </td>
+                          <td className="px-3 py-2 text-slate-500 text-[11px] max-w-xs truncate">
+                            {item.Remarks || 'Excel Upload'}
+                          </td>
+                        </tr>
+                      ))}
                   </tbody>
                 </table>
               )}

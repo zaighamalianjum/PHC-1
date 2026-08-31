@@ -3101,6 +3101,10 @@ export default function App() {
                 setNhcPatients={setNhcPatients}
                 smartLocatorMedicines={smartLocatorMedicines}
                 setSmartLocatorMedicines={setSmartLocatorMedicines}
+                appointments={appointments}
+                setAppointments={setAppointments}
+                patients={patients}
+                setPatients={setPatients}
               />
             </Suspense>
           )}

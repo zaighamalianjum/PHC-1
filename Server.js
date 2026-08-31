@@ -1098,6 +1098,89 @@ app.get('/api/appointments/:id', async (req, res) => {
   }
 });
 
+// Bulk Insert / Upsert Appointments to MongoDB
+app.post('/api/appointments/bulk', async (req, res) => {
+  try {
+    const appsList = req.body;
+    if (!Array.isArray(appsList)) {
+      return res.status(400).json({ error: 'Expected an array of appointments.' });
+    }
+    const wipe = req.query.wipe === 'true';
+    if (wipe) {
+      await db.collection('appointments').deleteMany({});
+    }
+
+    if (appsList.length === 0) {
+      return res.json({ success: true, count: 0, message: 'Empty list provided.' });
+    }
+
+    // Auto-create/upsert patients that may not exist yet
+    const patientOps = [];
+    const seenPids = new Set();
+
+    appsList.forEach(app => {
+      if (app.PatientID) {
+        const pid = String(app.PatientID).trim();
+        if (!seenPids.has(pid)) {
+          seenPids.add(pid);
+          patientOps.push({
+            updateOne: {
+              filter: { PatientID: pid },
+              update: {
+                $setOnInsert: {
+                  PatientID: pid,
+                  PatientName: app.PatientName || `Patient ${pid}`,
+                  PhoneMobile: app.PhoneMobile || '',
+                  Sex: app.Sex || 'Male',
+                  AgeYears: app.AgeYears || 0,
+                  RegistrationDate: app.AppointmentDate || new Date().toISOString().split('T')[0],
+                  CityID: 1,
+                  Country: 'Pakistan',
+                  Address: 'N/A'
+                }
+              },
+              upsert: true
+            }
+          });
+        }
+      }
+    });
+
+    if (patientOps.length > 0) {
+      await db.collection('patients').bulkWrite(patientOps, { ordered: false }).catch(err => {
+        console.warn('Patient bulk auto-seed notice:', err.message);
+      });
+    }
+
+    const appOps = appsList.map((app, idx) => {
+      const doc = { ...app };
+      if (doc._id) delete doc._id;
+      if (!doc.AppointmentID) doc.AppointmentID = `APP-${Date.now()}-${idx + 1}`;
+      if (doc.FeeCharged !== undefined) doc.FeeCharged = Number(doc.FeeCharged) || 0;
+      if (doc.Shift) doc.Shift = parseInt(doc.Shift) || 1;
+      if (doc.Status === undefined) doc.Status = 2;
+
+      return {
+        updateOne: {
+          filter: { AppointmentID: doc.AppointmentID },
+          update: { $set: doc },
+          upsert: true
+        }
+      };
+    });
+
+    const bulkResult = await db.collection('appointments').bulkWrite(appOps, { ordered: false });
+    res.json({
+      success: true,
+      message: `Bulk synchronized ${appsList.length} appointment records to MongoDB!`,
+      result: bulkResult
+    });
+  } catch (err) {
+    console.error('Bulk appointments import error:', err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Book / Upsert Appointment
 app.post('/api/appointments', async (req, res) => {
   try {

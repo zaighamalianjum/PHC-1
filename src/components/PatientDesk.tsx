@@ -94,6 +94,12 @@ import EMRDesk from './EMRDesk';
 import { generatePatientId } from '../utils/idGenerator';
 import { openWhatsAppUrl } from '../utils/whatsappUtils';
 
+import PatientQueueView from './patient/PatientQueueView';
+import PatientAppointmentsView from './patient/PatientAppointmentsView';
+import PatientGridView from './patient/PatientGridView';
+import PatientVisitDeskView from './patient/PatientVisitDeskView';
+import PatientDeskModals from './patient/PatientDeskModals';
+
 const WhatsAppIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
     <path d="M17.472 14.382c-.297-.149-1.758-.867-2.03-.967-.273-.099-.471-.148-.67.15-.197.297-.767.966-.94 1.164-.173.199-.347.223-.644.075-.297-.15-1.255-.463-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.298-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.573-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414-.074-.124-.272-.198-.57-.347m-5.421 7.403h-.004a9.87 9.87 0 01-5.031-1.378l-.361-.214-3.741.982.998-3.648-.235-.374a9.86 9.86 0 01-1.51-5.26c.001-5.45 4.436-9.884 9.888-9.884 2.64 0 5.122 1.03 6.988 2.898a9.825 9.825 0 012.893 6.994c-.003 5.45-4.437 9.884-9.885 9.884m8.413-18.297A11.815 11.815 0 0012.05 0C5.495 0 .16 5.335.157 11.892c-.001 2.096.547 4.142 1.588 5.945L.057 24l6.305-1.654a11.882 11.882 0 005.683 1.448h.005c6.554 0 11.89-5.335 11.893-11.893a11.821 11.821 0 00-3.48-8.413z"/>
@@ -250,6 +256,28 @@ export default function PatientDesk({
   };
   const [fullscreenShift, setFullscreenShift] = useState<'both' | 'morning' | 'evening'>('both');
   const [isLcdFullScreenMode, setIsLcdFullScreenMode] = useState(false);
+  const [queueStatusFilter, setQueueStatusFilter] = useState<'all' | 'waiting' | 'completed' | 'called'>('all');
+  const [queueSearchTerm, setQueueSearchTerm] = useState('');
+  const [queueShiftFilter, setQueueShiftFilter] = useState<'all' | 'morning' | 'evening'>('all');
+
+  const onOpenDirectVisitModal = (tok: Token) => {
+    const pat = patients.find(p => p.PatientID === tok.PatientID) || (nhcPatients || []).find(p => p.PatientID === tok.PatientID);
+    if (pat) {
+      setDirectVisitShiftModal({
+        patient: pat,
+        shift: (tok.Shift as 1 | 2) || shift || 1,
+        fee: (tok as any).FeeCharged || 0,
+        remarks: (tok as any).Remarks || '',
+        autoPrintTicket: false
+      });
+    }
+  };
+
+  const getPatientAgeGender = (id: string) => {
+    const p = patients.find(x => x.PatientID === id) || (nhcPatients || []).find(x => x.PatientID === id);
+    if (!p) return 'N/A';
+    return `${(p as any).AgeYears || 0} Y / ${p.Sex || 'N/A'}`;
+  };
 
   // Auto-switch sub-tab if active one is restricted
   useEffect(() => {
@@ -6034,6 +6062,13 @@ Healing Naturally. Restoring Balance.`;
     return `Patient (${id})`;
   };
 
+  const handleImportNhcPatientToRegister = (nhc: NhcPatientHistory) => {
+    setPatientName(getResolvedNhcPatientName(nhc));
+    setMobilePhone(nhc.PhoneMobile || '');
+    setAddress(nhc.Address || '');
+    setActiveSubTab('register');
+  };
+
   const getPatientPhone = (id: string) => {
     if (!id) return 'N/A';
     const p = patients.find((pat) => pat.PatientID === id);
@@ -6108,7 +6143,7 @@ Healing Naturally. Restoring Balance.`;
           cityId={cityId}
           setCityId={setCityId}
           cities={cities}
-          canAdd={canAdd}
+          canAdd={canAddPatient}
           canEditPatient={canEditPatient}
           canBookAppointment={canBookAppointment}
           searchTerm={searchTerm}
@@ -6119,33 +6154,11 @@ Healing Naturally. Restoring Balance.`;
           filteredNhcPatients={filteredNhcPatients}
           handleStartEditPatient={handleStartEditPatient}
           setSelectedPatientId={setSelectedPatientId}
-          setActiveSubTab={setActiveSubTab}
-          handleImportNhcPatientToRegister={(nhc) => {
-            const newPatient: Patient = {
-              PatientID: nhc.PatientID,
-              PatientName: nhc.PatientName,
-              Father_husband: nhc.Father_husband || 'N/A',
-              AgeYears: nhc.AgeYears || 30,
-              Sex: (nhc.Sex === 'Male' || nhc.Sex === 'Female' || nhc.Sex === 'Other') ? nhc.Sex : 'Male',
-              MaritalStatus: 'Single',
-              Occupation: 'N/A',
-              Address: nhc.Address || 'N/A',
-              CityID: 1,
-              Country: 'Pakistan',
-              PhoneMobile: nhc.PhoneMobile || '03000000000',
-              RegistrationDate: nhc.RegistrationDate || new Date().toISOString()
-            };
-            onAddPatient(newPatient);
-            handleStartEditPatient(newPatient);
-          }}
+          setActiveSubTab={handleSubTabChange}
+          handleImportNhcPatientToRegister={handleImportNhcPatientToRegister}
           getResolvedNhcPatientName={getResolvedNhcPatientName}
         />
       )}
-
-
-
-
-
 
       {/* PATIENT PROFILE SUB-TAB VIEW */}
       {activeSubTab === 'profile' && (
@@ -6157,14 +6170,14 @@ Healing Naturally. Restoring Balance.`;
           tokens={tokens}
           cities={cities}
           nhcPatients={nhcPatients}
-          selectedPatientId={selectedPatientId || pvSelectedPatientId || ''}
+          selectedPatientId={searchTerm || pvSelectedPatientId}
           setSelectedPatientId={(id) => {
-            setSelectedPatientId(id);
+            setSearchTerm(id);
             setPvSelectedPatientId(id);
           }}
           onOpenVisitDesk={(patId) => {
+            setPvPatientSearch(patId);
             setPvSelectedPatientId(patId);
-            setSelectedPatientId(patId);
             setActiveSubTab('patient_visit');
           }}
           onOpenTokenIssue={(patId) => {
@@ -6173,7 +6186,7 @@ Healing Naturally. Restoring Balance.`;
           }}
           onOpenBookAppointment={(patId) => {
             setSelectedPatientId(patId);
-            setActiveSubTab('book');
+            setActiveSubTab('appointments');
           }}
           onEditPatient={(pat) => {
             handleStartEditPatient(pat);
@@ -6187,4243 +6200,469 @@ Healing Naturally. Restoring Balance.`;
       {/* TOKEN ISSUE SUB-TAB VIEW */}
       {activeSubTab === 'token_issue' && (
         <InstantTokenIssueView
+          tokens={tokens}
           patients={patients}
           nhcPatients={nhcPatients}
           nhcArchiveList={nhcArchiveList}
           cities={cities}
-          tokens={tokens}
           appDate={appDate}
           shift={shift}
-          canIssueToken={canIssueToken}
+          canIssueToken={canAccessTokenIssue}
           canDeleteToken={canDeleteToken}
           onDeleteToken={onDeleteToken}
           onUpdateTokenStatus={onUpdateTokenStatus}
           onPrintThermalSlip={handlePrintThermalFromToken}
           visits={visits}
           appointments={appointments}
-          isSearchingArchive={isSearchingArchive}
+          selectedPatientId={searchTerm || pvSelectedPatientId}
+          setSelectedPatientId={(id) => {
+            setSearchTerm(id);
+            setPvSelectedPatientId(id);
+          }}
+          setOpdTokenModalPatient={(pat) => {
+            if (pat) {
+              setPvPatientSearch(pat.PatientID);
+              setPvSelectedPatientId(pat.PatientID);
+            }
+          }}
+          setTokenIssueMode={() => {}}
+          setAppError={setAppError}
+          setIsOpdTokenModalOpen={setIsOpdTokenModalOpen}
           searchTerm={searchTerm}
           setSearchTerm={setSearchTerm}
           fetchNhcArchive={fetchNhcArchive}
-          selectedPatientId={selectedPatientId}
-          setSelectedPatientId={setSelectedPatientId}
-          setOpdTokenModalPatient={setOpdTokenModalPatient}
-          setTokenIssueMode={setTokenIssueMode}
-          setExistingFee={setExistingFee}
-          setAppError={setAppError}
-          setIsOpdTokenModalOpen={setIsOpdTokenModalOpen}
-          setActiveSubTab={setActiveSubTab}
-          onAddPatient={onAddPatient}
-          handleStartEditPatient={handleStartEditPatient}
+          isSearchingArchive={isSearchingArchive}
           filteredPatients={filteredPatients}
           filteredNhcPatients={filteredNhcPatients}
+          onAddPatient={onAddPatient}
+          handleStartEditPatient={(pat) => {
+            handleStartEditPatient(pat);
+            setActiveSubTab('register');
+          }}
+          setActiveSubTab={setActiveSubTab}
         />
       )}
-      {false && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6" id="patients-view-token-issue">
-          {/* Left Column (2 cols): Patient Database Search Engine & Lookup */}
-          <div className="lg:col-span-2 bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center space-x-2">
-                <div className="p-2 bg-emerald-50 text-emerald-600 rounded-lg">
-                  <Ticket className="w-5 h-5" />
-                </div>
-              </div>
 
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSelectedPatientId('');
-                    setOpdTokenModalPatient(null);
-                    setTokenIssueMode('new_patient');
-                    setAppError('');
-                    setIsOpdTokenModalOpen(true);
-                  }}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition flex items-center space-x-1.5 cursor-pointer shadow-2xs"
-                >
-                  <UserPlus className="w-3.5 h-3.5" />
-                  <span>+ Register New Patient Token</span>
-                </button>
-                {selectedPatientId && (
-                  <div className="text-xs bg-emerald-50 text-emerald-800 font-bold px-3 py-1 rounded-lg border border-emerald-200 flex items-center space-x-1">
-                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
-                    <span>Selected: {patients.find(p => p.PatientID === selectedPatientId)?.PatientName || selectedPatientId}</span>
-                  </div>
-                )}
-              </div>
-            </div>
-
-            {/* Search Bar */}
-            <div className="relative flex gap-2">
-              <div className="relative flex-1">
-                <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder=""
-                  value={searchTerm}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSearchTerm(val);
-                    if (val.trim().length >= 1) {
-                      fetchNhcArchive(val);
-                    }
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') {
-                      fetchNhcArchive(searchTerm);
-                    }
-                  }}
-                  className="w-full text-xs border border-slate-200 rounded-lg pl-9 pr-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 font-medium shadow-2xs"
-                />
-              </div>
-              <button
-                type="button"
-                onClick={() => fetchNhcArchive(searchTerm)}
-                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shrink-0 cursor-pointer flex items-center space-x-1.5 shadow-2xs"
-              >
-                <Search className="w-3.5 h-3.5" />
-                <span>Search PHC Archive</span>
-              </button>
-            </div>
-
-            {isSearchingArchive && (
-              <div className="p-3 bg-emerald-50 text-emerald-800 text-xs rounded-lg border border-emerald-200 flex items-center space-x-2 animate-pulse">
-                <div className="w-4 h-4 border-2 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-                <span className="font-semibold">Querying legacy PHC database archive for "{searchTerm}"...</span>
-              </div>
-            )}
-
-            {/* Results Counter Banner */}
-            <div className="flex items-center justify-between text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded-lg border border-slate-200">
-              <span>
-                Matching Records: <strong className="text-slate-800">{filteredPatients.length} Active</strong> + <strong className="text-indigo-800">{filteredNhcPatients.length} PHC Archive</strong>
-              </span>
-              <span className="text-[10px] text-slate-400">Click "Select for Token" on any record below to open OPD Token Issue popup</span>
-            </div>
-
-            {/* Search Results List */}
-            <div className="max-h-[500px] overflow-y-auto space-y-3 divide-y divide-slate-100 pr-1">
-              {filteredPatients.length === 0 && filteredNhcPatients.length === 0 ? (
-                <div className="text-center py-10 space-y-2">
-                  <Search className="w-8 h-8 text-slate-300 mx-auto" />
-                  <p className="text-xs text-slate-500 font-semibold">No matching records found for "{searchTerm}"</p>
-                  <p className="text-[11px] text-slate-400">Try searching by full or partial name, mobile number, or Patient ID.</p>
-                </div>
-              ) : (
-                <>
-                  {/* Active Clinic Patients */}
-                  {filteredPatients.map((p, idx) => {
-                    const city = cities.find((c) => c.CityID === p.CityID)?.CityName || 'Other';
-                    const isSelected = selectedPatientId === p.PatientID;
-                    const existingTodayToken = (tokens || []).find(t => t.PatientID === p.PatientID && t.Date === appDate);
-                    
-                    return (
-                      <div 
-                        key={`act-tok-${p.PatientID}-${idx}`} 
-                        className={`pt-3 first:pt-0 p-3 rounded-xl border transition ${
-                          isSelected ? 'bg-emerald-50/60 border-emerald-300 shadow-2xs' : 'bg-white border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="flex items-center space-x-2">
-                              <strong className="text-slate-900 font-bold text-sm">{p.PatientName}</strong>
-                              <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">Active</span>
-                              {existingTodayToken && (
-                                <span className="text-[9px] bg-amber-100 text-amber-900 font-black px-2 py-0.5 rounded-full uppercase">
-                                  Token #{existingTodayToken.TokenNo}
-                                </span>
-                              )}
-                            </div>
-                            <p className="text-xxs font-mono text-slate-500 font-semibold mt-0.5">
-                              ID: {p.PatientID} {p.Father_husband && p.Father_husband !== 'N/A' ? `| S/O, W/O: ${p.Father_husband}` : ''}
-                            </p>
-                          </div>
-                          <span className="text-xxs bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded uppercase">
-                            {p.Sex} ({p.AgeYears} Yrs)
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-slate-600">
-                          <div className="flex items-center">
-                            <Phone className="w-3 h-3 mr-1.5 text-slate-400 shrink-0" />
-                            <span className="font-mono text-slate-800">{p.PhoneMobile}</span>
-                          </div>
-                          <div className="flex items-center">
-                            <MapPin className="w-3 h-3 mr-1.5 text-slate-400 shrink-0" />
-                            <span className="truncate">{p.Address}, {city}</span>
-                          </div>
-                        </div>
-
-                        <div className="pt-3 flex flex-wrap items-center justify-between gap-2 border-t border-slate-100 mt-2">
-                          <span className="text-[10px] text-slate-400">Reg: {formatDisplayDate(p.RegistrationDate)}</span>
-                          
-                          <div className="flex items-center space-x-2">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setSelectedPatientId(p.PatientID);
-                                setOpdTokenModalPatient(p);
-                                setTokenIssueMode('existing');
-                                setExistingFee('');
-                                setAppError('');
-                                setIsOpdTokenModalOpen(true);
-                              }}
-                              className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition flex items-center space-x-1.5 cursor-pointer shadow-2xs"
-                            >
-                              <Ticket className="w-3.5 h-3.5" />
-                              <span>Select for Token</span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })}
-
-                  {/* PHC Archive Patients */}
-                  {filteredNhcPatients.map((p, idx) => {
-                    const isSelected = selectedPatientId === p.PatientID;
-                    return (
-                      <div 
-                        key={`nhc-tok-${p.PatientID}-${idx}`} 
-                        className={`pt-3 p-3 rounded-xl border transition ${
-                          isSelected ? 'bg-indigo-50/60 border-indigo-300 shadow-2xs' : 'bg-white border-slate-200 hover:border-slate-300'
-                        }`}
-                      >
-                        <div className="flex justify-between items-start">
-                          <div>
-                            <div className="flex items-center space-x-2">
-                              <strong className="text-slate-900 font-bold text-sm">{p.PatientName}</strong>
-                              <span className="text-[9px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">PHC Archive</span>
-                            </div>
-                            <p className="text-xxs font-mono text-slate-500 font-semibold mt-0.5">
-                              ID: {p.PatientID} | Guardian: {p.Father_husband || 'N/A'}
-                            </p>
-                          </div>
-                          <span className="text-xxs bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded uppercase">
-                            {p.Sex} ({p.AgeYears} Yrs)
-                          </span>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2 mt-2 text-xs text-slate-600">
-                          <div className="flex items-center">
-                            <Phone className="w-3 h-3 mr-1.5 text-slate-400 shrink-0" />
-                            <span className="font-mono text-slate-800">{p.PhoneMobile || 'N/A'}</span>
-                          </div>
-                          <div className="flex items-center">
-                            <MapPin className="w-3 h-3 mr-1.5 text-slate-400 shrink-0" />
-                            <span className="truncate">{p.Address || 'N/A'}</span>
-                          </div>
-                        </div>
-
-                        {p.MedicalCondition && (
-                          <div className="text-[10px] bg-indigo-50/60 p-1.5 rounded-lg text-indigo-900 italic mt-2">
-                            Legacy Condition: {p.MedicalCondition}
-                          </div>
-                        )}
-
-                        <div className="pt-3 flex items-center justify-between border-t border-slate-100 mt-2">
-                          <span className="text-[10px] text-slate-400">Legacy PHC File</span>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const newPatient: Patient = {
-                                PatientID: p.PatientID,
-                                PatientName: p.PatientName,
-                                Father_husband: p.Father_husband || 'N/A',
-                                AgeYears: p.AgeYears || 30,
-                                Sex: (p.Sex === 'Male' || p.Sex === 'Female' || p.Sex === 'Other') ? p.Sex : 'Male',
-                                MaritalStatus: 'Single',
-                                Occupation: 'N/A',
-                                Address: p.Address || 'N/A',
-                                CityID: 1, // Lahore
-                                Country: 'Pakistan',
-                                PhoneMobile: p.PhoneMobile || '03000000000',
-                                RegistrationDate: p.RegistrationDate || new Date().toISOString().split('T')[0]
-                              };
-                              onAddPatient(newPatient);
-                              setSelectedPatientId(p.PatientID);
-                              setOpdTokenModalPatient(newPatient);
-                              setTokenIssueMode('existing');
-                              setExistingFee('');
-                              setAppError('');
-                              setIsOpdTokenModalOpen(true);
-                            }}
-                            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition flex items-center space-x-1.5 cursor-pointer shadow-2xs"
-                          >
-                            <UserCheck className="w-3.5 h-3.5" />
-                            <span>Import Archive & Select for Token</span>
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Right Column (1 col): Issued Tokens Summary Box for Today */}
-          <div className="space-y-4">
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs space-y-2">
-              <div className="flex justify-between items-center border-b border-slate-100 pb-2">
-                <h4 className="text-xs font-bold text-slate-900 flex items-center">
-                  <ListOrdered className="w-3.5 h-3.5 text-emerald-600 mr-1.5" />
-                  Today's Tokens ({tokens.filter(t => t.Date === appDate).length})
-                </h4>
-                <span className="text-[10px] text-slate-500 font-mono">{appDate}</span>
-              </div>
-
-              <div className="max-h-48 overflow-y-auto space-y-1.5 pr-1 text-xs">
-                {tokens.filter(t => t.Date === appDate).length === 0 ? (
-                  <p className="text-[11px] text-slate-400 italic text-center py-3">No tokens issued for {appDate} yet.</p>
-                ) : (
-                  tokens.filter(t => t.Date === appDate).map((t) => {
-                    const patName = patients.find(p => p.PatientID === t.PatientID)?.PatientName || t.PatientID;
-                    const isCompleted = t.Status === 2 ||
-                      (visits || []).some(v => v.PatientID === t.PatientID && (v.VisitDate ? v.VisitDate.split('T')[0] === appDate : false)) ||
-                      (appointments || []).some(a => a.PatientID === t.PatientID && a.AppointmentDate === appDate && a.Status === 4);
-
-                    return (
-                      <div key={`tok-${t.TokenNo}-${t.Shift}`} className="p-2 bg-slate-50 rounded-lg border border-slate-200 flex justify-between items-center text-xs">
-                        <div>
-                          <div className="flex items-center space-x-1.5">
-                            <span className="font-mono font-black text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded text-[10px]">
-                              #{t.TokenNo}
-                            </span>
-                            <strong className="text-slate-900 font-bold text-xs">{patName}</strong>
-                          </div>
-                          <span className="text-[10px] text-slate-500">{t.Shift === 1 ? 'Morning' : 'Evening'} Shift</span>
-                        </div>
-                        <div className="flex items-center space-x-1.5">
-                          <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                            isCompleted || t.Status === 2 ? 'bg-emerald-100 text-emerald-800' :
-                            t.Status === 1 ? 'bg-amber-100 text-amber-800' : 'bg-slate-200 text-slate-700'
-                          }`}>
-                            {isCompleted || t.Status === 2 ? 'Visited' : t.Status === 1 ? 'Waiting' : 'Closed'}
-                          </span>
-
-                          <button
-                            type="button"
-                            onClick={() => {
-                              if (!canDeleteToken) {
-                                alert('Access Control Security: You do not have permission to delete issued tokens. Administrator rights required.');
-                                return;
-                              }
-                              if (window.confirm(`Are you sure you want to delete issued Token #${t.TokenNo} for ${patName}?`)) {
-                                if (onDeleteToken) {
-                                  onDeleteToken(t.TokenNo, t.Shift);
-                                } else {
-                                  onUpdateTokenStatus(t.TokenNo, t.Shift, 3);
-                                }
-                                setAppSuccess(`Token #${t.TokenNo} deleted successfully.`);
-                                setTimeout(() => setAppSuccess(''), 3000);
-                              }
-                            }}
-                            title="Delete issued token"
-                            className="p-1 rounded transition cursor-pointer flex items-center justify-center text-rose-600 hover:text-rose-800 hover:bg-rose-50"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* PATIENT VISIT SUB-TAB VIEW */}
       {activeSubTab === 'patient_visit' && (
-        <div className="space-y-3" id="patient-visit-subtab">
-          
-          {/* Combined Header & Patient Details Bar */}
-          <div className="bg-white text-slate-800 p-2 rounded-xl border border-slate-200 shadow-2xs space-y-1.5">
-            {/* Top Row: Title, Search, Dropdown, Visit Date, Nav Buttons */}
-            <div className="flex flex-wrap items-center justify-between gap-1.5 border-b border-slate-100 pb-1.5">
-              {/* Title & Daily Collection */}
-              <div className="flex flex-col sm:flex-row sm:items-center gap-1.5 sm:gap-2 w-full sm:w-auto">
-                <div className="flex items-center space-x-1.5 shrink-0">
-                  <div className="p-1 bg-emerald-50 text-emerald-600 rounded-lg shrink-0 border border-emerald-100">
-                    <Stethoscope className="w-3.5 h-3.5" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-900 tracking-tight">Patient Visit & Prescription Desk</h3>
-                  </div>
-                </div>
-
-                {/* Shift-wise Daily Collection Display - Mobile Responsive */}
-                <div 
-                  onClick={() => setShowDailyBreakdownMobile(prev => !prev)}
-                  className="group relative flex flex-wrap items-center justify-between sm:justify-start gap-1.5 bg-slate-900 text-white px-2.5 py-1 rounded-lg border border-emerald-500/40 shadow-2xs text-xs font-bold transition hover:bg-slate-800 cursor-pointer w-full sm:w-auto"
-                >
-                  <div className="flex items-center space-x-1.5 shrink-0">
-                    <Coins className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span className="text-emerald-300 font-extrabold text-[10px] uppercase tracking-wider whitespace-nowrap">
-                      Daily Collection ({shift === 1 ? 'Morning' : 'Evening'}):
-                    </span>
-                    <span className="text-amber-300 font-black text-xs font-mono whitespace-nowrap">
-                      PKR {shiftDailyCollection.grandTotal.toLocaleString()}
-                    </span>
-                  </div>
-
-                  {/* Shift Quick Switch Buttons */}
-                  <div className="flex items-center space-x-1 shrink-0 ml-auto sm:ml-1">
-                    <div className="flex items-center bg-slate-800 p-0.5 rounded-md border border-slate-700 text-[9px] font-extrabold">
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setShift(1); }}
-                        className={`px-1.5 py-0.5 rounded cursor-pointer transition ${
-                          shift === 1 ? 'bg-emerald-600 text-white font-black shadow-2xs' : 'text-slate-400 hover:text-white'
-                        }`}
-                        title="Switch to Morning Shift Collection"
-                      >
-                        Morning
-                      </button>
-                      <button
-                        type="button"
-                        onClick={(e) => { e.stopPropagation(); setShift(2); }}
-                        className={`px-1.5 py-0.5 rounded cursor-pointer transition ${
-                          shift === 2 ? 'bg-blue-600 text-white font-black shadow-2xs' : 'text-slate-400 hover:text-white'
-                        }`}
-                        title="Switch to Evening Shift Collection"
-                      >
-                        Evening
-                      </button>
-                    </div>
-                  </div>
-
-                  {/* Hover & Tap Breakdown Tooltip */}
-                  <div className={`absolute top-full left-0 sm:left-auto right-0 sm:right-auto mt-1.5 ${showDailyBreakdownMobile ? 'flex' : 'hidden group-hover:flex'} flex-col bg-slate-900 text-white p-3 rounded-xl border border-slate-700 shadow-xl z-50 min-w-[240px] max-w-[calc(100vw-24px)] text-xs space-y-1.5 pointer-events-auto sm:pointer-events-none`}>
-                    <div className="font-extrabold text-emerald-400 border-b border-slate-800 pb-1 flex justify-between items-center text-[11px]">
-                      <span>Shift Revenue Breakdown</span>
-                      <span className="text-[9px] text-slate-400 uppercase font-mono">{shift === 1 ? 'Morning' : 'Evening'} Shift</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300 text-[11px]">
-                      <span>Clinical Medicine:</span>
-                      <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.clinicalMedsTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300 text-[11px]">
-                      <span>File Fee:</span>
-                      <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.fileTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300 text-[11px]">
-                      <span>Cards Fee:</span>
-                      <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.cardTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300 text-[11px]">
-                      <span>OPD / Tokens:</span>
-                      <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.opdTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300 text-[11px]">
-                      <span>Store / Pharmacy:</span>
-                      <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.storePaymentTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-amber-300 font-extrabold border-t border-slate-800 pt-1 text-xs">
-                      <span>Grand Total:</span>
-                      <span className="font-mono text-sm font-black">PKR {shiftDailyCollection.grandTotal.toLocaleString()}</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Controls */}
-              <div className="flex flex-wrap items-center gap-1.5 w-full sm:w-auto">
-                {/* Search Box + Search Button */}
-                <div className="flex items-center space-x-1 shrink-0 w-full sm:w-auto">
-                  <div className="relative flex-1 sm:w-44">
-                    <Search className="absolute left-2.5 top-2.5 sm:top-2 h-3.5 w-3.5 sm:h-3 sm:w-3 text-slate-400" />
-                    <input
-                      type="text"
-                      placeholder=""
-                      value={pvPatientSearch}
-                      onFocus={() => {
-                        // When doctor clicks/focuses search box, prepare form for new patient check
-                        if (editingVisitId) {
-                          setEditingVisitId(null);
-                        }
-                      }}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setPvPatientSearch(val);
-                        const trimmed = val.trim();
-                        const cleanNum = trimmed.replace(/\D/g, '');
-
-                        if (!trimmed) {
-                          // Search box is empty -> clear record, history & fields
-                          setPvSelectedPatientId('');
-                          resetPvConsultationFields('');
-                          setPvSelectedHistoryDate('ALL');
-                          setPvNhcHistory([]);
-                          setIsMultiPatientModalOpen(false);
-                          return;
-                        }
-
-                        // Fetch NHC archive records in background as doctor types
-                        fetchNhcArchive(trimmed);
-
-                        // 1. Check if typed query matches any Patient ID, MR#, or Name directly (EXCLUDING phone number)
-                        const allPats = [...patients, ...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory];
-                        const idOrNameMatch = allPats.find(p => p && (
-                          String(p.PatientID || '').trim().toLowerCase() === trimmed.toLowerCase() ||
-                          (cleanNum.length > 0 && String(p.PatientID || '').replace(/\D/g, '').replace(/^0+/, '') === cleanNum.replace(/^0+/, '')) ||
-                          matchPatientIdOrNameOnly(p, trimmed)
-                        ));
-
-                        if (idOrNameMatch && idOrNameMatch.PatientID) {
-                          if (idOrNameMatch.PatientID !== pvSelectedPatientId) {
-                            resetPvConsultationFields(idOrNameMatch.PatientID);
-                            setPvSelectedPatientId(idOrNameMatch.PatientID);
-                            setPvSelectedHistoryDate('ALL');
-                            loadPvPatientHistory(idOrNameMatch.PatientID, false);
-                          }
-                          return;
-                        }
-
-                        // 2. Mobile Number Search (checks Pakistani mobile prefixes: 0300-0309, 0310-0319, 0320-0327, 0330-0339, 0340-0349, 0355, 0370, +923)
-                        const isMobilePattern = isPakistaniMobilePrefix(trimmed);
-
-                        if (isMobilePattern) {
-                          if (cleanNum.length >= 9) {
-                            const phoneMatches = allPats.filter(p => p && String(p.PhoneMobile || '').replace(/\D/g, '').includes(cleanNum));
-                            const uniquePhoneMap = new Map<string, any>();
-                            phoneMatches.forEach(p => uniquePhoneMap.set(String(p.PatientID).trim().toLowerCase(), p));
-
-                            if (uniquePhoneMap.size > 1) {
-                              // Multiple patients found with this mobile number -> Open popup selection modal!
-                              setTimeout(() => {
-                                handleExecutePatientSearch();
-                              }, 300);
-                            } else if (uniquePhoneMap.size === 1) {
-                              // Exactly 1 patient found -> Auto select in real time
-                              const matchedPt = Array.from(uniquePhoneMap.values())[0];
-                              if (matchedPt && matchedPt.PatientID !== pvSelectedPatientId) {
-                                resetPvConsultationFields(matchedPt.PatientID);
-                                setPvSelectedPatientId(matchedPt.PatientID);
-                                setPvSelectedHistoryDate('ALL');
-                                loadPvPatientHistory(matchedPt.PatientID, false);
-                              }
-                            }
-                          } else {
-                            // Mobile search is < 9 digits -> Check if token number matches
-                            const tokMatch = (tokens || []).find(t => String(t.TokenNo) === cleanNum);
-                            if (tokMatch && tokMatch.PatientID && tokMatch.PatientID !== pvSelectedPatientId) {
-                              resetPvConsultationFields(tokMatch.PatientID);
-                              setPvSelectedPatientId(tokMatch.PatientID);
-                              setPvSelectedHistoryDate('ALL');
-                              loadPvPatientHistory(tokMatch.PatientID, false);
-                            }
-                          }
-                        } else {
-                          // 3. General Search for non-mobile queries
-                          const generalMatch = pvPatientDropdownOptions.find(p => matchPatientRecord(p, trimmed))
-                            || allPats.find(p => matchPatientRecord(p, trimmed));
-
-                          if (generalMatch && generalMatch.PatientID && generalMatch.PatientID !== pvSelectedPatientId) {
-                            resetPvConsultationFields(generalMatch.PatientID);
-                            setPvSelectedPatientId(generalMatch.PatientID);
-                            setPvSelectedHistoryDate('ALL');
-                            loadPvPatientHistory(generalMatch.PatientID, false);
-                          }
-                        }
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          e.preventDefault();
-                          handleExecutePatientSearch();
-                        }
-                      }}
-                      className="w-full text-xs sm:text-[11px] bg-slate-50 text-slate-800 border border-slate-200 rounded-lg sm:rounded-md pl-8 sm:pl-7 pr-7 sm:pr-6 py-2 sm:py-1 focus:outline-none focus:ring-1 focus:ring-emerald-500 placeholder-slate-400 focus:bg-white min-h-[38px] sm:min-h-0"
-                    />
-                    {pvPatientSearch && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPvPatientSearch('');
-                          setPvSelectedPatientId('');
-                          resetPvConsultationFields('');
-                          setPvSelectedHistoryDate('ALL');
-                          setPvNhcHistory([]);
-                          setIsMultiPatientModalOpen(false);
-                        }}
-                        className="absolute right-2 top-2.5 sm:top-1.5 text-slate-400 hover:text-slate-600 p-0.5 cursor-pointer"
-                        title="Clear search"
-                      >
-                        <X className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
-                      </button>
-                    )}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={handleExecutePatientSearch}
-                    className="px-3 sm:px-2 py-2 sm:py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-xs sm:text-[11px] font-bold rounded-lg sm:rounded-md shadow-2xs transition flex items-center space-x-0.5 cursor-pointer shrink-0 min-h-[38px] sm:min-h-0"
-                  >
-                    <Search className="w-3.5 h-3.5 sm:w-3 sm:h-3" />
-                    <span>Search</span>
-                  </button>
-
-                  {/* Multiple Patients Found Quick Action Button */}
-                  {(() => {
-                    const q = pvPatientSearch.trim().toLowerCase();
-                    const cleanNum = q.replace(/\D/g, '');
-                    const isMobile = isPakistaniMobilePrefix(q);
-
-                    if (q.length >= 1 && !pvSelectedPatientId) {
-                      const allPatsForBadge = [...patients, ...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory];
-                      const hasIdMatch = allPatsForBadge.some(p => p && matchPatientIdOrNameOnly(p, q));
-
-                      // If query is a mobile prefix AND less than 9 digits AND no Patient ID matched -> don't show badge
-                      if (isMobile && cleanNum.length < 9 && !hasIdMatch) return null;
-
-                      const matchedCount = pvPatientDropdownOptions.filter(p => matchPatientRecord(p, q)).length;
-                      if (matchedCount > 1) {
-                        return (
-                          <button
-                            type="button"
-                            onClick={() => handleExecutePatientSearch()}
-                            className="text-[10px] font-extrabold text-amber-900 bg-amber-100 hover:bg-amber-200 border border-amber-300 px-2 py-1 rounded-md flex items-center space-x-1 cursor-pointer transition animate-pulse shrink-0"
-                            title="Click to view all matching patients in selection modal"
-                          >
-                            <Users className="w-3 h-3 text-amber-700 shrink-0" />
-                            <span>‚ö° {matchedCount} Patients Found - Click to Choose</span>
-                          </button>
-                        );
-                      }
-                    }
-                    return null;
-                  })()}
-                </div>
-
-
-                {/* Visit Date Display (Calendar Input Removed) */}
-                <div className="flex items-center space-x-1 shrink-0">
-                  <span className="text-[10px] font-bold text-slate-500 uppercase">Visit:</span>
-                  <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-mono">
-                    {formatDisplayDate(pvVisitDate)}
-                  </span>
-                </div>
-
-                {/* Visit Action Buttons */}
-                <div className="flex items-center space-x-1 shrink-0">
-                  {/* Print Report Button */}
-                  <button
-                    type="button"
-                    onClick={handlePrintDailyReport}
-                    className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-amber-300 border border-slate-700 text-[10px] font-bold rounded-md transition flex items-center space-x-0.5 cursor-pointer shadow-2xs"
-                    title="Print Patient Visit & Financial Report with Custom Date Range"
-                  >
-                    <Printer className="w-3 h-3 text-amber-400" />
-                    <span>Print Report</span>
-                  </button>
-
-                  {/* Organization Claim Bill Button */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!pvSelectedPatientId) {
-                        alert('Please select a patient first.');
-                        return;
-                      }
-                      setIsClaimBillModalOpen(true);
-                    }}
-                    disabled={!pvSelectedPatientId}
-                    className="px-1.5 py-0.5 bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-300 disabled:opacity-40 text-[10px] font-bold rounded-md transition flex items-center space-x-0.5 cursor-pointer shadow-2xs"
-                    title="Generate Official Organization / Corporate Reimbursement Claim Bill"
-                  >
-                    <Building2 className="w-3 h-3 text-blue-700" />
-                    <span>Claim Bill / Invoice</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={handlePrintPreviousRxDirect}
-                    disabled={!pvSelectedPatientId || combinedPreviousHistory.length === 0}
-                    className="px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-250 disabled:opacity-40 text-[10px] font-bold rounded-md transition flex items-center space-x-0.5 cursor-pointer shadow-2xs"
-                    title="Print Previous Patient Prescription (Rx)"
-                  >
-                    <Printer className="w-3 h-3 text-emerald-700" />
-                    <span>Print Previous Rx</span>
-                  </button>
-
-                  {/* Search Record Button */}
-                  <button
-                    type="button"
-                    onClick={() => handleOpenNewPatientModal()}
-                    className="px-2.5 py-1 text-xs font-black rounded-md transition flex items-center space-x-1 cursor-pointer bg-emerald-600 hover:bg-emerald-700 text-white shadow-2xs"
-                    title="Search Mobile No or Patient ID for next patient checkup"
-                  >
-                    <Search className="w-3.5 h-3.5" />
-                    <span>Search Record</span>
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            {/* Bottom Row: Selected Patient Details Bar */}
-            {selectedPvPatient ? (() => {
-              const activeTok = (tokens || []).find(t => t.PatientID === selectedPvPatient.PatientID);
-              return (
-                <div className="flex flex-col md:flex-row md:items-center justify-between gap-1.5 text-xs">
-                  <div className="flex items-center space-x-2">
-                    <div className="w-6 h-6 rounded-full bg-emerald-600 text-white font-black text-[11px] flex items-center justify-center shrink-0 border border-emerald-500 shadow-2xs">
-                      {selectedPvPatient.PatientName.charAt(0)}
-                    </div>
-                    <div>
-                      <div className="flex items-center space-x-1.5 flex-wrap gap-1">
-                        <span className="font-extrabold text-xs text-slate-900">{selectedPvPatient.PatientName}</span>
-                        <span className="text-[10px] bg-emerald-50 text-emerald-700 px-1.5 py-0.2 rounded-md font-mono font-bold border border-emerald-200">
-                          {selectedPvPatient.PatientID}
-                        </span>
-                        {activeTok && (
-                          <span className="text-[10px] bg-amber-100 text-amber-950 font-black px-2 py-0.2 rounded-md font-mono flex items-center border border-amber-300">
-                            <ListOrdered className="w-3 h-3 mr-0.5" />
-                            Token #{activeTok.TokenNo} ({activeTok.Shift === 1 ? 'Morning' : 'Evening'})
-                          </span>
-                        )}
-                      </div>
-                      <p className="text-[10px] text-slate-600">
-                        Gender: <span className="font-bold text-slate-800">{selectedPvPatient.Sex}</span> | Age: <span className="font-bold text-slate-800">{selectedPvPatient.AgeYears} yrs</span> | Mobile: <span className="font-bold text-slate-800">{selectedPvPatient.PhoneMobile}</span> | Guardian: <span className="font-bold text-slate-800">{selectedPvPatient.Father_husband || 'N/A'}</span>
-                      </p>
-                    </div>
-                  </div>
-                  <div className="text-[10px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
-                    City: <span className="font-bold text-slate-800">{cities.find(c => c.CityID === selectedPvPatient.CityID)?.CityName || 'Lahore'}</span> | Reg: <span className="font-bold text-slate-800">{formatDisplayDate(selectedPvPatient.RegistrationDate)}</span>
-                  </div>
-                </div>
-              );
-            })() : (
-              <div className="text-[10px] text-slate-500 italic flex items-center space-x-1.5">
-                <span className="w-1.5 h-1.5 rounded-full bg-slate-400 animate-pulse"></span>
-                <span>No patient selected. Please enter a Mobile No or Patient ID in the search box above to view patient records.</span>
-              </div>
-            )}
-          </div>
-
-          {/* 2-COLUMN GRID LAYOUT FOR PREVIOUS HISTORY & CURRENT VISIT */}
-          <div className={`grid grid-cols-1 ${hidePreviousHistory ? '' : 'lg:grid-cols-2'} gap-3 items-start`}>
-            {/* BOX 1: PREVIOUS HISTORY (WITH VISIT DATE SEPARATE DROPDOWN) */}
-            {hidePreviousHistory ? (
-              <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-3 flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
-                    <History className="w-4 h-4" />
-                  </div>
-                  <div>
-                    <h3 className="text-xs font-bold text-slate-900">Previous History & Prescriptions</h3>
-                    <p className="text-[10px] text-slate-500">
-                      {pvSelectedPatientId && combinedPreviousHistory.length === 0
-                        ? 'No previous history or prescriptions recorded for this patient'
-                        : 'Section hidden'}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center space-x-2">
-                  {pvSelectedPatientId && (
-                    <button
-                      type="button"
-                      onClick={() => setHistoryAlertModalOpen(true)}
-                      className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-bold rounded-lg transition flex items-center space-x-1 cursor-pointer shadow-2xs"
-                      title="Open Previous History Alert Popup"
-                    >
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Alert Popup</span>
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setHidePreviousHistory(false)}
-                    className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[10px] font-bold rounded-lg transition flex items-center space-x-1 cursor-pointer"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>Show History</span>
-                  </button>
-                </div>
-              </div>
-            ) : (
-            <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-3 space-y-2.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-2 gap-2">
-              <div className="flex items-center space-x-2">
-                <div className="p-1.5 bg-indigo-50 text-indigo-600 rounded-lg">
-                  <History className="w-4 h-4" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-900">Previous History & Prescriptions</h3>
-                  <p className="text-[10px] text-slate-500">Select a visit date from the side navigation to inspect consultation history</p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <button
-                  type="button"
-                  onClick={() => setHidePreviousHistory(true)}
-                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg transition flex items-center space-x-1 cursor-pointer"
-                  title="Hide Previous History & Prescriptions"
-                >
-                  <EyeOff className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Hide History</span>
-                </button>
-
-                {pvSelectedPatientId && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setHistoryAlertModalOpen(true)}
-                      className="px-2.5 py-1 bg-amber-100 hover:bg-amber-200 text-amber-900 border border-amber-300 text-[10px] font-bold rounded-lg transition flex items-center space-x-1 cursor-pointer shadow-2xs"
-                      title="Open Previous History Alert Popup"
-                    >
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-700" />
-                      <span>Popup Alert</span>
-                    </button>
-
-                    {uniquePvVisitDates.length > 0 && (
-                      <select
-                        value={pvSelectedHistoryDate || (uniquePvVisitDates[0] || 'ALL')}
-                        onChange={(e) => setPvSelectedHistoryDate(e.target.value)}
-                        className="bg-indigo-50 hover:bg-indigo-100 text-indigo-950 border border-indigo-300 text-[10px] font-bold rounded-lg px-2 py-1 cursor-pointer focus:ring-1 focus:ring-indigo-500 focus:outline-none transition shadow-2xs"
-                        title="Select Visit Date from Previous History"
-                      >
-                        {uniquePvVisitDates.map((d, idx) => (
-                          <option key={d} value={d}>
-                            {idx === 0 ? `Latest Visit Date: ${formatDisplayDate(d)}` : `Visit Date: ${formatDisplayDate(d)}`}
-                          </option>
-                        ))}
-                        <option value="ALL">Show All Visit Dates ({uniquePvVisitDates.length})</option>
-                      </select>
-                    )}
-
-                    <button
-                      type="button"
-                      onClick={() => loadPvPatientHistory(pvSelectedPatientId, true)}
-                      className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg transition flex items-center space-x-1 cursor-pointer"
-                      title="Reload PHC History"
-                    >
-                      <History className="w-3.5 h-3.5" />
-                    </button>
-                  </>
-                )}
-              </div>
-            </div>
-
-            {/* Content of Previous History */}
-            {!pvSelectedPatientId ? (
-              <div className="text-center py-6 bg-slate-50 rounded-lg border border-dashed border-slate-200">
-                <Search className="w-6 h-6 text-slate-300 mx-auto mb-1" />
-                <p className="text-xs font-bold text-slate-600">No Patient Selected</p>
-                <p className="text-[10px] text-slate-400 mt-0.5">Please search or select a Patient ID above to view visit history.</p>
-              </div>
-            ) : isFetchingPvHistory ? (
-              <div className="text-center py-6 bg-indigo-50/30 rounded-lg border border-indigo-100 flex flex-col items-center justify-center space-y-1">
-                <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
-                <p className="text-xs font-bold text-indigo-800">Fetching Previous PHC Patient History...</p>
-              </div>
-            ) : combinedPreviousHistory.length === 0 ? (
-              <div className="text-center py-6 bg-amber-50/50 rounded-lg border border-amber-200/60 p-3">
-                <p className="text-xs font-bold text-amber-800">No History Records Found for Patient</p>
-                <p className="text-[10px] text-amber-600 mt-0.5">There are no previous consultation records for this patient.</p>
-              </div>
-            ) : (
-              /* FULL-WIDTH HISTORY DETAILS LAYOUT */
-              <div className="w-full space-y-2.5 min-h-[200px]">
-                {displayedPreviousHistory.length === 0 ? (
-                  <div className="text-center py-8 bg-amber-50/50 rounded-lg border border-amber-200 p-3">
-                    <p className="text-xs font-bold text-amber-800">No Records Found for Selected Date</p>
-                    <p className="text-[10px] text-amber-600 mt-0.5">Please select another visit date from the top dropdown.</p>
-                  </div>
-                ) : (
-                    <>
-                      {allSymptomsText && (
-                        <div className="text-[10px] text-slate-700 bg-slate-100/80 px-2.5 py-1 rounded-md border border-slate-200 font-medium">
-                          <strong className="font-bold text-slate-900">Diagnosis / Symptoms:</strong> {allSymptomsText}
-                        </div>
-                      )}
-
-                      {(allLabTestsText || allMedicalReportResultsText) && (
-                        <div className="text-[10px] bg-blue-50/80 p-2.5 rounded-lg border border-blue-200 text-blue-950 font-medium space-y-1.5 shadow-2xs">
-                          <div className="flex items-center space-x-1.5 font-bold text-blue-900 border-b border-blue-200/80 pb-1">
-                            <FileText className="w-3.5 h-3.5 text-blue-700 shrink-0" />
-                            <span>Advised Lab Investigations & Medical Report Results:</span>
-                          </div>
-                          {allLabTestsText && (
-                            <div>
-                              <span className="text-slate-500 font-bold uppercase text-[8px] tracking-wider block">Advised Lab Tests:</span>
-                              <p className="font-mono text-slate-800 font-semibold">{allLabTestsText}</p>
-                            </div>
-                          )}
-                          {allMedicalReportResultsText && (
-                            <div className={allLabTestsText ? 'pt-1 border-t border-blue-200/60' : ''}>
-                              <span className="text-indigo-900 font-extrabold uppercase text-[8px] tracking-wider block mb-0.5">
-                                Medical Report Result (nhc_Patient_history):
-                              </span>
-                              <div className="bg-white border border-indigo-100 rounded-md p-2 text-indigo-950 font-semibold text-[10px] whitespace-pre-wrap">
-                                {allMedicalReportResultsText}
-                              </div>
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <div className="space-y-3">
-                        {groupedRxByDate.map((group, groupIdx) => (
-                          <div key={`grp-rx-${group.date}-${groupIdx}`} className="border border-slate-300 rounded-xl bg-white p-2.5 space-y-2 shadow-2xs">
-                            {/* Top Row: Date & Item Count Badge + Copy Date Rx Button */}
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-1.5">
-                              <span className="font-bold text-slate-900 text-xs font-mono flex items-center gap-1.5">
-                                <Calendar className="w-3.5 h-3.5 text-indigo-600" />
-                                <span>Visit Date: {formatDisplayDate(group.date)}</span>
-                              </span>
-                              <div className="flex items-center space-x-1.5">
-                                <button
-                                  type="button"
-                                  title="Edit this visit record in current visit form"
-                                  onClick={() => {
-                                    const vMatch = (visits || []).find(v => v.PatientID === pvSelectedPatientId && (v.VisitDate ? v.VisitDate.split('T')[0] : '') === group.date);
-                                    const nhcMatch = pvNhcHistory.find(nhc => (nhc.VisitDate ? nhc.VisitDate.split('T')[0] : nhc.date) === group.date);
-                                    if (vMatch) handleEditVisit(vMatch);
-                                    else if (nhcMatch) handleEditVisit(nhcMatch);
-                                    else {
-                                      setEditingVisitId(`VIS-${group.date}`);
-                                      setPvVisitDate(group.date);
-                                      if (group.symptoms) setPvSymptomsDiagnosis(group.symptoms);
-                                      if (group.medicalReportResult && group.medicalReportResult !== 'N/A') setPvMedicalReportResult(group.medicalReportResult);
-                                      if (group.labTestAdvice && group.labTestAdvice !== 'N/A') setPvLabTestAdvice(group.labTestAdvice);
-                                      const cItems = group.clinicalItems.map((i, idx) => ({ id: String(idx + 1), medicineName: i.medicineName, dosage: i.dosage }));
-                                      const pItems = group.patentItems.map((i, idx) => ({ id: String(idx + 1), medicineName: i.medicineName, dosage: i.dosage }));
-                                      if (cItems.length > 0) setPvClinicalItems(cItems);
-                                      if (pItems.length > 0) setPvPatientItems(pItems);
-                                      setPvSaveSuccess(`Visit record for ${group.date} loaded for editing.`);
-                                    }
-                                  }}
-                                  className="px-2 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-250 text-[9px] font-bold rounded flex items-center space-x-1 transition cursor-pointer"
-                                >
-                                  <Pencil className="w-2.5 h-2.5 text-amber-700" />
-                                  <span>Edit Visit</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  title="Copy this date's prescription to current visit"
-                                  onClick={() => {
-                                    const cItems = group.clinicalItems
-                                      .filter(i => i.medicineName && i.medicineName !== 'None prescribed' && i.medicineName !== 'None recorded')
-                                      .map((i, idx) => ({ id: String(Date.now() + idx), medicineName: i.medicineName, dosage: i.dosage && i.dosage !== 'As directed' ? i.dosage : '' }));
-
-                                    const pItems = group.patentItems
-                                      .filter(i => i.medicineName && i.medicineName !== 'None prescribed' && i.medicineName !== 'None recorded')
-                                      .map((i, idx) => ({ id: String(Date.now() + idx + 100), medicineName: i.medicineName, dosage: i.dosage && i.dosage !== 'As directed' ? i.dosage : '' }));
-
-                                    const cExp = group.clinicalItems.map(i => i.expireDate).find(Boolean) || '';
-
-                                    if (cItems.length > 0) setPvClinicalItems(cItems);
-                                    if (pItems.length > 0) setPvPatientItems(pItems);
-                                    if (cExp) setPvClinicalMedicineExpireDate(cExp);
-
-                                    if (group.symptoms) {
-                                      setPvSymptomsDiagnosis(group.symptoms);
-                                    }
-                                    if (group.medicalReportResult && group.medicalReportResult !== 'N/A') {
-                                      setPvMedicalReportResult(group.medicalReportResult);
-                                    }
-                                    if (group.labTestAdvice && group.labTestAdvice !== 'N/A') {
-                                      setPvLabTestAdvice(group.labTestAdvice);
-                                    }
-
-                                    setPvSaveSuccess(`Prescription from ${group.date} copied into current visit form!`);
-                                    setHidePreviousHistory(true);
-                                    setTimeout(() => setPvSaveSuccess(''), 4000);
-                                  }}
-                                  className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-[9px] font-bold rounded flex items-center space-x-1 transition cursor-pointer"
-                                >
-                                   <Copy className="w-2.5 h-2.5 text-indigo-600" />
-                                  <span>Copy Rx</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  title="Print this previous visit prescription"
-                                  onClick={() => handlePrintPreviousVisitPrescription(group)}
-                                  className="px-2 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-[9px] font-bold rounded flex items-center space-x-1 transition cursor-pointer"
-                                >
-                                  <Printer className="w-2.5 h-2.5 text-emerald-600" />
-                                  <span>Print Rx</span>
-                                </button>
-                                <button
-                                  type="button"
-                                  title="Send this previous visit prescription via WhatsApp"
-                                  onClick={() => {
-                                    const cItems = (group.clinicalItems || [])
-                                      .filter((i: any) => i.medicineName && i.medicineName !== 'None prescribed' && i.medicineName !== 'None recorded');
-                                    const pItems = (group.patentItems || [])
-                                      .filter((i: any) => i.medicineName && i.medicineName !== 'None prescribed' && i.medicineName !== 'None recorded');
-                                    handleSendWhatsAppRx(
-                                      selectedPvPatient,
-                                      group.date,
-                                      cItems,
-                                      pItems,
-                                      group.symptoms || 'Routine Consultation',
-                                      (group as any).labAdvice || (group as any).labTestAdvice || 'None'
-                                    );
-                                  }}
-                                  className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[9px] font-bold rounded flex items-center space-x-1 cursor-pointer transition shadow-2xs"
-                                >
-                                  <WhatsAppIcon className="w-2.5 h-2.5 fill-current text-white" />
-                                  <span>WhatsApp</span>
-                                </button>
-                                <span className="text-[9px] font-extrabold text-slate-500 bg-slate-50 border border-slate-200 px-2 py-0.5 rounded uppercase tracking-wider">
-                                  {group.totalItems} ITEM(S)
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* CLINICAL COMPOUNDED ('C') EXCEL TABLE */}
-                            {group.clinicalItems.length > 0 && (
-                              <div className="space-y-1">
-                                <div className="inline-block bg-amber-100 text-amber-950 font-extrabold text-[9px] uppercase border border-amber-300 px-2 py-0.5 rounded">
-                                  Clinical Compounded ('C')
-                                </div>
-                                <div className="overflow-x-auto border border-amber-300 rounded-lg bg-white shadow-2xs">
-                                  <table className="w-full text-left border-collapse font-sans text-xs">
-                                    <thead>
-                                      <tr className="bg-amber-100/90 border-b border-amber-300 text-[10px] font-black text-amber-950 uppercase tracking-wider">
-                                        <th className="py-1 px-2 w-7 text-center border-r border-amber-200">#</th>
-                                        <th className="py-1 px-2 border-r border-amber-200">Clinical Medicine Name</th>
-                                        <th className="py-1 px-2">Dosage / Usage</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-amber-100">
-                                      {group.clinicalItems.map((item, idx) => (
-                                        <tr key={idx} className="hover:bg-amber-50/50">
-                                          <td className="py-1 px-1.5 text-center font-bold text-slate-500 text-[10px] border-r border-amber-100 bg-amber-50/50">
-                                            {idx + 1}
-                                          </td>
-                                          <td className="py-1 px-2 font-bold text-slate-900 border-r border-amber-100">
-                                            {item.medicineName}
-                                          </td>
-                                          <td className="py-1 px-2 font-mono font-bold text-amber-900">
-                                            {item.dosage} {item.expireDate ? `(EXP: ${item.expireDate})` : ''}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            )}
-
-                            {/* PATENT PRE-PACKAGED ('P') EXCEL TABLE */}
-                            {group.patentItems.length > 0 && (
-                              <div className="space-y-1">
-                                <div className="inline-block bg-emerald-100 text-emerald-950 font-extrabold text-[9px] uppercase border border-emerald-300 px-2 py-0.5 rounded">
-                                  Patent Pre-Packaged ('P')
-                                </div>
-                                <div className="overflow-x-auto border border-emerald-300 rounded-lg bg-white shadow-2xs">
-                                  <table className="w-full text-left border-collapse font-sans text-xs">
-                                    <thead>
-                                      <tr className="bg-emerald-100/90 border-b border-emerald-300 text-[10px] font-black text-emerald-950 uppercase tracking-wider">
-                                        <th className="py-1 px-2 w-7 text-center border-r border-emerald-200">#</th>
-                                        <th className="py-1 px-2 border-r border-emerald-200">Patent Medicine Name</th>
-                                        <th className="py-1 px-2">Dosage / Instructions</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-emerald-100">
-                                      {group.patentItems.map((item, idx) => (
-                                        <tr key={idx} className="hover:bg-emerald-50/50">
-                                          <td className="py-1 px-1.5 text-center font-bold text-slate-500 text-[10px] border-r border-emerald-100 bg-emerald-50/50">
-                                            {idx + 1}
-                                          </td>
-                                          <td className="py-1 px-2 font-bold text-slate-900 border-r border-emerald-100">
-                                            {item.medicineName}
-                                          </td>
-                                          <td className="py-1 px-2 font-mono font-bold text-emerald-900">
-                                            {item.dosage}
-                                          </td>
-                                        </tr>
-                                      ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              </div>
-                            )}
-
-                            {group.clinicalItems.length === 0 && group.patentItems.length === 0 && (
-                              <div className="bg-slate-50 p-2 rounded-lg text-center">
-                                <p className="text-slate-400 italic text-[10px]">No structured medicine records found for this date.</p>
-                              </div>
-                            )}
-
-                            {/* DOCTOR VISIT PAYMENT BREAKDOWN BADGE */}
-                            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-lg p-2 flex flex-wrap items-center justify-between gap-1.5 shadow-2xs border border-indigo-900/40">
-                              <div className="flex items-center space-x-1.5">
-                                <div className="p-1 bg-emerald-500/20 text-emerald-300 rounded shrink-0">
-                                  <Coins className="w-3 h-3 text-emerald-300" />
-                                </div>
-                                <div className="text-[10px] font-mono">
-                                  <span className="text-slate-300 font-extrabold uppercase text-[8.5px] block">
-                                    Payment Received on this Visit:
-                                  </span>
-                                  <span className="text-blue-300 font-bold">
-                                    Appointment: <strong className="text-white">PKR {Number(group.filePkr || 0).toLocaleString()}</strong>
-                                  </span>
-                                  <span className="text-slate-500 mx-1.5">‚Ä¢</span>
-                                  <span className="text-amber-300 font-bold">
-                                    Clinical Meds: <strong className="text-white">PKR {Number(group.clinicalMedicinePkr || 0).toLocaleString()}</strong>
-                                  </span>
-                                </div>
-                              </div>
-                              <div className="bg-emerald-600/90 text-white px-2 py-0.5 rounded text-[10px] font-mono font-black border border-emerald-400/40 shrink-0">
-                                Total Paid: PKR {(Number(group.filePkr || 0) + Number(group.clinicalMedicinePkr || 0)).toLocaleString()}
-                              </div>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="flex justify-end pt-0.5">
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const copiedClinicalItems: Array<{ id: string; medicineName: string; dosage: string }> = [];
-                            const copiedPatentItems: Array<{ id: string; medicineName: string; dosage: string }> = [];
-                            let cExp = '';
-
-                            const mrResults: string[] = [];
-                            const labAdvList: string[] = [];
-
-                            groupedRxByDate.forEach((g) => {
-                              if (g.medicalReportResult && g.medicalReportResult !== 'N/A') {
-                                if (!mrResults.includes(g.medicalReportResult)) mrResults.push(g.medicalReportResult);
-                              }
-                              if (g.labTestAdvice && g.labTestAdvice !== 'N/A') {
-                                if (!labAdvList.includes(g.labTestAdvice)) labAdvList.push(g.labTestAdvice);
-                              }
-
-                              g.clinicalItems.forEach((item) => {
-                                if (item.medicineName && item.medicineName !== 'None prescribed' && item.medicineName !== 'None recorded') {
-                                  const exists = copiedClinicalItems.some(i => i.medicineName.toLowerCase() === item.medicineName.toLowerCase());
-                                  if (!exists) {
-                                    copiedClinicalItems.push({
-                                      id: String(Date.now() + Math.random()),
-                                      medicineName: item.medicineName,
-                                      dosage: item.dosage && item.dosage !== 'As directed' ? item.dosage : ''
-                                    });
-                                  }
-                                }
-                                if (item.expireDate && !cExp) cExp = item.expireDate;
-                              });
-
-                              g.patentItems.forEach((item) => {
-                                if (item.medicineName && item.medicineName !== 'None prescribed' && item.medicineName !== 'None recorded') {
-                                  const exists = copiedPatentItems.some(i => i.medicineName.toLowerCase() === item.medicineName.toLowerCase());
-                                  if (!exists) {
-                                    copiedPatentItems.push({
-                                      id: String(Date.now() + Math.random()),
-                                      medicineName: item.medicineName,
-                                      dosage: item.dosage && item.dosage !== 'As directed' ? item.dosage : ''
-                                    });
-                                  }
-                                }
-                              });
-                            });
-
-                            if (copiedClinicalItems.length > 0) {
-                              setPvClinicalItems(copiedClinicalItems);
-                            }
-                            if (copiedPatentItems.length > 0) {
-                              setPvPatientItems(copiedPatentItems);
-                            }
-                            if (cExp) setPvClinicalMedicineExpireDate(cExp);
-
-                            if (allSymptomsText) {
-                              setPvSymptomsDiagnosis(allSymptomsText);
-                            }
-                            if (mrResults.length > 0) {
-                              setPvMedicalReportResult(mrResults.join('\n\n'));
-                            }
-                            if (labAdvList.length > 0) {
-                              setPvLabTestAdvice(labAdvList.join('\n\n'));
-                            }
-                            setPvSaveSuccess('Selected history medicines & dosages copied into current visit Excel grid!');
-                            setHidePreviousHistory(true);
-                            setTimeout(() => setPvSaveSuccess(''), 4000);
-                          }}
-                          className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg shadow-2xs transition flex items-center space-x-1 cursor-pointer"
-                        >
-                          <Copy className="w-3 h-3 text-white" />
-                          <span>Repeat Medicines</span>
-                        </button>
-                      </div>
-                    </>
-                  )}
-              </div>
-            )}
-            </div>
-          )}
-
-          {/* BOX 2: CURRENT PATIENT VISIT */}
-          <div id="prescription-entry-form" className="bg-white rounded-xl border border-slate-200 shadow-xs p-3 space-y-2.5">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between border-b border-slate-100 pb-2 gap-2">
-              <div className="flex items-center space-x-2">
-                <div className="p-1 bg-emerald-50 text-emerald-600 rounded-md">
-                  <Stethoscope className="w-3.5 h-3.5" />
-                </div>
-                <div>
-                  <h3 className="text-xs font-bold text-slate-900 flex items-center gap-1.5">
-                    <span>Current Patient Visit & Prescriptions</span>
-                    {editingVisitId ? (
-                      <span className="text-[9px] bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-full font-mono font-bold">
-                        Editing #{editingVisitId}
-                      </span>
-                    ) : (
-                      <span className="text-[9px] bg-emerald-100 text-emerald-900 border border-emerald-300 px-2 py-0.5 rounded-full font-bold">
-                        New Visit Entry
-                      </span>
-                    )}
-                  </h3>
-                  <p className="text-[10px] text-slate-500">Record consultation & write clinical / patient prescriptions</p>
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => handleOpenNewPatientModal()}
-                className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-lg shadow-2xs transition flex items-center space-x-1.5 cursor-pointer shrink-0 self-start sm:self-auto"
-                title="Search Mobile No or Patient ID for next patient checkup"
-              >
-                <Search className="w-4 h-4" />
-                <span>Search Record</span>
-              </button>
-            </div>
-
-            {pvSaveSuccess && (
-              <div className="p-2 bg-emerald-50 text-emerald-800 text-xs rounded-lg font-semibold border border-emerald-200 flex items-center justify-between">
-                <div className="flex items-center space-x-1">
-                  <CheckCircle2 className="w-3.5 h-3.5 mr-1 text-emerald-600 shrink-0" />
-                  <span>{pvSaveSuccess}</span>
-                </div>
-                {editingVisitId && (
-                  <button
-                    type="button"
-                    onClick={handleAddNewVisit}
-                    className="ml-2 text-[10px] bg-emerald-600 text-white font-bold px-2 py-0.5 rounded hover:bg-emerald-700 transition"
-                  >
-                    + Add New Visit
-                  </button>
-                )}
-              </div>
-            )}
-
-            {pvSaveError && (
-              <div className="p-2 bg-red-50 text-red-700 text-xs rounded-lg font-semibold border border-red-200">
-                {pvSaveError}
-              </div>
-            )}
-
-            <form
-              onSubmit={handleSavePatientVisit}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                }
-              }}
-              className="space-y-2.5"
-            >
-              {/* 2-COLUMN ROW: History of Patient and Medical Reports Results */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-0.5 flex items-center justify-between">
-                    <span>History of Patient</span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    placeholder=""
-                    value={pvSymptomsDiagnosis}
-                    onChange={(e) => setPvSymptomsDiagnosis(e.target.value.toUpperCase())}
-                    onFocus={handleFocusPatientVisitInput}
-                    className="w-full min-h-[64px] text-xs border border-slate-200 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-sans text-slate-800 resize-y transition-all uppercase"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-teal-800 uppercase mb-0.5 flex items-center justify-between">
-                    <span className="flex items-center">
-                      <FileText className="w-3.5 h-3.5 mr-1 text-teal-600" />
-                      Medical Reports Results
-                    </span>
-                  </label>
-                  <textarea
-                    rows={3}
-                    placeholder=""
-                    value={pvMedicalReportResult}
-                    onChange={(e) => setPvMedicalReportResult(e.target.value.toUpperCase())}
-                    onFocus={handleFocusPatientVisitInput}
-                    className="w-full min-h-[64px] text-xs border border-slate-200 bg-slate-50/50 rounded-lg px-2.5 py-1.5 focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-slate-800 resize-y transition-all uppercase"
-                  />
-                </div>
-              </div>
-
-
-              {/* SEPARATE EXCEL SHEET TABLES FOR CLINICAL MEDICINE & DOSAGE AND PATIENT MEDICINE & DOSAGE */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                
-                {/* CLINICAL MEDICINE EXCEL GRID SECTION */}
-                <div className="bg-emerald-50/40 p-2.5 rounded-xl border border-emerald-200/80 space-y-2">
-                  <div className="flex items-center justify-between border-b border-emerald-200 pb-1">
-                    <label className="text-[11px] font-extrabold text-emerald-900 uppercase flex items-center">
-                      <Pill className="w-3.5 h-3.5 mr-1 text-emerald-700" />
-                      1. Clinical Medicine (Excel Grid)
-                    </label>
-                    <div className="flex items-center space-x-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenSmartLocator('clinical')}
-                        className="px-2 py-0.5 text-[10px] font-extrabold bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white rounded-md shadow-2xs transition flex items-center cursor-pointer"
-                        title="Search medicines by symptom & insert name into Clinical Medicine box"
-                      >
-                        <Sparkles className="w-3 h-3 mr-1 text-amber-300 animate-pulse" />
-                        <span>Smart Locator</span>
-                      </button>
-                      <span className="text-[9px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.5 rounded">Compound Formula</span>
-                    </div>
-                  </div>
-
-                  {/* Excel Sheet Table for Clinical Medicine */}
-                  <div className="overflow-x-auto border border-emerald-300 rounded-lg bg-white shadow-2xs">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-emerald-100/80 border-b border-emerald-300 text-[10px] font-black text-emerald-950 uppercase tracking-wider">
-                          <th className="py-1.5 px-2 w-8 text-center border-r border-emerald-200">#</th>
-                          <th className="py-1.5 px-2 border-r border-emerald-200">Clinical Medicine Name</th>
-                          <th className="py-1.5 px-2 border-r border-emerald-200">Dosage / Usage</th>
-                          <th className="py-1.5 px-1 w-8 text-center"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-emerald-100 text-xs font-sans">
-                        {pvClinicalItems.map((item, index) => (
-                          <tr key={`clin-${item.id || index}-${index}`} className="hover:bg-emerald-50/50 transition">
-                            <td className="py-1 px-1.5 text-center font-bold text-slate-400 text-[10px] border-r border-emerald-100 bg-slate-50/50">
-                              {index + 1}
-                            </td>
-                            <td className="p-1 border-r border-emerald-100">
-                              <input
-                                type="text"
-                                placeholder=""
-                                value={item.medicineName}
-                                onChange={(e) => updateClinicalItem(item.id, 'medicineName', e.target.value.toUpperCase())}
-                                onFocus={handleFocusPatientVisitInput}
-                                className="w-full text-xs font-semibold text-slate-900 px-2 py-1 bg-transparent focus:bg-amber-50/30 focus:outline-none rounded border border-transparent focus:border-emerald-400 uppercase"
-                              />
-                            </td>
-                            <td className="p-1 border-r border-emerald-100">
-                              <input
-                                type="text"
-                                placeholder=""
-                                value={item.dosage}
-                                onChange={(e) => updateClinicalItem(item.id, 'dosage', e.target.value.toUpperCase())}
-                                onFocus={handleFocusPatientVisitInput}
-                                className="w-full text-xs font-mono font-medium text-slate-900 px-2 py-1 bg-transparent focus:bg-amber-50/30 focus:outline-none rounded border border-transparent focus:border-emerald-400 uppercase"
-                              />
-                            </td>
-                            <td className="p-1 text-center">
-                              {pvClinicalItems.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => removeClinicalItem(item.id)}
-                                  className="text-slate-400 hover:text-red-600 p-1 rounded transition cursor-pointer"
-                                  title="Remove row"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="flex justify-start">
-                    <button
-                      type="button"
-                      onClick={addClinicalItem}
-                      className="inline-flex items-center space-x-1 px-2.5 py-1 text-[10px] font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white rounded-md shadow-2xs transition cursor-pointer"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>+ Add Clinical Row</span>
-                    </button>
-                  </div>
-
-                  {/* EXPIRE DATE & WEEKS BOX FOR CLINICAL MEDICINE */}
-                  <div className="bg-white p-2 rounded-lg border border-emerald-300 space-y-1.5 shadow-2xs">
-                    <div className="flex flex-wrap items-center justify-between gap-1.5">
-                      <div className="flex items-center space-x-2 flex-wrap gap-1">
-                        <label className="text-[10px] font-extrabold text-emerald-950 uppercase tracking-wide flex items-center gap-1">
-                          <Calendar className="w-3 h-3 text-emerald-600" />
-                          Expire Date:
-                        </label>
-                        <input
-                          type="date"
-                          value={pvClinicalMedicineExpireDate}
-                          onChange={(e) => setPvClinicalMedicineExpireDate(e.target.value)}
-                          onFocus={handleFocusPatientVisitInput}
-                          className="text-xs font-mono font-bold border border-emerald-400 rounded-md px-2 py-1 bg-white focus:outline-none focus:ring-1 focus:ring-emerald-500 text-slate-900 shadow-2xs"
-                        />
-                        {pvClinicalMedicineExpireDate && (
-                          <span className="text-[10px] font-black bg-emerald-100 text-emerald-900 px-2 py-0.5 rounded-full border border-emerald-200">
-                            {getWeeksLabel(pvClinicalMedicineExpireDate)}
-                          </span>
-                        )}
-                      </div>
-                      <span className="text-[9px] text-emerald-700 font-bold italic">
-                        Prints on usage label
-                      </span>
-                    </div>
-
-                    {/* QUICK WEEK SELECTION BUTTONS */}
-                    <div className="flex items-center space-x-1.5 pt-1 border-t border-emerald-100">
-                      <span className="text-[9px] font-extrabold text-emerald-900 uppercase tracking-wide">Expire Weeks:</span>
-                      {[1, 2, 3, 4].map((w) => {
-                        const isSelected = getWeeksLabel(pvClinicalMedicineExpireDate) === (w === 1 ? '1 Week' : `${w} Weeks`);
-                        return (
-                          <button
-                            key={w}
-                            type="button"
-                            onClick={() => setExpireDateByWeeks(w)}
-                            className={`px-2 py-0.5 text-[10px] font-extrabold rounded-md border transition cursor-pointer ${
-                              isSelected
-                                ? 'bg-emerald-600 text-white border-emerald-700 shadow-2xs'
-                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300'
-                            }`}
-                            title={`Set expire date to Week ${w} (${w * 7} days from today)`}
-                          >
-                            Week {w}
-                          </button>
-                        );
-                      })}
-                      {pvClinicalMedicineExpireDate && (
-                        <button
-                          type="button"
-                          onClick={() => setPvClinicalMedicineExpireDate('')}
-                          className="px-1.5 py-0.5 text-[9px] text-slate-500 hover:text-slate-800 font-bold ml-auto cursor-pointer"
-                          title="Clear expire date"
-                        >
-                          Clear
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                {/* PATIENT MEDICINE EXCEL GRID SECTION */}
-                <div className="bg-blue-50/40 p-2.5 rounded-xl border border-blue-200/80 space-y-2">
-                  <div className="flex items-center justify-between border-b border-blue-200 pb-1">
-                    <label className="text-[11px] font-extrabold text-blue-900 uppercase flex items-center">
-                      <Pill className="w-3.5 h-3.5 mr-1 text-blue-700" />
-                      2. Patient Medicine (Excel Grid)
-                    </label>
-                    <div className="flex items-center space-x-1.5">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenSmartLocator('patient')}
-                        className="px-2 py-0.5 text-[10px] font-extrabold bg-gradient-to-r from-blue-600 to-indigo-700 hover:from-blue-700 hover:to-indigo-800 text-white rounded-md shadow-2xs transition flex items-center cursor-pointer"
-                        title="Search medicines by symptom & insert name into Patient Medicine box"
-                      >
-                        <Sparkles className="w-3 h-3 mr-1 text-amber-300 animate-pulse" />
-                        <span>Smart Locator</span>
-                      </button>
-                      <span className="text-[9px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.5 rounded">Patent / Commercial</span>
-                    </div>
-                  </div>
-
-                  {/* Excel Sheet Table for Patient Medicine */}
-                  <div className="overflow-x-auto border border-blue-300 rounded-lg bg-white shadow-2xs">
-                    <table className="w-full text-left border-collapse">
-                      <thead>
-                        <tr className="bg-blue-100/80 border-b border-blue-300 text-[10px] font-black text-blue-950 uppercase tracking-wider">
-                          <th className="py-1.5 px-2 w-8 text-center border-r border-blue-200">#</th>
-                          <th className="py-1.5 px-2 border-r border-blue-200">Patient Medicine Name</th>
-                          <th className="py-1.5 px-2 border-r border-blue-200">Dosage / Instructions</th>
-                          <th className="py-1.5 px-1 w-8 text-center"></th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-blue-100 text-xs font-sans">
-                        {pvPatientItems.map((item, index) => (
-                          <tr key={`pat-itm-${item.id || index}-${index}`} className="hover:bg-blue-50/50 transition">
-                            <td className="py-1 px-1.5 text-center font-bold text-slate-400 text-[10px] border-r border-blue-100 bg-slate-50/50">
-                              {index + 1}
-                            </td>
-                            <td className="p-1 border-r border-blue-100">
-                              <input
-                                type="text"
-                                placeholder=""
-                                value={item.medicineName}
-                                onChange={(e) => updatePatientItem(item.id, 'medicineName', e.target.value.toUpperCase())}
-                                onFocus={handleFocusPatientVisitInput}
-                                className="w-full text-xs font-semibold text-slate-900 px-2 py-1 bg-transparent focus:bg-amber-50/30 focus:outline-none rounded border border-transparent focus:border-blue-400 uppercase"
-                              />
-                            </td>
-                            <td className="p-1 border-r border-blue-100">
-                              <input
-                                type="text"
-                                placeholder=""
-                                value={item.dosage}
-                                onChange={(e) => updatePatientItem(item.id, 'dosage', e.target.value.toUpperCase())}
-                                onFocus={handleFocusPatientVisitInput}
-                                className="w-full text-xs font-mono font-medium text-slate-900 px-2 py-1 bg-transparent focus:bg-amber-50/30 focus:outline-none rounded border border-transparent focus:border-blue-400 uppercase"
-                              />
-                            </td>
-                            <td className="p-1 text-center">
-                              {pvPatientItems.length > 1 && (
-                                <button
-                                  type="button"
-                                  onClick={() => removePatientItem(item.id)}
-                                  className="text-slate-400 hover:text-red-600 p-1 rounded transition cursor-pointer"
-                                  title="Remove row"
-                                >
-                                  <Trash2 className="w-3.5 h-3.5" />
-                                </button>
-                              )}
-                            </td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-
-                  <div className="flex justify-start">
-                    <button
-                      type="button"
-                      onClick={addPatientItem}
-                      className="inline-flex items-center space-x-1 px-2.5 py-1 text-[10px] font-extrabold bg-blue-600 hover:bg-blue-700 text-white rounded-md shadow-2xs transition cursor-pointer"
-                    >
-                      <Plus className="w-3 h-3" />
-                      <span>+ Add Patient Row</span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-
-              {/* SIDE-BY-SIDE GRID FOR VISITS CHARGES & LAB TESTS ADVICE BOX */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5 items-stretch">
-                
-                {/* BOX 1: CHARGES & FEES SUMMARY */}
-                <div className="bg-slate-50/80 p-2.5 rounded-xl border border-slate-300 space-y-2 flex flex-col justify-between">
-                  <div className="flex items-center justify-between border-b border-slate-200 pb-1.5">
-                    <label className="text-[10px] font-black text-slate-800 uppercase tracking-wide flex items-center">
-                      <Coins className="w-3.5 h-3.5 mr-1 text-emerald-600" />
-                      Visit Charges & Fees (PKR)
-                    </label>
-                    <div className="text-xs font-black text-emerald-950 bg-emerald-100 px-2.5 py-0.5 rounded-md border border-emerald-300 font-mono shadow-2xs">
-                      Total: PKR {(Number(pvOpdFeePkr) || 0) + (Number(pvClinicalMedicinePkr) || 0) + (Number(pvFilePkr) || 0) + (Number(pvCardPkr) || 0)}
-                    </div>
-                  </div>
-
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-0.5">
-                    <div>
-                      <label className="block text-[9px] font-extrabold text-slate-600 uppercase mb-0.5 truncate">Clinical Med (PKR):</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={4}
-                        placeholder=""
-                        value={pvClinicalMedicinePkr}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                          setPvClinicalMedicinePkr(val);
-                        }}
-                        onFocus={handleFocusPatientVisitInput}
-                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-center font-bold text-slate-900 shadow-inner"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[9px] font-extrabold text-slate-600 uppercase mb-0.5 truncate">File (PKR):</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={4}
-                        placeholder=""
-                        value={pvFilePkr}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                          setPvFilePkr(val);
-                        }}
-                        onFocus={handleFocusPatientVisitInput}
-                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-center font-bold text-slate-900 shadow-inner"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[9px] font-extrabold text-slate-600 uppercase mb-0.5 truncate">Card (PKR):</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={4}
-                        placeholder=""
-                        value={pvCardPkr}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 4);
-                          setPvCardPkr(val);
-                        }}
-                        onFocus={handleFocusPatientVisitInput}
-                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-center font-bold text-slate-900 shadow-inner"
-                      />
-                    </div>
-
-                    <div>
-                      <label className="block text-[9px] font-extrabold text-slate-600 uppercase mb-0.5 truncate">OPD / App (PKR):</label>
-                      <input
-                        type="text"
-                        inputMode="numeric"
-                        maxLength={5}
-                        placeholder=""
-                        value={pvOpdFeePkr}
-                        onChange={(e) => {
-                          const val = e.target.value.replace(/\D/g, '').slice(0, 5);
-                          setPvOpdFeePkr(val);
-                        }}
-                        onFocus={handleFocusPatientVisitInput}
-                        className="w-full text-xs border border-slate-300 rounded px-2 py-1.5 bg-white focus:ring-2 focus:ring-emerald-500 focus:outline-none font-mono text-center font-bold text-slate-900 shadow-inner"
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                {/* BOX 2: LAB TESTS / INVESTIGATIONS ADVICE */}
-                <div className="bg-purple-50/40 p-2.5 rounded-xl border border-purple-200/90 space-y-1.5 flex flex-col justify-between">
-                  <div className="flex items-center justify-between">
-                    <label className="block text-[10px] font-bold text-purple-900 uppercase flex items-center">
-                      <FlaskConical className="w-3.5 h-3.5 mr-1 text-purple-600" />
-                      Lab Tests / Investigations Advice
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setPvLabTestModalOpen(true)}
-                      className="px-2 py-0.5 bg-purple-700 hover:bg-purple-800 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition flex items-center space-x-1 cursor-pointer"
-                      title="Open Lab Tests Selection Modal"
-                    >
-                      <FlaskConical className="w-3 h-3 text-purple-200" />
-                      <span>üìã Select Tests (Modal)</span>
-                    </button>
-                  </div>
-
-                  {/* Compact Selected Tests Display Box */}
-                  <div
-                    onClick={() => setPvLabTestModalOpen(true)}
-                    className="min-h-[34px] p-1 bg-purple-50/70 border border-purple-200 rounded-lg cursor-pointer hover:bg-purple-100/60 transition flex flex-wrap items-center gap-1"
-                  >
-                    {getLabTestList(pvLabTestAdvice).length === 0 ? (
-                      <span className="text-[10px] text-purple-500 font-medium px-1 flex items-center">
-                        Click here or button above to select lab tests in modal
-                      </span>
-                    ) : (
-                      getLabTestList(pvLabTestAdvice).map((testItem, idx) => (
-                        <span
-                          key={idx}
-                          className="inline-flex items-center text-[10px] font-extrabold bg-purple-100 text-purple-900 border border-purple-300 px-1.5 py-0.2 rounded shadow-2xs"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <span>{testItem}</span>
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleToggleLabTestAdvice(testItem);
-                            }}
-                            className="ml-1 text-purple-500 hover:text-purple-900 font-black p-0.5 focus:outline-none"
-                            title="Remove test advice"
-                          >
-                            √ó
-                          </button>
-                        </span>
-                      ))
-                    )}
-                  </div>
-
-                  <textarea
-                    rows={1}
-                    placeholder=""
-                    value={pvLabTestAdvice}
-                    onChange={(e) => setPvLabTestAdvice(e.target.value.toUpperCase())}
-                    onFocus={handleFocusPatientVisitInput}
-                    className="w-full text-xs border border-purple-200 bg-purple-50/20 rounded-lg px-2.5 py-1 focus:ring-1 focus:ring-purple-500 focus:outline-none font-mono text-slate-800 resize-y uppercase"
-                  />
-                </div>
-
-              </div>
-
-              <div className="flex flex-wrap items-center justify-end gap-1.5 pt-1">
-                <button
-                  type="button"
-                  onClick={() => handleOpenPrintModal('A5_VISIT_SLIP')}
-                  className="w-full sm:w-auto px-3 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-950 text-xs font-bold rounded-lg border border-amber-300 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
-                  title="Print Patient Visit Slip (148mm x 210mm)"
-                >
-                  <FileText className="w-3.5 h-3.5 text-amber-600" />
-                  <span>Visit Slip</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleOpenPrintModal('A4_PRESCRIPTION')}
-                  className="w-full sm:w-auto px-3 py-1.5 bg-blue-50 hover:bg-blue-100 text-blue-950 text-xs font-bold rounded-lg border border-blue-300 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
-                  title="Print Prescription Letterhead (A4)"
-                >
-                  <Stethoscope className="w-3.5 h-3.5 text-blue-600" />
-                  <span>Prescription</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleOpenPrintModal('A4_LAB_TESTS')}
-                  className="w-full sm:w-auto px-3 py-1.5 bg-teal-50 hover:bg-teal-100 text-teal-950 text-xs font-bold rounded-lg border border-teal-300 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
-                  title="Print Clinical Lab Test Advice (A4)"
-                >
-                  <FlaskConical className="w-3.5 h-3.5 text-teal-700" />
-                  <span>Lab Test</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleOpenPrintModal('A4_PATIENT_INVOICE')}
-                  className="w-full sm:w-auto px-3 py-1.5 bg-purple-50 hover:bg-purple-100 text-purple-950 text-xs font-bold rounded-lg border border-purple-300 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
-                  title="Print Patient Official Invoice / Cash Receipt (A4)"
-                >
-                  <Receipt className="w-3.5 h-3.5 text-purple-700" />
-                  <span>Patient Invoice</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => handleSendWhatsAppRx()}
-                  className="w-full sm:w-auto px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg border border-emerald-700 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
-                  title="Send Patient Prescription & Visit Summary via WhatsApp"
-                >
-                  <WhatsAppIcon className="w-3.5 h-3.5 fill-current text-white" />
-                  <span>WhatsApp</span>
-                </button>
-
-                <button
-                  type="submit"
-                  disabled={isSavingVisit}
-                  className="w-full sm:w-auto px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg border border-emerald-700 shadow-sm transition flex items-center justify-center space-x-1.5 cursor-pointer"
-                >
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  <span>{isSavingVisit ? 'Saving...' : (editingVisitId ? 'Update & Print' : 'Save & Print')}</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-
-      </div>
+        <PatientVisitDeskView
+          selectedPvPatient={selectedPvPatient}
+          pvPrescriptionModalOpen={pvPrescriptionModalOpen}
+          setPvPrescriptionModalOpen={setPvPrescriptionModalOpen}
+          handleSendWhatsAppRx={handleSendWhatsAppRx}
+          handleCleanPrintTab={handleCleanPrintTab}
+          printDocType={printDocType}
+          setPrintDocType={setPrintDocType}
+          pvOpdFeePkr={pvOpdFeePkr}
+          setPvOpdFeePkr={setPvOpdFeePkr}
+          pvClinicalMedicinePkr={pvClinicalMedicinePkr}
+          setPvClinicalMedicinePkr={setPvClinicalMedicinePkr}
+          pvFilePkr={pvFilePkr}
+          setPvFilePkr={setPvFilePkr}
+          pvCardPkr={pvCardPkr}
+          setPvCardPkr={setPvCardPkr}
+          pvLabTestAdvice={pvLabTestAdvice}
+          setPvLabTestAdvice={setPvLabTestAdvice}
+          getLabTestList={getLabTestList}
+          shift={shift}
+          setShift={setShift}
+          showDailyBreakdownMobile={showDailyBreakdownMobile}
+          setShowDailyBreakdownMobile={setShowDailyBreakdownMobile}
+          shiftDailyCollection={shiftDailyCollection}
+          pvPatientSearch={pvPatientSearch}
+          setPvPatientSearch={setPvPatientSearch}
+          editingVisitId={editingVisitId}
+          setEditingVisitId={setEditingVisitId}
+          pvSelectedPatientId={pvSelectedPatientId}
+          setPvSelectedPatientId={setPvSelectedPatientId}
+          pvVisitDate={pvVisitDate}
+          setPvVisitDate={setPvVisitDate}
+          pvSymptomsDiagnosis={pvSymptomsDiagnosis}
+          setPvSymptomsDiagnosis={setPvSymptomsDiagnosis}
+          setPvClinicalItems={setPvClinicalItems}
+          pvClinicalItems={pvClinicalItems}
+          items={items}
+          clinicSettings={clinicSettings}
+          pvPatientItems={pvPatientItems}
+          setPvPatientItems={setPvPatientItems}
+          handleSavePatientVisit={handleSavePatientVisit}
+          groupedRxByDate={groupedRxByDate}
+          tokens={tokens}
+          appointments={appointments}
+          visits={visits}
+          patients={patients}
+          nhcPatients={nhcPatients}
+          cities={cities}
+          addClinicalItem={addClinicalItem}
+          removeClinicalItem={removeClinicalItem}
+          updateClinicalItem={updateClinicalItem}
+          addPatientItem={addPatientItem}
+          removePatientItem={removePatientItem}
+          updatePatientItem={updatePatientItem}
+          handleOpenSmartLocator={handleOpenSmartLocator}
+          handleFocusPatientVisitInput={handleFocusPatientVisitInput}
+          handleToggleLabTestAdvice={handleToggleLabTestAdvice}
+          handleOpenPrintModal={handleOpenPrintModal}
+          handlePrintPreviousVisitPrescription={handlePrintPreviousVisitPrescription}
+          handlePrintPreviousRxDirect={handlePrintPreviousRxDirect}
+          handlePrintDailyReport={handlePrintDailyReport}
+          handleAddNewVisit={handleAddNewVisit}
+          handleEditVisit={handleEditVisit}
+          handleOpenNewPatientModal={handleOpenNewPatientModal}
+          handleExecutePatientSearch={handleExecutePatientSearch}
+          loadPvPatientHistory={loadPvPatientHistory}
+          resetPvConsultationFields={resetPvConsultationFields}
+          fetchNhcArchive={fetchNhcArchive}
+          allSymptomsText={allSymptomsText}
+          allMedicalReportResultsText={allMedicalReportResultsText}
+          allLabTestsText={allLabTestsText}
+          combinedPreviousHistory={combinedPreviousHistory}
+          displayedPreviousHistory={displayedPreviousHistory}
+          uniquePvVisitDates={uniquePvVisitDates}
+          pvPatientDropdownOptions={pvPatientDropdownOptions}
+          pvNhcHistory={pvNhcHistory}
+          setPvNhcHistory={setPvNhcHistory}
+          nhcArchiveList={nhcArchiveList}
+          hidePreviousHistory={hidePreviousHistory}
+          setHidePreviousHistory={setHidePreviousHistory}
+          isFetchingPvHistory={isFetchingPvHistory}
+          isSavingVisit={isSavingVisit}
+          isSearchLoadingModal={isSearchLoadingModal}
+          pvClinicalMedicineExpireDate={pvClinicalMedicineExpireDate}
+          setPvClinicalMedicineExpireDate={setPvClinicalMedicineExpireDate}
+          pvMedicalReportResult={pvMedicalReportResult}
+          setPvMedicalReportResult={setPvMedicalReportResult}
+          pvSelectedHistoryDate={pvSelectedHistoryDate}
+          setPvSelectedHistoryDate={setPvSelectedHistoryDate}
+          pvSaveSuccess={pvSaveSuccess}
+          setPvSaveSuccess={setPvSaveSuccess}
+          pvSaveError={pvSaveError}
+          setPvLabTestModalOpen={setPvLabTestModalOpen}
+          setHistoryAlertModalOpen={setHistoryAlertModalOpen}
+          setIsClaimBillModalOpen={setIsClaimBillModalOpen}
+          setIsMultiPatientModalOpen={setIsMultiPatientModalOpen}
+          setExpireDateByWeeks={setExpireDateByWeeks}
+        />
       )}
 
-      {/* SEARCH LOADING MODAL POPUP */}
-      {isSearchLoadingModal && (
-        <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-2xl p-5 shadow-2xl border border-slate-200 flex flex-col items-center space-y-3.5 max-w-sm w-full text-center animate-in fade-in zoom-in-95">
-            <div className="relative flex items-center justify-center">
-              <div className="p-3 bg-emerald-50 text-emerald-600 rounded-full shadow-inner">
-                <div className="w-8 h-8 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
-              </div>
-              <div className="absolute -bottom-1 -right-1 bg-emerald-600 text-white p-1 rounded-full text-[9px] shadow-sm animate-pulse">
-                <Database className="w-3 h-3" />
-              </div>
-            </div>
-
-            <div className="w-full space-y-1">
-              <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-100/80 text-emerald-800 text-[10px] font-bold tracking-wide uppercase mb-1">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-ping"></span>
-                Database Query Active
-              </div>
-              <h4 className="text-xs sm:text-sm font-extrabold text-slate-900">Fetching Patient Records...</h4>
-              <p className="text-[11px] text-slate-600 leading-snug">
-                Searching database & PHC history for: <br />
-                <span className="font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 inline-block mt-1 font-mono text-[11px]">
-                  "{pvPatientSearch || pvSelectedPatientId || 'Patient'}"
-                </span>
-              </p>
-            </div>
-
-            {/* ANIMATED PROGRESS BAR */}
-            <div className="w-full space-y-1.5 pt-1">
-              <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden border border-slate-200/80 shadow-inner relative">
-                <div className="bg-gradient-to-r from-emerald-500 via-teal-400 to-emerald-600 h-full rounded-full animate-pulse w-full origin-left transition-all duration-300"></div>
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/50 to-transparent animate-[shimmer_1.5s_infinite] -translate-x-full"></div>
-              </div>
-              <div className="flex items-center justify-between text-[10px] font-semibold text-slate-500 px-0.5">
-                <span className="flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
-                  Loading Records...
-                </span>
-                <span className="font-mono text-emerald-700 font-bold">Connecting API</span>
-              </div>
-            </div>
-          </div>
-        </div>
+      {/* GRID-VIEW TAB FOR ALL PATIENTS */}
+      {activeSubTab === 'grid_view' && (
+        <PatientGridView
+          patients={patients}
+          nhcPatients={nhcPatients}
+          visits={visits}
+          visitMedicines={visitMedicines}
+          items={items}
+          gridViewSearch={gridViewSearch}
+          setGridViewSearch={setGridViewSearch}
+          nhcArchiveList={nhcArchiveList}
+          pvNhcHistory={pvNhcHistory}
+          gridViewStartDate={gridViewStartDate}
+          setGridViewStartDate={setGridViewStartDate}
+          gridViewEndDate={gridViewEndDate}
+          setGridViewEndDate={setGridViewEndDate}
+          gridViewDatePreset={gridViewDatePreset}
+          setGridViewDatePreset={setGridViewDatePreset}
+          gridViewGenderFilter={gridViewGenderFilter}
+          setGridViewGenderFilter={setGridViewGenderFilter}
+          gridViewFocOnly={gridViewFocOnly}
+          setGridViewFocOnly={setGridViewFocOnly}
+          appointments={appointments}
+          invoices={invoices}
+          handleOpenRecentVisitsModal={handleOpenRecentVisitsModal}
+          setIsDetailReportModalOpen={setIsDetailReportModalOpen}
+          openGridVisitSelectorModal={openGridVisitSelectorModal}
+          setDeletePatientModalData={setDeletePatientModalData}
+        />
       )}
 
-      {/* PATIENT VISIT PRESCRIPTION PRINT MODAL */}
-      {pvPrescriptionModalOpen && selectedPvPatient && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto print:p-0 print:static print:bg-transparent print:overflow-visible">
-          
-          {/* Style tag for print paper dimensions */}
-          <style>{`
-            @media print {
-              @page {
-                size: A4 portrait;
-                margin: 0 !important;
-              }
-              .print\\:hidden, .no-print, button, header, nav {
-                display: none !important;
-              }
-              html, body {
-                margin: 0 !important;
-                padding: 0 !important;
-                width: 210mm !important;
-                max-width: 210mm !important;
-                height: 297mm !important;
-                max-height: 297mm !important;
-                overflow: hidden !important;
-                -webkit-print-color-adjust: exact !important;
-                print-color-adjust: exact !important;
-                page-break-after: avoid !important;
-                page-break-inside: avoid !important;
-                break-after: avoid !important;
-              }
-              body * {
-                visibility: hidden !important;
-              }
-              #printable-patient-doc, #printable-patient-doc * {
-                visibility: visible !important;
-              }
-              #printable-patient-doc {
-                position: absolute !important;
-                left: 0 !important;
-                top: 0 !important;
-                width: 210mm !important;
-                max-width: 210mm !important;
-                height: 297mm !important;
-                max-height: 297mm !important;
-                margin: 0 !important;
-                padding: 0 !important;
-                background: white !important;
-                box-shadow: none !important;
-                border: none !important;
-                box-sizing: border-box !important;
-                overflow: hidden !important;
-                page-break-inside: avoid !important;
-                page-break-after: avoid !important;
-                break-after: avoid !important;
-              }
-            }
-          `}</style>
-
-          <div className="bg-white w-full max-w-4xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-auto print:max-w-none print:shadow-none print:border-none print:rounded-none">
-            
-            {/* Modal Toolbar (hidden during print) */}
-            <div className="bg-slate-900 text-white p-3.5 flex flex-col sm:flex-row justify-between items-center gap-3 print:hidden">
-              <div className="flex items-center space-x-2">
-                <Printer className="w-4 h-4 text-emerald-400" />
-                <h4 className="font-bold text-xs sm:text-sm">
-                  Print Patient Document
-                </h4>
-                <span className="text-[10px] bg-slate-800 text-emerald-300 font-mono px-2 py-0.5 rounded border border-slate-700">
-                  {selectedPvPatient.PatientName} ({selectedPvPatient.PatientID})
-                </span>
-              </div>
-
-              {/* DOCUMENT TYPE SELECTOR TABS */}
-              <div className="flex flex-wrap items-center bg-slate-800 p-1 rounded-lg border border-slate-700 gap-1">
-                <button
-                  type="button"
-                  onClick={() => setPrintDocType('A5_VISIT_SLIP')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center space-x-1.5 cursor-pointer ${
-                    printDocType === 'A5_VISIT_SLIP'
-                      ? 'bg-amber-500 text-slate-950 shadow-sm'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                  }`}
-                  title="Patient Visit Slip (148mm x 210mm)"
-                >
-                  <FileText className="w-3.5 h-3.5" />
-                  <span>Visit Slip</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPrintDocType('A4_PRESCRIPTION')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center space-x-1.5 cursor-pointer ${
-                    printDocType === 'A4_PRESCRIPTION'
-                      ? 'bg-blue-500 text-white shadow-sm'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                  }`}
-                  title="Prescription Letterhead (A4)"
-                >
-                  <Stethoscope className="w-3.5 h-3.5" />
-                  <span>Prescription</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPrintDocType('A4_LAB_TESTS')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center space-x-1.5 cursor-pointer ${
-                    printDocType === 'A4_LAB_TESTS'
-                      ? 'bg-teal-500 text-white shadow-sm'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                  }`}
-                  title="Lab Test Advice (A4)"
-                >
-                  <FlaskConical className="w-3.5 h-3.5" />
-                  <span>Lab Test</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setPrintDocType('A4_PATIENT_INVOICE')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center space-x-1.5 cursor-pointer ${
-                    printDocType === 'A4_PATIENT_INVOICE'
-                      ? 'bg-purple-600 text-white shadow-sm'
-                      : 'text-slate-300 hover:text-white hover:bg-slate-700'
-                  }`}
-                  title="Patient Official Invoice (A4)"
-                >
-                  <Receipt className="w-3.5 h-3.5" />
-                  <span>Patient Invoice</span>
-                </button>
-              </div>
-
-              <div className="flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleSendWhatsAppRx()}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer"
-                  title="Send current document/prescription to patient via WhatsApp"
-                >
-                  <WhatsAppIcon className="w-3.5 h-3.5 fill-current text-white" />
-                  <span>WhatsApp</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleCleanPrintTab(printDocType)}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer"
-                  title="Open clean printable document in new tab with exact page sizing"
-                >
-                  <Printer className="w-3.5 h-3.5" />
-                  <span>Print Now ({printDocType === 'A5_VISIT_SLIP' ? '148x210mm on A4' : 'A4 Portrait'})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setPvPrescriptionModalOpen(false)}
-                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition cursor-pointer"
-                >
-                  Close
-                </button>
-              </div>
-            </div>
-
-            {/* DOCUMENT PREVIEW CONTAINER */}
-            <div className="p-4 sm:p-6 bg-slate-100 min-h-[480px] flex justify-center items-center print:p-0 print:bg-white print:min-h-0">
-              <div id="printable-patient-doc" className="w-full bg-white shadow-md print:shadow-none flex justify-center">
-
-                {/* ========================================================================= */}
-                {/* OPTION 1: PATIENT VISIT SLIP (148mm x 210mm CONTAINER ON A4) */}
-                {/* ========================================================================= */}
-                {printDocType === 'A5_VISIT_SLIP' && (
-                  <div className="w-[148mm] max-w-[148mm] h-[210mm] max-h-[210mm] mx-auto print:!ml-[30mm] print:!mr-auto print:!mt-0 p-3 sm:p-4 print:p-3 border border-slate-300 print:border-none text-slate-900 font-sans box-border overflow-hidden print:overflow-hidden flex flex-col justify-between bg-white">
-                    
-                    {/* Top Content Group */}
-                    <div className="space-y-2">
-                      {/* Slip Header with PHC Logo on Left */}
-                      <div className="relative border-b-2 border-teal-800 pb-1.5">
-                        <div className="flex items-center justify-between gap-2">
-                          <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" style={{ width: '36px', height: '36px', maxHeight: '36px', maxWidth: '36px', objectFit: 'contain' }} className="w-9 h-9 object-contain shrink-0" />
-                          <div className="text-center flex-1">
-                            <h2 className="text-center text-sm font-black uppercase text-teal-950 tracking-wide">
-                              {clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}
-                            </h2>
-                            <p className="text-[9px] font-extrabold text-rose-700 tracking-wider uppercase">PATIENT VISIT SLIP</p>
-                          </div>
-                          <div className="w-9 h-9 shrink-0"></div>
-                        </div>
-
-                        <div className="mt-1 text-[11px] border-t border-slate-200 pt-1 space-y-0.5">
-                          <div className="flex justify-between items-baseline">
-                            <p className="font-bold text-slate-900 text-xs">
-                              Patient Name: <strong className="text-teal-950 uppercase">{selectedPvPatient.PatientName}</strong> &nbsp;
-                              <span className="font-semibold text-slate-700 text-[10px]">
-                                ({selectedPvPatient.AgeYears}Y / {selectedPvPatient.Sex} {selectedPvPatient.MaritalStatus || ''})
-                              </span>
-                            </p>
-                            <p className="text-slate-700 font-mono text-[10px]">
-                              Patient ID: <strong className="text-slate-950">{selectedPvPatient.PatientID}</strong>
-                            </p>
-                          </div>
-
-                          {/* S/O, D/O, W/O BELOW PATIENT NAME */}
-                          <div className="flex justify-between items-baseline pt-0.5 text-[10px]">
-                            <p className="font-bold text-slate-800">
-                              S/O, D/O, W/O: <span className="font-bold text-slate-950 uppercase">{(selectedPvPatient as any).Father_husband || selectedPvPatient.Father_husband || '____________________'}</span>
-                            </p>
-                            <div className="text-right font-mono flex items-center space-x-2">
-                              <span className="font-bold text-slate-900">Visit Date: <span className="underline">{formatDisplayDate(pvVisitDate)}</span></span>
-                              <span className="font-bold text-emerald-800">
-                                City: <span className="bg-emerald-100 text-emerald-950 px-1.5 py-0.2 rounded border border-emerald-300 font-bold">{cities.find(c => c.CityID === selectedPvPatient.CityID)?.CityName || 'Lahore'}</span>
-                              </span>
-                              <span className="font-bold text-slate-800">
-                                Mobile: <span className="text-slate-950 font-bold">{selectedPvPatient.PhoneMobile || (selectedPvPatient as any).Mobile || (selectedPvPatient as any).Phone || (selectedPvPatient as any).MobileNumber || 'N/A'}</span>
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Symptoms / Diagnosis */}
-                      <div className="space-y-0.5 text-[10px] border-b border-slate-200 pb-1">
-                        <span className="font-bold uppercase text-[10px] text-slate-700 tracking-wider">Symptoms / Diagnosis:</span>
-                        <p className="font-bold text-slate-900 uppercase leading-snug">
-                          {pvSymptomsDiagnosis || 'N/A'}
-                        </p>
-                      </div>
-
-                      {/* Medical Report Results */}
-                      <div className="space-y-0.5 text-[10px] border-b border-slate-200 pb-1">
-                        <span className="font-bold uppercase text-[10px] text-slate-700 tracking-wider">Medical Report Results:</span>
-                        <p className="text-slate-800 font-mono text-[10px] italic whitespace-pre-wrap">
-                          {pvMedicalReportResult || 'None Recorded'}
-                        </p>
-                      </div>
-
-                      {/* Clinical Medicines Grid */}
-                      <div className="space-y-0.5 text-[10px] border-b border-slate-200 pb-1.5">
-                        <div className="flex items-center justify-between text-emerald-900 font-bold uppercase text-[10px] tracking-wider">
-                          <span className="flex items-center space-x-1">
-                            <Pill className="w-3 h-3 text-emerald-700" />
-                            <span>1. Clinical / Compounded Medicines</span>
-                          </span>
-                          {pvClinicalMedicineExpireDate && (
-                            <span className="text-[9px] bg-emerald-100 text-emerald-900 font-mono px-1.5 py-0.2 rounded font-bold">
-                              EXP: {pvClinicalMedicineExpireDate}
-                            </span>
-                          )}
-                        </div>
-                        <div className="bg-emerald-50/30 p-1 rounded-md border border-emerald-200/80 font-mono text-[10px]">
-                          {(() => {
-                            const validItems = pvClinicalItems.filter((i) => i.medicineName.trim() || i.dosage.trim());
-                            if (validItems.length === 0) {
-                              return <p className="text-slate-400 italic text-[10px] p-0.5">No clinical medicines prescribed</p>;
-                            }
-                            return (
-                              <table className="w-full text-left border-collapse bg-white rounded border border-emerald-300 text-[10px] shadow-2xs">
-                                <thead>
-                                  <tr className="bg-emerald-100/80 border-b border-emerald-300 text-[9px] font-black text-emerald-950 uppercase tracking-wider">
-                                    <th className="py-0.5 px-1.5 w-6 text-center border-r border-emerald-200">#</th>
-                                    <th className="py-0.5 px-1.5 border-r border-emerald-200">Clinical Medicine Name</th>
-                                    <th className="py-0.5 px-1.5">Dosage / Usage</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-emerald-100">
-                                  {validItems.map((item, idx) => (
-                                    <tr key={item.id || idx} className="hover:bg-emerald-50/30">
-                                      <td className="py-0.5 px-1 text-center font-bold text-slate-500 text-[9px] border-r border-emerald-100 bg-emerald-50/50">
-                                        {idx + 1}
-                                      </td>
-                                      <td className="py-0.5 px-1.5 font-bold text-slate-900 border-r border-emerald-100">
-                                        {item.medicineName.trim() || 'Clinical Compounding Formula'}
-                                      </td>
-                                      <td className="py-0.5 px-1.5 font-semibold text-emerald-800">
-                                        {item.dosage.trim() || 'As directed'}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      {/* Patent Medicines Grid */}
-                      <div className="space-y-0.5 text-[10px] border-b border-slate-200 pb-1.5">
-                        <div className="flex items-center justify-between text-blue-900 font-bold uppercase text-[10px] tracking-wider">
-                          <span className="flex items-center space-x-1">
-                            <Pill className="w-3 h-3 text-blue-700" />
-                            <span>2. Patent / Commercial Medicines</span>
-                          </span>
-                        </div>
-                        <div className="bg-blue-50/30 p-1 rounded-md border border-blue-200/80 font-mono text-[10px]">
-                          {(() => {
-                            const validItems = pvPatientItems.filter((i) => i.medicineName.trim() || i.dosage.trim());
-                            if (validItems.length === 0) {
-                              return <p className="text-slate-400 italic text-[10px] p-0.5">No patent medicines prescribed</p>;
-                            }
-                            return (
-                              <table className="w-full text-left border-collapse bg-white rounded border border-blue-300 text-[10px] shadow-2xs">
-                                <thead>
-                                  <tr className="bg-blue-100/80 border-b border-blue-300 text-[9px] font-black text-blue-950 uppercase tracking-wider">
-                                    <th className="py-0.5 px-1.5 w-6 text-center border-r border-blue-200">#</th>
-                                    <th className="py-0.5 px-1.5 border-r border-blue-200">Patient Medicine Name</th>
-                                    <th className="py-0.5 px-1.5">Dosage / Instructions</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-blue-100">
-                                  {validItems.map((item, idx) => (
-                                    <tr key={item.id || idx} className="hover:bg-blue-50/30">
-                                      <td className="py-0.5 px-1 text-center font-bold text-slate-500 text-[9px] border-r border-blue-100 bg-blue-50/50">
-                                        {idx + 1}
-                                      </td>
-                                      <td className="py-0.5 px-1.5 font-bold text-slate-900 border-r border-blue-100">
-                                        {item.medicineName.trim() || 'Commercial Medicine'}
-                                      </td>
-                                      <td className="py-0.5 px-1.5 font-semibold text-blue-800">
-                                        {item.dosage.trim() || 'As directed'}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            );
-                          })()}
-                        </div>
-                      </div>
-
-                      {/* Advised Lab Investigations */}
-                      <div className="text-[10px] border-b border-slate-200 pb-1 flex items-baseline gap-1">
-                        <span className="font-bold uppercase text-[9px] text-slate-600 shrink-0">Advised Lab Investigations:</span>
-                        <p className="font-mono text-slate-800 font-semibold">{pvLabTestAdvice || 'Routine Homeopathic Treatment'}</p>
-                      </div>
-                    </div>
-
-                    {/* Charges / Remarks Footer */}
-                    <div className="pt-1.5 border-t-2 border-slate-800 flex justify-between items-center text-[10px]">
-                      <div className="font-mono text-[10px]">
-                        <span className="font-bold uppercase text-slate-500 mr-1.5">Charges (PKR):</span>
-                        <span>OPD/App: <strong>{pvOpdFeePkr || 0}</strong></span> &nbsp;|&nbsp; 
-                        <span>Clinical: <strong>{pvClinicalMedicinePkr || 0}</strong></span> &nbsp;|&nbsp; 
-                        <span>File: <strong>{pvFilePkr || 0}</strong></span> &nbsp;|&nbsp; 
-                        <span>Card: <strong>{pvCardPkr || 0}</strong></span> &nbsp;|&nbsp; 
-                        <span className="text-emerald-900 font-bold bg-emerald-100 px-1.5 py-0.2 rounded">
-                          Total: PKR {(Number(pvOpdFeePkr)||0) + (Number(pvClinicalMedicinePkr)||0) + (Number(pvFilePkr)||0) + (Number(pvCardPkr)||0)}
-                        </span>
-                      </div>
-                      <div className="text-slate-500 text-[9px] italic">
-                        Printed via PHC Clinical CMS
-                      </div>
-                    </div>
-
-                  </div>
-                )}
-
-
-                {/* ========================================================================= */}
-                {/* OPTION 2: PATIENT PRESCRIPTION LETTERHEAD (A4 SIZE - MATCHING IMAGE EXACTLY) */}
-                {/* ========================================================================= */}
-                {printDocType === 'A4_PRESCRIPTION' && (
-                  <div className="w-full max-w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-5 sm:p-6 print:p-5 border border-slate-300 print:border-none text-slate-900 font-sans space-y-2.5 flex flex-col justify-between bg-white box-border overflow-hidden print:overflow-hidden">
-                    
-                    <div className="space-y-3">
-                      {/* Top Header Section with PHC Official Logo on Left & Clinic Title */}
-                      <div className="flex items-center justify-between border-b-2 border-teal-800 pb-2 gap-2">
-                        {/* PHC Official Logo Left */}
-                        <div className="flex items-center space-x-2 shrink-0">
-                          <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" style={{ width: '80px', height: '80px', maxHeight: '80px', maxWidth: '80px', objectFit: 'contain' }} className="w-20 h-20 object-contain" />
-                        </div>
-
-                        {/* Main Clinic Title */}
-                        <div className="text-center flex-1 px-2">
-                          <h1 className="font-serif uppercase tracking-tight flex flex-col items-center justify-center">
-                            <span className="text-2xl sm:text-3xl font-serif text-red-900 font-black tracking-tight">{clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}</span>
-                          </h1>
-                          <p className="text-[10px] font-extrabold text-rose-700 tracking-widest uppercase mt-0.5">HEALING NATURALLY. RESTORING BALANCE.</p>
-                          <div className="flex justify-center space-x-8 text-xs font-bold text-slate-800 mt-1">
-                            <span>PHC Reg. # <span className="underline decoration-slate-800">R-__________</span></span>
-                            <span>PHC License #: ___________________</span>
-                          </div>
-                          <p className="text-[10.5px] font-bold text-teal-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
-                        </div>
-
-                        {/* Right Spacer for balanced centering */}
-                        <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
-                      </div>
-
-                      {/* Patient Details Section */}
-                      <div className="text-xs space-y-2 font-sans pt-1 border-b-2 border-teal-800 pb-2.5">
-                        {/* ROW 1: Patient Name & Age/Sex & Visit Date */}
-                        <div className="grid grid-cols-12 gap-2 items-baseline">
-                          <div className="col-span-6 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">Patient Name:</span>
-                            <span className="font-black text-slate-950 uppercase border-b border-slate-400 flex-1 pl-1 text-sm">
-                              {selectedPvPatient.PatientName}
-                            </span>
-                          </div>
-                          <div className="col-span-3 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">Age/Sex:</span>
-                            <span className="font-semibold text-slate-900 border-b border-slate-400 flex-1 text-center">
-                              {selectedPvPatient.AgeYears}Y ({selectedPvPatient.Sex})
-                            </span>
-                          </div>
-                          <div className="col-span-3 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">Visit Date:</span>
-                            <span className="font-semibold text-slate-900 border-b border-slate-400 flex-1 text-center font-mono">
-                              {pvVisitDate}
-                            </span>
-                          </div>
-                        </div>
-
-                        {/* ROW 2: S/O, D/O, W/O (EXACTLY BELOW PATIENT NAME) & PID Ref # & City & Mobile */}
-                        <div className="grid grid-cols-12 gap-2 items-baseline pt-0.5">
-                          <div className="col-span-4 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">S/O, D/O, W/O:</span>
-                            <span className="font-bold text-slate-950 uppercase border-b border-slate-400 flex-1 pl-1 truncate">
-                              {(selectedPvPatient as any).Father_husband || selectedPvPatient.Father_husband || '________________________'}
-                            </span>
-                          </div>
-                          <div className="col-span-3 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">PID Ref #:</span>
-                            <span className="font-mono font-bold text-slate-950 border-b border-slate-400 flex-1 pl-1 text-center">
-                              {selectedPvPatient.PatientID}
-                            </span>
-                          </div>
-                          <div className="col-span-2 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">City:</span>
-                            <span className="font-mono font-bold text-emerald-800 border-b border-slate-400 flex-1 text-center">
-                              {cities.find(c => c.CityID === selectedPvPatient.CityID)?.CityName || 'Lahore'}
-                            </span>
-                          </div>
-                          <div className="col-span-3 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">Mobile:</span>
-                            <span className="font-mono font-bold text-slate-950 border-b border-slate-400 flex-1 text-center">
-                              {selectedPvPatient.PhoneMobile || (selectedPvPatient as any).Mobile || (selectedPvPatient as any).Phone || (selectedPvPatient as any).MobileNumber || 'N/A'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Prescription Main Body: Left Prescriptions + Right Vitals Sidebar */}
-                      <div className="grid grid-cols-12 gap-4 pt-1 min-h-[480px]">
-                        
-                        {/* Left 8 columns: RX & Prescribed Medicines */}
-                        <div className="col-span-8 space-y-3">
-                          <div className="grid grid-cols-12 items-center border-b border-slate-200 pb-1">
-                            <div className="col-span-2">
-                              <span className="text-3xl font-serif italic font-black text-slate-950">Rx</span>
-                            </div>
-                            <div className="col-span-8 text-center">
-                              <h3 className="text-center font-bold text-sm sm:text-base tracking-wider uppercase underline underline-offset-4 font-serif text-red-900">
-                                PRESCRIPTION
-                              </h3>
-                            </div>
-                            <div className="col-span-2"></div>
-                          </div>
-
-                          {/* Numbered Prescription Medicine Items (Name & Usage) */}
-                          <div className="space-y-4 pt-1 text-xs font-sans">
-                            {(() => {
-                              const parsedItems: Array<{ name: string; usage: string }> = [];
-
-                              const parseBlock = (medStr: string, dosageStr: string) => {
-                                const m = medStr.trim();
-                                const d = dosageStr.trim();
-
-                                if (!m && !d) return;
-
-                                if (m && !m.includes('\n') && d && !d.includes('\n')) {
-                                  parsedItems.push({ name: m, usage: d });
-                                  return;
-                                }
-
-                                const lines = `${m}\n${d}`.split('\n').map(l => l.trim()).filter(Boolean);
-                                let currentItem: { name: string; usage: string } | null = null;
-
-                                for (const line of lines) {
-                                  const isNum = /^[0-9]+[\)\.]\s*/.test(line);
-                                  const clean = line.replace(/^[0-9]+[\)\.]\s*/, '').trim();
-
-                                  if (isNum) {
-                                    if (currentItem) parsedItems.push(currentItem);
-                                    if (clean.includes(' - ')) {
-                                      const [n, ...u] = clean.split(' - ');
-                                      currentItem = { name: n.trim(), usage: u.join(' - ').trim() };
-                                    } else {
-                                      currentItem = { name: clean, usage: '' };
-                                    }
-                                  } else if (line.includes(' - ')) {
-                                    if (currentItem) parsedItems.push(currentItem);
-                                    const [n, ...u] = line.split(' - ');
-                                    currentItem = { name: n.trim(), usage: u.join(' - ').trim() };
-                                  } else if (currentItem) {
-                                    if (currentItem.usage) {
-                                      currentItem.usage += ` / ${clean}`;
-                                    } else {
-                                      currentItem.usage = clean;
-                                    }
-                                  } else {
-                                    currentItem = { name: clean, usage: '' };
-                                  }
-                                }
-                                if (currentItem) parsedItems.push(currentItem);
-                              };
-
-                              // Requirement 4: In the A4 letterhead print, use Patent Medicine Prescription only
-                              pvPatientItems.forEach((i) => {
-                                if (i.medicineName.trim() || i.dosage.trim()) {
-                                  parsedItems.push({ name: i.medicineName.trim(), usage: i.dosage.trim() });
-                                }
-                              });
-
-                              if (parsedItems.length === 0) {
-                                parseBlock(pvPatientMedicine, pvPatientDosage);
-                              }
-
-                              if (parsedItems.length === 0) {
-                                return (
-                                  <div className="pt-8 text-slate-300 italic text-center font-sans">
-                                    Prescription area (Write medicines name and usage instructions here)
-                                  </div>
-                                );
-                              }
-
-                              return parsedItems.map((item, idx) => (
-                                <div key={idx} className="space-y-0.5">
-                                  <p className="font-bold text-slate-950 text-xs sm:text-sm uppercase flex items-baseline">
-                                    <span className="w-6 text-slate-800 font-mono shrink-0">{idx + 1})</span>
-                                    <span>{item.name}</span>
-                                  </p>
-                                  {item.usage && (
-                                    <p className="pl-6 text-[11px] sm:text-xs font-semibold text-slate-700 font-mono uppercase tracking-tight">
-                                      {item.usage}
-                                    </p>
-                                  )}
-                                </div>
-                              ));
-                            })()}
-                          </div>
-
-                          {/* Advised Lab Investigations / Tests List (Numbered List: 1. CBC, 2. LFT etc.) */}
-                          {(() => {
-                            const labList = getLabTestList(pvLabTestAdvice);
-                            if (labList.length === 0) return null;
-                            return (
-                              <div className="pt-3 border-t border-slate-300 mt-4 space-y-1.5 font-sans">
-                                <h4 className="text-xs font-black text-teal-950 uppercase tracking-wider flex items-center font-serif">
-                                  <FlaskConical className="w-3.5 h-3.5 mr-1 text-teal-800" />
-                                  Advised Lab Tests / Investigations:
-                                </h4>
-                                <div className="pl-2 space-y-1 text-xs">
-                                  {labList.map((testName, idx) => (
-                                    <p key={idx} className="font-bold text-slate-900 uppercase flex items-baseline">
-                                      <span className="w-5 text-slate-800 font-mono shrink-0">{idx + 1}.</span>
-                                      <span>{testName}</span>
-                                    </p>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()}
-                        </div>
-
-                        {/* Right 4 columns: Sidebar for Vitals, Urdu Contacts & Pill Badges */}
-                        <div className="col-span-4 border-l border-slate-300 pl-3 space-y-3 text-xs flex flex-col justify-between">
-                          <div className="space-y-2.5">
-                            <div className="space-y-1 font-mono text-[11px]">
-                              <div className="flex justify-between items-baseline border-b border-slate-200 pb-1">
-                                <span className="text-slate-700 font-medium">Date:</span>
-                                <strong className="text-slate-950 underline decoration-slate-300">{pvVisitDate}</strong>
-                              </div>
-                              <div className="flex justify-between items-baseline border-b border-slate-200 pb-1">
-                                <span className="text-slate-700 font-medium">Visit:</span>
-                                <span className="text-slate-400">________</span>
-                                <span className="text-slate-700 font-medium">Time:</span>
-                                <span className="text-slate-400">________</span>
-                              </div>
-                              <div className="flex justify-between items-baseline border-b border-slate-200 pb-1">
-                                <span className="text-slate-700 font-medium">B.P</span>
-                                <span className="text-slate-400">____</span>
-                                <span className="text-slate-700 font-medium">Pulse</span>
-                                <span className="text-slate-400">____</span>
-                                <span className="text-slate-700 font-medium">Weight</span>
-                                <span className="text-slate-400">____</span>
-                              </div>
-                            </div>
-
-                            <div className="pt-1 space-y-1">
-                              <span className="font-bold text-slate-800 text-[11px] block">Allergies (Any)</span>
-                              <div className="border-b border-slate-300 pb-0.5 text-slate-400 italic text-[10px]">____________________</div>
-                            </div>
-
-                            <div className="pt-1 space-y-1">
-                              <span className="font-bold text-slate-800 text-[11px] block">Findings</span>
-                              <div className="text-slate-900 font-semibold text-[11px] min-h-[40px]">
-                                ________________________
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Right Sidebar Urdu Section with Bordered Pill Badges */}
-                          <div className="pt-4 border-t border-slate-300 text-right space-y-3 text-[10px]">
-                            
-                            {/* Clinic Appointment */}
-                            <div className="space-y-0.5">
-                              <p className="text-[10px] text-slate-700 font-bold">⁄©ŸÑ€åŸÜ⁄© ÿßŸæÿßÿ¶ŸÜŸπŸÖŸÜŸπ ÿßŸàÿ± ÿØ€å⁄Øÿ± ŸÖÿπŸÑŸàŸÖÿßÿ™ ⁄©€åŸÑÿ¶€í</p>
-                              <div className="inline-block border-2 border-slate-900 text-slate-950 font-mono font-black text-xs px-3 py-0.5 rounded-full mt-0.5">
-                                +92-311-4000608
-                              </div>
-                            </div>
-
-                            {/* Address & Email */}
-                            <div className="text-[10px] text-slate-700 pt-2 border-t border-slate-200 space-y-0.5">
-                              <p className="font-semibold">10 ÿ¥ÿßŸÑ€åŸÖÿßÿ± ÿ±Ÿà⁄àÿå ⁄Ø⁄ë⁄æ€å ÿ¥ÿß€ÅŸàÿå ŸÑÿß€ÅŸàÿ±-39</p>
-                              <p className="font-mono">+92 42 3631 2924, 3630 2873</p>
-                              <p className="font-mono text-slate-600 text-[9px]">punjabhomeopathic@gmail.com</p>
-                            </div>
-
-                          </div>
-
-                        </div>
-
-                      </div>
-                    </div>
-
-                    {/* Bottom Footer Section with Doctor Details, Stamp & Signature, & Sunday Closed Banner */}
-                    <div className="space-y-2 pt-2 border-t-2 border-slate-900 mt-auto">
-                      <div className="flex justify-between items-end text-xs pb-1 border-b border-slate-200">
-                        {/* Doctor Details */}
-                        <div className="space-y-0.5 text-[10px] text-center sm:text-left text-red-900 pr-2">
-                          <h5 className="font-black text-red-900 text-sm sm:text-base italic font-serif">Dr. Ejaz Ahmad <span className="text-xs font-sans not-italic font-bold text-red-900">(PUNJAB HOMEOPATHIC)</span></h5>
-                          <p className="text-red-900 font-bold text-xs">Consultant Homeopathic Medical Practitioner</p>
-                          <p className="text-red-900 font-semibold text-xs">D.H.M.S (Pak)</p>
-                          <p className="text-[10px] text-red-900 font-medium">Registered Homeopathic Medical Practitioner No: <strong className="text-red-900 font-bold">48776</strong></p>
-                        </div>
-
-                        {/* Signature Line */}
-                        <div className="text-center w-44 space-y-1 shrink-0">
-                          <div className="h-10 border-b border-slate-800 flex items-end justify-center pb-1 font-serif italic text-slate-400 text-xs">
-                            Doctor's Stamp & Signature
-                          </div>
-                          <span className="text-[10px] font-bold text-slate-700 block uppercase">Consultant Signature</span>
-                        </div>
-                      </div>
-
-                      {/* Footer Banner */}
-                      <div className="grid grid-cols-12 items-center border border-slate-300 rounded overflow-hidden text-[11px] font-sans">
-                        <div className="col-span-7 p-1.5 pl-3 italic font-serif text-slate-800 bg-white border-r border-slate-300 text-[10px]">
-                          Please don't forget to bring your prescription at your next visit.
-                        </div>
-                        <div className="col-span-5 p-1.5 text-center bg-slate-100 text-slate-950 font-bold text-[10px]">
-                          Timings: Morning 8:30 AM - 12:00 PM | Evening 4:30 - 9:00 PM (Sunday Closed)
-                        </div>
-                      </div>
-                    </div>
-
-                  </div>
-                )}
-
-                {/* ========================================================================= */}
-                {/* OPTION 3: CLINICAL LABORATORY TEST ADVICE (A4 LETTERHEAD) */}
-                {/* ========================================================================= */}
-                {printDocType === 'A4_LAB_TESTS' && (
-                  <div className="w-full max-w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-5 sm:p-6 print:p-5 border border-slate-300 print:border-none text-slate-900 font-sans space-y-2.5 flex flex-col justify-between bg-white box-border overflow-hidden print:overflow-hidden">
-                    <div className="space-y-3">
-                      {/* Top Header Section with PHC Official Logo on Left & Clinic Title */}
-                      <div className="flex items-center justify-between border-b-2 border-teal-800 pb-2 gap-2">
-                        <div className="flex items-center space-x-2 shrink-0">
-                          <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" style={{ width: '80px', height: '80px', maxHeight: '80px', maxWidth: '80px', objectFit: 'contain' }} className="w-20 h-20 object-contain" />
-                        </div>
-                        <div className="text-center flex-1 px-2">
-                          <h1 className="font-serif uppercase tracking-tight flex flex-col items-center justify-center">
-                            <span className="text-2xl sm:text-3xl font-serif text-red-900 font-black tracking-tight">{clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}</span>
-                          </h1>
-                          <p className="text-[10px] font-extrabold text-rose-700 tracking-widest uppercase mt-0.5">HEALING NATURALLY. RESTORING BALANCE.</p>
-                          <div className="flex justify-center space-x-8 text-xs font-bold text-slate-800 mt-1">
-                            <span>PHC Reg. # <span className="underline decoration-slate-800">R-__________</span></span>
-                            <span>PHC License #: ___________________</span>
-                          </div>
-                          <p className="text-[10.5px] font-bold text-teal-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
-                        </div>
-                        <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
-                      </div>
-
-                      {/* Patient Details Section */}
-                      <div className="text-xs space-y-2 font-sans pt-1 border-b-2 border-teal-800 pb-2.5">
-                        <div className="grid grid-cols-12 gap-2 items-baseline">
-                          <div className="col-span-6 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">Patient Name:</span>
-                            <span className="font-black text-slate-950 uppercase border-b border-slate-400 flex-1 pl-1 text-sm">
-                              {selectedPvPatient?.PatientName || 'N/A'}
-                            </span>
-                          </div>
-                          <div className="col-span-3 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">Age/Sex:</span>
-                            <span className="font-semibold text-slate-900 border-b border-slate-400 flex-1 text-center">
-                              {selectedPvPatient?.AgeYears || 0}Y ({selectedPvPatient?.Sex || 'M'})
-                            </span>
-                          </div>
-                          <div className="col-span-3 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">Visit Date:</span>
-                            <span className="font-semibold text-slate-900 border-b border-slate-400 flex-1 text-center font-mono">
-                              {pvVisitDate}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-12 gap-2 items-baseline pt-0.5">
-                          <div className="col-span-4 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">S/O, D/O, W/O:</span>
-                            <span className="font-bold text-slate-950 uppercase border-b border-slate-400 flex-1 pl-1 truncate">
-                              {(selectedPvPatient as any)?.Father_husband || selectedPvPatient?.Father_husband || '________________________'}
-                            </span>
-                          </div>
-                          <div className="col-span-3 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">PID Ref #:</span>
-                            <span className="font-mono font-bold text-slate-950 border-b border-slate-400 flex-1 pl-1 text-center">
-                              {selectedPvPatient?.PatientID}
-                            </span>
-                          </div>
-                          <div className="col-span-2 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">City:</span>
-                            <span className="font-mono font-bold text-emerald-800 border-b border-slate-400 flex-1 text-center">
-                              {cities.find(c => c.CityID === selectedPvPatient?.CityID)?.CityName || 'Lahore'}
-                            </span>
-                          </div>
-                          <div className="col-span-3 flex items-baseline">
-                            <span className="font-bold text-slate-900 shrink-0 mr-1.5">Mobile:</span>
-                            <span className="font-mono font-bold text-slate-950 border-b border-slate-400 flex-1 text-center">
-                              {selectedPvPatient?.PhoneMobile || (selectedPvPatient as any)?.Mobile || (selectedPvPatient as any)?.Phone || (selectedPvPatient as any)?.MobileNumber || 'N/A'}
-                            </span>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* LAB TEST ADVICE MAIN SECTION */}
-                      <div className="pt-2 min-h-[460px] space-y-6">
-                        <div className="text-center border-b border-slate-300 pb-2">
-                          <h2 className="text-lg font-black font-serif uppercase tracking-widest text-teal-950 underline underline-offset-8">
-                            CLINICAL LABORATORY TEST ADVICE
-                          </h2>
-                          <p className="text-xs text-slate-600 italic mt-1 font-sans">
-                            Recommended Diagnostic Investigations & Clinical Pathology Advice
-                          </p>
-                        </div>
-
-                        {/* Prescribed Lab Tests Table / List */}
-                        <div className="space-y-3">
-                          <h4 className="text-xs font-black uppercase tracking-wider text-teal-950 flex items-center border-b border-teal-800/30 pb-1">
-                            <FlaskConical className="w-4 h-4 mr-1.5 text-teal-700" />
-                            Prescribed Diagnostic Tests:
-                          </h4>
-
-                          {(() => {
-                            const labList = getLabTestList(pvLabTestAdvice);
-                            if (labList.length === 0) {
-                              return (
-                                <div className="p-6 bg-slate-50 rounded-xl border border-dashed border-slate-300 text-center text-slate-500 text-xs italic">
-                                  No specific lab test advice entered for this visit.
-                                </div>
-                              );
-                            }
-                            return (
-                              <div className="grid grid-cols-1 gap-2 pt-1 font-mono">
-                                {labList.map((testName, idx) => (
-                                  <div key={idx} className="p-2.5 bg-teal-50/50 rounded-lg border border-teal-200/80 flex items-center justify-between text-xs">
-                                    <div className="flex items-center space-x-3">
-                                      <span className="w-6 h-6 rounded-full bg-teal-800 text-white font-mono font-bold flex items-center justify-center text-xs shrink-0">
-                                        {idx + 1}
-                                      </span>
-                                      <span className="font-bold text-slate-900 text-sm uppercase">{testName}</span>
-                                    </div>
-                                    <span className="text-[10px] font-bold text-teal-800 uppercase bg-teal-100 px-2.5 py-0.5 rounded border border-teal-200">
-                                      Advised Test
-                                    </span>
-                                  </div>
-                                ))}
-                              </div>
-                            );
-                          })()}
-                        </div>
-
-
-                      </div>
-                    </div>
-
-                    {/* Bottom Footer Section with Doctor Signature & Stamp */}
-                    <div className="space-y-3 pt-4 border-t-2 border-slate-900 mt-auto">
-                      <div className="flex justify-between items-end text-xs">
-                        <div className="text-[10px] text-red-900 pr-2">
-                          <div className="space-y-0.5">
-                            <h5 className="font-black text-red-900 text-sm italic font-serif">Dr. Ejaz Ahmad <span className="text-xs font-sans not-italic font-bold text-red-900">(PUNJAB HOMEOPATHIC)</span></h5>
-                            <p className="text-red-900 font-bold text-xs">Consultant Homeopathic Medical Practitioner</p>
-                            <p className="text-red-900 font-semibold text-xs">D.H.M.S (Pak)</p>
-                            <p className="text-[10px] text-red-900 font-medium">Registered Homeopathic Medical Practitioner No: <strong className="text-red-900 font-bold">48776</strong></p>
-                          </div>
-                        </div>
-
-                        {/* Signature Line */}
-                        <div className="text-center w-44 space-y-1 shrink-0">
-                          <div className="h-10 border-b border-slate-800 flex items-end justify-center pb-1 font-serif italic text-slate-400 text-xs">
-                            Doctor's Stamp & Signature
-                          </div>
-                          <span className="text-[10px] font-bold text-slate-700 block uppercase">Consultant Signature</span>
-                        </div>
-                      </div>
-
-                      {/* Footer Banner */}
-                      <div className="grid grid-cols-12 items-center border border-slate-300 rounded overflow-hidden text-[11px] font-sans">
-                        <div className="col-span-7 p-1.5 pl-3 italic font-serif text-slate-800 bg-white border-r border-slate-300 text-[10px]">
-                          Please present this Lab Advice slip to the diagnostic collection center.
-                        </div>
-                        <div className="col-span-5 p-1.5 text-center bg-slate-100 text-slate-950 font-bold text-[10px]">
-                          Timings: Morning 8:30 AM - 12:00 PM | Evening 4:30 - 9:00 PM (Sunday Closed)
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* ========================================================================= */}
-                {/* OPTION 4: PATIENT PAYMENT INVOICE / RECEIPT (A4 LETTERHEAD) */}
-                {/* ========================================================================= */}
-                {printDocType === 'A4_PATIENT_INVOICE' && (() => {
-                  const appt = (appointments || []).find(a => a.PatientID === selectedPvPatient?.PatientID && a.AppointmentDate && a.AppointmentDate.startsWith(pvVisitDate));
-                  const currentVisit = (visits || []).find(v => v.PatientID === selectedPvPatient?.PatientID && v.VisitDate && v.VisitDate.startsWith(pvVisitDate));
-                  const tokenFeeVal = Number(pvOpdFeePkr) || Number(currentVisit?.ConsultationFee) || Number(appt?.FeeCharged) || Number((selectedPvPatient as any)?.FeeCharged) || Number((selectedPvPatient as any)?.ConsultationFee) || 0;
-                  const clinFeeVal = Number(pvClinicalMedicinePkr) || 0;
-                  const fileFeeVal = Number(pvFilePkr) || 0;
-                  const cardFeeVal = Number(pvCardPkr) || 0;
-
-                  const validClinicalMeds = pvClinicalItems.filter(i => i.medicineName && i.medicineName.trim());
-                  const validPatientMeds = pvPatientItems.filter(i => i.medicineName && i.medicineName.trim());
-
-                  const totalPaidAmount = tokenFeeVal + clinFeeVal + fileFeeVal + cardFeeVal;
-
-                  return (
-                    <div className="w-full max-w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-5 sm:p-6 print:p-5 border border-slate-300 print:border-none text-slate-900 font-sans space-y-3 flex flex-col justify-between bg-white box-border overflow-hidden print:overflow-hidden">
-                      <div className="space-y-3">
-                        {/* Top Header Section with PHC Official Logo & Letterhead */}
-                        <div className="flex items-center justify-between border-b-2 border-purple-900 pb-2 gap-2">
-                          <div className="flex items-center space-x-2 shrink-0">
-                            <img src={clinicSettings?.ClinicLogoImage || "/nhc_logo.svg"} alt="PHC Logo" style={{ width: '80px', height: '80px', maxHeight: '80px', maxWidth: '80px', objectFit: 'contain' }} className="w-20 h-20 object-contain" />
-                          </div>
-                          <div className="text-center flex-1 px-2">
-                            <h1 className="font-serif uppercase tracking-tight flex flex-col items-center justify-center">
-                              <span className="text-2xl sm:text-3xl font-serif text-red-900 font-black tracking-tight">{clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}</span>
-                            </h1>
-                            <p className="text-[10px] font-extrabold text-rose-700 tracking-widest uppercase mt-0.5">HEALING NATURALLY. RESTORING BALANCE.</p>
-                            <div className="flex justify-center space-x-8 text-xs font-bold text-slate-800 mt-1">
-                              <span>PHC Reg. # <span className="underline decoration-slate-800">R-__________</span></span>
-                              <span>Official Cash Receipt</span>
-                            </div>
-                            <p className="text-[10.5px] font-bold text-purple-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
-                          </div>
-                          <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
-                        </div>
-
-                        {/* Invoice Title Banner */}
-                        <div className="bg-purple-950 text-white px-4 py-2 rounded-lg flex items-center justify-between shadow-sm">
-                          <div>
-                            <h2 className="text-sm font-extrabold uppercase tracking-wider font-serif text-purple-200">
-                              PATIENT OFFICIAL PAYMENT INVOICE / RECEIPT
-                            </h2>
-                            <p className="text-[10px] text-purple-300 font-mono">Itemized Fee Breakdown & Acknowledged Payment</p>
-                          </div>
-                          <div className="text-right font-mono text-xs">
-                            <div className="font-bold text-amber-300">
-                              Invoice #: <span className="text-white">INV-{selectedPvPatient?.PatientID || '001'}-{pvVisitDate.replace(/[\/\-]/g, '')}</span>
-                            </div>
-                            <div className="text-[10px] text-slate-300">
-                              Date: {pvVisitDate} &nbsp;|&nbsp; {new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Patient Information Block */}
-                        <div className="text-xs space-y-2 font-sans bg-purple-50/50 p-3 rounded-lg border border-purple-200">
-                          <div className="grid grid-cols-12 gap-2 items-baseline">
-                            <div className="col-span-6 flex items-baseline">
-                              <span className="font-bold text-slate-900 shrink-0 mr-1.5">Patient Name:</span>
-                              <span className="font-black text-purple-950 uppercase border-b border-purple-300 flex-1 pl-1 text-sm">
-                                {selectedPvPatient?.PatientName || 'N/A'}
-                              </span>
-                            </div>
-                            <div className="col-span-3 flex items-baseline">
-                              <span className="font-bold text-slate-900 shrink-0 mr-1.5">MR / PID #:</span>
-                              <span className="font-mono font-bold text-slate-900 border-b border-purple-300 flex-1 text-center">
-                                {selectedPvPatient?.PatientID}
-                              </span>
-                            </div>
-                            <div className="col-span-3 flex items-baseline">
-                              <span className="font-bold text-slate-900 shrink-0 mr-1.5">Visit Date:</span>
-                              <span className="font-semibold text-slate-900 border-b border-purple-300 flex-1 text-center font-mono">
-                                {pvVisitDate}
-                              </span>
-                            </div>
-                          </div>
-
-                          <div className="grid grid-cols-12 gap-2 items-baseline pt-0.5">
-                            <div className="col-span-4 flex items-baseline">
-                              <span className="font-bold text-slate-900 shrink-0 mr-1.5">S/O, D/O, W/O:</span>
-                              <span className="font-bold text-purple-950 uppercase border-b border-purple-300 flex-1 pl-1 truncate">
-                                {(selectedPvPatient as any)?.Father_husband || selectedPvPatient?.Father_husband || '________________________'}
-                              </span>
-                            </div>
-                            <div className="col-span-3 flex items-baseline">
-                              <span className="font-bold text-slate-900 shrink-0 mr-1.5">Age / Gender:</span>
-                              <span className="font-semibold text-slate-900 border-b border-purple-300 flex-1 text-center">
-                                {selectedPvPatient?.AgeYears || 0}Y ({selectedPvPatient?.Sex || 'M'})
-                              </span>
-                            </div>
-                            <div className="col-span-2 flex items-baseline">
-                              <span className="font-bold text-slate-900 shrink-0 mr-1.5">City:</span>
-                              <span className="font-mono font-bold text-purple-900 border-b border-purple-300 flex-1 text-center">
-                                {cities.find(c => c.CityID === selectedPvPatient?.CityID)?.CityName || 'Lahore'}
-                              </span>
-                            </div>
-                            <div className="col-span-3 flex items-baseline">
-                              <span className="font-bold text-slate-900 shrink-0 mr-1.5">Mobile:</span>
-                              <span className="font-mono font-bold text-purple-950 border-b border-purple-300 flex-1 text-center">
-                                {selectedPvPatient?.PhoneMobile || (selectedPvPatient as any)?.Mobile || (selectedPvPatient as any)?.Phone || (selectedPvPatient as any)?.MobileNumber || 'N/A'}
-                              </span>
-                            </div>
-                          </div>
-                        </div>
-
-                        {/* Itemized Services & Payments Table */}
-                        <div className="pt-1">
-                          <h3 className="text-xs font-black uppercase text-purple-950 mb-2 flex items-center">
-                            <Coins className="w-3.5 h-3.5 text-purple-700 mr-1.5" />
-                            Itemized Services & Payment Summary
-                          </h3>
-
-                          <table className="w-full text-left text-xs border-collapse border border-slate-300 font-sans">
-                            <thead>
-                              <tr className="bg-purple-900 text-white font-bold text-[11px] uppercase tracking-wider">
-                                <th className="p-2 border border-purple-800 text-center w-10">#</th>
-                                <th className="p-2 border border-purple-800">Particulars / Service Description</th>
-                                <th className="p-2 border border-purple-800 text-center w-24">Status</th>
-                                <th className="p-2 border border-purple-800 text-right w-28">Amount (PKR)</th>
-                              </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-200 text-slate-800 text-xs">
-                              {/* Row 1: Consultation / Token Fee */}
-                              <tr className="hover:bg-purple-50/30">
-                                <td className="p-2 border border-slate-300 text-center font-bold font-mono">1</td>
-                                <td className="p-2 border border-slate-300 font-bold text-slate-900">
-                                  Appointment / Token Consultation Fee
-                                </td>
-                                <td className="p-2 border border-slate-300 text-center">
-                                  <span className="bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded border border-emerald-300">
-                                    PAID
-                                  </span>
-                                </td>
-                                <td className="p-2 border border-slate-300 text-right font-mono font-bold text-slate-900">
-                                  {tokenFeeVal > 0 ? tokenFeeVal.toLocaleString() : '0'}
-                                </td>
-                              </tr>
-
-                              {/* Row 2: Clinical Formulated Medicine */}
-                              <tr className="hover:bg-purple-50/30">
-                                <td className="p-2 border border-slate-300 text-center font-bold font-mono">2</td>
-                                <td className="p-2 border border-slate-300 font-bold text-slate-900">
-                                  Clinical Formulated Medicine
-                                </td>
-                                <td className="p-2 border border-slate-300 text-center">
-                                  <span className="bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded border border-emerald-300">
-                                    PAID
-                                  </span>
-                                </td>
-                                <td className="p-2 border border-slate-300 text-right font-mono font-bold text-slate-900">
-                                  {clinFeeVal > 0 ? clinFeeVal.toLocaleString() : '0'}
-                                </td>
-                              </tr>
-
-                              {/* Row 3: Commercial / Patient Store Medicine */}
-                              {validPatientMeds.length > 0 && (
-                                <tr className="hover:bg-purple-50/30">
-                                  <td className="p-2 border border-slate-300 text-center font-bold font-mono">3</td>
-                                  <td className="p-2 border border-slate-300 font-bold text-slate-900">
-                                    Store / Commercial Patent Medicine
-                                  </td>
-                                  <td className="p-2 border border-slate-300 text-center">
-                                    <span className="bg-blue-100 text-blue-800 font-bold text-[10px] px-2 py-0.5 rounded border border-blue-300">
-                                      ISSUED
-                                    </span>
-                                  </td>
-                                  <td className="p-2 border border-slate-300 text-right font-mono font-bold text-slate-900">
-                                    0
-                                  </td>
-                                </tr>
-                              )}
-
-                              {/* Row 4: File Registration Fee */}
-                              <tr className="hover:bg-purple-50/30">
-                                <td className="p-2 border border-slate-300 text-center font-bold font-mono">{validPatientMeds.length > 0 ? 4 : 3}</td>
-                                <td className="p-2 border border-slate-300 font-bold text-slate-900">
-                                  File Registration & Folder Charges
-                                </td>
-                                <td className="p-2 border border-slate-300 text-center">
-                                  <span className="bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded border border-emerald-300">
-                                    PAID
-                                  </span>
-                                </td>
-                                <td className="p-2 border border-slate-300 text-right font-mono font-bold text-slate-900">
-                                  {fileFeeVal > 0 ? fileFeeVal.toLocaleString() : '0'}
-                                </td>
-                              </tr>
-
-                              {/* Row 5: Card Fee */}
-                              <tr className="hover:bg-purple-50/30">
-                                <td className="p-2 border border-slate-300 text-center font-bold font-mono">{validPatientMeds.length > 0 ? 5 : 4}</td>
-                                <td className="p-2 border border-slate-300 font-bold text-slate-900">
-                                  Patient Card & Membership Fee
-                                </td>
-                                <td className="p-2 border border-slate-300 text-center">
-                                  <span className="bg-emerald-100 text-emerald-800 font-bold text-[10px] px-2 py-0.5 rounded border border-emerald-300">
-                                    PAID
-                                  </span>
-                                </td>
-                                <td className="p-2 border border-slate-300 text-right font-mono font-bold text-slate-900">
-                                  {cardFeeVal > 0 ? cardFeeVal.toLocaleString() : '0'}
-                                </td>
-                              </tr>
-                            </tbody>
-                          </table>
-                        </div>
-
-                        {/* Invoice Summary Totals & Paid Stamp */}
-                        <div className="grid grid-cols-12 gap-4 pt-2 items-start">
-                          <div className="col-span-7 bg-emerald-50/60 p-3 rounded-lg border border-emerald-200/90 space-y-2">
-                            <div className="flex items-center space-x-2">
-                              <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                              <span className="font-black text-emerald-950 uppercase text-xs tracking-wide">Payment Status & Acknowledgment</span>
-                            </div>
-                            <p className="text-[11px] text-emerald-900 font-medium leading-relaxed">
-                              Received total sum of <strong className="font-bold text-emerald-950 underline">PKR {totalPaidAmount.toLocaleString()}</strong> towards patient visit charges, and medicines. Payment acknowledged in cash at clinic reception.
-                            </p>
-                            <div className="pt-1 flex items-center justify-between border-t border-emerald-200 text-[10px] text-emerald-800 font-bold font-mono">
-                              <span>Cashier / Collector: Reception Desk</span>
-                              <span>Mode: Cash Counter</span>
-                            </div>
-                          </div>
-
-                          <div className="col-span-5 bg-slate-50 p-3 rounded-lg border border-slate-300 space-y-1.5 font-mono text-xs">
-                            <div className="flex justify-between text-slate-600 pb-1 border-b border-slate-200">
-                              <span>Sub Total:</span>
-                              <span className="font-bold text-slate-900">PKR {totalPaidAmount.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between text-slate-600 pb-1 border-b border-slate-200">
-                              <span>Discount Allowed:</span>
-                              <span className="font-bold text-slate-900">PKR 0</span>
-                            </div>
-                            <div className="flex justify-between text-sm font-black text-purple-950 bg-purple-100/80 p-1.5 rounded border border-purple-200">
-                              <span>TOTAL PAYABLE:</span>
-                              <span>PKR {totalPaidAmount.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between font-bold text-emerald-700 pt-0.5">
-                              <span>Total Received:</span>
-                              <span>PKR {totalPaidAmount.toLocaleString()}</span>
-                            </div>
-                            <div className="flex justify-between font-bold text-slate-500 text-[11px]">
-                              <span>Balance Remaining:</span>
-                              <span className="text-emerald-700">PKR 0 (PAID)</span>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Bottom Footer Section with Doctor Signature & Stamp */}
-                      <div className="space-y-3 pt-3 border-t-2 border-slate-900 mt-auto">
-                        <div className="flex justify-between items-end text-xs">
-                          <div className="text-[10px] text-red-900 pr-2">
-                            <div className="space-y-0.5">
-                              <h5 className="font-black text-red-900 text-sm italic font-serif">Dr. Ejaz Ahmad <span className="text-xs font-sans not-italic font-bold text-red-900">(PUNJAB HOMEOPATHIC)</span></h5>
-                              <p className="text-red-900 font-bold text-xs">Consultant Homeopathic Medical Practitioner</p>
-                              <p className="text-red-900 font-semibold text-xs">D.H.M.S (Pak)</p>
-                              <p className="text-[10px] text-red-900 font-medium">Registered Homeopathic Medical Practitioner No: <strong className="text-red-900 font-bold">48776</strong></p>
-                            </div>
-                          </div>
-
-                          {/* Stamp / Signature Block */}
-                          <div className="text-center w-48 space-y-1 shrink-0">
-                            <div className="h-10 border-b border-slate-800 flex items-end justify-center pb-1 font-serif italic text-slate-400 text-xs">
-                              Authorized Cashier / Doctor Stamp
-                            </div>
-                            <span className="text-[10px] font-bold text-slate-700 block uppercase">Accounts Stamp & Signature</span>
-                          </div>
-                        </div>
-
-                        {/* Footer Banner */}
-                        <div className="grid grid-cols-12 items-center border border-slate-300 rounded overflow-hidden text-[11px] font-sans">
-                          <div className="col-span-7 p-1.5 pl-3 italic font-serif text-slate-800 bg-white border-r border-slate-300 text-[10px]">
-                            Official receipt generated by Punjab Homeopathic Clinic. Please retain for your records.
-                          </div>
-                          <div className="col-span-5 p-1.5 text-center bg-purple-900 text-white font-bold text-[10px]">
-                            Timings: Morning 8:30 AM - 12:00 PM | Evening 4:30 - 9:00 PM (Sunday Closed)
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-              </div>
-            </div>
-
-          </div>
-        </div>
-      )}
-
-      {/* GRID-VIEW TAB FOR ALL PATIENTS (Database: Patient, Visit, Visit Medicine) */}
-      {activeSubTab === 'grid_view' && (() => {
-        const term = gridViewSearch.trim().toLowerCase();
-        
-        const getLocalDateString = (d: Date = new Date()): string => {
-          const year = d.getFullYear();
-          const month = String(d.getMonth() + 1).padStart(2, '0');
-          const day = String(d.getDate()).padStart(2, '0');
-          return `${year}-${month}-${day}`;
-        };
-
-        const parseDateToISOKey = (dateStr?: string | null): string => {
-          if (!dateStr || dateStr === 'N/A' || dateStr === '‚Äî') return '';
-          const clean = String(dateStr).trim().split('T')[0].split(' ')[0];
-          const parts = clean.split('-');
-          if (parts.length === 3) {
-            if (parts[0].length === 4) {
-              return `${parts[0]}-${parts[1].padStart(2, '0')}-${parts[2].padStart(2, '0')}`;
-            }
-            if (parts[2].length === 4) {
-              return `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
-            }
-          }
-          const d = new Date(String(dateStr).trim());
-          if (isNaN(d.getTime())) return clean;
-          const yyyy = d.getFullYear();
-          const mm = String(d.getMonth() + 1).padStart(2, '0');
-          const dd = String(d.getDate()).padStart(2, '0');
-          return `${yyyy}-${mm}-${dd}`;
-        };
-
-        // Master consolidate patients from EMR, NHC, and history
-        const masterMap = new Map<string, Patient>();
-        (patients || []).forEach(p => {
-          if (p && p.PatientID) masterMap.set(String(p.PatientID).trim().toLowerCase(), p);
-        });
-        [...(nhcPatients || []), ...(nhcArchiveList || []), ...(pvNhcHistory || [])].forEach(p => {
-          if (p && p.PatientID) {
-            const k = String(p.PatientID).trim().toLowerCase();
-            if (!masterMap.has(k)) {
-              masterMap.set(k, p as any);
-            }
-          }
-        });
-        const masterPatientsList = Array.from(masterMap.values());
-
-        // Effective date filter calculation (active across grid, stats, and print)
-        let effStart = gridViewStartDate;
-        let effEnd = gridViewEndDate;
-        if (gridViewDatePreset !== 'all' && gridViewDatePreset !== 'custom') {
-          const now = new Date();
-          const todayStr = getLocalDateString(now);
-          if (gridViewDatePreset === 'today') {
-            effStart = todayStr;
-            effEnd = todayStr;
-          } else if (gridViewDatePreset === 'yesterday') {
-            const y = new Date(now);
-            y.setDate(y.getDate() - 1);
-            const yStr = getLocalDateString(y);
-            effStart = yStr;
-            effEnd = yStr;
-          } else if (gridViewDatePreset === 'this_week') {
-            const w = new Date(now);
-            w.setDate(w.getDate() - 6);
-            effStart = getLocalDateString(w);
-            effEnd = todayStr;
-          } else if (gridViewDatePreset === 'this_month') {
-            const m = new Date(now.getFullYear(), now.getMonth(), 1);
-            effStart = getLocalDateString(m);
-            effEnd = todayStr;
-          }
-        }
-
-        // Filter patients
-        let rawFilteredPatients = masterPatientsList.filter((pt) => {
-          const ptVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
-          const ptVisitIds = new Set(ptVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
-          const ptVisitDates = new Set(ptVisits.map(v => v.VisitDate ? parseDateToISOKey(v.VisitDate) : '').filter(Boolean));
-          const ptNhc = (pvNhcHistory || []).filter(nhc => {
-            if (!isSamePatient(nhc.PatientID, pt.PatientID)) return false;
-            const nhcId = String(nhc.VisitID || '').trim().toLowerCase();
-            if (nhcId && ptVisitIds.has(nhcId)) return false;
-            const nhcDate = nhc.date || (nhc as any).VisitDate || '';
-            if (nhcDate && ptVisitDates.has(parseDateToISOKey(nhcDate))) return false;
-            return true;
-          });
-          const allPtVisits = [...ptVisits, ...ptNhc];
-
-          if (effStart || effEnd) {
-            const ptRegDate = parseDateToISOKey(pt.RegistrationDate);
-            const matchesRegDate = ptRegDate && (!effStart || ptRegDate >= effStart) && (!effEnd || ptRegDate <= effEnd);
-            
-            const matchesVisitDate = allPtVisits.some(v => {
-              const rawV = ('VisitDate' in v && v.VisitDate) ? v.VisitDate : ('date' in v ? (v as any).date : '');
-              const vDate = parseDateToISOKey(rawV);
-              return vDate && (!effStart || vDate >= effStart) && (!effEnd || vDate <= effEnd);
-            });
-
-            const ptApps = (appointments || []).filter(a => isSamePatient(a.PatientID, pt.PatientID) && a.Status !== 3);
-            const matchesAppDate = ptApps.some(a => {
-              const aDate = parseDateToISOKey(a.AppointmentDate);
-              return aDate && (!effStart || aDate >= effStart) && (!effEnd || aDate <= effEnd);
-            });
-
-            // Only show by Reg Date if patient is newly registered with ZERO visits yet
-            const isNewRegInDate = matchesRegDate && allPtVisits.length === 0;
-
-            if (!matchesVisitDate && !matchesAppDate && !isNewRegInDate) {
-              return false;
-            }
-          }
-
-          if (gridViewGenderFilter !== 'all' && pt.Sex !== gridViewGenderFilter) return false;
-
-          if (!term) return true;
-
-          const matchedMeds = (visitMedicines || []).some(m => {
-            const isPtVisit = ptVisits.some(v => v.VisitID === m.VisitID);
-            return isPtVisit && (
-              (m.MedicineDetail && m.MedicineDetail.toLowerCase().includes(term)) ||
-              (m.Dosage && m.Dosage.toLowerCase().includes(term))
-            );
-          });
-
-          const matchedSymptoms = allPtVisits.some(v => {
-            const sx = 'SymptomsDiagnosis' in v ? v.SymptomsDiagnosis : ('symptoms' in v ? (v as any).symptoms : '');
-            return sx && sx.toLowerCase().includes(term);
-          });
-
-          return (
-            matchPatientRecord(pt, term) ||
-            matchedMeds ||
-            matchedSymptoms
-          );
-        });
-
-        if (gridViewFocOnly) {
-          rawFilteredPatients = rawFilteredPatients.filter(pt => {
-            const pVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
-            const pNhc = (pvNhcHistory || []).filter(nhc => isSamePatient(nhc.PatientID, pt.PatientID));
-            const hasFocVisit = pVisits.some(v =>
-              v.ConsultationPaymentOption === 'FOC' ||
-              (v.VisitRemarks && (v.VisitRemarks.includes('FOC') || v.VisitRemarks.includes('Free of Charge')))
-            );
-            const hasFocNhc = pNhc.some(nhc =>
-              (nhc as any).ConsultationPaymentOption === 'FOC' ||
-              ((nhc as any).VisitRemarks && ((nhc as any).VisitRemarks.includes('FOC') || (nhc as any).VisitRemarks.includes('Free of Charge'))) ||
-              ((nhc as any).symptoms && (nhc as any).symptoms.includes('FOC'))
-            );
-            return hasFocVisit || hasFocNhc;
-          });
-        }
-
-        // Helper to get latest activity date for sorting & deduplication
-        const getPtLatestActivityDate = (p: typeof patients[0]) => {
-          const pVisits = (visits || []).filter(v => isSamePatient(v.PatientID, p.PatientID));
-          const pNhc = (pvNhcHistory || []).filter(nhc => isSamePatient(nhc.PatientID, p.PatientID));
-          let maxDate = parseDateToISOKey(p.RegistrationDate);
-          pVisits.forEach(v => {
-            const vD = parseDateToISOKey(v.VisitDate);
-            if (vD && vD > maxDate) maxDate = vD;
-          });
-          pNhc.forEach(nhc => {
-            const nD = parseDateToISOKey(nhc.date || (nhc as any).VisitDate);
-            if (nD && nD > maxDate) maxDate = nD;
-          });
-          return maxDate || '1970-01-01';
-        };
-
-        // Deduplicate patients by PatientID to ensure each patient appears once with latest entry
-        const uniquePatientsMap = new Map<string, typeof patients[0]>();
-        rawFilteredPatients.forEach(pt => {
-          const key = String(pt.PatientID || '').trim().toLowerCase();
-          if (!key) return;
-          const existing = uniquePatientsMap.get(key);
-          if (!existing) {
-            uniquePatientsMap.set(key, pt);
-          } else {
-            const dateExisting = getPtLatestActivityDate(existing);
-            const datePt = getPtLatestActivityDate(pt);
-            if (datePt > dateExisting) {
-              uniquePatientsMap.set(key, pt);
-            }
-          }
-        });
-
-        // Sort patients descending by latest entry/visit date (newest first)
-        const filteredPatients = Array.from(uniquePatientsMap.values()).sort((a, b) => {
-          const dateA = getPtLatestActivityDate(a);
-          const dateB = getPtLatestActivityDate(b);
-          if (dateA !== dateB) {
-            return dateB.localeCompare(dateA); // Newest date first
-          }
-          return (Number(b.PatientID) || 0) - (Number(a.PatientID) || 0);
-        });
-
-        // Dynamic summary metrics based on date preset & filters
-        const activeFilteredPatientIds = new Set(filteredPatients.map(p => String(p.PatientID || '').trim().toLowerCase()));
-        const isPatientFilterActive = filteredPatients.length < masterPatientsList.length;
-
-        // Filter visits according to date range (and patient filter if active)
-        const dateFilteredVisits = (visits || []).filter(v => {
-          const vDate = parseDateToISOKey(v.VisitDate);
-          if (effStart && (!vDate || vDate < effStart)) return false;
-          if (effEnd && (!vDate || vDate > effEnd)) return false;
-          if (isPatientFilterActive) {
-            return activeFilteredPatientIds.has(String(v.PatientID || '').trim().toLowerCase());
-          }
-          return true;
-        });
-
-        // Also include NHC visits in date range
-        const existingVisitIds = new Set(dateFilteredVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
-        const existingPtDates = new Set(dateFilteredVisits.map(v => `${String(v.PatientID || '').trim().toLowerCase()}_${parseDateToISOKey(v.VisitDate)}`));
-
-        const dateFilteredNhcVisits = (pvNhcHistory || []).filter(nhc => {
-          const nDate = parseDateToISOKey(nhc.date || (nhc as any).VisitDate);
-          if (effStart && (!nDate || nDate < effStart)) return false;
-          if (effEnd && (!nDate || nDate > effEnd)) return false;
-          if (isPatientFilterActive) {
-            if (!activeFilteredPatientIds.has(String(nhc.PatientID || '').trim().toLowerCase())) return false;
-          }
-          const id = String(nhc.VisitID || '').trim().toLowerCase();
-          if (id && existingVisitIds.has(id)) return false;
-          if (nDate && existingPtDates.has(`${String(nhc.PatientID || '').trim().toLowerCase()}_${nDate}`)) return false;
-          return true;
-        });
-
-        // Dynamic Total Patients Count
-        const totalPatientsCount = filteredPatients.length;
-
-        // Dynamic Total Visits Count
-        const totalVisitsCount = (effStart || effEnd || isPatientFilterActive)
-          ? (dateFilteredVisits.length + dateFilteredNhcVisits.length)
-          : (visits.length + dateFilteredNhcVisits.length);
-
-        // Dynamic Total Prescribed Medicines Count
-        const dateFilteredVisitIdSet = new Set(dateFilteredVisits.map(v => v.VisitID).filter(Boolean));
-
-        let totalMedicinesCount = 0;
-
-        if (!effStart && !effEnd && !isPatientFilterActive) {
-          totalMedicinesCount = visitMedicines ? visitMedicines.length : 0;
-          (pvNhcHistory || []).forEach(nhc => {
-            if (Array.isArray((nhc as any).medicines)) {
-              totalMedicinesCount += (nhc as any).medicines.length;
-            } else if (typeof (nhc as any).medicines === 'string' && (nhc as any).medicines.trim()) {
-              totalMedicinesCount += (nhc as any).medicines.split(',').filter((s: string) => s.trim().length > 0).length;
-            } else if (typeof (nhc as any).PrescribedMedicines === 'string' && (nhc as any).PrescribedMedicines.trim()) {
-              totalMedicinesCount += (nhc as any).PrescribedMedicines.split(',').filter((s: string) => s.trim().length > 0).length;
-            }
-          });
-        } else {
-          const matchingMeds = (visitMedicines || []).filter(m => dateFilteredVisitIdSet.has(m.VisitID));
-          totalMedicinesCount += matchingMeds.length;
-
-          dateFilteredNhcVisits.forEach(nhc => {
-            if (Array.isArray((nhc as any).medicines)) {
-              totalMedicinesCount += (nhc as any).medicines.length;
-            } else if (typeof (nhc as any).medicines === 'string' && (nhc as any).medicines.trim()) {
-              totalMedicinesCount += (nhc as any).medicines.split(',').filter((s: string) => s.trim().length > 0).length;
-            } else if (typeof (nhc as any).PrescribedMedicines === 'string' && (nhc as any).PrescribedMedicines.trim()) {
-              totalMedicinesCount += (nhc as any).PrescribedMedicines.split(',').filter((s: string) => s.trim().length > 0).length;
-            }
-          });
-        }
-
-        return (
-          <div className="space-y-4" id="patients-view-grid-tab">
-            {/* Top Metrics & Banner */}
-            <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-blue-900 text-white p-4 sm:p-5 rounded-2xl shadow-md space-y-3">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div className="flex items-center space-x-3">
-                  <div className="p-3 bg-indigo-500/20 rounded-xl border border-indigo-400/30">
-                    <Database className="w-6 h-6 text-indigo-300" />
-                  </div>
-                  <div>
-                    <h3 className="text-base sm:text-lg font-extrabold tracking-tight flex items-center gap-2">
-                      <span>All Patients Database Grid-View</span>
-                      <span className="text-[10px] font-bold uppercase tracking-wider bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 px-2 py-0.5 rounded-full">
-                        MongoDB Live Sync
-                      </span>
-                    </h3>
-                    <p className="text-xs text-indigo-200 font-medium mt-0.5">
-                      Consolidated Master Database view merging <strong>Patient</strong>, <strong>Visit</strong>, <strong>Store Sales</strong>, and <strong>Medicines</strong>.
-                    </p>
-                  </div>
-                </div>
-
-                <div className="flex flex-wrap items-center gap-2 text-xs font-bold">
-                  <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/15 flex items-center space-x-2">
-                    <Users className="w-4 h-4 text-blue-300" />
-                    <span>Total Patients: <strong className="text-white text-sm font-black">{totalPatientsCount}</strong></span>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/15 flex items-center space-x-2">
-                    <Stethoscope className="w-4 h-4 text-emerald-300" />
-                    <span>Total Visits: <strong className="text-white text-sm font-black">{totalVisitsCount}</strong></span>
-                  </div>
-                  <div className="bg-white/10 backdrop-blur-xs px-3 py-1.5 rounded-xl border border-white/15 flex items-center space-x-2">
-                    <Pill className="w-4 h-4 text-amber-300" />
-                    <span>Prescribed Meds: <strong className="text-white text-sm font-black">{totalMedicinesCount}</strong></span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Filters & Search Control Bar */}
-              <div className="bg-white/10 backdrop-blur-md p-3 rounded-xl border border-white/15 flex flex-wrap items-center gap-2.5">
-                <div className="flex-1 min-w-[220px] relative">
-                  <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-                  <input
-                    type="text"
-                    placeholder=""
-                    value={gridViewSearch}
-                    onChange={(e) => setGridViewSearch(e.target.value)}
-                    className="w-full bg-slate-900/90 text-white placeholder-slate-400 text-xs rounded-lg pl-9 pr-3 py-2 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 font-medium"
-                  />
-                  {gridViewSearch && (
-                    <button
-                      onClick={() => setGridViewSearch('')}
-                      className="absolute right-2.5 top-2 text-slate-400 hover:text-white cursor-pointer"
-                    >
-                      <X className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                </div>
-
-                {/* Date Preset Filter */}
-                <div className="min-w-[150px]">
-                  <select
-                    value={gridViewDatePreset}
-                    onChange={(e) => {
-                      const val = e.target.value as any;
-                      setGridViewDatePreset(val);
-                      if (val !== 'custom' && val !== 'all') {
-                        const now = new Date();
-                        const todayStr = getLocalDateString(now);
-                        if (val === 'today') {
-                          setGridViewStartDate(todayStr);
-                          setGridViewEndDate(todayStr);
-                        } else if (val === 'yesterday') {
-                          const y = new Date(now);
-                          y.setDate(y.getDate() - 1);
-                          const yStr = getLocalDateString(y);
-                          setGridViewStartDate(yStr);
-                          setGridViewEndDate(yStr);
-                        } else if (val === 'this_week') {
-                          const w = new Date(now);
-                          w.setDate(w.getDate() - 6);
-                          setGridViewStartDate(getLocalDateString(w));
-                          setGridViewEndDate(todayStr);
-                        } else if (val === 'this_month') {
-                          const m = new Date(now.getFullYear(), now.getMonth(), 1);
-                          setGridViewStartDate(getLocalDateString(m));
-                          setGridViewEndDate(todayStr);
-                        }
-                      } else if (val === 'all') {
-                        setGridViewStartDate('');
-                        setGridViewEndDate('');
-                      }
-                    }}
-                    className="w-full bg-slate-900/90 text-white text-xs rounded-lg px-2.5 py-2 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 font-medium cursor-pointer"
-                  >
-                    <option value="all">üìÖ All Dates</option>
-                    <option value="today">Today</option>
-                    <option value="yesterday">Yesterday</option>
-                    <option value="this_week">This Week</option>
-                    <option value="this_month">This Month</option>
-                    <option value="custom">Custom Period Range</option>
-                  </select>
-                </div>
-
-                {/* Custom Period Date Range Inputs */}
-                {(gridViewDatePreset === 'custom' || (gridViewStartDate || gridViewEndDate)) && (
-                  <div className="flex items-center space-x-1.5 bg-slate-900/90 px-2.5 py-1.5 rounded-lg border border-slate-700 text-xs">
-                    <span className="text-[10px] font-bold text-indigo-300 uppercase shrink-0">From:</span>
-                    <input
-                      type="date"
-                      value={gridViewStartDate}
-                      onChange={(e) => {
-                        setGridViewStartDate(e.target.value);
-                        setGridViewDatePreset('custom');
-                      }}
-                      className="bg-slate-800 text-white text-xs rounded px-1.5 py-0.5 border border-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-400 font-mono"
-                    />
-                    <span className="text-[10px] font-bold text-indigo-300 uppercase shrink-0">To:</span>
-                    <input
-                      type="date"
-                      value={gridViewEndDate}
-                      onChange={(e) => {
-                        setGridViewEndDate(e.target.value);
-                        setGridViewDatePreset('custom');
-                      }}
-                      className="bg-slate-800 text-white text-xs rounded px-1.5 py-0.5 border border-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-400 font-mono"
-                    />
-                  </div>
-                )}
-
-                {/* Gender Filter */}
-                <div className="min-w-[120px]">
-                  <select
-                    value={gridViewGenderFilter}
-                    onChange={(e) => setGridViewGenderFilter(e.target.value)}
-                    className="w-full bg-slate-900/90 text-white text-xs rounded-lg px-2.5 py-2 border border-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-400 font-medium cursor-pointer"
-                  >
-                    <option value="all">All Genders</option>
-                    <option value="Male">Male</option>
-                    <option value="Female">Female</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-
-                {/* FOC Cases Filter Toggle Button */}
-                <button
-                  type="button"
-                  onClick={() => setGridViewFocOnly(!gridViewFocOnly)}
-                  className={`px-3 py-2 text-xs font-extrabold rounded-lg transition shadow-2xs flex items-center space-x-1.5 cursor-pointer border ${
-                    gridViewFocOnly
-                      ? 'bg-purple-600 text-white border-purple-700 ring-2 ring-purple-400 font-black'
-                      : 'bg-purple-900/90 hover:bg-purple-800 text-purple-200 border-purple-700'
-                  }`}
-                  title="Filter Grid-View to show only Free of Charge (FOC) Cases"
-                >
-                  <HeartHandshake className={`w-3.5 h-3.5 ${gridViewFocOnly ? 'text-white' : 'text-purple-300'}`} />
-                  <span>FOC Cases {gridViewFocOnly ? '‚úì' : ''}</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Main Patient & Visit Grid Table */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden space-y-0">
-              <div className="p-3 bg-slate-100 border-b border-slate-200 flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-bold text-slate-800 flex items-center space-x-1.5">
-                  <Table className="w-4 h-4 text-indigo-600" />
-                  <span>Showing <strong className="text-indigo-700 font-extrabold">{filteredPatients.length}</strong> Patient Record(s)</span>
-                </span>
-
-                <div className="flex items-center space-x-2">
-                  <button
-                    type="button"
-                    onClick={() => handleOpenRecentVisitsModal()}
-                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white text-xs font-bold rounded-lg transition shadow-2xs flex items-center space-x-1 cursor-pointer"
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                    <span>Edit Recent Visit Record</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const printWin = window.open('', '_blank');
-                      if (!printWin) return;
-
-                      let sumClinMeds = 0;
-                      let sumClinOpd = 0;
-                      let sumStoreMed = 0;
-                      let sumGrandTotal = 0;
-
-                      const rowsHtml = filteredPatients.map(p => {
-                        let pVisits = (visits || []).filter(v => isSamePatient(v.PatientID, p.PatientID));
-                        const pVisitIds = new Set(pVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
-                        const pVisitDates = new Set(pVisits.map(v => v.VisitDate ? parseDateToISOKey(v.VisitDate) : '').filter(Boolean));
-                        let pNhc = (pvNhcHistory || []).filter(nhc => {
-                          if (!isSamePatient(nhc.PatientID, p.PatientID)) return false;
-                          const nhcId = String(nhc.VisitID || '').trim().toLowerCase();
-                          if (nhcId && pVisitIds.has(nhcId)) return false;
-                          const nhcDate = nhc.date || (nhc as any).VisitDate || '';
-                          if (nhcDate && pVisitDates.has(parseDateToISOKey(nhcDate))) return false;
-                          return true;
-                        });
-                        let pInvoices = (invoices || []).filter(inv => isSamePatient(inv.PatientID, p.PatientID));
-                        let pApps = (appointments || []).filter(a => isSamePatient(a.PatientID, p.PatientID) && a.Status !== 3);
-
-                        if (effStart || effEnd) {
-                          pVisits = pVisits.filter(v => {
-                            const d = parseDateToISOKey(v.VisitDate);
-                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
-                          });
-                          pNhc = pNhc.filter(nhc => {
-                            const d = parseDateToISOKey(nhc.date || (nhc as any).VisitDate);
-                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
-                          });
-                          pApps = pApps.filter(a => {
-                            const d = parseDateToISOKey(a.AppointmentDate);
-                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
-                          });
-                          pInvoices = pInvoices.filter(inv => {
-                            const d = parseDateToISOKey(inv.InvoiceDate);
-                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
-                          });
-                        }
-
-                        const sortedVisits = [...pVisits].sort((a, b) => {
-                          const dA = parseDateToISOKey(a.VisitDate);
-                          const dB = parseDateToISOKey(b.VisitDate);
-                          if (dA !== dB) return dB.localeCompare(dA);
-                          return (Number(b.VisitID) || 0) - (Number(a.VisitID) || 0);
-                        });
-                        const sortedNhc = [...pNhc].sort((a, b) => {
-                          const dA = parseDateToISOKey(a.date || (a as any).VisitDate);
-                          const dB = parseDateToISOKey(b.date || (b as any).VisitDate);
-                          return dB.localeCompare(dA);
-                        });
-
-                        const lastV = sortedVisits[0];
-                        const lastNhc = sortedNhc[0];
-                        let isVisitNewer = true;
-                        if (lastV && lastNhc) {
-                          const vDate = parseDateToISOKey(lastV.VisitDate);
-                          const nDate = parseDateToISOKey(lastNhc.date || (lastNhc as any).VisitDate);
-                          if (nDate > vDate) isVisitNewer = false;
-                        } else if (!lastV && lastNhc) {
-                          isVisitNewer = false;
-                        }
-
-                        const pMeds = lastV ? (visitMedicines || []).filter(m => m.VisitID === lastV.VisitID) : [];
-                        const medStr = pMeds.map(m => `${m.MedicineDetail} (${m.Dosage || '1-0-1'})`).join(', ') || 'N/A';
-                        const symptomsText = isVisitNewer ? (lastV?.SymptomsDiagnosis || 'N/A') : (lastNhc?.symptoms || 'N/A');
-
-                        const appDates = new Set(pApps.map(a => parseDateToISOKey(a.AppointmentDate)));
-
-                        let appOpdTotal = pApps.reduce((acc, a) => acc + (Number(a.FeeCharged) || Number((a as any).ConsultationFee) || 0), 0);
-
-                        pVisits.forEach(v => {
-                          const vDate = parseDateToISOKey(v.VisitDate);
-                          let vFee = Number(v.ConsultationFee) || 0;
-                          if (!vFee && v.VisitRemarks) {
-                            const oMatch = v.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
-                            if (oMatch) vFee = Number(oMatch[1]);
-                          }
-                          if (!appDates.has(vDate) && vFee > 0) {
-                            appOpdTotal += vFee;
-                          }
-                        });
-
-                        pNhc.forEach(nhc => {
-                          const nDate = (nhc as any).date || (nhc as any).VisitDate || '';
-                          let nhcFee = Number((nhc as any).ConsultationFee) || Number((nhc as any).fee) || Number((nhc as any).FeeCharged) || 0;
-                          const rem = (nhc as any).VisitRemarks || (nhc as any).Remarks || '';
-                          if (!nhcFee && rem) {
-                            const oMatch = rem.match(/OPD Fee PKR\s*(\d+)/i) || rem.match(/Consultation Fee PKR\s*(\d+)/i) || rem.match(/OPD PKR\s*(\d+)/i);
-                            if (oMatch) nhcFee = Number(oMatch[1]);
-                          }
-                          if (!appDates.has(nDate) && nhcFee > 0) {
-                            appOpdTotal += nhcFee;
-                          }
-                        });
-
-                        let clinMedsTotal = pVisits.reduce((acc, v) => {
-                          let clin = Number(v.ClinicalMedicinePayment) || 0;
-                          let file = Number(v.FileFee) || 0;
-                          let card = Number(v.CardFee) || Number(v.CardsPayment) || 0;
-                          if (v.VisitRemarks) {
-                            if (!clin) { const cPkr = v.VisitRemarks.match(/Clinical Meds PKR\s*(\d+)/); if (cPkr) clin = Number(cPkr[1]); }
-                            if (!file) { const fPkr = v.VisitRemarks.match(/File PKR\s*(\d+)/); if (fPkr) file = Number(fPkr[1]); }
-                            if (!card) { const kPkr = v.VisitRemarks.match(/Card PKR\s*(\d+)/); if (kPkr) card = Number(kPkr[1]); }
-                          }
-                          return acc + clin + file + card;
-                        }, 0);
-
-                        pNhc.forEach(nhc => {
-                          let clin = Number((nhc as any).ClinicalMedicinePayment) || 0;
-                          let file = Number((nhc as any).FileFee) || 0;
-                          let card = Number((nhc as any).CardFee) || Number((nhc as any).CardsPayment) || 0;
-                          const rem = (nhc as any).VisitRemarks || (nhc as any).Remarks || '';
-                          if (rem) {
-                            if (!clin) { const cPkr = rem.match(/Clinical Meds PKR\s*(\d+)/); if (cPkr) clin = Number(cPkr[1]); }
-                            if (!file) { const fPkr = rem.match(/File PKR\s*(\d+)/); if (fPkr) file = Number(fPkr[1]); }
-                            if (!card) { const kPkr = rem.match(/Card PKR\s*(\d+)/); if (kPkr) card = Number(kPkr[1]); }
-                          }
-                          clinMedsTotal += (clin + file + card);
-                        });
-
-                        const ptStorePayment = pInvoices.reduce((acc, inv) => acc + (Number(inv.NetAmount) || 0), 0);
-                        const grandTotal = appOpdTotal + clinMedsTotal + ptStorePayment;
-
-                        sumClinMeds += clinMedsTotal;
-                        sumClinOpd += appOpdTotal;
-                        sumStoreMed += ptStorePayment;
-                        sumGrandTotal += grandTotal;
-
-                        return `
-                          <tr>
-                            <td><strong>${p.PatientID}</strong></td>
-                            <td>${p.PatientName}</td>
-                            <td>${p.AgeYears} Y / ${p.Sex}</td>
-                            <td>${symptomsText}</td>
-                            <td>${medStr}</td>
-                            <td style="text-align: right;">PKR ${clinMedsTotal.toLocaleString()}</td>
-                            <td style="text-align: right;">PKR ${appOpdTotal.toLocaleString()}</td>
-                            <td style="text-align: right; font-weight: bold; color: #1e1b4b;">PKR ${ptStorePayment.toLocaleString()}</td>
-                            <td style="text-align: right; font-weight: 900;">PKR ${grandTotal.toLocaleString()}</td>
-                          </tr>
-                        `;
-                      }).join('');
-
-                      printWin.document.write(`
-                        <html>
-                          <head>
-                            <title>Patients Database Grid View Report</title>
-                            <style>
-                              body { font-family: system-ui, -apple-system, sans-serif; padding: 20px; font-size: 11px; color: #0f172a; }
-                              h2 { margin: 0; color: #1e293b; text-transform: uppercase; font-size: 16px; font-weight: 800; }
-                              p { margin: 4px 0 12px 0; color: #475569; font-weight: 600; }
-                              table { width: 100%; border-collapse: collapse; margin-top: 10px; }
-                              th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
-                              th { background: #1e293b; color: white; font-size: 10px; text-transform: uppercase; }
-                              tfoot td { background: #f1f5f9; font-weight: bold; font-size: 11px; }
-                            </style>
-                          </head>
-                          <body>
-                            <h2>PUNJAB CLINIC - PATIENTS DATABASE GRID REPORT</h2>
-                            <p>Generated on: ${new Date().toLocaleString()} | Total Records: ${filteredPatients.length}</p>
-                            <table>
-                              <thead>
-                                <tr>
-                                  <th>Patient ID</th>
-                                  <th>Patient Name</th>
-                                  <th>Age / Sex</th>
-                                  <th>Symptoms / Diagnosis</th>
-                                  <th>Prescribed Medicines</th>
-                                  <th style="text-align: right;">Clinical Meds</th>
-                                  <th style="text-align: right;">App./OPD</th>
-                                  <th style="text-align: right;">Store</th>
-                                  <th style="text-align: right;">Total</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                ${rowsHtml.length > 0 ? rowsHtml : '<tr><td colspan="9" style="text-align: center; padding: 20px;">No patient records found matching current criteria.</td></tr>'}
-                              </tbody>
-                              <tfoot>
-                                <tr>
-                                  <td colspan="5" style="text-align: right;">GRAND TOTALS (${filteredPatients.length} Patients):</td>
-                                  <td style="text-align: right;">PKR ${sumClinMeds.toLocaleString()}</td>
-                                  <td style="text-align: right;">PKR ${sumClinOpd.toLocaleString()}</td>
-                                  <td style="text-align: right; color: #1e1b4b;">PKR ${sumStoreMed.toLocaleString()}</td>
-                                  <td style="text-align: right; font-size: 12px;">PKR ${sumGrandTotal.toLocaleString()}</td>
-                                </tr>
-                              </tfoot>
-                            </table>
-                          </body>
-                        </html>
-                      `);
-                      printWin.document.close();
-                      printWin.focus();
-                      setTimeout(() => printWin.print(), 500);
-                    }}
-                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg transition shadow-2xs flex items-center space-x-1 cursor-pointer"
-                  >
-                    <Printer className="w-3.5 h-3.5" />
-                    <span>Print Grid Report</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setIsDetailReportModalOpen(true)}
-                    className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-lg transition shadow-2xs flex items-center space-x-1 cursor-pointer shadow-sm"
-                  >
-                    <FileText className="w-3.5 h-3.5" />
-                    <span>Print Detail Report</span>
-                  </button>
-                </div>
-              </div>
-
-              {filteredPatients.length === 0 ? (
-                <div className="p-12 text-center text-slate-500 space-y-3">
-                  <Search className="w-10 h-10 text-slate-300 mx-auto" />
-                  <p className="text-sm font-bold text-slate-700">
-                    No patient records found matching your search or filter settings.
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    Try clearing your search query or changing date filter settings.
-                  </p>
-                </div>
-              ) : (
-                <div className="w-full overflow-hidden rounded-lg border border-slate-300 shadow-sm bg-white overflow-x-auto">
-                  <table className="table-auto w-full min-w-max text-left text-[11px] border-collapse bg-white border border-slate-300">
-                    <thead>
-                      <tr className="bg-slate-900 text-white font-bold text-[10px] uppercase tracking-tight">
-                        <th className="p-2 border border-slate-700 text-center whitespace-nowrap px-3">Patient ID</th>
-                        <th className="p-2 border border-slate-700 whitespace-nowrap min-w-[140px] px-3">Patient Profile</th>
-                        <th className="p-2 border border-slate-700 whitespace-nowrap min-w-[110px] px-3">Reg / Last Visit</th>
-                        <th className="p-2 border border-slate-700 text-right whitespace-nowrap px-3">Clinical Meds</th>
-                        <th className="p-2 border border-slate-700 text-right whitespace-nowrap px-3">App./OPD</th>
-                        <th className="p-2 border border-slate-700 text-right whitespace-nowrap px-3">Store</th>
-                        <th className="p-2 border border-slate-700 text-right whitespace-nowrap px-3">Total</th>
-                        <th className="p-2 border border-slate-700 text-center whitespace-nowrap px-2">Actions</th>
-                        <th className="p-2 border border-slate-700 text-center whitespace-nowrap px-2">Visits</th>
-                        <th className="p-2 border border-slate-700 min-w-[170px] px-3">Latest Symptoms</th>
-                        <th className="p-2 border border-slate-700 min-w-[200px] px-3">Prescribed Medicines</th>
-                      </tr>
-                    </thead>
-                    <tbody className="text-slate-800">
-                      {filteredPatients.map((pt, idx) => {
-                        let ptVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
-                        const ptVisitIds = new Set(ptVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
-                        const ptVisitDates = new Set(ptVisits.map(v => v.VisitDate ? parseDateToISOKey(v.VisitDate) : '').filter(Boolean));
-                        let ptNhc = (pvNhcHistory || []).filter(nhc => {
-                          if (!isSamePatient(nhc.PatientID, pt.PatientID)) return false;
-                          const nhcId = String(nhc.VisitID || '').trim().toLowerCase();
-                          if (nhcId && ptVisitIds.has(nhcId)) return false;
-                          const nhcDate = nhc.date || (nhc as any).VisitDate || '';
-                          if (nhcDate && ptVisitDates.has(parseDateToISOKey(nhcDate))) return false;
-                          return true;
-                        });
-                        let ptInvoices = (invoices || []).filter(inv => isSamePatient(inv.PatientID, pt.PatientID));
-                        let ptApps = (appointments || []).filter(a => isSamePatient(a.PatientID, pt.PatientID) && a.Status !== 3);
-
-                        if (effStart || effEnd) {
-                          ptVisits = ptVisits.filter(v => {
-                            const d = parseDateToISOKey(v.VisitDate);
-                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
-                          });
-                          ptNhc = ptNhc.filter(nhc => {
-                            const d = parseDateToISOKey(nhc.date || (nhc as any).VisitDate);
-                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
-                          });
-                          ptApps = ptApps.filter(a => {
-                            const d = parseDateToISOKey(a.AppointmentDate);
-                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
-                          });
-                          ptInvoices = ptInvoices.filter(inv => {
-                            const d = parseDateToISOKey(inv.InvoiceDate);
-                            return d && (!effStart || d >= effStart) && (!effEnd || d <= effEnd);
-                          });
-                        }
-
-                        const allPtVisits = [...ptVisits, ...ptNhc];
-
-                        const sortedPtVisits = [...ptVisits].sort((a, b) => {
-                          const dA = parseDateToISOKey(a.VisitDate);
-                          const dB = parseDateToISOKey(b.VisitDate);
-                          if (dA !== dB) return dB.localeCompare(dA);
-                          return (Number(b.VisitID) || 0) - (Number(a.VisitID) || 0);
-                        });
-
-                        const sortedPtNhc = [...ptNhc].sort((a, b) => {
-                          const dA = parseDateToISOKey(a.date || (a as any).VisitDate);
-                          const dB = parseDateToISOKey(b.date || (b as any).VisitDate);
-                          return dB.localeCompare(dA);
-                        });
-
-                        const latestVisit = sortedPtVisits.length > 0 ? sortedPtVisits[0] : null;
-                        const latestNhc = sortedPtNhc.length > 0 ? sortedPtNhc[0] : null;
-
-                        let isVisitNewer = true;
-                        if (latestVisit && latestNhc) {
-                          const vDate = parseDateToISOKey(latestVisit.VisitDate);
-                          const nDate = parseDateToISOKey(latestNhc.date || (latestNhc as any).VisitDate);
-                          if (nDate > vDate) isVisitNewer = false;
-                        } else if (!latestVisit && latestNhc) {
-                          isVisitNewer = false;
-                        }
-
-                        const latestRecord = isVisitNewer ? latestVisit : (latestNhc || latestVisit);
-
-                        const rawVisitDateDisplay = isVisitNewer && latestVisit?.VisitDate
-                          ? latestVisit.VisitDate
-                          : (latestNhc ? (latestNhc.date || (latestNhc as any).VisitDate) : (pt.RegistrationDate || 'N/A'));
-                        const visitDateDisplay = formatDisplayDate(rawVisitDateDisplay);
-
-                        const symptomsDisplay = isVisitNewer ? (latestVisit?.SymptomsDiagnosis || 'N/A') : (latestNhc?.symptoms || 'N/A');
-                        const labAdviceDisplay = latestVisit?.LabTestAdvice || 'None';
-
-                        const matchedMedicines = latestVisit ? (visitMedicines || []).filter(m => m.VisitID === latestVisit.VisitID) : [];
-                        const clinicalMeds = matchedMedicines.filter(m => m.MedicineType === 'C');
-                        const patentMeds = matchedMedicines.filter(m => m.MedicineType === 'P');
-
-                        const appDates = new Set(ptApps.map(a => parseDateToISOKey(a.AppointmentDate)));
-
-                        let appOpdTotal = ptApps.reduce((acc, a) => acc + (Number(a.FeeCharged) || Number((a as any).ConsultationFee) || 0), 0);
-
-                        ptVisits.forEach(v => {
-                          const vDate = v.VisitDate ? v.VisitDate.split('T')[0] : '';
-                          let vFee = Number(v.ConsultationFee) || 0;
-                          if (!vFee && v.VisitRemarks) {
-                            const oMatch = v.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
-                            if (oMatch) vFee = Number(oMatch[1]);
-                          }
-                          if (!appDates.has(vDate) && vFee > 0) {
-                            appOpdTotal += vFee;
-                          }
-                        });
-
-                        ptNhc.forEach(nhc => {
-                          const nDate = (nhc as any).date || (nhc as any).VisitDate || '';
-                          let nhcFee = Number((nhc as any).ConsultationFee) || Number((nhc as any).fee) || Number((nhc as any).FeeCharged) || 0;
-                          const rem = (nhc as any).VisitRemarks || (nhc as any).Remarks || '';
-                          if (!nhcFee && rem) {
-                            const oMatch = rem.match(/OPD Fee PKR\s*(\d+)/i) || rem.match(/Consultation Fee PKR\s*(\d+)/i) || rem.match(/OPD PKR\s*(\d+)/i);
-                            if (oMatch) nhcFee = Number(oMatch[1]);
-                          }
-                          if (!appDates.has(nDate) && nhcFee > 0) {
-                            appOpdTotal += nhcFee;
-                          }
-                        });
-
-                        let clinMedsTotal = ptVisits.reduce((acc, v) => {
-                          let clin = Number(v.ClinicalMedicinePayment) || 0;
-                          let file = Number(v.FileFee) || 0;
-                          let card = Number(v.CardFee) || Number(v.CardsPayment) || 0;
-                          if (v.VisitRemarks) {
-                            if (!clin) { const cPkr = v.VisitRemarks.match(/Clinical Meds PKR\s*(\d+)/); if (cPkr) clin = Number(cPkr[1]); }
-                            if (!file) { const fPkr = v.VisitRemarks.match(/File PKR\s*(\d+)/); if (fPkr) file = Number(fPkr[1]); }
-                            if (!card) { const kPkr = v.VisitRemarks.match(/Card PKR\s*(\d+)/); if (kPkr) card = Number(kPkr[1]); }
-                          }
-                          return acc + clin + file + card;
-                        }, 0);
-
-                        ptNhc.forEach(nhc => {
-                          let clin = Number((nhc as any).ClinicalMedicinePayment) || 0;
-                          let file = Number((nhc as any).FileFee) || 0;
-                          let card = Number((nhc as any).CardFee) || Number((nhc as any).CardsPayment) || 0;
-                          const rem = (nhc as any).VisitRemarks || (nhc as any).Remarks || '';
-                          if (rem) {
-                            if (!clin) { const cPkr = rem.match(/Clinical Meds PKR\s*(\d+)/); if (cPkr) clin = Number(cPkr[1]); }
-                            if (!file) { const fPkr = rem.match(/File PKR\s*(\d+)/); if (fPkr) file = Number(fPkr[1]); }
-                            if (!card) { const kPkr = rem.match(/Card PKR\s*(\d+)/); if (kPkr) card = Number(kPkr[1]); }
-                          }
-                          clinMedsTotal += (clin + file + card);
-                        });
-
-                        const ptStorePayment = ptInvoices.reduce((acc, inv) => acc + (Number(inv.NetAmount) || 0), 0);
-                        const clinicalAndOpdTotal = appOpdTotal;
-                        const grandTotalPayment = appOpdTotal + clinMedsTotal + ptStorePayment;
-                        const rawOpt = latestVisit?.ConsultationPaymentOption || '';
-                        const remStr = latestVisit?.VisitRemarks || '';
-                        const isFocCase = rawOpt === 'FOC' || remStr.includes('FOC') || remStr.includes('Free of Charge') || (grandTotalPayment === 0 && rawOpt !== 'Follow-Up');
-                        const paymentOpt = isFocCase ? 'FOC' : (rawOpt === 'Follow-Up' || remStr.includes('Follow-up')) ? 'Follow-Up' : (rawOpt || 'Cash Paid');
-
-                        return (
-                          <tr
-                            key={`grid-${pt.PatientID}-${idx}`}
-                            className={`hover:bg-indigo-50/60 transition ${idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}`}
-                          >
-                            <td className="p-1.5 border border-slate-200 font-mono font-bold text-slate-900 align-top text-center">
-                              <span className="bg-slate-100 text-slate-900 border border-slate-300 px-1 py-0.5 rounded text-[10px] block truncate shadow-2xs">
-                                {pt.PatientID}
-                              </span>
-                            </td>
-
-                            <td className="p-1.5 border border-slate-200 align-top space-y-0.5">
-                              <div className="font-extrabold text-slate-950 text-[11px] uppercase tracking-tight truncate">
-                                {pt.PatientName}
-                              </div>
-                              <div className="text-[9px] text-slate-500 font-medium truncate">
-                                S/O, W/O: {pt.Father_husband || 'N/A'}
-                              </div>
-                              <div className="flex items-center space-x-1 pt-0.5">
-                                <span className="bg-blue-100 text-blue-800 text-[9px] font-bold px-1 py-0.2 rounded border border-blue-200">
-                                  {pt.AgeYears} Yrs
-                                </span>
-                                <span className={`text-[9px] font-bold px-1 py-0.2 rounded border ${
-                                  pt.Sex === 'Female' ? 'bg-pink-100 text-pink-800 border-pink-200' : 'bg-slate-100 text-slate-700 border-slate-200'
-                                }`}>
-                                  {pt.Sex}
-                                </span>
-                              </div>
-                            </td>
-
-                            <td className="p-1.5 border border-slate-200 align-top text-[10px] font-mono text-slate-700">
-                              <span className="font-bold text-slate-900 block truncate">{visitDateDisplay}</span>
-                              <span className="text-[8px] text-slate-400 uppercase block">Last Recorded</span>
-                            </td>
-
-                            <td className="p-2 border border-slate-200 align-top text-right whitespace-nowrap px-3 space-y-0.5">
-                              <div className="font-bold text-slate-900 text-[10px] font-mono" title="Clinical Medicine, File & Card Charges">
-                                PKR {clinMedsTotal.toLocaleString()}
-                              </div>
-                            </td>
-
-                            <td className="p-2 border border-slate-200 align-top text-right whitespace-nowrap px-3 space-y-0.5">
-                              <div className="font-bold text-slate-900 text-[10px] font-mono" title="Appointment / OPD Token Issue Fee Payment">
-                                PKR {clinicalAndOpdTotal.toLocaleString()}
-                              </div>
-                              {allPtVisits.length > 0 && (
-                                <span className="text-[8.5px] text-emerald-700 font-bold block">
-                                  ({allPtVisits.length} visit{allPtVisits.length > 1 ? 's' : ''})
-                                </span>
-                              )}
-                            </td>
-
-                            <td className="p-2 border border-slate-200 align-top text-right whitespace-nowrap px-3 space-y-0.5">
-                              <div className="font-bold text-slate-900 text-[10px] font-mono" title="Store Medicine Sales Payment">
-                                PKR {ptStorePayment.toLocaleString()}
-                              </div>
-                              {ptInvoices.length > 0 && (
-                                <span className="text-[8.5px] text-indigo-700 font-bold block">
-                                  ({ptInvoices.length} store bill{ptInvoices.length > 1 ? 's' : ''})
-                                </span>
-                              )}
-                            </td>
-
-                            <td className="p-2 border border-slate-200 align-top text-right whitespace-nowrap px-3 space-y-0.5">
-                              <div className="font-extrabold text-slate-950 text-[10.5px] font-mono" title={`Grand Total Payment: Clin Meds (PKR ${clinMedsTotal}) + App/OPD (PKR ${clinicalAndOpdTotal}) + Store (PKR ${ptStorePayment})`}>
-                                PKR {grandTotalPayment.toLocaleString()}
-                              </div>
-                              <span className={`text-[8px] font-extrabold px-1.5 py-0.5 rounded border uppercase inline-block text-center ${
-                                paymentOpt === 'FOC'
-                                  ? 'bg-purple-100 text-purple-900 border-purple-300 font-black'
-                                  : paymentOpt === 'Follow-Up'
-                                  ? 'bg-amber-100 text-amber-900 border-amber-300'
-                                  : paymentOpt === 'Cash Paid' || paymentOpt === 'Paid' || paymentOpt === 'Paid - Cash'
-                                  ? 'bg-emerald-100 text-emerald-900 border-emerald-300'
-                                  : 'bg-rose-100 text-rose-900 border-rose-300'
-                              }`}>
-                                {paymentOpt}
-                              </span>
-                            </td>
-
-                            <td className="p-1.5 border border-slate-200 align-top text-center space-y-1">
-                              <button
-                                type="button"
-                                onClick={() => openGridVisitSelectorModal(pt.PatientID, 'EDIT')}
-                                className="w-full px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-[9px] rounded transition flex items-center justify-center space-x-0.5 cursor-pointer"
-                                title="Edit Medical Record in Popup Modal"
-                              >
-                                <Pencil className="w-2.5 h-2.5 text-amber-700" />
-                                <span>Edit</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => setDeletePatientModalData({ isOpen: true, pt })}
-                                className="w-full px-1.5 py-0.5 bg-red-50 hover:bg-red-100 text-red-900 border border-red-250 font-bold text-[9px] rounded transition flex items-center justify-center space-x-0.5 cursor-pointer"
-                                title="Delete Patient and all associated records"
-                              >
-                                <Trash2 className="w-2.5 h-2.5 text-red-700" />
-                                <span>Delete</span>
-                              </button>
-
-                              <button
-                                type="button"
-                                onClick={() => openGridVisitSelectorModal(pt.PatientID, 'PRINT')}
-                                className="w-full px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border border-emerald-250 font-bold text-[9px] rounded transition flex items-center justify-center space-x-0.5 cursor-pointer"
-                                title="Print Patient Document / Prescription Slip"
-                              >
-                                <Printer className="w-2.5 h-2.5 text-emerald-700" />
-                                <span>Print</span>
-                              </button>
-                            </td>
-
-                            <td className="p-1.5 border border-slate-200 align-top text-center">
-                              <span className="bg-indigo-100 text-indigo-900 font-extrabold text-[10px] px-1.5 py-0.5 rounded-full border border-indigo-200 inline-block">
-                                {allPtVisits.length}
-                              </span>
-                            </td>
-
-                            <td className="p-1.5 border border-slate-200 align-top text-[10px]">
-                              <div className="bg-slate-50 p-1 rounded border border-slate-200 font-medium text-slate-800 text-[9px] line-clamp-3">
-                                {symptomsDisplay}
-                              </div>
-                            </td>
-
-                            <td className="p-1.5 border border-slate-200 align-top space-y-1 text-[9px]">
-                              {matchedMedicines.length > 0 ? (
-                                <div className="space-y-1">
-                                  {clinicalMeds.length > 0 && (
-                                    <div className="bg-emerald-50/80 border border-emerald-200 p-1 rounded">
-                                      <strong className="text-emerald-900 font-bold block text-[8px] uppercase">Clinical:</strong>
-                                      {clinicalMeds.map((m, i) => (
-                                        <div key={i} className="text-emerald-950 font-medium truncate">
-                                          ‚Ä¢ {m.MedicineDetail} ({m.Dosage || '1-0-1'})
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {patentMeds.length > 0 && (
-                                    <div className="bg-blue-50/80 border border-blue-200 p-1 rounded">
-                                      <strong className="text-blue-900 font-bold block text-[8px] uppercase">Patent:</strong>
-                                      {patentMeds.map((m, i) => (
-                                        <div key={i} className="text-blue-950 font-medium truncate">
-                                          ‚Ä¢ {m.MedicineDetail} ({m.Dosage || 'As directed'})
-                                        </div>
-                                      ))}
-                                    </div>
-                                  )}
-                                </div>
-                              ) : (
-                                <span className="text-slate-400 italic text-[9px]">No prescription</span>
-                              )}
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })()}
-
+      {/* APPOINTMENTS TAB */}
       {activeSubTab === 'book' && (
-        <div className="space-y-4" id="patients-view-book">
-          {/* Header Bar */}
-          <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center space-x-3">
-              <div className="p-2.5 bg-emerald-100 text-emerald-800 rounded-xl border border-emerald-200 shadow-2xs">
-                <CalendarPlus className="w-5 h-5 text-emerald-700" />
-              </div>
-              <div>
-                <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
-                  <span>Book Appointments & Schedule Desk</span>
-                </h2>
-                <p className="text-xs text-slate-500 font-medium">Manage, view, and filter patient appointment schedules and booking details</p>
-              </div>
-            </div>
+        <PatientAppointmentsView
+          appointments={appointments}
+          patients={patients}
+          nhcPatients={nhcPatients}
+          cities={cities}
+          tokens={tokens}
+          appDate={appDate}
+          setAppDate={setAppDate}
+          shift={shift}
+          setShift={setShift}
+          canAddAppointment={canBookAppointment}
+          canDeleteAppointment={canCancelAppointment}
+          getPatientName={getPatientName}
+          getPatientPhone={getPatientPhone}
+        />
+      )}
 
-            {/* Search, Date Period & Shift Controls */}
-            <div className="flex flex-wrap items-center gap-2">
-              <div className="relative">
-                <Search className="absolute left-2.5 top-2.5 h-3.5 w-3.5 text-slate-400" />
-                <input
-                  type="text"
-                  placeholder="Search Patient Name, PID, Mobile, Appt ID..."
-                  value={appGridSearch}
-                  onChange={(e) => setAppGridSearch(e.target.value)}
-                  className="pl-8 pr-7 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-1 focus:ring-emerald-500 focus:outline-none w-64 bg-slate-50 font-medium"
-                />
-                {appGridSearch && (
-                  <button
-                    type="button"
-                    onClick={() => setAppGridSearch('')}
-                    className="absolute right-2 top-2 text-slate-400 hover:text-slate-600 cursor-pointer"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                )}
-              </div>
+      {/* QUEUE TAB */}
+      {activeSubTab === 'queue' && (
+        <PatientQueueView
+          tokens={tokens}
+          appointments={appointments}
+          visits={visits}
+          patients={patients}
+          nhcPatients={nhcPatients}
+          appDate={appDate}
+          shift={shift}
+          setShift={setShift}
+          queueStatusFilter={queueStatusFilter}
+          setQueueStatusFilter={setQueueStatusFilter}
+          queueSearchTerm={queueSearchTerm}
+          setQueueSearchTerm={setQueueSearchTerm}
+          queueShiftFilter={queueShiftFilter}
+          setQueueShiftFilter={setQueueShiftFilter}
+          canAddToken={canAccessTokenIssue}
+          canCallServeToken={canAccessTokenIssue}
+          canDeleteToken={canDeleteToken}
+          canPost={canPost}
+          onOpenDirectVisitModal={onOpenDirectVisitModal}
+          handleCallPatient={handleCallPatient}
+          handlePostPayment={handlePostPayment}
+          handleCancelQueue={handleCancelQueue}
+          handlePrintThermalTokenSlip={handlePrintThermalFromToken}
+          getPatientName={getPatientName}
+          getPatientPhone={getPatientPhone}
+          getPatientAgeGender={getPatientAgeGender}
+          onOpenTokenIssue={() => setActiveSubTab('token_issue')}
+        />
+      )}
 
-              {/* Date Period Preset Dropdown */}
-              <div className="flex items-center space-x-1">
-                <Calendar className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                <select
-                  value={appGridDatePreset}
-                  onChange={(e) => {
-                    const val = e.target.value as any;
-                    setAppGridDatePreset(val);
-                    const now = new Date();
-                    const todayStr = now.toISOString().split('T')[0];
-                    if (val === 'today') {
-                      setAppGridStartDate(todayStr);
-                      setAppGridEndDate(todayStr);
-                    } else if (val === 'yesterday') {
-                      const y = new Date(now);
-                      y.setDate(y.getDate() - 1);
-                      const yStr = y.toISOString().split('T')[0];
-                      setAppGridStartDate(yStr);
-                      setAppGridEndDate(yStr);
-                    } else if (val === 'this_week') {
-                      const w = new Date(now);
-                      w.setDate(w.getDate() - 6);
-                      setAppGridStartDate(w.toISOString().split('T')[0]);
-                      setAppGridEndDate(todayStr);
-                    } else if (val === 'this_month') {
-                      const m = new Date(now.getFullYear(), now.getMonth(), 1);
-                      setAppGridStartDate(m.toISOString().split('T')[0]);
-                      setAppGridEndDate(todayStr);
-                    } else if (val === 'all') {
-                      setAppGridStartDate('');
-                      setAppGridEndDate('');
-                    }
-                  }}
-                  className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 font-bold text-slate-800 focus:outline-none focus:ring-1 focus:ring-emerald-500 cursor-pointer"
-                >
-                  <option value="today">üìÖ Today</option>
-                  <option value="yesterday">Yesterday</option>
-                  <option value="this_week">This Week</option>
-                  <option value="this_month">This Month</option>
-                  <option value="all">All Dates</option>
-                  <option value="custom">Custom Period Range</option>
-                </select>
-              </div>
+      {/* STATUS LCD SUBTAB */}
+      {activeSubTab === 'status' && (
+        <LargeScreenTokenDisplay
+          tokens={tokens}
+          patients={patients}
+          fullscreenShift={fullscreenShift}
+          setFullscreenShift={setFullscreenShift}
+          isFullScreenMode={isLcdFullScreenMode}
+          setIsFullScreenMode={setIsLcdFullScreenMode}
+        />
+      )}
 
-              {/* Custom Period Search Date Inputs */}
-              {(appGridDatePreset === 'custom' || (appGridStartDate || appGridEndDate)) && (
-                <div className="flex items-center space-x-1.5 bg-emerald-50/80 border border-emerald-200 px-2 py-1 rounded-lg text-xs">
-                  <span className="text-[10px] font-bold text-emerald-800 uppercase shrink-0">From:</span>
-                  <input
-                    type="date"
-                    value={appGridStartDate}
-                    onChange={(e) => {
-                      setAppGridStartDate(e.target.value);
-                      setAppGridDatePreset('custom');
-                    }}
-                    className="bg-white text-slate-900 text-xs rounded px-1.5 py-0.5 border border-emerald-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono font-semibold"
-                  />
-                  <span className="text-[10px] font-bold text-emerald-800 uppercase shrink-0">To:</span>
-                  <input
-                    type="date"
-                    value={appGridEndDate}
-                    onChange={(e) => {
-                      setAppGridEndDate(e.target.value);
-                      setAppGridDatePreset('custom');
-                    }}
-                    className="bg-white text-slate-900 text-xs rounded px-1.5 py-0.5 border border-emerald-300 focus:outline-none focus:ring-1 focus:ring-emerald-500 font-mono font-semibold"
-                  />
-                </div>
-              )}
-
-              <select
-                value={appGridShiftFilter}
-                onChange={(e) => setAppGridShiftFilter(e.target.value as any)}
-                className="text-xs border border-slate-200 rounded-lg px-2 py-1.5 bg-slate-50 font-semibold focus:outline-none cursor-pointer"
-              >
-                <option value="all">All Shifts</option>
-                <option value="1">Morning Shift (1)</option>
-                <option value="2">Evening Shift (2)</option>
-              </select>
-            </div>
-          </div>
-
-          {appError && (
-            <div className="p-3 bg-red-50 text-red-700 text-xs rounded-lg font-semibold border border-red-100">
-              {appError}
-            </div>
-          )}
-          {appSuccess && (
-            <div className="p-3 bg-emerald-50 text-emerald-700 text-xs rounded-lg font-semibold border border-emerald-100 flex items-center">
-              <CheckCircle2 className="w-4 h-4 mr-1.5 shrink-0" />
-              {appSuccess}
-            </div>
-          )}
-
-          {/* EXCEL SHEET WISE GRID VIEW TABLE */}
-          {(() => {
-            const todayStr = new Date().toISOString().split('T')[0];
-
-            const normalizeDateStr = (dStr: string | undefined): string => {
-              if (!dStr || dStr === 'Today' || dStr === 'today') return todayStr;
-              const clean = dStr.split('T')[0].trim();
-              if (clean.includes('-')) {
-                const parts = clean.split('-');
-                if (parts[0].length === 2 && parts[2]?.length === 4) {
-                  return `${parts[2]}-${partxúÏ}Îr€F∫‡ˇyäé&ëgLJ¢d[÷»r…íú®bKIN&õJÉ$$b ‘%ä™Œ3l’÷˛Ÿ™≠=Ø≤o2O∞è∞ﬂ◊› ∫›ç)YJF¨J,@£/ﬂ˝ö˛ºÚK7ˆÜ'ôód≠ﬁ3≤∏ºÿæÌ|}√˜ÙÁeÕ≈O˝Q>∑≤ŒHk˙ﬁ§L·tËß≠≈•≈võ‹TÜDì4#ÙÌ‰5a•qdÙâÍ´qËbÆ°?9œF‰ıÎ◊§Gæ˘ÜÛsÔó7‚ï5›k	I¸löL»ß|ÈΩ_ m¯{ƒﬂOW,?}˚◊?Iﬂóñ»«Ip¯C≤«Q0…∆˛$#«˛ JÜ)	ÿ¿ltîƒQ‚e¡‰\º/}FN£œ˛$%ﬂêÇ4»“∂4:;ÄA4Ó¶‚„?ˇ«Ús∑€my¬ò‰∑ﬂ»œø¥Qf⁄ ÿõÿ’ÓYîÏyÉQnì◊[ïs`ÔÜ´ª^ÊD…ﬁ5Åº0¯’«ﬂN≤Ó‚ﬂ``O˚W∞~
-;¬∫i4ˆ[-èæ5HOº±;Soy]˛◊˛Ó3|u˘µç TyΩ◊vÉŒÉBï0È ƒFøbÛ“Éº0—xöéZ:¯ﬁ∫øªA>muNø0ƒI”#=ànŸ◊|&∑üûiF*∏!ØWwØ≤÷qù∫˚OF¡Y∆∆•‚—ØhoÃºlöÚ;Èﬂmﬂ¿ïüW·ÁU¯Y;‘±?ˆíœ0÷'∫‰œÚñêì¡»NC_ªÔ|g‰%Á˛pÉ,ÎwÎWoôÔ"E#∏\<Ú'C¿∏≈*˛W¿B¶ x]Fûäù‰Åü-»Wm»óªt∫˜ÖA¯ÇŸ0Hò˘ó√†ˆO eä]Ÿﬂ≈Ì∆it'—e´]ã@“rùHX¶Å¨8≥f≈Çb1¸\—‚·—.ŸÅ”ùÜ0FMÈ_¨√àÉÈ∏Ô3®üÜ[⁄8¨¬,y¡–ÅÉ7@=f<œÇ0Éô"W≤`\Õ8Í∞.W`Sè#c/å œÈ6¬P*≤ìaÎ¢ä*"™‡€dTπ(qSã9¬uÜ3¬z=Û˝ºg»œﬂZqõlëÂvÂtﬁ˝›ï7äq•y£ó π–√'	S˘´∞≥ˆs8(`¢@rZÈ2„ÉhË<¸mÈ]ÔËM‰+ÿÍE/ÒT`ØaôtgË=mzπ˙TªXù¶æ≤:ó^óí˚IkgÑ˜%~ÍgÂÑÃ"4<DüÃÂΩ@·6á |‡M¢^UWlqo2T«€"Ú5˚h∑ö˝\Ö≥ıΩd0"ˇò˙…µÂlÈ]]8»qÀ¢Ö¸ÉîÁ üàﬁGó~≤„•~´ÕüØÆ3◊aê0ƒ¡SFZ±Ü∆f¢`úb€Ø‡ 	ozì?JØ ›_l+s.∞ÿ«>
-ÜÂ–“§ÊwM*ì∆ﬂ>D˝ ,&Ì:ÄÒæ2QâÕœ7ŸúÉJ„ãlµŸ»Tä)O`ˇ´bØÀ/tÉäØlÅ≈W˛Ú:‹êøÛ{≥dÍ◊–W~gK`s\ÄfÍ•)N¸ıBˇºs9ëó$—t2Ùáù´êÙA˘R…˛È§!`pguyô§#o]vÆR]¯…YèÇ·‰Ù4ˆ~Á∫≥º∞UŸ™õ•#{W?$«AøÚ wæá√øıÚoKÍµ3Ù«~‚Ö√Œ:L"ÛØ2>Â¯™≥F‚ÎNèúÖ˛˝_Á2Òb«ig `Ô˘o”4ŒÆ;}?ªÙaÆt X√Y4…:˝(ÊÌÁ‰Ø{Ø;˜‚NO≥™Í<È§7≥]π¬˘·ª∆—$“écùz}¿a¥KX⁄˛£≥Õ'á∞@ñC¿€&[¢a◊œº L	ΩÕ%zY∑å%XáÀ˙ËL~^YâØ~aÎaÃHû·
-lôe#∫œÀS2l≈M”V!Z⁄ p<îg:k9ÿ∞ØØû/≥¿OâG! ∆CHZÜ	rD |ΩÀtΩï%!\¨îaXLy0\–≠•ø≈ïET??D…ç<LÆi≠¥©"∫w·ãøˆ⁄ã∑ÊÛ‰/ÌO≥,öØí]«∏GÙ∂À}—d'ü_ﬂ¥(øëeª≤Ñ`™∏\~tÁ±‘[&#§&“ØkïÉZQéÊUâàY>¶I%ä	∞øp»d˚:≥ ar'£Ëílá!€Ï‘¸ÑyÔQÛì1ü“€”X∂S6ÏˆçE¬lä=9RøÃÒG¬ÚbªgEôÕ‰cøX÷1iö[L˝÷,ï¢RΩkäNßÏØRπÛ1 P9õ∆¯#p(ƒïÉƒﬂ◊U^˘eÒW7/˙–1æ$ˆ0z«ï“‹øøgIXeáloÓ~#*¥‹UÅ∞Fﬂ≤ÕàΩ˙∑˙[N£Ã£[„ıAP5œ-áÖ^é¨|Ü•éÌ>=Éê¿÷ä|úπDY0AÿõL‡àÕåâE	”ó˘]AJºA\¯ƒõ	ï»ÓÓ—	â3I	…í1‡/™».Ù…ayY:%ArÏÉÈXCÎTÒ”,P6)ç4≤B»Ö˘øÈˆ¬÷ˇ˚ﬂˇ˝ˇ‰'∞M∑√N7Ì4Ò.öÑ◊9Xn›°ƒ√$¢∑™kúå…&Q°ﬂ∆µ€9Åê
-{∫ûÔ)á-º?-—}∞}2sÿP≥M“Ü–-í6nÒ1* F‘â&ÒüpÂ¨M≤`€ê™·OXlS4r(+’2)uL÷Ö¡ﬁÅt*úmÃT¿nêNŒ§QD‘ó≤Z—å(Õôm©5óåTe±È(	&üA}÷Œ—t .b¶çIN¶]1»1äŒt‘ìëÇ÷,”ê§ª®Öπ‡™„M≥àåΩ´Œ®ÛÛÛÁ(ÍïÎ¨™üMCÆmÜ>PÖú¸rÇ=à¬–ãSŒçSÿiìÇYÿ#v¢p:ŒÌz>√Ê2Ç;å41Kû¬&(#´L•4•–…≥Ø/%az«~2 ∆é–2¯ﬁπPLÄÃ&E˙öÙUg5üÉ∆ÆCáÊÊ≤≥“#≈"zLé,ÖDaﬁvAùê?[∑lt«KìŒ%lœö¢Úèh!Ÿﬂ%ﬂP9‰¶
-[[7Unß%8˙„‹LnÈe~£áò"• *ì‡|î9˝;ﬂ™Y‹€Ñ{ÂÑ∆YgL	˚CLsΩˆËs€˘¸Â•MyÊYäd)üEô>=∑ì!l£…lg◊ìPca
-õY?^ãÀ~DºsM¯≈Ï%ÂA ÆÎ‚™ïlQV\I—,Ànö÷í_≈?
-O@é{}≥~´ JO:a¶œëœù_j‰ﬂÕ&<Ùí£pö Ï}ùå‡?ad4€ésâ°
-W Oê]Á1Z¡ã˜ƒíU∞◊\hê˘Ô¬÷A$™ÖÍyÜ2	& XÜ˛ iÓ"/ªõK±˝ı%‚÷”·”VßqÀŒù++5{[]∑(ò G∂∞u
-∫ÇO’Ñ™EÄd‘∆ Ö≤-Åà¶Y
-0Ãt
-T6àµÁ>* )í´˙›°≠µØÂW;[˛QT]¯Pıc± Uùˆ
-zk±˘√‹a>À£UçßÒ‘3Ó˙Ó[õπ2ˇ»∞º¬I;◊±‡¡f)ÈY”≥†iIæª‹mûÁäVœ¶i’P=Ë™Jê!ÛÄ›Vól˙6˚‘Ÿ1À˚åät˛icO›0FÅ'§‡Ö-äLÄÏ>Yÿ…Å) QÑÕùÙ}–ÔÄnêA‚#M»Ó¨“‘zÍ`5Éﬂ5jb6~]∑5K{1<zîË_’íë{Q_cÂºËu¡ñxÏ^í√&ÍGåÀ@Lß?ëÊY?Êò*‚pJ`»¡“ˆb˝0w‰ßôõ«‚˝E†_u≤≥˝âÁ @Ò∏bèÃÉ -£"P‰H•5ÙÍ≥˝˙ÊLæÛıM∫1Jû"ÈÌß:vT5ûàÿS8≤"¸îdÙÊì—gVÂiœQg!_◊&™ø!ã¬†-Ω,ÃKËãPú®œsÕ"ı«ÚI4”}"ˇÖÙ
-ea1è˛°eAä_z±\çÛï?u^«Õ–w,Éß—¯V~®Ç“DüÌ)¶-≠KR_V®:©∑Á:ﬂ…_»JÌZ(sÿ!≠µÍû6ÀEΩPT∫-}%{ô4HÎ …ËﬁfVg$ß»4ê’∞( ∑ó:åhõª/‡U‘Væª9ÄZÉéƒ-‹∫ë9¸ú€ø,áË"wÖa^≈çƒ3Ô¯$‰ΩûÉ∫ÿ"—Èn
-ÅË^HZ3ÔïÑR„j%X$ÙP5É^5⁄ï£Ôè…óNò†√Çp›*”≠e¬Œ˚≈|…˜œg\∞Rq*ﬂ|™‡ñ1≤™t9HÑπîÈØp¶œ‹ò+ïËÜ\ËáSøºLø·’⁄˜ÅP‡¢?ﬂhf≈˝Ÿ¢˚±ﬁ¬PÁ±ŒÔrÑë‹®}üPRxœ
-kFêÅ∆0¿†Ó… Ÿ;∫G›<D|Êj,;*WwGg®ùº•z˛ú[#äcy(À Ç ö˚T6˜ªi≈GI{ÁT· 2àLä#o2˝√ÿüÏÉÏà!ÕSr1àÒ09|P≤£4≥•≈‘xV"ßd;+ê∑˜ª_kÿ&.fU6Ê£âoÑˇØµ‘”-`_¸åwAˇ |·ú2Ã†+“)±≥gÉﬁÕÈ'æb8≈æ‰Ÿü&^:Í}â√∑õ˛¯Vó≈‹b4”öEó®èOUCcWöEKæ=<==¸@∂wN˜»€ÌcÚ„˛Èwd{w˜Ÿ€›?}Fv˜ﬁÔùÓë∑·∆É◊Ãô2%.9SVı˚6I†¡∆Ußîç∑ÌÖÏÛ4≈Ë»ÜM≥„¨ûgôú©,ó¡∏@‹+4˙H≤‚,oåqQÒ4L˝kxoÒé≠¬¶É÷Tê4º&Ω¥[ig‹BãkB°-Üq}0iÈûeíKÓ$&◊∞]óË/E¡yâ◊ Ñ~6Ôgé˛%dH…`„ m›EÙ,wvw9íô¬Ê[)“à·ÎõØﬁ‰m}∏Åâï™î?∂áC*~∏≈6Ú∏eü[>¡ç‹Áæ&¸∆…$Õ!£À<£¿›G'ªË¨8Îƒ∂åp_3†iu∆ƒêÙ¶z,®§h<`Ta¡ﬂè}@≈ Q”ûûUÚ;#"≈ˇ¢@(ì[P!fÀ:;/	Ñﬁáå•cóa‹Ã[∆JíxJﬁ/™à“-|ÛrŸ⁄Z1ù_3`Ùiõ… }ˇëPH#›ª·’qrn7'FH“œ‚ƒé7¯·]bB¨›5∫á*4Ü‰$JH¶ø¸ë Yß´∏Å2WŸö≥Óö-ç™ˆGÈ∞o€-9P?^∂èé˜N?Ïúíáª€Ôtπ	R`W =î""y¨Ê¿TD©‡ «8∏‘œ:Çø”_¿woyòD1“æèÛWÃ®2ßBÒØ1l|e’uÂ	zW!∑è Òú ]ΩÇ^YØ Q‰í{ÄuÜÙﬂ_£hˇv^='√iBÕNØXÉ
- _µ)azUj¥Zïª«5ónM¬P„\ ]`â≤eéVµø[Hv=¡Æ˙Ù˜U‡n—∫5ﬁñ3…Ë†HÀöòR¯wyˇ—Nb≤íò	âI⁄<√Rq—‰d⁄YÆ'úx>€ìÇg…∆§ÁEÑiÒC›ù€ß˚HPNÄ3≈¸Ω}ºÛ¸√~–3ÂõØpRπ˚œ¨ ´8ïOiU÷πë‹ƒ‘¿d¨W"ûahŒó¨’]–ïèz}?îHCÂ.≤Çjºf@.â?U<∑:6ø“,JÆk—˘˙8°Fªë.7Z–bLGﬂÌhüøÈ≤?é£ã}íΩ«µFê%∫I,1zø≥PæE
-å©˙#ı‡± ryUˇÂ(÷-æ)B¸ÚhiXuæ+∂<ªÅ∆d’†ØD˜%;Å∑—Ÿüƒ”å\ŸàÏ]≈@ ©úÕ.≥hL≥ìÊ.Rå´£$>0]Lﬂ¶&D{†˙&ü™∏◊O£p
-$˚–M≤Dèë◊»eπeLj¿∏=VC1c,8™›
-™˙#Ä1?yΩ`øı¬ΩÔulâ√“ev« 0∞FœÆØ:ünQ;4høÀ‘Ÿ.}y]Ã60«£ ÏZhm¥7™(p/íVd4º&=}˝e˘sÊcï¨—`ﬁ	 ‚ÙF˚¶’DûGìÔ˝Î›Ër‚º©∏@ø˚Ÿøf)◊{à⁄z|Í«Ô∆âÅ°ß˛ô73]	9›À™`b©`W˝®[jÆ~:ué´πé¢öøáùW$N:ÎrS…1ÅÀüEÉi∫ÅA!¥†VÒE0»/≠.Û+’¢2§P%ƒî+. Xù¬Ü‡Vä£¡˙∫≤ÆûÃ&^Ã™0¨¡˜E{ô¸Ë3çˇ°49ßÕä'@êñÖ ß 1ıûFUlÆS⁄˘SéEÀfÿY≤ÀŒX!»NÊ$wE:l@d%
-≤˝âßINâó:ßÑ¢XW3˙J1É])/¿–¿Iû<2K∆<+h∂"H1…›≥.	Ì|:ıÇy]9•:ıœ(Ñ·\*=ˆ1u %Ô±üÅY6ΩiπKø≤@?O9ò ß±§&î%auCiÎ¬«ZZ";¨xu^¡(Wh)#˛q∞‡…•5”¿„¶W~bÃ}Ò/acÙ√?≥‚πP‘ú›nCe!œ«Èˆ2èÁçÀ˝Ô<,JÛÔ£i⁄á9=≤}Óˇí¬Õjª˘ƒør4HÅËqLÿ¿¬;’Ê‚ÁvÀzÍeñ/Â◊Êà	«Ÿ≈‰R)ÃNµÖÛåÌ%Í+œ∞cç≈lÆöÁ Û•œï_Ìœ…Áåè øÿüŒèüÀˇ∂?Áé7√?ˆ˚‰sß∂@Á≤Ü’í/·my2(oÆ2
-z»j ?#˚§‡¡HÈOÒE9◊_ÃëﬁR@ åWÉH=·6°˛3#ñ s‰•Ú-µ"E∞•«Î@[n˘I∑ÁÄÉ<&
-/¸·A±›x	gÛ¨@◊gÚﬁµkﬂ!"ùùZﬁ∫n-p˘7∑qJ¡Úo∆∆‚áb
->–ó}BøˆÖ2ﬁ`Ωiª8hÕÚ†R Üµù$ﬁu˜,â∆-	®$µJ≠r√l:Q\t–˜®é¢´Ÿ>g¡vÌ+ƒÇËÛ’m◊ØVpo\æ];Í∑S/ﬁDXÛ3ŒüÀxÂ¿`˘fÂ≤ÖÂﬂÚ	ÕH€ÚXMﬁãgµu;{ H≈"n»ƒ1´Õ)‡uPiıì¢‹LaÔ.Â|ênó®˘[Qy‹“2n0¡%oãÛB‰HzÄ®JqóbÓ_1Òÿx¿U˘\ÏVè:e_wN¨ä›Û^È\æf≈jÃAI’óZUﬁ´b+ïCr®dZVú‹ıµ~4UORT9àä/≤ìßõìù}¡\Ë≥XáKb°KÅå≤´É ±?¨/ëxUÖƒø¿<˘◊(úp ˝ﬁK3¯M$ÂN•Vú2ÈÛûß”çyj=ÚAlÅ($i‚WXr}R}˛ë‡á∫n4YÔÎÀvÉL%––%v…çpÀU¿œ¶SÊ´xw%,ªÏ†	oGO.ùvG0àän^ª™Æ9Çaö,dUí@júÜquºRÜ#%(π±1[ıÆQÙ&;£Â¢¡]Ä’&+lº'&Qv"®“ı{˙J·‹∆îÃÁnYÙπh∏ëÑ≤pæ∏fkºïn§WzáÛÊô˝ˇé(F?5›BîX˘Ï˚ﬁAwXwLÒ/nw´¥P&ÔPB`ÌÛ2ŒhX≈<-◊ºãR‚UÖf∫:&¡_dî5◊ô4V≤∞F∞$ïphU€qL≥˙À≈”\y.Tî+æo‚ßËmo¯…‰ït6ÚΩïS!‘.ﬂÑ^ﬂî÷¿‚’ÉÙ÷¸Ü€üHÎ&.å0⁄sœ°π(¬›Œ©¨Ï”4°ï}f™Ü»>©üΩc˜ã≠˙Å®YNíUf¨$ZªE√!ıûrky+ı≥¥D∂A˚=&xaxM‚ÙS⁄íµQ]:ÛY@|?∫b—[àŒA4M•:ypWÛÌ(Îzµrõ#Ì∆ãÿ?+5lêDcQH»kÍ›öD&˚©éØê¥À¢qÅ&A]‹≤‹ÖÜÍ¬ÈB˚{‘Â‚âV1‘y„¶kı√Ï—y˚Cg£pÈæn8‘lN„(ç›8’OùÉ¶†öM÷˘nú”Íá™[åÑ{Ë>Ωnª€´’œ/¡‰‘¢uÒ	‡ƒ√”òÊlÃ∏;√a‚ßÈåOÔŸ5Bê∂á¥ıAêL2¥‹/yüáºI„wõ=ÅÙTñATÊü∆C˚Á0'ñc¡zy°{õæE£˛…a^˝ßõ∆aêµO€?/ˇ“Ë5∑MX #:&‘rkJ<ê’ñO∑*“à’‰ÕvØSµ^ˆ±ı|TåÃNÈªCÀø¢øB
-ò` ˜Zå$≥DÍàü:—«‘◊î)/Bp0|~Ÿ±∆E1&ïB˜eŒÿL0wØï¬Óvî_]"EÎJ◊Ëßµs©π¡úÎ®¶¬âL:<&{ß{«‰`Ô«"ïÂ√ˆ¡«Ì˜Ôj,ge©Õ¨íofãó◊’\Vä})vvc#òqø¶îp≠Ñ–f)M+o€˙—?c¬€y$ –ØÌÛ‰mõ’-¢Eÿê'E|oî_{¨˝YÈ‚`∆bÅ r˘Ïµ0nMÃ±ùƒÒ$∂‰™èµ©,Ù’ıÈÓ		çRä§Ñ3Y˘r(î€,'A´·……	‰•¢n:hqµ\MÆ?è)±èîC‡˘xHXπ%}1ŒÂ<‡<öfa0Ò;t<—È+ÜPu˚—ŸÉ;kÈË√•¸ÊÔ
-!Jy∂1Bhl
-∏a∏‘ó‡}\piΩlkh∫dv(`∫MT›€%G«{?Ï~<)¯˛ŒˆÒ.|˝ªÃô›eèPmµÌJRj·'GYVıl ≤≠[í™;ûµñÉ«Eëˇ]ÇMDı†ßO∫¨1é≥8o∞¬`ù,›8ΩTı`ì_ëO’∑íÆ¡ã—ZùèY©¸úéi´y"‹È;ZsáìävßiÒ'˙qÃŒ7/è÷´c®.ˆ™‹Ë9]>çïÖ≠æ cŒ±Ëz>∑ã—‡¸9ìÏº‘ƒÊ‰ö>Ìk\n.ã.ä¶2¢F.u|B`Ì÷',®íÈ$¥<‚fcòX*&ï	EÉJìbÈ5[∞√‘Õ†¬Ûy∞Á+CdÑõë¬Ã—µZ|çäŸ≥§¥sN{π©jëY+ƒ±Ê5Rpç¸Àp√íÕì¯ˇòâ?4ﬁ »π0?úñLM“-–]≤Uz}5ïhxô5¿AJ’∑y®aÜ¶¢6ØÌΩC/J_2Vdìéõÿ¸∞Ècyã!Âƒ—≥B~#ΩG~ˆyØõÊdm3ä)•‰˚∏rª%uWﬂ\b◊ùË›nI€Î M∏!π¥óB5v◊4è∂ûhÅÄ“∂±ïÍ1ö«í˝LßÁ§ÁàPJJñ}Z\|Èé¥Ô1@ç÷ík˙ù3†z *[Ôåˇå7ûºl∆§¶¿≈gÿ≤¯cø∞∫3H©xPÃëﬂ˛dXÍïOÀäQöø¸Áºı‰Â5´U0‡/‰˚2úZÔ$ùß˛%´]j`1Vy›a_SZsŒ¥ØÚÆTK>Ã›˚µV›1i;∆Õä&gA2&ﬂ¨ü'÷8lºÅ∆™üHI ~V~™÷˝§£kbÈuLµä„ßäüsW¸§uûuπOS·f°oL}±OµQi	`§¥ık?|˘œΩbn-Ùu,˚I˜‚èVÛ∑bˆ¢üµΩDåı7l¨i\Øâä0äàœóµé¯£$:Bﬂ¢†yÖÑVzã≥dQwŸ‘ÈÑ¶¶Ê3¶-;#j_ı`b∏‰‹}L“∑ÉÎˆ]∂˜-ÖS‚S´Ÿ)Äz≤˘ì]ı_”ÆÍÄOF’?ûQµˆ‡ü,™Âï'ãÍ…¢Í∆tüÃ©∫œì9µ1L=Ñ-5è5{p+™Ωùë…ö‡ha]ïÂ!REÔ"πõQQ†π—Twmà\
-ªä≠àÊhßu Ó%«Ÿ|ÉüG`g∑…?[{}
-è€Ó⁄-Ófõª•e›Ω[€m[ˆ1FÂ¨÷“>sp—}ò·µ◊–<ü£ﬁÀç>ôˆOΩ>Î.è©?ı©^xc	»âÔÖß—–ª>…^˘∑>5R»ÚÊiÃÈiÙŸüÏD„	le—ÁBÆD⁄—∆â—Á.Kò•3Ìıî±¸£«;9Fü©b˛ˇÍ“?˚Mö}ıôëó“t#úÕ˛ë◊DeI›“Ü∑.Ë,/îo|ôT¡¥u—•c“º!¬7yãÚßÈ}º¨ò“÷ÆN7H•-ªVZ¶ûw≤¨ô∫‘Íím¶0GzÉp k¶…Úc*6Ê%œºº˘∂(”‘Oò∆¸±9Åô`Ê„õÓvöÁH/˛Uy*Eó\•˚4<,ì]¡Y»?-æç≤—"m•X\–çÀ5=˝∏=◊qãÅ±D7V{&ﬂ†Ãq˝	í∂$/]@qí¥¸+ZÅíÑ˛π7∏∆åÅâA|…¢1ŸﬂeΩ£IxMx©J>^B”ôiU—¢û!¥ï“GNŸJ‚_íÚ:§ô?ø¢'˚U&ævSÑ≥Ù« µqˆãmÂ∂_xiy˘ÂÛµ^o±@räV,Ø≈qNDËm_¡ãƒ˚Íﬁ√wnÔ
-∂íÓL±ï"ñÒ
-≠j’aÖt≈ö¢À¸yF˘&ñÁ5à%ÕM¿•vô∆%~Ù®Àé[9›¨+"‡z&‚:˝Â+ïà√£mc|Ü-M_Ÿõ„ïÉ¸"-Ëo{£f4ëü©l#≤Ü~ËøçÆ¸îñ2@Ä®êú70Â≤‹&a%∫!\\QÁèFÓù(LwPD¬˘W_GwËYSY«C1ïï6~/áÁ¬Â’EaQö˙ç¶ä±/
-G5z©˜'$Ç «aπs¯óJ≠Ÿ\˙Ç!9<–#∂0ıB#“Q?Úía%ÁYôŒÕ'Í¯˙F⁄©[ÍxÒÈVïñîØ¥7˜·4B}€áõ ÅjöÊ‘Üÿ¸èLM«j0ÄÉá]˘|¿~EsVzZC¨^ˇπU±Õj™Îˆ˜¬ÊÁ◊‰ÈÚ\sãól…%-ˆœJõ◊¿#Ù(MâHfÈ\õ|#õ∏lÖ˛÷eñ›»t∫®lÃøk'ÆW∏ç~yÂhÕÂ~«¡§3Í¸ _˝¢o¿©ùmMâﬂ*@ØÙƒ∫æf›~g‰>Ô… Ù+≈:@÷∫ºÔÿukq≈Jè˚ ™Fù”|-wöÆá≠≤ppöÀß Å]rÚLàèî8vÕn˚ÊŸ§ Ó”ö¿ Â< l/
-,‘DßÌ∫µMÔç˙‹:DWP"JI√>sô∞⁄‚√“X)axkgº“˘˙_O9ˇAÑ≈ÑZKX•Øî‹—‘A`ôX(Ç˛ùDó¯∑L«™Y≥lÛ/ıu"‹»ÌjMûlu¨K¿e¿éï“†ƒ’DSìâO)ïsÖ†/K≠M%¥Æ(ã#u¥≥ØÅê?Ke_p}%ôJÅt†ló5gBü”R3#J¶ì˙Ò∑n “⁄4∑O¬ç∂9v«˛jE¢Á¿≤a∂hèÙ∫[ÚP¢>¸\NäFõÃ0´∫I´˚ú≈£gK˚Ê√:∞`}˝”2ı‡àZpñx˛ıE˛˘≥#B˛‰Ú,*÷;@XßaF#6ÎóÂT^…ºÎYÓ@…ò˘=RKŸ!:Vìú~1~æén›w€IÊÌ9jîùé¸dÏÖÔíhLIbBì π<∑"ìQ≈àØP–¬é}•≥^kêD0fõt≥Rcº1 ›¥gakl∂$NòôúZ}H5ÂÌk°ˆà(;ì–ïDª{+˛áZeÃ…ƒÊ~
-«Íg.¯„VîÃˆ¥¥„Öa^Zo(b$ke∂îÉ∆p4Áô¢ıï ‡¶Su>F‹µºh∆ó>∆πIs°QmrŒ#œ=√_0˝VÇC˘€˙ùë:\ïí8‰‚€…à
-Û˛r˙úë MßXi‚‘»4Û>[ÇÒS6Zﬂts¿„”§TˇÆ oûÚBÜ⁄äÜ@”é≠˝±Z¡Ä¶Áà°k&KòdΩ¸=Y¬
-ÅÔ¬J)ÙÓÏ`Ú©r;XÔÀÿ¡J·YZ_C+òÏ:xÏV0Ìl÷
-VÄ˛É¡d`º{#ò≤˘øo#XÔﬁç`~Ô…ˆd{2Ç=¡ûå`ÍÁ…ˆd{2ÇŸgd{2Ç=¡*€˘d˚˝¡v˝aÄÎêú¯÷Q©å¨˛Å≈ÇC(Œó•ûu¬£5Ñ	!a/“f¥\–“#"√lâ⁄M≠eö≥ﬁçô"»¶∂
-÷ız ÛBO·ç…0p∏"1dØ˝&ßq‚ßÉ$à˘˚õ⁄LööÚRµí∫¬è≈zByŸ`Yü.ìlv=)>∑0Î)'†Ωãø!ã4º5]‘1úµg}F¿ìÃœFQ:àbﬂh,3EÔ◊˛W,úƒôƒ ík?+ÛÃV?WE?WÔ{Â»íz~J<ˆjC¯iJì’·öà?‘˘·¯Yi≠Ù§ûòc ª0O–ÇTXFﬂ©πRÜíﬂóµ≤˚VÊl»Æ™ô˜=eZuM©V ∫Ó»Ëäá˛ÄfWU'g1A#z|fY1ú∫A9˙;1ŒZ⁄ù‰üGbôΩÉÑia¥á≥ÛöDíJ√'˜@˚ûR∆FË∆Ó0∂ºzì®E‹e:õ≥∏´Ÿ™≠\˘Ü1.◊˜áÆ˝ÔÃÊ:ªÖævésò·>ÊQ£œãπl =Úò|*Dr◊§Vîîw¢Ço$.ß	ípﬁ:AK–tºY)éóeÛ´∆…>SÎ¬bñ*bJœºƒÒéØñDùi√“*ÿ=π« ù•ªÅw>â“ÄäãG¢<óôµßÁt~w‘!Ù…π‰\xr.ËÓö≈πê∆æ˜˘á(Ãdb.¿áó?R äÚÉ\ddn–…Kˆ:Ç ±ã§PBPEÍÆòxì	º|‡£&6'§¸Ö”±^id7Ês•'ÚØÊ∞x¸Óä?¢è‚Óù¯ì˝7Â—b"R[qî+ﬁcï9r2H–~oóº/‚<	Øg0“8ÙÆ—CS(•˜. Ú´© Ä\ûßÒ∑iÄnQÄÌ$
-S'Ááä¨c¨ﬁ˝ Åµ.T¬∫
-â›Bb-7á%÷#∂"-5∞sT[XÍœçj¶¨*-lΩﬂŸÂÍÀ;Z∞bCèÍtÉ	≠ÈGg]”µú* TA(wˇπ∂πÄë2◊Q„jµw†Öß@YÒŸ≈>ñ∆—Ra±⁄CÈhêigÈ§(76'•·¸˙ÊL~/És˙n‘ÀÄ(Ÿ¡A’CEâUK/ﬁ~™Œ^GD∞;“TCåuıÔsÛyÊ¯CÌ˛z~ÉΩœ»Ò'·ıc9∑¸PGêø^∆ÇÁ˜wyx£30Wªì”îÌêj[ª“KÔC<7∆X?DCêì©Øññ»vº"Œ»ƒ£I}‡G)ZãÕ'XîŒ:ùTF»ÎÒÎ‰5:∏¶(¸wœ˝l/§z¿€kÏ,[‘‹	ëÌwÿËù‚Q]SX¨UéÏΩ¯“≈“Ú~*¿g[ÎÉ≤<–jwhº…´ﬁj&†¬H•;≠$/2gÚx„íπ-ã*ëåeYcƒûÀ&lMÕòpËÂâ”*∆ ØtpPˇÄTgR¨
-¸b¥X™K˛aXÁä˝6"∏±ÑJlÓ®"ãFx4JZœeW~g]ÍhƒEÖµ™Ã Ù0r,
-•PE“@…Ò;ﬂ£&˜(!ß?é/5•†ÍÿÁ*yŸ≤MêÄ˙ÜûO>0Z©w¥˘”ê¬U¯[ÌéûyYp> dSiÈE @1ﬂ x“N2;N»·ë$ÃÔ2)~si¥¢ô¶ŸÅì˚Îe·S5”óSa]‹èBø\"rS?<¶Îhö∞2¬äπw…˜¿D¬kÚŸ˜cv9Ò~”Ä o®ıˇÎï#Âúôç˚®ìQµ¢76¢ÁáÉà≠©õÓ§xî|’F÷¬Yj≠ÆÙÃN¸®°	Ä‰F™ó˙>x°å˝ºl™Nu‘J˛n<—äÒ˚o±bZ2)=VV®∫¥æ@“Ï:)De	xÁ);‹™4/M“bóµj=jıûa0Õÿªj-?#+gIªM≈¯kQz«m•òõXΩçΩÄΩYó∑⁄≤ÃÂ∑ﬂÙ3-ÑbΩˇ∆™∫∆@
-k¢¸÷Ö∆S/f±3îPÔk…õ±Cée˙àÍ"´¨R
-&ß+Øî¢kÀÎ´À§CVzØ•Ôö-°•ÿŸuôôØJ~1åÿûNJ®'P®ô9îπl·iE®ñı&˙TõW’ÏBêﬁ)≤&πÔwSÔ!≤ÚtlùV¡íÛâu—Vó#äMÍ‚—
-¯ÇËáL–≠W’Õ‹ÎßÄª‘wñIËüÒné‰∏ü_apÄßXÆµPó ›˘x|ºwp˙˛'≤@∂ONˆNN∞•≈Ó◊bzm∑†?Mÿüâ €µà“ÀÖaG¥˝›:rpx∞G:ù:kjÉ0÷B†`íò•|ûäxÜŸòª]k‡ü˘Ã1t⁄\´ÌÍgﬁÀÁöΩ¨Hk¨€ôlºÀE∂>u’⁄≈ÍÖ˝ÛLpÖaÇ¸Ns‘Ó∆Q¨ì ç≠9kì‹§
-≤Â·À—2ık’ƒÕ≥Ú2¬É≠ùÜËÕ'.[`É<}l±çàÁ˘èGQ§öºãvÙfl∫ÙUπtö%˙Ö≠∑˜O˜æ%˚∏˜qè¥ˆ˛~J>Y9Ù\≥û÷≈WIç»à…ãı6/yi_3·iB[…xçJ∆=k”LWç∂≈)¶óNµ-%y¡ÏËï±CÖ¬√˜]‡+vßúxs]L ≥‘]Nµ(9¶“…ÛWÖ°ü◊©L†#T∂ã‡©Rå§AUûÃÕX„hl…’å‰»Ègó⁄?w´J∆Ì'UJØJq{ªB£ï¬=+/7ñQóÍ≠¿øø]JSøˇIóz“•AÃì.ı§KÕØKi·Í_Bó™[˘ì.ıÿt)◊|]*EΩ.•›∏˘t)ßièPó*Ö 'mÍ^µ)Î= ïåÏ/$t™ßˇƒ?å—¸=ëÚ›’H{åÊYpÂçSüãÇ◊ˇJè¸
-≤~~QƒXU?*d”kîQÄÛ˘£ÿ	CÓÌØƒÜÓ‰Q°_$–êW… J0$≈%*I∏kÑ˙ÇÛ@P}à¶£WBœ´Pq¯≥Ò£¶˚[Suâo÷¯œÖ≠⁄`œM÷1^√ºKµ¨~´¿≠ÌP≠Ñ¢…]™âáÌØ+h“ÑÙ≤)*≤†‘¡z•Ë`≠4=◊7µï[ |≈}±¸1∂h«XÿB47óÿ5œqg±ÍˇƒË6«∏çD’˙Õ# lP@P~˝b±o,Y^\V´ï»c÷Ù·d≈˝˛Upè°dòû4`i]LŸY∫∞íW·%∆ÀJå)≥çiÆ;UåÓ^Ü]„Ωõ¿ÍN¡ Âˆ(‡‡&DW’D‚€c•^(Ïa<,√Óı1X¥Â'ﬁ«æ˙ì!¡œÛÌ5¯î—D^≠
-ëWœC‰ï^¸Œßò´Å√Øz˜~•$2Ü^ôNÕ"ûÊ;PXWf¡zÅò∂*≤iá¨;¿“ÚbÉ¥ß`‹ƒy∞Õ6ÏÚçØ;Î∑Và6k•g≈∫Ô@,5À9ÎÓC∞jº∫0÷*<ŸÖ\õS·é]
-’‡S˙Ω°"¨q'‹edñ1ô…Ÿï «LöjÅ›{HV”j`ç5Ó°§ç.®Zt <ü◊Å∞ft ‰$•æzŸ}¯–Uu(º`¿1áC·˛B≥4¶sÈ=¢¨›µ/A#^§„ZGBofG¬EÕ4˚∂NÍl≤¶|)»wÎ_»ôÖ¬≤j⁄Ëõ≤%X}
-ïdSπxÚ`õÈıA∏¨˛n#å∞µ‰æ÷’‡ñ¸\‹mœn‰e»a∂±Ø·˛¢∂f†Dw≥ÂN|*>¿ûÚÎ*Nõi“LªóÜX£≈Ëıfæ≈Ûpñﬁe◊™l€lÓz0
-£ÕN–ï√oSGÑŒÒ dZµπ!`ıw‰à∞óá0∞HTÌèj ós◊›q=)c_&∂ÎëhcÛu=icˇö⁄ÿÏ¡]O⁄y“∆Ó1∞Îè≠ç›qÿì6v?⁄ÿÏq_˜°çπF}=mLª{wßç›e ÿ√hcÇ,˙§è›á>VπÆxﬂEQVÎ{ÅAQta4
-Õ‚¿ñ…PGı0åí*iò¡Ö{Ù›ÜÑ@qvBﬂ˝ﬂˇ¸èˇB|È'¨8‰ˆ>9…¶√ "oßLÇ^N¸4ÂA
-YD0îÉjí4¶Ì"/´ª£˝äj≠«· «ø"@lVU˚; HQS	˝.FÒ4ÆÜ çÿMÙzÒ0…{∆`9Ïñ‘áÕ& w˜√iÇ‹„◊éµõxN^YåwP#Áîí9[¿®têÍ…Aj¶™≈ºÑì+®ÃÅŒÒj˘b§˙©Z òMSS•ám∂6öD;ıÛƒ‚Av≤®T.â∆l^^NùhXb§ˆf cuq~SÅ18¡ΩEÇ6
-π⁄°ß'uQ]^Í…ùTWÂzï⁄¶™k4mH/≥‰@.ïå⁄cïØ—ñR5≤hﬂÊh’ò∑PJÏ$fh¯≈
-J€±πh`¿⁄\1Ï∂ÂçVµøkÿ‘ J¡ß¯∂ô´ﬁﬂ∞ÿ:xt¡'l‡/ éù√«˛¯ÍÌ5m1√≈µ-÷,åÙ˘ÙÉ|}£‡±-b›åÜ´í∂©∂¯uuÇ]Åﬁ~≤ºyÉ|B9OúJÁ‰Ù
-S£ú≤x‚{…`ÑMóÿƒÀÂJ‰» ˜Û7:xi¯æ{É?S≈F{Ω∆jµ∆Ôt\Ñ@Vß-—îs—H≠ôh¥ós÷lÀﬂ5TBCÙ≈M5£rt›üúØ˜™Ñæ
-%éˆ·Çhb,&ÚG’$[ˆúX‘e‚≈v‚ü´uEöTb ÊÓä"ìrı∫≠só¥K¬Å˛b©e}≠k∫th⁄÷ {£lc¡#ƒ¬óG^“Êﬂ–®§òµQ¢maå3ﬂﬂ5…˛ñƒ¨ñ)ö}XaNV+¥&Ï`∆îR©ÉôjT°∫®eû∆ûiºµX˘>s⁄WìÉ`bkU3±ÊòÏXæU+e1®æ)&\ﬂÀÆs¢ia0U]◊€Ûö$X√\+íCŸAC/vlmü˚K'˛’Ü#Æ„HÜa~&öﬁíÎ$%K:(á∑‰xi–èa:¥%íi2JÆ√¥Ëp¢>0j!<X⁄^¥Nb_&S0ﬁF√ÎZıBßX6nÃ$aæŒ*gwÛUïãÈ0Õ¶©Sª∫–Tœ,˜ΩtTÙa™i¿¥…E)âµœ⁄’So#‘ m‡bbæ'|åêVìs vñeDŸ¶yÑº
-§≈B⁄ÿ•	a‰ŒñﬂèÆ™í£$πÍmì˙î=†)A˙Œœ#‡“GπÓ1ÎâóíÃZΩ∂∑Rqt[kÁU!úÉóù /**Ñ¢ˆπu®C%ÕÿCá™LÈs{DìÖ-s◊`ó˛Ä%É_ÿzÅ˙èÊ¸F
-†…f<Xã6¶=_ó}çYaV≠,˚π'k˙Bv!gU Ô
-íKè©Ï®
-¬öÍ Ho}AK4sò˜Ÿõ©Åvl·a|Å⁄v˘ÁC”±è Õè˙òˆj#-UÒ˝y˘ó7]‘rK÷b“1õ58õr—t—v\µçy¬0◊dSÇî«ËÎ@◊(Éã¶«ºø-(t1¸±c°^·Ô6]l]Øoù™ÂÖ·{Ø
-OO—Á{?}†]Ô√c?éíÏÿ«Ë
-zŸP≤âæDè%ºø÷“+OÚVX4°äd‰
-ñ≈GÄè∆NsS÷f˝ÚÄfS)Èdø2˘∏oØÇÚéòÓ´	=ÈH"vZõ 1£Ÿˆ¿Ä	4Ò8ª‡úı°z…èé∞≥#¸çb—_ºQaƒ⁄¡“F=ä%TŸ)©fEé%≠6-ÓùgÕzÈD™§¨TéÑ04$‘‘ô«!e“Ñn,XX ¬ *ß˜Ü,∆Ã„¶˙Ür®^z±L≥Ω+U∂•˜hRP‚ççHjée÷˙>∞Z8'≠…hÔ\¶¯w.∂7l´®áì€≈(–IôÎΩÆlú/¬Ød«;–9:*£F ‘R€VÕÿÄƒ⁄DtûégÕ=®Zﬂ¬Z≠2¸RêîÃ¥≥·FŸ˝òÅK0ÒS“:æjs°CõK£5-ØlZV®¬◊À–y@ox∆d‘˝ö !¸‡<â;¥ahá;®îtõ€Ø!hÅØW‘y·R[-’7À‘Û”(&«—ÂM¢>¥<ñÏ¿2Ú÷û˚‰/-f=6=æ"o©ÂŸﬁÒˆÆbyW≥∂˜:w6“»≤	ãŒêÑZ‹ÌŒPûÃ∏¥H≥ãÀkªƒW4ë^∫√Ø…HZ~Ñ¿πæG∑K‘ÒÿM†Âß∆S7@•2Ñ˙eY¡*÷V[U:œø¨‰ØãÊ+Œ{€œ‚¥ê±Áê˙±É14FB0*9Y≥∂ÙbÁ‡„´ﬂQkÿzxÊ}πê‘•‰5#‰›ìÒB˙kÌÑ‰Òkæ3Ëé9£¬ΩGAO˘Â+Læ8¿⁄7q¡‹≠˜Ω–M⁄≥4 ò! Ó˛‹ ºÂcìË6Ë/ÙñgD|ÎÜ2ãgd•ﬁ9˝ù˝≈f ˇ¶s‹∆ˆ£	µ&bÇ‚" ü‰∂xÏx±|†ó£3Â_‡‡ˇ@u”QˆÆb=>–•ÒMˆØbxÆÜ˚…ﬁFQË{mÏ6⁄πéç[ˆ⁄»é.vƒ◊Úª∏
-ÜÃttƒ∏…à∏! ºrÅtØÿvó„≤Ÿﬁ¶◊„8ã`ƒä∞˜üGvÔ|•A™Uø¢:Œ)Œp\UOÃŒ,m/6XìF2ø˛é2›-ø\ö¸Û,ãz/é†{ô”B\ƒ( 
-{=~ö∂>â“Ã#íû84&2ãP°>fÙDq˜´OÆ≤€–œÖ@.«ôhjüû]Ú£`mühöµä®yÅûÆ-YΩG9≤ïb§!&¢*Dñ1kèOÜ§zûMÄ,=PŒÚ#Ût§LøºSA≤.¬Gõ¬É∂J—økä∂’Ö≤4¥fîéá:(ˇπ%˚ß{Z'v±¬A—t≤ô 2±(n‘jëÃó Á[Y¥!0n:SÀÅˆO«µıs≥$öú“‘UYpJ≤DrÓâˆe˙‡ñ∫ˆ9ÏnzSﬂ·ôÿJRÛÛ·9NS ≠k*\B≤H8Lß“Û∫9›≠€gÈE≠ÁáOCÔˇY•‰p5'áÕ|@|‰{ÚÒ—ÌÄäüõô‡±îËªk_]¨&7“˙›∫ë¯t8ìr√?Ê9U7´ÆÏ5}[˝ÒX ı„Áf^™pﬂ'©˙ëöe˜êÛ!œÍ	"B‰∑›ƒ…¶∆Tî‡r∫ıöçlÕÄÛ0B,˝~ˇ`g˚=Ÿ9¸pt¯Ò`woó¥wÄUÌ˝}gÔ=9›~˚~œÍV∏—Ÿ&Ñ‡†Ü,oV∂Lh-kÊˆ,bä
-Èø®— °LB≤ê5qH´z	¥är+Ÿâ∆1b∫√Û≤uä0MØhZÑ(4‰hÁ‰õ‚ØÕºæ$E„€ËNbÕå¸ïÉ(Ω8Ô—≈rVq¢∫◊å|oËÇ¢õY¢êí‚ÏÀXôRÚ(7B$j˛A	/3k≈:‘‚å.;/•Ï‰º:v%˙maÎœõKŸhŒ◊YÜ/ 47§|x˛wb1jı\"Ò_◊·æƒ@ñ!d3Îc§≥0C@8¡Œ5·“Ñ%Tç±-îä›Z°à≥Kò33ﬁ≈IÜå<:r…®é:‘I¡:≈åxù:.)Z»YaÂ,ì√NÃ÷^œC˘rñ2'R`YzOøXA7©.∞—ä‡Ï%7¡ó_õ.Î†àîmºÊ±∏ÂﬂJ&X∂ˆ˛~¥AæV/›∂?±`ß;_∫I∞µ™ë∆BÇP/òQF7ßv7ßxv¥}∫wpJéé˜:G€;ﬂoK≈≥£Ê‚ô‡√{¬ô—≈?õÄñ?=´àvD7cú:G¿‚Ïálóø¨à&.„è/§	0†”ƒÕ∞	j"‰<î®&Ñ°‹è∞&ΩÄCÎ˝	k˚ì4K¶j¸z¥2õ >M§6ëﬁ£ÃV∆5=©M$π3O±KnMÅ"_”„î›
-“6ªÙˆ$à9ﬁP'à}8‹›~‚ÿOX§ìº=ﬁ€˛~˜«Úv{˜[ª vO{ÑàcÊjR ÅVn‰	ΩŸ€y≠ŸAo˛í
-¶ëòùWÆΩZ“IJ„°π<QÂe;Q ÇéÕì$º¢÷á4É$(¶œπ6(µªjäÇƒ5y"ıMêŸÁ»ª∆Œq4 ∏ â8öê˜^öáe∑j"≤≠©"l”\\˙S7üTÅŸaA€1œ†ãzÁ”‹}Ω√ö"»Yﬂìõ⁄ıãØ≥è>'Ë
-^.{[}≠
-Gˆ=Æºdˆc©˛œˇ¯œy,Õ°Mˆ≤b2úa7J¯ﬁ⁄Ÿy9Öñ¢q‹®ÃàÖ’h…3)÷¢hP,f=àäç^-\£‰ÿï»±lŸ#£]Èﬁ∑Ã†ù€…héfÓHò∆ı¢Ö±2â˙õæ¶ÍΩ†®´6∞3ÚüYÚyœXêB¨AŒKRò™Q8dÑï’Ï«[˛eQ=`	+F%xp À‰“º…•#:´éòéãYÎè’\:-JÚ‡pH…"¿S°§ZÜ—l<}ºK~ä¶d §Ó2AÙ@¿Ú”ë<Dﬂ£K]ZxÉö⁄˛‘“oe≠myR-%)C¥  ]Y¢‰JÈ∏ÏÍ$¯Hà!Åﬁl*4gé‘eã8eà∞xV‡[úZ
-/’6–«ïb\±§9\XI=ûqL@yø£d%≈D‹nóDìﬂﬂf?|RâîJbÑÔªH(π≥4íªJπ´îÖö8•ãíD¥√òÊoíØ‘˘¬œÍnq ¶0&Ü‘å>˜¢*ëÊãÓëìAå#Z&o∏PMˇxœ ÿHíGÎÎÒù4§mN±‰ÄÃí˘1∫Ü˛Ïf»#—f{TV ⁄\2gYŸæGdï´ö;¸R6ñU*èà"<7É±∆=yëÿ⁄¬„b–≥Ω¢¨>ÕCì⁄QX†Lr}ôæ¡3‰èiÒ6ﬁæ	ÑÃdlnˇ§œﬂ®ËR ◊ØÙ´ÉµJe¶ ≠µ‘
- ∆⁄¿¢◊•æN0+–ˇÌGL¶¥VˇÆü~Vw‘V&ÿ¯C•ê?˚5åÉΩ1N`”«{ﬂÓüú√∑√rÚqggÔ‰Ñ}<‚l°Ñ‚üs§ó
-¯ó?[ÙöîÙˇµÛÛ+¯¸"◊ˆ°©ÌÔP÷mÓ˙˝Öﬁ…A»Ïl*˝«ùBã±¢dö<>∆<(ÁW©∏Ç•©‡∂páÇ˝öUÉ≠€òº%ür0ôK“:ãU‡´15T(èFı≠¨ªÚMµ˚‹–å:∑êu∏◊∫ÚÛN∆1√Öï≈¨‡)Z;Ú¢ÈÄÊﬁg X)s‰•§OªxhÓÜMﬁ˚púT[A≈N†”ˇ-Ü¬¢:∑‹Æ¶¶ºEæ^¿!ño+Ç7‹:3®f‚tΩ]2DÚ±≤‘®1†∂hn5ºcùπ≠Kõ™öhƒÓÖ≠ô§u˘·ÔecÙ•uj©∂ÿl'5Ær„.Pw˜cﬁ^«ñ’[û¢¥eò’)k0ªÔàÔµBìMd™µÜá=ÆÚk£x-›éãka≠Ô çº*x≈¨x’]
-‹Çº≈Ÿÿxhï°’c8¸û,bñrU· ]í:˘pBNÁﬁc[—”Ωù@6h∂t∫ÇÙîéSºï›‰ $ı#ò◊∏Îü√ø¥øQ!£ò◊™ûbÍGÙí∂?dñ0@πIµk=çKÉ’H?ñ0ÄJ;À*«™‡2é6¢qxΩ¢Î´Y…∑"∆Í≤EsWå G•@Œa]≈‡∆€, »Æ;/ücÌfG*T¥®ﬂ)Ω%_ñË`zÖ·W}÷Ω/©Îg&tâ€ëwjHQ ]˙^6aQÚÍ˚t4ê!ù™;Vµ¿iE≤ •»y•ªK•4∂ùh¸Û˝è¶§B+säAr∆aá°¿Ê	kœcmPâ9Ÿí(Lƒ– F~ùs&å™àêï ®	Á>‚ Û¬‡W_4N"å•L4‹Nëok?mØ•DÂ À≈ö∫7Ü>≠dŒkG+ª∏ œ}å#‹¨«ßç∫YW&˜<˜ßŸƒlÚ∑bp»≠”<vï&Úbmlã…wßßG¿≥Ü˛Aq˛{-n—üé˝≥rÛ¡ÀF›≥0äíËç!!Ù7‡û√h8ıo‰Ω†+ËŒÙﬁE!F§Oc¡¸!HSVRû≈ Ø=0⁄ô Ûh≤æÄ"CEól¨è1øü›9SS¿e}S@'√Â¨_∫˚à0já?≈z†ÈÙÁﬁ„/œ≥™6ñqj‹ßOÇ‘u[ô/¢œ\G_Ë≠WNﬁZ•A1#Ë“B˙R¨Üí*NhAr#{8c‰cs¬}66;1 Éã≈SŸ#%£Ä®Â`EÆˇÒËú9∂óy.µìQU¥‡dˆìY:HT[jîø9BÈ©ì5Ô&á∂Ë¨†üAJ& {>ÉΩ.ŸOYÄäß°µQBﬁÓê÷ªƒ˜qåùëóú˚m≤ê˝∆	bÎ¨b/ñ++“,Éu≤∑c≈ìw>÷w><⁄≈øûIÒ~œñbÅﬂºdÿ&^‚Á´ö¯„8£;À]ﬁŸ&è‹™¨Ω¨˚É!<g≈eÙVO√å2õgÂ„∞K∏) S∏mY‚{4¨Ûæ9‡ *oÕ¢¢·◊d»;‰ƒ¸‡lÕ3¯ÑŒ√¶
-ÃˆüµªÒÒae,º«îøıàõ÷´' Â+ùUôı%`Jé‡‚—©'ÜiQÆëc∂bÚ§›…Ó˙W˛ tT¥ás,°àIù∫œ»¨˚ÀΩ¶3öq¥;\nÃﬁ3w™è2;.ÏnS&RˇÑ‘¨†@mìv}è'´ãJ®«%ù„ºxj §y◊œº dAìÎ_„io1Ò4âC_˛€„Ö≠ìÏ; ˜Êœ~sà¯ç3®Ã·ƒ≈◊˝Ë—<ãú	JÆÅã?zóUÔRa°ôﬂˆ˘]©^w„≥q6áJì∆·≈}™]òZP§X≥7Î∂JÁ÷Øl`-®X¬ˆÿu,Sü´z›«£`˜/ú˙§≈¢¿–Ç¿∫É¥µ/çGÂ2JX?@É-˛ØÔ”ÃÜÂäÙ¸H∫[®¥´
-» L0{
-á™Ë.Ä0•Ìl‚7z˛Ôˇ¸≤™ﬁ—(*é
-ü¿ë*˙û∞C™¬«/©U0Î5#„¥efÊ!%í3Té˙>¬˜%É˚"	AÜDÄÃ√ù6Og ÷zÓO@Œ¬§Ñ˛qLº…  Ç}Èág®L%wRÏ”Y¢∆U5]%Yu«Œì Ù¯jig}˘uï™∫æ;F z}?î»$≠ÍQ±çÎzçÕï>9·'ifÎ"∞7óË˚µ3&Ò4”Œ0wBsúÙô/êpΩæ9ãl"áÒ¶°vLyìs∏ΩÂÁ∏˛N~∞Âw3Ä¨K6§I≈!†√ˆ…O^/†€G{ó∆'õÎLµeìïR"”GÈyÑıO”çÇ5≥Ø’NÛ‘ã/˛	V}›‰u«Pˇ¯Å‡M4l§u˘lf=·È‡Ô	˙æ<Ù°!Cê©<4Ï·\p"≥¡ûÙÏÏi‘0qÕ ˜åL—Õ¸sLµ\ô√K5≤Ø
-7YÉwÕ¿%Ä±1up`Ä)ˆÄ =jqÃàXf€Øı¸‰Öæ%r‡˚ YsÕgaÀxisâç·0¸IÊùù¡Ûª— °ı∏ß1\h0Ùè\Ç]"ˇ’˚Ïe‰lÌ¬ñÓ◊ÉRÅ•¬o∫ºÙµ¡0|U;—4…¸˝$ˆ©‹MÈWÇÂØÏw4xŸ!h0"˝«¸ÿÊCwí†ı#–våj7Äzè∞z¢ımπEóR/2+7P∞µ\©°ˆ K‘¶ædDÆ´Um¸ÖÂAs¨ A^Ê@ë‰€E•É ÇÿdπK`pm˜b¶¬éÅ§ÇÈ_∆Ø4ãΩƒú$4£WÈJ;Ä
-~¯h\ÜÌ’9LŒ(˙ƒ3¬|R˙lÀ(n&>3|¡§˙\Aıüq≠P¡]˝ 	ï:6H!±–dÁíÈÚMX‘<|{'nç”Â•∆È≤˛0NóÓÛπ‹tòµfq∏pÔ˘Ü–l K)∏}!Ã.bÿÃ‹ |‰'cobà}º/C˙ä^•©Aöß”nàùÇ∆≠á@™ŒCì¯√{wœ‡;^<ﬂç};MPh,—o˘æÃ˚ÜRê¥ÃŸR¬Æ!èÓ>}ªZp«#6gq∂A0 (Áûê|Ánê’9› ∏›6ﬂ’ÇøÀ=ÄÍ}€†∑]GSíN˘óe'q	bú¬)ïµ1Èò‹∑∞e¢úq÷=™f¶ë÷˛Æ5~æŸ–˚ª˘¿mCêù˙k’OYçÆcaÎ5Ûh„Eo¿X±7¡@¡æO`è `ªå°¨!V¥bﬁN¿yﬂ°ñY§æOı∑©d5
-É4ÎÉt@Ë_¿dÇ°_¶ì™ñ£`‚PO¯¬`k;ƒ7e‡„›I(ˆ@
-ä¡3∆Å˛6ıßòıŸß›◊Ñ¬ç©˝¡∑∞Q∏{ﬂà’+1}W˜ÿÊ“4|HÃ®môôÃc•“ööMï≠&u£“≈ï%igµå‰Ë´⁄]-Àù‰¢N±ß¯É=¸ \ÎD÷ÏGìü&^:j(¸ˇ‰ßœr|xÙor˛•bØ¶Ú7±>Ï€(¬îßƒó3˙8¢æ™˛*(3 ˝_M£î˚MI1ÜZœk‰~w—{µZBCÕn£}MpÉ¶V«2÷ÍX6&ÄV
-wº¥ÒJù~KÕ÷Õÿ+9
-ßJEÍ0©⁄<C^˛lzÑúv‹g	°.ú`&Ë4‘g—ËrâV⁄.)a“‹™Éc£ÇÅ¯ˆJPók:æÖOKe‘◊ÃPùßMÁ9*:3ËÔæBÑÜf˝^™D‹E’mçÛû4´¢®,8a(Øz€ÿp#ù mX7”ikKm∂±"15ﬁ"L‰ÌôeÛyQ§úXW≤!8™	éXËû7oÁ›øç’o˛?   ˇˇÏ}Îr‹8ñÊ´¿Ó⁄RÊîï∫Y.YÎK»∫∏eKjIU=ΩnGõ §$Æ2ìŸdJ≤Z•à~Äçò≥±—±O1œS/0˚ãs ê àÄô)_zä?™,&	‚rppÆﬂ©Wˇ∂RÉm9Ö–Êº˙b˜˚Fû'gC ,8ON«Sr?õ…Öö™æ«û?ŒñÿK6˜6ÕÜpLa7Xkqmù˜tû-=Êˇoœ4+gı'˛ƒÚ">1≈¨uMR#GÖIJù‡E˝¿J‘¨&˙‰„(ªT÷£Qî]Ù„‹¢Ëü–ã∂´Õ—«ÿ-]¨ªàñçDÊ/Ó;ô˝˜*ÓFó i†ÈE€ü¸œ\	7¬I±ù¡Ü`-’2πeäo¥q˘„–j¡Æ£ºLD‹?Ê_ /Uò0˝¶x±√éœ)_íAÌÚ·Îs~‚éï( ≤‰äOdä∑ì¨2ËœL@ *[∑bé@Œyo6âù⁄€BòAﬂﬁ|60∂]≈˙]õ≠¢1K7ö5¶.≤È«›ãazÕ)Ó¡"4Úﬁ}[à-s|…π0ío%…Ã¸k†nwua+ÿ∂Q®∫÷˛¥›2)H€]•ë#kª> áÜ*nuöH¯b4f8S∆Ò¯<ÕªÈ(Sô	±≈¯;°‚,∑öRGd≠§ΩTn≤]dÌM“°¶“•e
-æÿÚﬂ*]ZÉuÈK.ÖdLmŸ8I¿1@CEï^öQ• œÁ@≈pge‘@˘¨&û—•y´DUn±˙nÑ0Ø¢ÿdÅáa„u÷])∑À¢˛≈¸ÓêaÙ»Â»‚È£úà÷£GUÇ±:√ﬁŸ›∫´'˛◊P$<ò6	k¢&îﬂ€z¨˚¸Ñ∞◊ìákˇeGÉããú^Ú'Ö¯® 7Ñ˜™√¶á–¢y(D4&≈Mp'*åÇ @ÜxµüûÂêÛvÂ+˛Kë≤61PÜ)x¯‹iæmù¶k°ïËm+ß©/åUÆ—Óû‹∫e:ônVerH	•ì‡¸ˇKvÀ:ù¸˚ëXÃuÆ≠ﬁ1·ÃÛƒ—ﬂ~ .S«$.ÅáM◊QKj
--F®Ÿ7ˆXA˚~‘ÙlÎ[¥Ô∫z[¢$1ôèˇ+±ìVK¿[$\Îÿ≤ë;P˜kπ÷∏¿ı…∂¸çB!òÈEvSJë€P¬+kL˛◊ˇı∑ˇ¯˜aÉÜ´û¡Gu˚ó˝k=πFÕÍº∞ÆÑ«‰¨¿ølPÈçµ+1Œ'Åæ∏∂æ≤»6ﬁ≤_ˇˆØli˛8xÎ/¶%ÓÙÂØvß/;w∫¨J[nHy√‹ÎÂÌﬂ6{e≥óUÖæ¯ˇÁ¸oV1MNµ◊óÔıb5?«f_ÏÅÿÏãO≈M+ß4I·à¡‘s∏–ÏGsgÏK!·H≠jø-: *,Èseòæ◊¶á/TjæÄ6ê	´î®ƒË‰T_jÍ °2£–Nåßˆº’ZÜ°´“ ˇ {Æ“åÏCL∞◊DöÄWüBb¯\¡´ß®ëTmI_lòˇ®U™≈äEB„í˛á^ÜT‹Ê:Ç[C»m}’¶ä^ò· ç71©BÀç…1ùIViqfT(;yOî¯’–_∞[ÑÄ¥∑Ûb;Q	íÍÇ°„$˝XÔo“{˛P£(∞ Å[€à{FÍÕc.U∆„˙˙ë°,)>•¢ºE ‘5%D£≥Î≈DÈŒØ™z∆ÕT›iDò≤ÆÁõÛ^ß'¡§Œ«É˛NöãGäg6y`_ÜW©Œ≥∞]iU>Í'#¥I„Uç‚-|èíU6Ñq&Œ40í∂UŒx…ñô z≠A'.¿õπY+*}4F ¥ôû1yúÛ—_yA•Î.»@=ısﬁ—Î«“•†Õ3ˆ&0ZúòZ·èÒÌNùÏ¯©≥ï+A ¸çSˆâÇùﬂlºb«€G«GlÅÌÓ˝Ãˇµ˚À±ç≠üw7∑©rÅ#U9µR-∞9≤?·÷-ä¯wW@%öùõ˛eıÛVPGØ'°—∞î¿'Œ˘ÿØŒﬂlÆ∆{ÖGΩ1:•Q2HÄ¢ÀÚ€HOk	»b°Øø?âZ3Y¯ÆL~∂˚wx´|K!róÛ¬2ìπ‹i:oqònîÎÅo/˚RûdµËq“e¢±#≥	¥ÊíZ”ì∞◊Êy
-µM«ÿª”,∞n4é˙È ÆˇÂíüp Ñí8á¸¿àw:/"ó¨Ω˛"Œ5¶œ©M`≠4Q’◊lO‡ˇ“Í5l ˛Ç9Û‘xt9 ˛´®	S¬∏ïZ‹ä¸uIèˆs:˙ö⁄JÉK+ı±–H™9ö™≥∞æ’Ì\* ≤ú2•0k<œ^˛πXYÚ\¨NÎñkcíàﬂ$˘∏5™V8ow˙Òl|^sgSë¶ú¬Zd/ÿ¢=l›ÂÒ;Bú˚Tñmüõ#`Âú´\òÁf¶Ëé˜ J“e¿ÅØ∫∑›»ı†cæc -W  Ìíπ-Ã›öñ∫R`¢_‰∑%√¿W>º+X>¨[='ˆR∆µJy$‰ä4o‚qá·‚…c·$Íñ9ƒ.»˜„˙hz'Öxµc9⁄\ıLâ@iÎ:ãFEãªñó“⁄çÑY°≈÷poﬂl¢Q´#ﬁÂcxƒíﬁG§O€ê\á9]ƒ7œo˘ÎvÆP±^9∞¬˜¨ˆ^;,iY[¨¬Ñiïm¨=±∂í[n’Tê)Úi3ÄÀœ‡2òÇP?è”≥≥~\Â™Wá0Êw–/Cû\G∫vN‘Õé<B5˜˘G1u7ı,5ôî
-u—ÏD¸J≠Q€
-\ÊOæ°$	°∆u≥¥œYD?∆®o÷2ûwxaZÆm_ì/Ú^¸˘œf:p»É0»ãÃé4ã<
-'#—™#Úà!Üß–.]ˆ˘"F"è˚•y¡^Â∑M¯zù√ßù1æ≥R‘‹Ê´ÕπGlÓÕŒ1¸ÔP¸ÔM2JzÏ KènºÍßièKëg|(;QjÊÌC,i8gáÂö˚)Éc¯pﬁ:ä≥À€ÑäO…êﬂÜ{¸wÆ&uì¸Ò√…∆R˛q|ÙŸ`üØAlêmú«CxÅãkúH˛y˛0∫Å?∑7_„Góc»x·'ÿ∆Œ+õ€ˇΩ8ºÉEÚ∫tíºÂû≥ê3'G)·Ø„™í¥⁄ÌN2Ïˆ/{q^~Ÿx¬Ó&íÖ∞ÏáñüY„—U|ëf±3fÍÂÏÜpı€ö3…ÉÒJ•I¬°◊Sq.‚*óŸÒê
-n—jÏË&P”‚gó‘R1@ó⁄ôiØv∆Ω»◊à¿qŸ¬_ƒEüeRê–vüé_ˇ˛Øò9˜›úG∞(ﬁ/È—#â8OHª„3Ùp$$t|Âz@˜@ñQ ˛ñ+p=ÆnÁ„t ¶#""6 6d–≥«ÜPÆ6gKÌ¯îŸ_Ÿ˝o0(KÈÛ≥ËDVÎeV,°Ÿh¸ÿNÉcZ+BG4ı”®üF‡i,mvy1w≠€æ`c9'lıO•ï≠≥≈;Àéùwò˚ÏˆıâsTJ««Â∫Üâ¢\:
-‹ÉtT‚h¸JÚÀ˘¯
- öÑﬁn¡pDZ¿Âé∂Ä´O=$√2™˛
-1XäAŸ`»,ÔáA€€#äÃ¬˛¸–˛ääs∞4Á0˙öN¢'Ï…Œ÷n[ó,ú‹B*ÒòÆ°•?^´	˛ºmæÈÊo‘?¥Ç?eP…Ç57Æ€çÑãÎÉr'⁄ó¿lÑ“g…†’Æ
-TvyJµ∆≈]¨˜ [lõ˛ó_ÿª˜Ìé¯≠5Ü>ëgŸÏC¬Iè;–L.‚–ŒΩ)Â?xØ]}qw+‰¢+|†ƒ/…)k©qVlKmr™Ω'\6]IV∑uîˆ(µôÑ]ä‰Ã‚⁄K9ôçªÄ'•Y¨NQ˙OÜ ,’a?Â†∆„°åL
-“¨3®(m&ºT:NÖßäã$ô;jÜÂdì,LN•≠âûÊ˚—-¬hëgÿÍ{T∏PÌ¯¿◊o˛õ€ÇæÀ^›Ò€`O#EPqÖ)%pÖ[õä>84∏tÌD?0–|£¶åŒ•$î;Å⁄&ã√/Ø™‡]˝ˆöœáÚ∏[ÂpœΩ{èNºk¥Â1 Àág^E¥]9eÓıÜKì+ƒÓµÜQ™«∞ôó]0÷ﬁ&ñy>NmÂE9«çßB!ßòVøåz∑⁄Üˆi~Íí‹¿ñ~†¸∆	R÷Óy¿≤¢ë;GBe|n¶¯ˇÊ&◊¨^£±öåqq¢4Ç`©Ê0ƒOı¯ruäºãÄ•7ƒx¸ìÁ_◊∂˙tµÂVÂ±Ú%~πk€Jx–ë"ÑhåQîÜÜˇ*˝ÿLs&,±ÕmœO&≥=3}*2B∆ÜW¸…⁄tWáÊJ[	*¿πz∂P-2»Ö”Ö˘î
-¶òòô]¯j3Ì“x9TµLá?∆7[Èı–ì= àÎqáãN(§œa%”9ó®ŒXåŸ¸ƒÿäO£À˛ò÷z‡bß1)πﬁ°ÜEå¥*íRP’óg¢<3Iÿ@ãˆ…∏!r©xkNz¯¸)√C„¬ÓVPa0™◊`ëñ˘3+Ó..“§[«MuówóØ!ó2ŸÙ8ıÜ€πOûpsâ5gD>ÍÆÛÍgtîü,Ä7äP¢èc÷⁄ÓqÖ˙ƒÍTc#QÚ°QGî^õ^Áœoó)*ù»∞':?ëMO*oSõÛH£óÓjYXv1•%í)Ÿ5πFù'Âgs+q;¿ë·vıOÑèO•É∏ÒÒ˝QÀÓlËö…ﬂ*IÑ∆‘!◊hÂmFx˙àò˛È ÃÃa†A¯+çLﬂ∞Rïö¢œ&…ﬂ¨µ9IGqZåF˝ŒÊ¬Ωdãágqh9ÎÏh{„pÛvºˇ„ˆ—6éw∑˜é◊äµÙç$ﬂãØe~ò∞qOô«A°Bø&9¶È⁄ú≤ U)!™d’"˚£ö≤QÛR»û9R9&…ﬁ0„T‰¯„ZÃ¥V.„SdsXåÍπBÑ‘2&ıcÆ6˘Í9@ÂX1í0Si6%Ï>ìÑ¿≥ÊïS≈|fIï‡Å„ê–⁄{)l“Ø‹)j∫‘}cˆÕY]^4≥Æç5∞‡Hã}Qäê~ê«Vú_R„W™!…+A9+®Ìjs^¶«g,"è<¯ÚZ&™®ôxk÷4Lb1ÔŒ(ãeóÊÌ!È,ËüCQ/øV≠µ™¶˝≈•≥nyäá—™# U^E0jçÓ¥X4È0®9‘Sc"sØ∆CÀ8=?]ûs˘†,Na≠ÕÂ ”–Åú2a¶IwY°
-Ø≤£Lb´?Â±•4äÜ4©#◊í÷‰ANé‡™u@˛r;4ˆ›Ô/„ÏÜJäô©®ÿ¸Ê÷«.–	2∂ô%√C≤J%µ(ú“>¸Nùò$”ÿÃbç…£¿]öÑE—"áµÇ·PKÀlYN—ﬁ®2RJ£†Ì‘>+50¶0X∞§H;äïvÌDàX”≥Ü—Ãﬂ"Ì»`ÿÊø´(ïèˆú-ª¨€ßÒ∏{æwﬁ›‡ﬂ‡†µ‡à”∞ﬁ•f)‘4ﬂÿ0/Êı/»]û3Î 5
-Y]xÄ∂eå˝¨Å·[u∏w	!S¯^'ãëÿZ⁄Z8{Q!d‡Prï^ºÖ`íã˙éEà‘∞Á	êbZÄºªó∂q˛äéÒ¶B^. ~ç…¬∆ƒˇÚã£°ÿsà"˙q˜!¯›ﬂØëÔx÷PÕ®€≠#|¬J%áøì•á¢ö–&∆ÂÙÒQ€§àÄ⁄ä§ÃùãÂ¡Úc∞VµÄ‚Ëëò£v€µæ@HùNß5<Ô ◊q=†°a±Ò¡§á∑FWú»ä§ÔCª‡^5∂)ñC51≥Âhrü`m/R‡ˇGôÑr÷ÄBB∂‰+¥ÑÚHS(Kç’3g˜Á’Å¡
-π∫TNlb®)Åárûh:ÿâe†·Añûeqûc“¸∑úıDc.¬æÂw¢≥ÿ¢‹∂ ¨x9[í)Ø∫˚&Ep$êvX≠∞jÙ•I<ÆÃk><óf1A§>£tè = \ª†CƒÍe,ÑAMéV[r,ƒºQî°â@7ó¯/£dX¶é»°áTRµ8Hdçû"¶HêÁSnodÛë·S“c£Ù¿!√V⁄Éå˛JdÍÈ2`É1I€Â.í5õõì(C_m’Õb%òÓ¡˙≤V`ä.ÎªÓ,„„·À:?NÁ3\”
-o∫J¢˘qıÒ˛H„J|˙∫JX£À~W:Á 3∑´Øz≥];™Åõ∆`Û ©tØûéŸ—YãzIìπ$Ω†Õn/Û#:¡›H¸!R≤K6«Çq*Ω(oÆlíÏ!‘ˆ·1	õÀeΩò˙≥X!˝°=X-∏d#Yq>?|!“ç•Q¥4õ~À3Ωˆ‘nÙÆ©t©¨,c'|Y Æ6_“«l5®i5"Ò> ôq¿
-ÚuR`, çÆ≥UJ÷”jµ˙‰%ƒYÿ±Û9ƒ¨|Ô≥X˛Û•Øìg1òõºèqâ™xÜ˝‚˘rísëü?~í¶∞x§U"ΩÃ∫ûYº{˜û/¸ª˜Œ%Œ9ìŸÂG;í;ä«œDì/Zi,,∞•é®Ñ#jr6 Jÿ1©1ü&Yn7ô:uömG›s∏Î≥F<Äg¯kMÒhRüK ŸD©◊ï˜Âñrøœ_ŸK˘Î’FîäÔ~7…èKì¬•ÄkMjjyıÆn5(5z˘Ñ°–µ›ÚiΩã˙}Nn@%S(¶û…ﬂ?˘ÔvEZŒÂ®æ≥_C#•∫(˙?ª6}ky†Y`\/≠™8ˇEi„¸¨¨}EFÄgúŸl˝†∫u†øÀ=›âzº3¡cdvﬂ]ÊÁ-óç@c˚¸#v$ã ìÇÔÀy√Y“`!+Ò·õ[ﬁ‰›ò>ÛûÎCÚ‘Xg⁄˛Ù>/**·+¯OˇxÜ»7ﬂŒ¡c°jˆÀŒÅVPÛ‘\oä„e]Lã8óﬁ¥_v^„mx›¯·(˛ËjéCµ∂6ŒbKC¸Óπ‘·ûSÎΩ∑ÆÁ‘A5ßKäåÜ¶ñn«)µ¨N©~
-0ú€o.d˜L,JK#Ô°4¬#i4’Åd·U.∑Ç⁄‹ÁQnŸ‹Â˜=ú¨~$πåäıïs$ùÖle}ám`˚Óm∫u-˚ˆû7-Ï99üfœÆ®=ª˜√¶20πwÌΩ2J∆êLaüÒ∞xˇˇT¨°˙˛∆xÁ˛S∞á≥òè8O˚WqoØ†+¯IÃÄ"ŒGíP⁄◊u"Q (À∆K*˜É∏IÂ≈OÃõ°eú]Ü1%Ã…-˜	ò
-ê`ÖN¬`!º∞ ı ≠'$ƒj		·ÃUµ¬• oà‹:Ç
-$D 	k  ıa:Ë∆ìi˚«Ùíu—ÑπáÇ≥W˝hx!*Ë&C∂ìfÉá%∫ÍuñŸçï‚±*»<y7C£kÆ:]TÆ≠ùö$YT*ÔC™Œ‚#∂º*!Xì ¯UAAdüûW18	¿9¯º’N¡ƒ%¨ÑS∑⁄x4)8„jU/VòaPà≥,Ω5áù.Äººƒ<KUí=‡l‹ß…1(‹π˛:Ù´ÖDMGt-Ëq`ƒ˛;3`π≠R˜„ä{√èRa7∆ØY
-õ∞‰e4û™(ç–/EDºW-çÔÊ·ãﬂU÷(ä¡x`GsÆ4∏∏∫“Á∫,‹;ﬁÏS˚⁄jBÔíV°”=è≤çqkåc?¡*
-âÀë‡üIGÄMD«L¡V<P’¿}ÿÅ»}ÊµËRΩúè®Ä¸aŒ˜,†'B –Å^ÒF“Éµ±Lx∆5'•ö≤¶cﬁı"–Ñçÿ≈ë…PÊÄ){*≥TÉ,ÊI÷ú&Á…ÿ¬6f≤çëiu©¡+ \#Æë,É;Á«Ê	õœi7x}ã∫<µé∫ÑÎ^ø$QÅ¬T‡ËºÚÓ∫˛c(>éxEËTeÉø˛ÌˇV~i÷ÑMYö‚∑Ôÿ≥<π«J®’bÄ≈f,ø"‘´ŸúÉûh ˘ª+-„¨î^}0"p≈ÆPé≤t	Ï70à'ƒ—êÜ]-9≥åä}Ó9§núñ◊Tè Q‚∆†ß¨TP.§∞
-˚Ô"à£sÆ™	õèÉ*‹`G¢≤€wÏPG°ıófãÄ·<e>∞†ê‘˘„¯ÔåOüS˝L‰eGbÏ,íú‘nÕ≈©§Ò]À%EÅƒJ∫ùëÅgd;ìÎÉÙEKññ°:“ıB,!@¡ô[Tñå`ˆﬂ±ä°c°0u(#ò<|≈ÔcÕßOºt/º5Ìrπ.m:û
-¨û"_s3v„>9’’ª◊©|˚”õ„›É7€ú¡€ç„Õ∂è$Ù¡—ˆõÌM([Y/Tô‰o/˚„D.KÂ¿å”°{Ÿs60_‹¡_<ÅaU¸_>YmMPá¸M·◊†Ë›?*g⁄~u.˝Ë”Ø;9IàVKªv/iËÎ;—¯<ŒÙ&ƒù?ü_Ê'êUÿZÍ+=1M˜é6‰$·tîÅj
-˘€|îˆ˚¢≥ˆﬂ∞µü ÔV¨·Svç5C#ÃºÍlê3Äı»åï≤`™9ÉFÃ∞÷ÏqBhÑ[óß#ÑZk©mMÇn»pm∆Ûqîçk“Ñl\Ö`cÆ}¡m6ΩW‰çΩ£S[ƒ”‹8 ü£¸IÿQÓ	œã≠w©∫F!#:ÑB˝‡Î/‡òœjF‚"âH@gJ#))¨„È3‚º´ëÔ ÿ8 JàcÄî‚ÌÄ¯[Ûñ‘Áôf®6lr6$ê™Ú{Küw
-.´:#‰4∏≤]hj°aCÙ<èçª«z√qú÷DÍ¶√≥Z´bKíä5pm1iWK0xhô8ëã˝êOˆÅö¬)‰o\YÙly∆∂“Óà6:èN	qË⁄L[Boü'¸ü‚‘1ÿ¬µÜu:Ï†Y
-Á•ú€eÌc9¯r¿Äæœœg2)NütX¢gì¬'¥NGCÙﬁY¬´Ì⁄%—@åµOâ Ç„µ	7˚PÍ;à©àﬂ‚G≥B˛…â31)¯Â‘≤QßI¬äJ«∫Çï†¿a∫ÑPàmËÀµıü=òD.BŒvøNnä}>Ñ∏=ˆˆwèÿ©ê˘·Nß”q¬K∫T ¿ﬂ=µΩ#Ì¥&,?≠Tﬁ)0<œ*’÷úÄ¬Ó|‰%:ôà5!äÒXWôö—O7C≠J‡LAÊXY•,+Â‡s%åyÕR€jÊ◊øˇqn4ö±ü'ÑÄf√÷)-6§∏VHÂRì‚‚©®le,`CÜ •[√Q^ÈiÄxf™›™Fqkeë√Ã—ÕéÓ±ÇÀŒ≥	DH_’ÅïäÂÍ™M±d‘<8Í`€:¥Ê8£‘§zàô-ºL∆ûT#ÃT§cYõ®()πâ¥W/·-ƒﬁ„ÏÛû0Uƒ+i˘Çá˘ƒ'ﬁVà[[tÛ6’aŒ?Üm…zg”q["j	yû∑6ˇÕ≠l≥¥^y„∂-˜çè£˙â"(5Ñ„’πZ$◊3ﬁÑ(øÈBkÄ=©–•¨7ı˚∫Ú&öí7∏^G˚QÄÀxÖ°Òd+fÒÍmÚ”`0\gW—ë2J<…Az∆’˘s®¶h´úQ“ ∆Ÿµ¬*¬ÜfâSZÇ8••	Ç–>GŸ¥°gO'=≥Ì/µ4cQºÔæblû¥–u’ùÀ5ˇ[i5i18ÍL€≠vÎù?:ÿdÖìF†˘f—}F÷QwÑÊg>KÎlØ‘4é0ÊB‘lw0 €gga'î-ü?ÆQ´Ç12Çg·f[P_d—˘„âˆæ‹¶—2Á∂Ñˇ‚+◊S^|—k#Êßπgº~ñS¥)ÇxB⁄\·l4É¨ô[…8U¬‰:t9ÃôT·
-‡€zyΩÃùxƒÑ◊m·È"“cæeG±ΩFñˆ—tc£/€¬Qü4‡©öKr
-rë∑j	≤–P&tØ5*›ˆL∏_´t†|N8∫nm‰/lÛX—/ê2√ñÕpHO¥ré4°ÄÈ=ZÿáêïÖ˝¬üÇË›ù€ÿØuq3Th5*˝ﬁÚﬂâ»ú—+£4QÑ\ Ì˙ÖÒñµnΩdæ©›≈òœXìÙÆ|ºıç~ÁÆ-ü˚r8‚ :◊Cx¿∂ôåo Ó#∫äí>T_Ú@mÂd⁄¬Ac+GÑ[MUéä+^B}çí!…[JÎDúPÇ¥FsŸÂ∞Òa"6a–{XÓ0bäfî—B/ì–I(H$†∫±tëΩB#e]∏P.h5$ÊLëÎ¸ÍOTôÀ˙’ufç‹)K$5âG&2òÍïí=wXß#éSWQÚnÑüWÀ]Hé—©}{J+’\ÒûÕÆJßË˛aﬂæù"Nö¸©›Æ[=k∆l“$ÓâûYPtÄ—éå¶éÒö¨Ï=Œ7+Æ˝⁄ I«˛8e)ÑcBCÄs.R’πPIPæN≥§‡zZ2	:¯≈∏ÓeÔíéäÏè‡¶3öπÚ≠kÉAª oÄ{ø©gﬁyÀ∏QOëc ˇÄΩ˙pwã˝ºª˝˛ü£›c∂µqº-y˜mqºØ≥§˜s¬G-h)Õ*¡ºg¸WıÉb„=Gîo.kÙåÌxiI~ƒWO∂§ƒ>≤J@§Y¿P¶j”+NG∞ÊN|´≥ÁdãS–æ¯±eoÀl*…8Ä—ÎœÛ9çEÇÉ√›Ω„πôE∂⁄™√y-¢U≈!Ìæ¿)√ZÖà»wì¬ &h3éU2•˝Ó4Õ¶øe`Ì‡¢\o?å‘·IU!39˛7uqJ≠˝K6ÁÜ(^®ƒàPÃW$Ìo◊√˜‚˘4Éx€ƒπ˚p◊((6LÄåä≈)ZXrƒ√ä'ñ)Â˝∂ú©g¯˛¶•åMò·SıÏ vì>˘Fôæ üoPkﬁ&[iµßE|ÎI≈XÈée’ÊbNÁ»z ™–H˛ä$b˝
-
-ä7ÎÍ	^À∑f\êºêéÂÖº_‹ñg√K3ì¬ [Kck›⁄ü®ãçb‹)÷nœT–°OŸ∆Åäbqæw≈)÷6ËÙ≤Õ} : »Ÿ∏PëGPé3¢Ω¸º–ΩX?§4åsXπç≤y¢≈¸8Û)´¸ÏG“…]Â”Ë*6^≈eß‰,≈sÖœÇ¸k5ƒ .ü•ΩM∑Rò*¬¢Jve¸ƒ^ò Dc∑ßÖ>˜‘÷p’Äw‡’S)bFjl€Z]îV≥..∂`m\ÇÍÏQ’…ÜOÖGÇæ&Zò4¥>â%IV%âZiêzTË«~=æ√^°¶†Â¢@MÖn·~pæ-\"«ò+˛G RñxEÑWÒwzpÄ«ÊÊÁ¯!öJ≠•˙—"“Èﬂœ0ƒ*bÓÊZo¯Õ\'∂∂‹]Ï◊ø˝OÒ^~3çSÙkeë¥≥>[˝¶ﬂâ]ãæo·ÄBû≤ dÒ\r(H1!å≤‰~ó¡ãOkÅé£å
-wq)Y9¬jcé∞Q¯!ƒ:…™¨%¨;ºóbÿm'ß®ˇ‰ KW¡(Ä$6º°∂Í| iLëù›|Î¡¿ä„ÌœSwcx8S≠·¬ÅB∏b≠K Q¡VBãÊX^ÂZ8çÔ/ï≤ÈÒ‰UTãÜ|∫hâzR<cNÉYäK(™*ÍNk≠ƒlK¥T9 à¿ÃÚ80L{´5=∏ºh¢qX∂	n≤®≈D'√˘k´ÅónfrÏØÜR]Ã˛Tl5èõ. ®<áf˛cfZp_≈Å_ …ø◊jïŸΩí´~È«®o(3rj;I54úLπl}—7∫D‡Ó•~U¥s9DÆ⁄ÃŒô»[è+ŸüÅ„©ˆƒG÷Œ!˘}œ¡úGÖÈ8÷hdt”æ#clßqÃUßÄmÊLóq≥ó.]Ω~<,∫5-qo”d´|ûïärrœ{m‡ê´·>âÉœbÌ46Œ[≠∂°=†yÆr†jèó7¥áŒfÛƒTG¨Î]´ÒXøn5·∫}EÂ}Óˇ&ªãx˛› { ¸™Æ0î∂∆?X\Õê∏H+U∞ó= ı¸ÿFﬁe‰Y·≥Q÷µñÎB€J=ƒŸç1«¨√Ry3+‚c6”·iíåπÂqO&◊?>ŒÀÿñFq+=)à7ã[!ò¢[ﬂ®Û=ké®±¶ﬂµ8≥‘e≤∆¢≈“)V∂'Ó≠Ÿî´˛\≤q"mé‰GV7ûOé~#>),-⁄í◊vcvX√j»l«@,Œµ∞qÄ'Í~Üa„›·NÜ…É)M¨cd≈<FVloÌ≥√ÌM@L+ê”¯ÕÕç7p{ˇpÎ®cqwUDA^≈J+:1•œ]˙HVÀT˛ØŸj∏V¿ı•aXƒ<ëëÄ\µ|u˛ﬁreı¸{˝dËWú
-"	´q`í≈ZPçÄ9ï3ﬁ‚äØd?:¡©äÙ≈ö™∏c7Ñí˛u¬ﬂg˜üR>v8îÈ:∑sT\Üœñ"xúøÛ?'PTB¡BlSÙ-∫—Ÿ[.'Ì±ç ~ÎJlei™ìæ\≥KTñ«ÜÖª¶¥Ñ¯OƒX“^=M¨]›€/u‰êæ∞hX"ü\·â°◊JÅ§y8?¯O|¡ä:+1kî≈y7K–Œ˝àı£Üö"ão–\/GIJq·Y !EWê˚Ù”].ﬂäà
-[%´A†Åö0;»SÎâw˙Iç,ì&‡Ñ2%xº5@ÄÑ∏X%!.™z%ü=ﬁTD@’èˇ˝„?jR¡]ãªkVÃ]u?‰|ò}Ä™ˆéÒ“'î3ùÏ&V>äqÒk[†¥’˜ˆ‘ù>„¿]{vå8*ÜæP;ºbØdi’#•‚ÿSaZé¯çí-[º¿®‡:ºlÅYë¬ØN*Î±ThÎeA	ª?‘vpqVòÄ∏óª›‘ÃbBõ“Jg5|E‘ö∏L®.‘[mB˜á˝è∑Ì√éÇâ9M≥uÆ#Î¢¢ÿ™ãt«ZﬂÎv◊˛‡Òâ}P(C¸ÃW‚â√ˇÈM÷∏ál"uJZ'≤ı¿>¡N€Æ∂ÓÉ˛¸íÅÓXÈr›
-†Eâ0]3ë"$˝Æ6@Â.Ø	Ë	√9A‘‘rN≠0√GÇ®»π¯ìW,pƒ≈0˜àO¯CﬂÒÖ·ìNqt"ü±πKY•
-“WÄóuÏ ∂O#Û˘±˘t>ŸU±"PÜB·+¬Ø4-8ÄëjëWáÊÀa!WÆ†´ îΩQ~≠’GETïû}0ü&IŸß®	N±+:8&éÏÙT∂B>ä∂Ü«k5©–˘…ß™xÂ£=˝ ø7ÆãÂí -ãíY?ÂîCÛ◊Ç¢û’x±Ê,J!`©0rØ{qÉ€àvÁ=géSd|^≥>X%DÃ◊/cœû-åœg’™VÙ[Ñ¥òe„Grß≥∂ïDg√4OÚY∂ˇÜÎ©Ω´§;”^ã ·°¯ŒÆaëÔ·ãÙV∏ZÁø¥oq"¶¸:≠W|À&=Æ‚0˘k5éµ™JÁU‘2‘ÃKøe—µÆlØ≥ñ†ﬂ_XY)YV˙mø{Ø™s_	Œ£ÊnÈe∏ÂD5n∏ÿQö’>œzqŒˇî.@á∂qÒ©¬=|êÔÇÚIœπà3î@Ì+b∆∑ﬂw‡…V+zƒNº	„¢iËŸf˙eyºŸè£aë6◊ö+˛98ãóà¢Nq<s=˝«V§ 6ã–XàZuŒ÷˚*¨'¸3'T‡«÷I”>@51P”˚‚™óìƒg;˝R√7”Ô~,Zr'«{Á#È¡ä»°Ôn…˘Â£ú}®‚˛íÌ!zxKª«Ivëx—?„IÔUÌ'ÖÀNö}AN|bÜB?KVÀÜ´è°ñy√ù˝ﬁ—",4!ÍÛëWÖv7¿÷GÕ‡ÕõäÒ3«∏g0~™L)e#u4fíè¢æ›U)ú÷Uªû/{•ÁÀ√pP‚ã˚\∂'dnäô+·W[ <ˆEê›<S¬K{yåo`†Po˚(C⁄gÇ/‹xÂ€≈à6ç¿˙¥DKW Ü÷ß⁄∑˜ÂÀX®∫ÅÆÄåÆÙT¸QÂSW`éÿ˚as˛õ€+ª)¿w<pñzDWñzDXÑ)§•+Œ´üx©ˇ’…G˝d‹ö;ûkø[|_WÎ ¬Czsﬂæ¿ºB∫¯Hò»Æd ‹àk“Ê∂Uô/g√∞·GæΩ¨|P•¨Œyî„À˛∑ôAîù®◊√W›√VÊoõﬂÖ;˛wæ—]ÊÁú?¯^tG¯0’Ô∞b|≠}á)ÉæáLŸó7ÚâélÄòYÔŸÁÛZÁ´ú›ôX ì^≥S»OB≥wäçŒXZ£JàŸ€Òp£Äòâz¡µ6∆¶˚ˆïΩÓ[=_π5ß›∞q/˝yd6¡C ?ñ_ûSzi°îﬂ∫Í‘~Cv™lV∂N©ﬂˆHqz’)ì·W8| O¯∏'õH\PyÆBteA9 R¯é˚}Dù¶Ö¸„TØ„‰:[pºÓíœ\«Ç*k©Ä˜ª9p–∫8ÕIÍë'∞˛—(>ø}rg∆Œ“eX2é˙I7 ãc/≠	ÿ™He∂Ø…Ú ?®PÖVê≈^Ä!JâW
-ÊÓl·ïŸXvÌ	Áú∫àÅ&πö5ô°K´mëLxıà%ÅFÅ{ên?¸º{…Äw¶8ÙÚõ@Á⁄Å”‡Pò¡i ˇl¬{Ô[ ﬁ[ÿ>úÓÒT:L/«	◊75î≤ê~ı£ìçﬁÙÌMtrÃïJal’˙Uπè#ÊËú´e0!t˚…p'Üê÷≠ﬂõ¸7à√†1ﬁiiáf_√|ø≈T√;‚∑∞Ü∫Q÷#{(~√ÜÏøÊç:ùéËOiFÚ4dT“,é°` sùTê¬„Aî]†ÌU˚Iª;Á\Va«¡∆}öäÃí¯≥≤g›ÉãÖ_l£É•eZä Ü0á§®?Âˇ‘˙SÔªˆB˚øbCZªNPp˚›“{˛ê[¡PUã„J_N≠}≤u·ªP#Ω”&]Ë*öR]∏∞OÃ÷Ö1&—^u¡o˚<≈F’$Wåıª‚ìﬂI*∞rÍYÒxƒCóÄ≈π’g»nœiFñ<“f«√πZ‡E¯†ñıT#¡CÄ¯FOÌz©Â[,â™…êLV3"˘ssÆq±#˝4…0ª√q*Íõ•Ÿ D<dùë"Ó`∏PÆ¨∫∫Ã¢ñ 2t•ä»®a
-k_Hkë_2≥}3ﬁö›Mñº@4
-¿]∆a@Ôû8e+î8FÔn≠≥[M@
-ñüdÆò/˝niMÑì‹Ê'ú˛zìèÀè.≥Q_+§"ñoÖ1È'õ–fÕB∆Ï§√”]¥~"FÅ©+4L]Õ0¶’’kZ]>Œ“ä^Z]F&^⁄X1” dU,âãﬂì` F1§J†Ê˜%åd–©æïpZ‹úJ∑Dß‚UÊœÀÓ˝<.„Ëëá+◊ŸØu∞CAÎ≠,‡Ü+üªOEõ¸M‰ñüÉ@{úFMïì ¡SØˆèè˜ﬂñ±Ï’d5ëœ∂≥¯∂Y{Å√7Y˚„–8vgº:]vòéT∑úr≈óìıá&	<v4é«ÁiﬁMGtyHA-Á≤ö∂ƒ∂Dårw√QNAsj8Ä⁄·këvK0NG'UÀDa√‘™ïÊ	´˜NºH•5+ﬁk’Bµ≠„õéìö‡?¸óúPoΩ¸sÛ"l€B+ÊÁù¨ZAî©†På®ÍåûN.;≥5Ë<?˘´Tmë$Ä'ïç78Åù*⁄˝∫M~‹Åõ(.UFª∫ÙéjÒª!Ó~·Ê™ı∫%®]ÈSÄGXj¿h·≤˙õD£4ÿ6{k)~“çõ3)Î1A(3%|Øi(˛¯Ê	„ˇãôıw˝Hê‚™‡A~`©]7≤⁄U§™ˇËEBußøÌr,1Ó£∏ÏËèÍ}
-R˝ÓBP˙ÑLEÉeı3W¶\B}£∫Ky“πNa¥oƒu‘n,#S‡˙≤˜ùmÁ≠+Codì3=ùî„[VÉ/àè∂ûA„QG¥£.ΩŒüﬂÆ–[…c°ÁW'æö≥∆	¥i'¡Z·§85!NL~ª—?JÓˆ–⁄◊!Jï*√¢–e	˘ Ë•SE©À.H´Ujï}]=ûàiZ⁄˘§ÏÛ^©÷œ@??ÒA68ceJÃóMu«ÒDÙVi·?•9~≤˛JÆ«¯LÚ9Ç£t'Êˇk¸xÿfØR∫v1	Ù#+Öò®úµlô“:ÂB'∞Ì8Wzsπ»Ñµ™n¨rco¶…0ßRvŸ¸R”“≈Ù¬:t_∞¡¨¶ºrvä¢‡´ãf—p´]	 >íÖ¬5ob∫còß∑.êR[“„çº≈5±ÿfﬂ±ÍSf†	∏–≠OÇ„ü˛|ÚÂØ˜RX’+ ÂÕ‡ıX¢çp≠w—Ω| …Œ”…VSﬁuB°üß@÷;Ω˙œ´ M1$3]\ÿ†9=8º‰dòt›œ¢èo0òÛ˘Ì™€m|VOD=∫ø”–hVƒæÒI7Õfù,∆^∑˛¥µpˆsVä`≈UØˇO…ñ!¥x˚û˜=û√âèÎ<eIØäB“:nø%#_CÃ÷"hIÁÜda…pË¿púı>ñyw/ÜB˝∂kÀ≥·k€©≤€øÌŒƒ›âQÇøÌŒR6˚⁄vßÏˆoªÛqwÓl±∂1˝∂E- ⁄W∑U´›ˇmÀNπeˇHW&y ƒ±jåˆ±Œ4\¶T;VÛp,≈ßt^¿%ëãÊ˚é’ß˚ﬁcà”Í<ﬂá)Œe]p"éúS7%YLm„≤∆è=0Ãmu;H˙} ËV˘¸˜^{õàsÆ§è€¯åËí=}Ê≤5 ‚+¯∞ã‡ﬂèÿ-KzÎ*1SﬂÜÈu´›~ƒrê0èêq¸àı“<:√≥ª˜°vw=ˆ◊®eQ+pa¿≤πCÖµ†`µÃ°ÚŸAˇ“4ÂM–FØ«”k?•AQÓfµˇ·Ä¿}+O¬yä´j´B:0”aA:ÿ-üIEÄ†9ºÖNÇP#úS∆ËÑ¬Ó˙ ˛˘•®p9™ëºSH<8D}§¯4x\"è?åﬂÕ ‡ˇb±˘Ç©ƒÂÉﬁ†J·KŒ7 ˛~´Ú	ËÃ[g¢ˆ.o"ÅA gRìêtÁB!#ILN¢H¯SÕùÁ^RÁˇrhMpÁT*SgœΩ—◊ı¸Ú⁄d‘U Œ3¶,÷
-øá	L[jñ¥‘H‘¿5V ;.˘ÅXdW§∫™≈ƒTgik5≠ {kÆ–8q§{gQ~æLíûc •ô¶®)=qSƒpó”z7·õl¢ƒc"µÂÑsáùü˚¬Ï„g“V€°™ä\∞}ø"UEtˇKQT‘ÃóZ
-ﬁ˘ME˘ÚTçp¶RP Å‡7˝Ñ∫>ì‰h„
-_ôvÇå„7’‰ì¿>ßb‚"¨{÷Jtû˚Î$‰‚˛¶ëXØ/J#˘dâG[)Ÿe
-kÅÌ•„ÿüq‰ÊÆ!|uÇå#Ÿ…	Úå‰õü0ªHãÅß"È'À
-˛¡Û`πUπÁ-YOÜÃcXtY•–S∏ﬁZe–[bp%ºRnEπUáEBï)m—U|tŸÌ∆yN±sª˙¨ªv=⁄•˝8Í&k_‹<èªõI÷Ì«úı°6T<ıãeÁîÕngÁ(çÊØ8@f>y˝8ã…#ÁN}=x‚pÑ3ö∂6 {0ÕdöX∑oﬁF1ªI/3~>@rŒ¯¸_≈Z\	Ú¢Z~«Ç∏¿î´<MÜI~nØë81Dâ‹‡ÚîÀ4ãpâa>¡k˙jª¶›Â1ÿ]ñK∏íJï¬Út1é„xÁN336®Qh£ÜÕhÿç˚ñ„D	Q˜7ü¸Óıc ±ù,h•Ì&òNTû‘åXﬂ/∫ üU'R∆˚õa÷,.íN2·œpO’ô¡éd·X}“–2üsÕ†@¿í≠K¶ùaı 	Î¬ïYZ÷ïÑ⁄!']9‰} ⁄6≈‚Uò®gÕ˚î0Gﬁ®¸Ÿ.†ΩAﬁ;zªqx,–Ωv˜∂Ÿõ˝Õç„˝Cˆvk„;ÿ?¯È `æTŸjˆÛÓ—Ó±&ﬁéÆé∏ê=~ìv#ÆQú∞zv’8xÚëÎÓ…ês“y¥âkÏO¯ﬂ|y{Y:Ç≠õ°G:>‰üöË˘WLﬂÑy]?Oz=ﬁáƒ@"ï)¢ZÊT%– ·_R'(R¯Ïâ°K´¶ò+åΩÔû.^ùø/æ¢{∆AE»„?ƒQ/@◊do≥∑Íî)YW¶ïèˇ,ãzÄˆ2?NÁ3v 7∑fNπJ"ÖˇÖeqSÌ∑róz≈s«n5$õÔ_œØÒÕ∂¶+_Ü·‚¬≤Ω0ıc˛”c[ÌoÉö2∞Ì◊)˚qN ï%X¢¢º—%?∆¨¨ÅR‚(ùÔ|•.˜tÆHœÈL¥6ﬁ‚Í/pìæ5&∑ª≥8π¿„À+aû∏^mf•ÆXjÖ1–‡
-]¥Ù-W”≠W¢.Ï:Á|\Óã·¸YŸŒsBwÄÿ≠XÔè(;M≤+ÛÉ%¶¨ı„≤ p—C(Î(aA¯•ú»‡X)¢7π˛ ›£Í>S≠ùMnF†E
-∑@Q©Ï	)⁄ıü«Us§&5òÈi;÷òH!}‡kK
-◊g◊øˇ[m˙l:eàŸK9O‚+âAÙyçˇßoÂãÚËà∂~bÒÚV .K)€aPJ–^mΩhÑ9‡µé ‹Ä ΩLÍ˙éy¥îâ¶‰5/l∂"†
-“,uï>‘6Ó=∞≈≤€wîÔ‘ LtÔo9çç?·k[1_˛°$‘Ù#òãiù\Dƒ‹XÓÑ√ñ~tE€…M(å™°ºz~Z©≠ Â©É◊&c›B:Ñ}}
-(ów…ÔQÚÒa1D>∞÷\Wû,sÑΩÇåÇ≥åùΩZ†6‡‰öBö¶ƒë\öœŸGâœr§§£@@lÃ≥`Ù˚u[„µe%mäÍ-U¨Õ€±∂	ÕéÂ1ã.uòsQl óêD˚„>èT•tVıêpa/˚œFøÀ
-<5˘6DVóËáJ¢Qe√≥Ì#ÕY:L/∞eî≤S0Â€JÚòøˇ‹ˆ§TîOq∂e1ÔPrU7‡√≤⁄Û—Iûˆ/9°ı„”1ﬂç„TH
- Ê]+•ªê˛)Ì∫ˆπ≠\÷
-h∑≤!≈HÏ|&8Úß∆ÀD´¶Kõ
-ø±º. 'Gg-≤ò&¨C{«´Å]>_9ÌF˝˘ßÍ∏Ü*FX“tÌŸΩ“ µ™£”ŸSvdÀ2í@í!›„éÈ	â‰ÒZr°Á®£äY˜H·Ÿ8£jõ– q)ı÷‘={ß)õJ]’ïì‰8Ò-£j»G	J≈Mw0ºâs”ﬁô5pü∆QJC5à«M5àÍ I;[y+°r⁄´hvÜíA®4P°π∑Ô¨KvÀêãÛÛ}'ÊÑ†{˝ÀπG1|Õ˜3ø
-˜Áÿ›#œ˚õÈÂﬂ@Ï¯<K£q•â.¸–ƒÎ‹Àºççn“´¥êÛÈä∫!mºISæoS<µ*mÙí(ÀŒ„(†ëΩËíÇº#?ß¨pQiËJ›Ù7t%CﬁÃ€Àº€è+çå¯/ÏO9ˇÜó˙ÀIq◊ﬂ¬Føgg7ï˜#yœZ.ÔΩàGgéì RˇŒd®≈¡É*oÆ#;`?Ñ<e|Aï‚Æ}Ñ˙
-ª4ÿµ+R◊yËV+AŸ"≠ìŒ0Z«	·®.Ï&ÍU	HÀ•ö∂SØπ“\UÅ´π„!•ó»Cæπfó–N »4CıXÆFV8î˙3tE+GÓ¨4nC:l‘≤j]ÊªÈ“∑PÍhïâo‚öΩI¯¶∞‚Y√˝¿Â8CLé#”ÕzÇπ|îv≠¡ez’âékVŒU’!ñ≥E˙-√¨3ÍÇNÑ•Cág©æ’·~uæ»7âı&Z â¢zGÛÒÒø\∆ŸçÖe1
-Õè≥d‡*Ω'óßOÄÜm £†ú"Ã>´.ûﬂ†(†®4-J˛∂´›ówE=6ÙVK≤ô∞±n:â∆gE2‘…⁄Í•πhjs3∑E{`… ëOV'v˚óΩ8á>‹Ö°[n√ ™∑€Eyx€˘>˙ )Øxbá\Ø»«*]î-!W˚XﬁØv≤ºœgÕºÌ*”'˜ü´Zü]õÊ›Ü"kyìÚ`nˇπ°rîjÂ;∆"XÖX˜√§5ËWhŸ2”•$C`Vë%'ùÓxÎ‰õüçgŒî_N√+
-Êà2xCñ9v93V9+69=ã¸‰Ï±!k¸LlÒé"C¨'âPÌ@–˘€$Âyãûª<«îÀA78Œ?©†˝˘—£d¡vÆZ,˘‡#2;_z=(à*%
-Ÿ	/ˆÄ{J©≥ˇE˚N”LEÂk èÛªıöﬁ`AqÃô[éÃæ”Òy\|ã.GPUôÛ”,Ãì…*,©¬í!{uŸø`?·c|ù∏{ÁL¥£»œN|j)˙C„E@r<ò€ö Ò⁄¥NököˆYÆ!
-—„&∑Â¶Òú •^írcç‘c?zW>Ü∂edy6èáñqún,≠™Ω≥i»L™=Ó◊êRı∑’#($Ò◊´ñö9À´¡√cœ∏nÙ ó»2Œi2bqñ‰	Îù†¿È)9£^v\èµ}Z≥‡à˚À≤XKΩTãwz∑dí{1úiÈ«_<Ö∂iíògRÉx¸›sVÇ§B⁄˚q‘Î∏o?∆æÙTè~Zè’1•¢3»Ù2âÎEæôo£™7‹§Ï8êÃ®∫J˚Ûñd†R	9ﬂ–pGCF·Éùb~∂óIm£±V) a ]¿ûÍÉ#EE±U8UΩQaÍ2páî±yí¸„`êÆë∞V9~∆ÄD8ë…∏6Û›aŒÖCˆÛ§y» ÆÚZ√£H≥1\û-5‡3a}ùQ.≈;‡	üëÍ<a\Í¢âÆAû‡WBn∂h¶œGm™73"∂I‘Ì¿4`™õ¬k2Ë‚Î:¨Õá“‹%‚èD7ládÊ	nITKÎ°2r=oúCOO√˛ç†ƒÇãÃÂÄ;SÇŒü§Õ‹p"∆˝Û'î®dYm†Ã¿6<âO-Ï¢QZq”§í-åZ‡ÀíÊ¶’64ª$<5äyÔˇ∏Ω«vèé~⁄ñŸ†"3TÀ MÚ˝QÔ8Ωàáü-˚S¶}NõÈÈIÏuB$Ér¶/#‡ålNG‚ß±ªÁvB'—'@¢è›ô}ı‘ú@ïis4Gµ‰n∞ÖËxtæ(∂wÃws<Æû@ÙiÏù.ë“
-ÇjÅ=uM5!†ÔÊ˘e,∂l´´%8yòáôH‰OTgÒÓpÄﬂäû∞◊Òê∑Çlh+Œ/¨=˚"2wÎ&àâ#˚ÆiO™®Mµ˘¨eN¡Æü˝s˝6Àlî›UGUˆ¬«5rëç«ú@ŒŒ ;v˚cŸLg	]Âl/æ.˛ÙáÜ‡61`¢ñt6Ä1ä˜å÷Ç¥ÉF◊öãÂ∞ÏÍÉ%Q.1§n©◊…®$"j\ÈÑH“(:BH∂/Õ4Ωnà7jùÕVüZÔS{åì-∫…∆[
-˙(b⁄$eX∏ô=qè=åØˇÏTß]Îü&d°w€Iì&†›?e<˚âk´“ìù#î«Ôd\¥Œj„3Nk‚ºö1≈‰v—h‰¿Ÿ"∂,àâ k™™¥Ô àÄ◊ Ÿˆ†:®ü÷®pÇŸ„*·Íú¶·¯Ù≤\≥KÁ^Æ!ﬁï¬,ë“QNE¯l⁄éƒ˝≠m∂ƒO√ﬁ=:ﬁ›{]Ä·ÏÏæµúÅ∑NV∂*Ù!≠ze≤\
-#@æëÀ«Â”ª~b√Ÿ{ŒR]˛Rﬂ˚Â&ôTﬁ9MÜΩ÷±f;Í[8⁄w	oÆ/‹€Y(ÓÈ"*Åç
-≈-ÈYB]§vk:J›v˙¶q™˙.§#U’ä$aÖ `s˙a'\•_cYóüm7Pï=£›≠uë∫˝7>~ß´“¢^° gœÏy∫ ˘ı-ß˜óäæU<SΩœÓHá†LVQ˜ c⁄Ô	Ω†\oÖãÃy:åKoìÉªo”®·Q{sÓ¡Ñ~o„¨V\·‰‰Z˚,ˇÒèqîaîŸ‚˚c¡‘¯ÀﬂjEG⁄ìê∏ƒî}òÀHDÊ_ù)‰)∞p8˘PÈñÆ¨oÈ≈ˆ+Û&·j±ü{•@q«úy∞âDüÄÔ∆∞ó9—Ù!Xi°ex)0d8πdŒ"u8»Ë◊G7î°«Á#b\∆-û8âπzJëÀgw“>;Ö¬ßÈËÚdêåüﬂ
-O“´4Ωÿ°Ê>‡ﬂº≥∂T}”†=KΩÏÑ	ÀÈv¶.<|!,:[
-È©∏Ï-ë ‘.¿(t9¶≤¯/óIÊÃÂëY—\
-ÉéπXπ¡{Cºﬁ]1˛p¢]bﬁÀãÜ∑8ÙºıÖªL¸Rá!£ßèt°˘ ‹3!ù'ßZXÉüöB∂∆êœ¡¿©	«’Z
-ˆﬂ~˘Ã íú4kÄ`⁄$3Æ'$Ê%œìÂﬂ†√ÔC,EÂ•ßŒ≠irÄz®ãNõÉÀ-!æM≥!ﬂ}Nâ3-Ñ∂¸5⁄r °Ÿ0bÙz,ˇ8$∂}OMbS÷z∑˛˙˛As ‡Á|èirCÀ	uÊŒ¢©Ê—º¬ˆyÛÃ¢∏ì#~…¢≤C“¡W#ü- l!QGú¯¯®ƒG„h|ôcπö{é\Îvˇz‹#ÚDfB}¥tZB@bÇ«6·®¨j‘â‘À√€…fÏµ-–ÎÇÄVüﬁ€∏,ÖœHWi\ÑqBU'Ù≠x,U≥7J9»ª˙î∞—ÍóﬁCã"lyWf˙∂Nà˙Vÿ›∫+5ÂQπ˘AÕ*dj[µ}ú∫;!jÀtX∞nP+®j¢‘ÌJwj`†T¡8(˙b'éπ¬ÀÂMƒùL¡"Ê≠˘È˙êfË*Õ?öé´¿?≤€ΩKPç-l§√;ƒıÆ¨`≈Eë]÷ç˙±,‚Ÿv—WÕOº4«·Á#Æ^ÓX	|ß Íú’b‚©99N{—Mi&∏◊µ“‹Ô¬é^Qãº»Z|eGú∏⁄3Y2_!12©ò:»ÇÚÂú=öÖ∂®sø¥8ÎÎ›‚3Ÿˆjêâíç
-6JÎÑÚÀéªEvõçbª|πâùb"KE	n±«óäUcFÅ¨vFg›ƒâ˙0,˜79Vóc]√Õ‚®è<ï/|†`QEãú;ªG˚Í–È‰£~2nÕœµﬂ-æw7ô‰;óú±@Í∂Í9ÙVˇ)[7N·pòÖr¥ı∫7|/…Ûø˜¸6…Öm∂Æ∞úÚ„˙A}U·n7B±h˛œV19/Ò∂aQÊÎw—Ìãç60»Ìœœ®ï¢õÎ)ó‹ìÒM°#[êŸKoaÛ*8D† rcÉBm6⁄ØÄk…o^Gâ±V]Î¨UùiÃµW´É9Ï-€Òßäá˚X∆…À”Ò|‘Ôß◊q/§£ué‘pr*ıÿµ˘∏lS3O-%&‘¶„À‰∫?√çeKøÙßÁÜá<§„÷ã‘ÖX©ÀÍ˚Ÿx˜Ë( –S¶πÀã`ˆ|îæP
-∞RÉN!ËÛp.:ùN†¨Ìˇ
-Ì’ö	Ë®-º€UBÀx=d4p›~VﬂB"ËÍ0ÊJ{ÇaÛÏ Œ	_	å±&!LÆâáÏÜ8Ém	]fû)eÜ}+jé±£~2
-ÌK0ë=Ä.3yTV&ïœ∏ÇAI˝ˆú?_Äønu(›Oï?ïIÿ)€⁄˜v`Xæ#ûmyùÌmˇ°e˚˝Oªõ?≤√Ì◊ªG«á¸ﬁ˛^£Ë6=bïp≥zÂÀçπìf{ÒµîΩÏﬁy:˙≈mÅ5Ï¨~KV-ƒI/Î¨∫≥H Îí,ÿ¸Íß≈D˘âlØÓH[¬SAj∏CJ*¶4¢;€¢]î'›"<$û¶ÄY÷ÂjN±#YzöÙ„;>èoÿ5‘H∞D¸ë˛;â-^MêãDCd$H¿vÀ)14⁄7CõY&3∞<©X‘öÏÄDÄgˇ‰4®8M)~#ä'®#»∫"Ì*C‹Ã.‰õAeØx+‘û2°%e÷f˚j>•Ï'ˆ‡˜œEe2Ê„ˇò0oﬂ'ï5'#ÏYs:¬◊>=!›k¯–óE9õÁI|äHD˝(A#a<à≤ã¸À¢Ÿ©Ê$_¸ ò—Ã('–ZR√m°+ms“‡0√∫—,F¶âaÌ~mjÕ™k≤üOY*Ú°ä∏UíËOi7bë7?¿Y≥ãHπ∂*(∆ñ˘úà≠D¶¡ÊúeΩñ=µR∞_´ã’d≠)2òiB,ã9SÆúeÚÜn‚ı∆ﬁÓ ÁÊõç›∑Ï’Óõ7PwjÔÁ˝›ÕmÙƒ&?wØ∏Ù?=ˆƒ⁄L∞'ÄvÌ·ˇ{óBâú
-åBÄNî»©@ÊO
-FQ"†p¢Eˇ˙ä
-1˙‚¿(Ï√É∑wï+πµÆ‚‡Ø.ì>†‰ŸB£>Mp±Ç8ª˜≥3N∫8áq28·"°Ö∞∑l.+˜oPÚ∫¬9_ të¯1KOOìn¬âñ(˘+Óﬂ´4È∆KsŸ3Ω·ã¥¿∫i6JÒ+äP∫M÷ﬁ!»u˛rL\œœ)Í{ÉûIò¢Ô´ÁÖΩF∂wÃÉ⁄˜É±⁄£_)©…ÊL≤z9ögÊZX+ní’≈ÖÔ=∂Àr3˘X≠#±…)?:sU5¨N÷Bï†∂Ç•»yq€ÊÌﬂ7ò]’‘Ú¢ærz∂¶'˙Æy,N¿At£˝˘›≠;g ô+.‹†Å< Ãù∂7X:wXWÓN¯~óIe≥ò∏ò tÊÎ*C4ﬁJrÆ€ﬂ`ÀË
-?ˇváMíSG´∂(mÍÁ^	„*KÓUw%r|√ieq!]ªSæâ•ê©òï¡-∞myD÷äyrôj‹˘]+ŒÉ8◊ÔÊ˛∞q∞µ1˜àÕÌΩ>xÉˇ√!ÕŸ‚¸u]pïì–aîÙØ£õo¶}8·ÿÎÙ
-™Œm^B—ø9Yç.Õ\’Ë‡≤T§Î™√ñœ˙≠x+ﬁ™CŒ»ˇÄ %ÑéÁr˚*ßI9⁄‘ÜÖ” ˜H÷∏^÷ÇÑ?u]πí(˙¶'#…Û)$f(§\a9HO¶ A™Á˘“íÓ1î%ïƒ©(f‡◊øˇÀ¸˚ø0qBm°"Ùñﬂ7Mád‰ÀSí}¨∞ Ù\Ì$1Ápd¶Rms„w`û[åîKnU‹ô”·‰÷ÆÛ≥bß´k´À6GhFèÜ78[vV-Ê6	ﬁæ`Í‡Pjii/÷OnﬂMò6ì˚f≠Ö	ìøm’©-8E»8¨ˆ˜¬ C‚•ÑÆLz›Í…≥æm?1 .…Fûˆ1€›bﬂ¥cr6$Ü;0T∂ir‡T$>…¶“GΩ cÖ~GÌ"œÚÏ†ê˝∏{ÃΩ£F·Bæqnù≤ÅΩ”|ÁPÆ´©6N©.PÛEl èÚÙyÈRﬂ¸ØQîa4‹WGö⁄@&§M≠ÖØé8gEín÷Ωì£!ö:è.É(ª}Ù*âØGüBv@q√E‹ç À≠•'π@ Ïª˜Ìê\ó∫I√öı“A¥¸…¯º¢√;K ¬/˚c$çù8ﬁªÑÑ2œ≤Ë˚K-ø#wùMÚ•3õ]©"™H¬¡EÊo
-‚ÃÍMÌªAØw£¨gÈ	øÙ˙Wºz«È8Íã,sıù>⁄ÔÙ˛~ß}ùH‹iºg≈æ°˚«íŒæl›ûÆ@ãEâ‚Ã®öïÉrπç&pÌ*◊Ç∞Pn¯@∆ÏUG\ßë‘t$∏”>ˆˇ  ˇˇÏ}_S#IíÁ˚}äh¶ß›í@P]E/T;≈∫Î⁄j ¶)A9%)µô©öÂivÁaÌﬁ∆ŒÓÂÃˆ˘æ¬}ú˚˚.<˛dFdFDF¶R™al∫@ åàpˇπáªbS∫’™òÙMt9Â‹ˇ◊ÆÕ∆JŒ˝m·µ—5.Ñ±≠%$∞¨’u⁄º+øô+À´ÒÌÏÏˆ∞∏tù˜±Ã¥Ps(¨v™…·(Ãs,q~OÛBÆ/T;µ„I0àìõHﬂ”‰¬ëX˝‰∆«g‹¯@ú~nÛæ∂Æ˜∆#"~•éc2üòy^UâΩXQÜ¸ÅXø†gƒ»±Ûœ"CÉ∫◊t"UMî’\∆"+&i@Ÿú∆Âõ"Elô¨° ÎÎ%j'5B°%#v+2Xèx¨'uôë~Ëc%ØvDj99É•2Æ§˘E˝∆Fkâ¿ﬂù‘ª%bUÜ™&W˙çUS¸oˆ„L ßÚﬁg6–b#´≈∆.fuÃT6`(vÚÛ¥∂¸&P(&∏&ãåŒÒJ©S«⁄‰Àüc™Uú∆<SÀÖ=º»Tg‘uÌÇR+ö=¬BØ1í+©Òº÷î«ÉyÓ≥o‹eóCàíœ¿2yã∑/û°ÙeNàº*XAªûÊTt)r_oLF&€¥…Áh¥£2ÿí›éáõ*ÒAóD9j VÁ||≤xÜNˆéèNŒ–ÓˆŸ:Ÿ>|≥áN˜ﬁÌÌê‡gm°ΩwÏOªßR{ø—˚¥´Só⁄”Ö0g¢ûá=M©ΩiCòaò4¨\ˆ`ˇ4"ø†ã¿ä¯ñ/≤"°Õ”D4€◊„yÁ…e†t¯Ü`˜®N]Â.ög}=|»ã¡…tWÚàIzˆù àS÷/u‹Jûƒ“aRiAñsÄ
-◊aÇ…à}Ò`‚É;ﬁÊ¥Œãˆã∞aÖ3/ºº∂Ú»ﬂ≠Â∫£ﬂIä+}–üöø≥Üò!´¢ S«ªÈ¬Ng2Ú¥∆ï∫¨ã—3Ö∞Â•YhHC=…ˇ8m¢2<tSúÇ£â¥C÷2≈/Ïçzπè+¥.2 9fé$îºñë3Er›dˇ∞„Œ6µV ê8‚Ïf‘Å@mÅwµ0Ië|ÛÎ‚!nàƒõQpu‰ùê Ìî6±·“„¸∂ÀçF“n—18<ÿƒ\Nû"\≤?ñPµ¥Ô%›–Ç‰’jv$k‘~Oö_»›ï‚¶,Ÿi¨
-b‹⁄˘W{’‹˜´˜r4é¸++§O3·Ó_Qˆª…}ﬁª∏_`¸
-Õ¸Äj§5,∫V∞Ùi¨cqë««Cî:^†eæ-†≥•)cŒÏÏ¢dœÈzÑ€‰¨ÔÖËΩÎ™ÎS?¬mr·!lè4ß‚= Y~†Zm©Œ∑≈ûÀ>¸›zàÃÀ«ÚƒæFˆ%ãXàM¶¶¬ñ!äﬁ>∏W–Ó+¿jøEmnÎ_Ìµ'µEQ‹:≤π:¯:át†¶X'S^]3Ê;JÈﬁjûT9é“õ√ oîıe=	zÆΩ¿^ËËjVÀ◊Ïx∫Ÿ±§LeU ˚å¡[h√ËQ¶á…Äg˛¸ÿèâÀ¢Ã«•ÏÎïe=Âá
-âKÁΩ&˜VÖ˚£Bb ßL§ûou€KùÔ©RÕ
-*¶1W•ˆ∑∞OìÊ‘ôﬂ˜/§fŸ_Æº–]ÃeÊ8õ:ô∫Å{±K=ŸkÙjo	`åX√6°n$Ù>õb49êã7Íyó>´,À∂K¸ﬁãtüêíèÒ±Ü]ÊÇ≥§ÿ*ﬁâEi∞Í≈Ωﬁxjãœ°<W2:µ(∏-ÎÖ¯—E<m¸‰›*ît´ÏEî¥oHÌfM_öˇØˇ¸?ˇÌ˙›»©:ÿxèßCH„J:ŒdkIí\ßgïIÚí¬{u¥}âˇC´;◊K&yË£Ô+;vnH>ôó(O˝ëH â˘˚ù‚A∏®ñc)øRûÍÆOﬂØÿù˙1*Bˇìh*(ö»¨ÕLΩcÌÀ¢¸÷éΩ¡6@\‚óòj@ºiGO#äú(Æπ%Â_*±X¯∞bû®¢⁄ˆx\'¡Òu"z? àÍT =j°3Ó]<fô‰?âú¢⁄û¥ôIÿg¯Ò-u˛-÷.DπÈe»áµ„›◊≥<ƒ¨¬V0Æê†˘Å·–«O	2Ö11q˙∫Ûx‚êL§XÂôNÓXΩ¢6e±Z<®(Ö –è” ÕV¨RµI!*)USA9Ó8¨P:˙0?⁄íXÂ ™ÃCU}ËübôçL
-\ÚåÉ∞0ŒÂe‡^íøWP7‡%·cL9ˇœuâN+ù2E∆´¡™r[• ∆%°–k‰Áø»P·µl1],cÜ3Ã±6€lD÷ë–´6yçë–$=Ø6Óﬁ#´J≈A?˚Í„†°∞ˆ7È∞®ü'≥¨∆ìÜ˜z’è±Ñy· D± õ¿˛∞Ÿ€\‘∏êËefÂÌ—iö∑PäÍ∫Œh‰GPwƒπ vÆñR‚∆∆⁄ur»%~Ü¥4—üßﬁÁP±<Z’ª‹ª9ÿÇÁ"2’›LiRÍ(øı,eÒ∆tj–i°∑(‘Y”™M˙»|Ω8–æ¢§ y;
-&ñq˝∫H˝‹îˆ_]l˛…dWs	∆ﬂ›ﬁ˜+⁄9z«cÔY\>æØa„≤€#2D—ôsŒ ı%9:ﬂÃô◊”q˙=EÒßs‚]v”9˝¡¢Ñ…üº_˙WRWõ¸9nîHmn¸øñ‰<ósôÛ<ÊåäæH>kñÃ%N"√≠QÎ9Û«‹èé^9ñjÀ)VD’âo˝“A–§Ì¢˛ƒ'-Ç9©˙NÅö»jK&YkÌ§ël^Ê:LYæTj…â'%óó&ev‰BπôÃŒøêªIŒI0µSﬁ:!Ï>qÖäj#ﬁæ*@A'(M@ÖáB.	ß±Ü2;BÖ=°µ6´‚#=j˛(8Gˇ>(^…»÷¨Úèˇ—“ÉvÔÉO¥@Á£`ì,d˜†∏D˙Ÿs ø°„›◊¥D+¡ƒË–≠Ÿƒ•ö—AGÔÚÓ`#tD†∂q¥:\›¥¯9ª #∏±≤ØféAen1`ƒlpÃç•±ø[(ÛêÜÉN˝¡öoaù:_\‡©YHı6Z§#¨ãj,zõPoQ*É_UI{Ï–¶≤ÚO√"eÿÄñéb	ãJ ≈Ge˝ó˝Ω˜heÌÌúù†”∑˚ØœÔ˜O˜‚™∆ÃòKÎÔ∑%’¿t˛ï\j¥≤VUc=æã∏.È˜43ûÂåk#3_0`v≥ôªUIÏÑ*âå÷É[ë±0©v¨N¸[<¡ëﬁLüóÀ.‹og‹7ÈÙC©ÛR¡¥XRñ|íó//Qa^$øÃÃ=U&Ä#nxπﬂ÷~óΩÏ,;«÷r›+¸Áÿ<ø∑ôˆ9$`ò˛∏£â>Û˝VmπóÜv^tµßÌ+®»’¡•åTô´b}pïP≈ª(ï›JäÉ5"mÊ.<)W<_9È∏ÿº€îÃ0ƒÖ≠ì∞ânk”#åM¯˙Múâ+¸©¡øúß!ãÈR67óy9Kf…˜.⁄È{„“©Ã√·fÚÁ∫qókìÁM:ëëßBJ$˝ö—⁄ö=Bˆ<kG¯‚>oSe%ÓY›Rüú6lB…"|rW∆›˝àV"ér§…äg≥B∂Ù“;∏À}Ì∫˙¸U/UíœÛÅ.À˙;]û$#Ë]ñLÙw∫<4j˚¯Ë[ÈÉ,ÁB†3WS©h©4i22'¶IåÒñ*ñJ‘XÖ≈"3¬mêió™∫µ±”"ÀÑ«i[™5K¢W&¶€+∏N•V/okﬂXçí5ÅáT‡ÒÊ¿]F}ö˘`IYv‘hﬁ∑‰$Ú6∂~aªQ»«I#‚P‡v°Uöñ3Íªq¨Øê_+¢¶]#u™Q∂ÆôGR$ê\ä€DŒË¶éŒ˜{◊õhD /O]ÄÃ-)Ÿ/‹MÎ ∆∂†9mùqU’Öx öy©¡[2©	Ãò
-f⁄…d≤Sci√XV—ò[‰¬~ˇ◊?†ﬁ-Yﬂ&òM*ou=Ÿ$7´@ÉM⁄:A ﬂ¡Ω…‹>Ú≤Å+¶E®U!~k+º&£<7BËætQ&»∏"‚X®‡m≤-ºyæÔb≥ëbUÜ™åy®ïŒn'ﬂ¶¯+ﬁ◊'5q&u&iR,ìkå—ÕåAp∂È	x&PÓBEN	}	∆æj∞≥ùõıúPö ˜àπ@îÏWX‘c,¯√ãÂ®_¶5˘_ŸVd5s˚íl%´i1æL8]s¨\rlòì¢ÇÛ±
-ÍbcßÇ∆®jŒ‘Ú©€C»ÙπBvJ˜>Û˚«O∆}ªúªq_DÁêR6^œm‹ ˆãêï®8©d’9˚íâQ&:ôí1f
-∆ÿN¡I®¶1Nk)˜ûîä3Wt@√=≥–Ÿv¯–7√‡–«G]î#'µÈr@ê∆«R5ˆ“}àÉIEHH…ˆIüŒ•{á≈˛ÌíH¶™:N¡˛1	§”!\”Õ§∞ˇ2Ü÷ÿºõQﬂπ®‘¨∆ú∑Ã®_; °“ŒM>Y/ØÂÎ√ccqÁè√b¥yb[z9=ôî1=pƒo≈•Áƒ¸œπBô\ﬁ;≈JÓÀ€’ªÏZ©5Ωt‰Ñ§(Z¨N÷ÿ@ßìs≤R®f≠ΩÎ‘±¡Ÿ,Z¡›ë•MLÂv…Ù$0˘t_›31u_›ã“j∆4»©‹%/z"¢nÖ€i%1wShÜ' Ø¬í+Ù (®ö&ÄX´96r°Øñ≤;;3R≈À §Ÿ§ñém⁄HÚ¨≥ãÒ3 Ç›_´YG>)·h	ê∫°Œi¬ÿoÂGâ≤[]#ÌπˆàΩ•“Ó‘ç"‹D¯Sì⁄ò–ú≠ã«ì—_ùsÙ÷˙Æè•vﬂÎ≤,8ãÍ Ó˝ñr⁄˙rq)´ÉGCÛvØ∏!A¨;œß}g‡ù ù¯NØéﬁ8AﬂC¯√˛§éﬁ9},bùÁöAËã'‰«™io ≈Ü$%ômK*>—$Tƒê…˛MådŸqâ"G›àjPF~)—Ÿ‘≈.%XªaNœGä@F⁄ƒÉë‡¶Îf√\2Ä,|h8¿‚!¢ñé'É>M`#ëö-Mb\öô¢Ç˛¶Ÿ±}
-U%%%’\ØUê—¿sA®ÖVÕ†jZÉgà®jò)‹ÑÆ…ó) 8∞Dñ1.∏dKWçÌˆ?.lëã‹ﬂQ?†µ2µ’Zˇ„G≈L£ÎU∂}ËC÷£$Ï´lÀùoôN#Yªnÿº1-›\öÏ5ﬁ8É'i}QSÉz5Ãà⁄‚Äm=®÷BËè!˛ÎQ'˛ïÏ¡’8p9©f=S¥D◊ÓRs´-≥(W◊ı∞™ÏustmÃBBæÍÃÖ√ÀQï◊6&–®Jõ‘hùÉó˛‰O1¡]¡Ì˜Jp¬ﬂE ÿ'Æ”çöØÁí0:Åb„FõÅs≈sX∞ñµôíËènòvD'0b…Öc≈º•ÍÖ	M¢)P‚‡WF¸Zî*Bá≤Yf4€∞ ⁄°XÅ£2E2[∑◊ı)•Ò>˝Ù≠∞Äƒ•È∑í	†ôOp1O©˘*F`Ö
-«öã‹O5naà_ËÈD@•{bÇÄ&P~ë6ªd` 4Ê<åƒùú®iÔ%GÓ|IWB–%¿!'|	dπ»ÄÚf¯YRóÂN5•Åö◊Héõ±-ı,Éo9∞áŸØΩë0˙îâ®⁄4M∞›rWBπ⁄’íÑ&ôçÅ˛d2“Rõ¬“Ωd±!^,ÀzDæã¶êèFg·e¬êËŒY~fÈõQXv,˝ﬂ÷úk⁄Dˇ|G™⁄ëÀ∑¯•8Ñd⁄’˛ ïØE8ÏdârFJ±Ò›˛oª}®=˚BM•¡≥†ı)î«óî^›‡M´HÇy4©Ñ/faR5ÃîÅÁ¨±T≤Nd¶xK∑üb∆sño∂„ì uÂçF%!∂1éÏ'◊tc}•ËÒ§MÅäh∫íØp›JU¬ËË·O6ãÓ®ÒÊ’‚“ùÚ¡3o»¸±énQﬂüÿîh7zﬁ•-÷—–M†õ¯#tß‹9æ©è0±›I‡Éø~jB˝4ÓyëæxÁ_z£ÿ'≥Ω{∞∏ò∑íπ™Pûï†ΩâﬁúÏÔ6»g€ØﬁÌ°Ôóß˜∞≠€{ÿJ:“tí¢n4›qÜ∑ûµ«,„0”z«L˛U$Z&S=À\£=ÃÚ¡WÏãYMe‡–8ÓÙ†}é;&rÏπ''Ã‘îÃÕı¢pòh
-e&Xò54N’≈ê8Œü
-ˆJ*˙Ì.¥áˇä…Ìª¨Vê%íﬂÀhŸéJ)®r,?XQdúÁ_‡x¯∫aÁÉ	Ω èB1Ü$nå<n®ˇf´6Ò5âïÕòbHÖŸÃ∞B9Áì	(Rﬂ…πs%{Õs‘¢◊Å§ï_ÿ⁄èπÂ
-w∞”tXÔ
-±Ã∂∏®1€à¬0À.ÄÌôv9QgòÖ4À·=ÒŸüÂÛŸTN˚>˜`f˜÷™ÌŸE.„VÏé'◊}úÔèbg<˛ç∏êÛΩÓ‹Såﬂ`nV„≈'%≤òS+ZÊ™Y≈Éƒ¶⁄ª}nkÊJÒ…-ß0éBÙÒI‡ÿ∫j‚T≠¿Øã|ﬂ—ï©êhÕ	pu„˜?¥?ﬁ5Ëo≠¯∑ïèÕprRßΩt˜)üú|ÁÎñ6Ø…ª•<◊ƒµ^Y≤$¬ùC™€7ùÒò;íÁ€qüà˜‘3úî˜”5\›∏üû…µâ9u-≤À´ô⁄@"P-RHÔÕur\jŒéÁø	‚ûÁø	x◊ÛﬂºÁáª	8Ö3€Ì}iEÄ˙1’øMÃSzn D‰ç‘Ï∂4π"ßSª∑∞“-Ø…¶«KRÛÎ ’ã≤aE]«E◊>@i–3·>◊#∏¸'/Æ%wMÔ.„5=F≤aaŸA√.⁄ê˘˜LiëC‚æI-r™‹3≠Eé°{&µ–π5Z∞âı 
-msüpv ?· S˙†ÖCä‘-dZ¥pêI}§¬AƒåÑC[7ÖﬁK®é°—1}xﬁ\À◊à£ΩL≤Ç“±Rêß ?Áåó…G	Ë7	3:Ù”Ò®mÚ˙~'£Ø˛"{YÂî&[ºÍHÎ≈rø£√Òs$4◊ºÄÖÒg^˛>À‹}&ØN“∑ökZÿ˙Xx≈?EÓ•‹‰%D+ﬁ∂dœ≥òÑ˜¬¬f⁄ãÏÈ∑Òrö¸ˆÊ$r∂G;+•ú6æßb”§ÙRP7mEGÉr›Ô◊z,J“tVﬂjÅâ°-Ck™Õ–ú8ê˚ÒŒFıüé	ÁFSµ\hOˆ√`CÎÒ0ÿp6f›î|87¢*fD{∫'≤ê†¡à≥±Ÿß„√π—T-⁄ì˝ ∏êáç=6ú3Œè®j± ›πúhÈ®ì/tfÔ˘pãñò»tÕª9¨M∑yﬂ8~yÚÊÇ$…+áÄf0¡È˘‹òæ”ê∫S_⁄‚!ÄrÌ'PïÂﬁ˛d<{∏Ï	î”}˜ª Â–wh.¿à·>eù˚¡⁄ù≈QñÊ•∞ôÓÑf‡<”≤∏À|∆`´ﬂö∆ˇL√L£4ñÉ|f	ÅiÊòáëlΩ7(¬`ø;¿|xª#Y;¸QÓè¸Å¶Ìˆ«¥Cû˜'√˝…p2‹ü˜ÈwÕ«Ecu:I¨N´eêSwÖòØ¸Ú“M—5]⁄&M&ØL“'}‚‹»xÎ¯dÔx˚doΩ˙’∂wvé~><€><[RVk–N[uÙlˇºªF»π7
-éèOé~)AÇöwT)¢ƒÿ≤‘˜“ü…5(DΩstÄWÎÌﬁ·È˛/{Ë¯dˇÌÓùmÔøCxèNŒ–¡—Óˆ;°<ı≠Ó∫ﬁét¯=gp4vG‰jF˙fÍÚ2:‹±ÉOüÅFê?æG^¶9ã‚ÁËM’¿πzOΩD5¨;aw{q>{º©?|\bu£ÃÿÅ°Ò/¥F4~ùUãf/—∆j_‡%/<≈+…ö≠}i≤ﬂˆwÎx	ìøñ§€±p6Ê/û{u ”AÎ¸√=ñA(u76°à˝&ëíæGK'°O;AH2°ù˘˚ßGro0°§ﬁ/n¿	…-hrœ5sïWM0^°zÅ2_,Ò{≥Xàf.Õäm±q“ñ∂≤√7µ√æãÇIÍ´;â|ÈñY÷ÌÒò,*∂N}oE~`ÛÈdó÷—.-PÔ4ÒË£Iàæ!wö+YlF'˘W"¨»B;ÕÌdòª_˝⁄Óèæ¯^◊%ÎÎÒﬂÂµ≈gWh\_Ú [bºSxí˘
-W[†<˛=ErëuzY3_ı™„a«é'PòÀu√?‡-~4&u7˘>¬g¿§Î÷j·dXGë˚¯WlÉ◊…ö‚ÉﬂÈ;¡%√£VñÍ¯ˇ"±ıÉ=ß€WI_Ë¸Ìóµ˚•πÉók2¿<ÑN¸m\(Ã‰7‰=<LFü∏C'¯fÛ$–Â˜ú®€«˝»è„ì\[>:ﬁÖ ÃË¯O'øØ˝π˜√“≤G∫V?/YËEËH~V≈&î⁄•‘‹–O?¥>¶ﬁë„€Èx˚NàR\“–∫T0fÑI1!ûu∞ïıWBó+íÙ	Àˇ¬Éw˝í|,q)n(≈çê>Ú¿ÌÖîxiÈ·k^öVÒØõ˙ í°_âYôKLã◊ıFº‡¢ä!	]‚ªØ)ë∫gªR?îjÚ¨ÙahË&<èÛ…¢¿®Wå-∫«üÌ&à´ß√ÏK\∫Ù#iﬁ^JÕ|FX2ì'ÑtëÙ}aÍõZWtyA∫Êˆ¬‹_7ÈÔ≥q¨Pã]—ﬂg:ƒ§øœö˛RõN‡YÃÂßº^úkÒóÚ7úi·5√Œ†c"êR≤9í#Pÿ¯TSàl8Î›àVf“»l⁄1Ëi¬Êïôå(ÅDﬁè©Ûõ/n0Ñ¢m§&@jÎí‰˘òP‹e+≠(˝õ\HOÛ:%˚K¢ÒHΩ”@≠èÚ¥bïÖT) æƒ-?5ΩQw0Èπamë>”^TwÒ1Ê°≈è˝Ñ⁄h”$m∞ì◊‡!¿5§πnÆ%üÒ»≈
-ù$"‰ıS$åó<
-ôÄ‚a∑¥äõY~2úFÅ`V	~2Õºp≤lÇ“x‚^bÉ3 ß'W¸ã*F¸Ïé—™>k¶Nœ»À>kR`ë>ÑNò&ïR1©FÑ÷•/ƒIêø·d÷ï3Æ¯îî⁄÷üø-<ûEE∞àR_∂·KŒZ0 r”Ò^≠´DO]%u≤O≤”h3ªøÎ:âó† “”D≈ä»k…öKÚÀã◊D©GÁ7t&Ä…{Bxó=Éô!~Ñ	}éÅﬁH:Ç›bhIﬁ8RS…±…πCb&AEi≈4=€˜N3\ÈM◊	∞⁄äIén∆nO?Ú\3
-ºamI›IˇÇ^*&70Ø‹`«	IíwÚ˙èÖá/k&0lqÛ`ºT_±Ä˚êπ-ÏÔ⁄ø_ìË˚#˜¿?Î•∫Ôƒ3-≤™‰]æŸ%Ñßµ+L•-ËÚ‹4
-«¸˙©&l&Ûòx–Vò;°P+ÌL+#.Ö⁄Ëàõó6rÈí&®è ÄÄ"7	«x$<êïRôî˚⁄$p&Ú≤lÒ«=ˆm¨	a=àjAXÑyÕD8Ç⁄£{Ê·òmÇKCs¢ÃÃ4ÀMsíxÕ4í∏eÃ≠pQ-hƒqfA%O^PiÅkˇÍ∏RÛ¶¿≥jN‘ºsiÊ-H2Èö˜÷ìOR$SÇ˙Ó`Ï©FIÉûŒ0ØÏ{b&]y£û’Ù«Ó®∂∏XGã98£œã8Ï˛G2Üq@∫=Û¢hÊãª€˚Ô~E;GÔﬁÌÌúÌr◊AÌx˚lÔΩﬂ?›[ZL˜”ì›‘¯_$ª˘/W^Ë..Ywt˙vˇu±n˙7ÁÅ◊+–Ö8®⁄˜àŒéŒ∂ﬂ--ff)L€3˜:Jü{¬aü÷∫®Ñı ÙÜ®äŸΩ—Å7à¬ñ<ø∏=–øBiÍà˙ÇuÃgtÈ2˙ï dI$.3Oﬁa•%ü≥áIÅK¯ïVS¡îBŸtB’fß‹∂;˛(¬GÍ€h8Äï“3;â9Á…B?€ÓßîÕˇBó®Au™çÍ¡ØlùË˙XWxÇ©#h◊Ó9–|ÃO3-ì 	Ê's VC–o›x»π3.Gõà∏˚\ÿbgÈ˜	BÛÇ#∞t¬T∫15]‰(¿“ÂO'K∫6‘°
-⁄xf}äÎoo*.»ãœ„ﬁ59>“<Õ€3(Ë©∆F‡æΩ≈M„cæe∆¿≠lΩ¿V∏?∫Ñ7î:7îf°O‰µ§n∏?óˆ™h^ﬂ°ﬁËÏ+Ærﬂ-Y∂%‘ÚÕy√ƒ$¨±XsT’
-õ∂qA´úEÛÇ∆9ãÊEe¥¬ˆidÕïl"àø√]‚Ωäb~†⁄kë.uëGüñöı=–ÕyÇ¥!I/¢ﬂWV4ú/$˚<‘8zπ∞∂PpÙD€A5IñP;ËÒhç•M√KŒ∑§Jc-∂WhŒ+Èîoë˘˜Ãwœ¸{é7÷å∫~æ≤¬>	Ωﬂ‹M‘ÍåØ5§\k%™i—ûù™]£Ì˚§Åπ-¨ó˚÷!	Ãì´˜O8˛äîjüJÂ;ÛzÚ§ˆ—&»⁄eÁ£öŒÑX˚Øˇ¸ˇééN˜ﬂP;◊B˘ WS7_Äü ä.‰&´<‘=T~ ®ª©\⁄´ªôµh'ß
-h~∞â˛–r[Á´ÁR™Ìˆ<˛w¥˜À^≈<û∫UèÀMŒÇ«≥ó≥f¬„©πôè+nÏ‹èÀ§T…„ﬂﬁ
-x4Â3ÊàVŸ∂;‚oËpˇÕ€≥
-˜CÜ iWWlp{Alf;AöïYÌ±ì{›"!UÓÄégn*«dÁË‡’˛·ﬁ.≈˚O7ßﬁ J,c˘M≥kûÃÈﬂΩ9ΩäÕÈxgÆ¨Ø]¨Æ?bÛ:ˆ⁄©¢Ó ÀÍå$¢yâj¯ı6-3WGœùFÖÒWív™ƒ∆!µ[ì°\z£F‰è7Q{Êõ}rÓG‘N_áœ“ΩêG /B©ÚÕ‰Êû(I€œ;Á?∆9jX{ÌÒ5
-˝Å◊√+z—z÷v~Dcß◊Éª~¸ëUÇ¢dVÊ€[2!wÄﬂE¢ÄI†ªÃ¢e≥˝¸û|]≥vd-x∆|›XÉ'ñÈ’*XOÓ®iörG)f„éZ-ÍéäO¥”ü_≈|ÆßhÆJr4Ì8öøZ›ì>‹ı·î•›≥"\–]É®Çñ°@iU∏∂HA})º¨.Ü˙÷”:Ø ∏é!-Àˇé‰¥∫\ó£1u=∆¡ï˝˝â¡mı$|∏.∆oÚû“´πT*=1°òÇÕ9Ë‹È~æ†N:f£ãçÁ¢À’tI?ÔtV[kk±8=oÇÕåµzû1*6ÒXW‡i§2ÎÙƒ¬çc|s≤}» , ∂O #«ªw‚;E”XR'ıd	=ì≤¢"ﬂd‰®aπ1eˆÆ mà
-}nö…*‹îU)ˆï®ˆπçºÅà]—ai∞t~}NΩÆüßΩoI"≠ÑbU⁄A9Â‹úîssSŒœQY^5ôﬁ5©ﬂπ¸,ò”Òs1g‰<‹ëssHŒÕ%9?ßdy~ûﬁi‚ÁbÆ»\˛∏È∏øàÎqˆŒ«9πÁ‰Äúó≤<œOÎt4qºŒÒhÄEL¿à-@©¨† %ø¸ñ©ƒyOÓ»˚tHﬁßKÚ^ùí”¡0kí[rıŸ∆⁄≥
-›íF#DΩïòReZ¸§MQ¡ÔM6{~w˘röWÅπ5˘ |—èÜÉL?:'Äõ[«ì—_ùsDçB‘ ¥∑ÔéBÔããËUP∑'ÜìR«)y?€.Y7’˝”ÿπt3	|Ë]ªÌUmé˝®|åC≠ï·m‡ˇÛ_Tè´ƒË˜uÙ˝ÊÊπ{ÅŸí¸Í\¿F5QÁ˛50¡fb?ÈµmW∞uÇµiöøÚzQ∆≤ÚGıh˚å≈ıOƒPé˙ÎY“|/CM‰}„aúëf	‚ùE‹√πèìùy·Ω¡Õ&
-o¬»6&^5úÒx‡6Ë'uÙ
-ÛﬂÁß{J˛~ç_™£ÖS˜“w—œ˚ut‚ü˚ë_Gê∫∫ÅwaËé	ó+¬}πçxrõù5ıcXƒúˆ¢Ÿ{2ÓÜ”˚Î¸¸Óµ”’å∏–„*∆Y˛Ωız.˘£ÜÜx≥{Œ Or.ÕP9>ª(ÏxSû;AXG›ö]<z¸aàæ_V¥{>â"ôì∆<Ω°;∫éö#ü±é67˘ò„∆5º€Û¬Ò¿¡Käâtsò@5F√∂ê‡P‘ZWØ¢™—&Ωp›ÄipÎàœŸx ¶ªD@6à–”4+ÚûÜjî=ªîOÈ·W5CªQ)É«Nónw®bo≥}s§
-˛ﬂ*àmgiàœãú7⁄πèÁb‡jHÑ-„]‹êe$Iäh-™s7∫r›ë˙¢ 4HÊ_⁄t√ıL£ã√YËnbƒ¯…›Éπ14e¶o¨ô@æ8m›¬$kÃ<˘|∏Æ„Cqj⁄à·‰‹v√hWA"tCGh Ì6˝¶Rã∫,JÊåI0°g‚!ÛﬂrèP—9¢Â¡4WØÍπ˙Ô•¿u>7<¨‰ı0%Œ$Ú≠Á@∑±UÌ~Ò=Õ&û&XA"`è‰	≤Zl75@À[7zº]Ûd·Ê˚uÈ»ÁéæV"DûØ:ùÛç\6âœMŸ¯¸…}A¥¨†8^ÆxÆ;V‘£‘ç0V:r0¢µÍi©©äîÎv√‘mgπ•g>=dgÔ¢u±vÒ‹n:DìΩ»ÇÙ/°Êı;˘“ÇÔù∞P0lﬂÖòyùh∏·|’Q$w¥∫W »czsÑW~ O¡„ıŸ⁄⁄˙sÀ’,ø{ÌÜÇ;•»q†Z·∫=œ°∆îVTjmà|”W’'Ê´ÑlCÀÒ»(éÄG6∏rnB˚éTQoJÿ‰≈≤
-ºy°	êã+äº\H[BÍêä~ã?/ö7[«?˛Ûˆ+¥Ûnˇp}áéﬂnülÔ¸ä…i)ztX]—MEÕ∏	ò±êQÎN[YÖ¥3ﬁ:vœÔ!ídj%A¥RÊ©$v˝+OOI<D‚©l[bº≠≤‡ä€ìFho{¡Ì°£ëH‹»Ω"°Êê⁄2bÊJ¶÷Ò}¸}öÚ±'ˆ¢ÎKOÉæÒ∑∑©Ë¥L0U<âåM2GÅâÌÙıÉå∂ıÀﬁ…˛Î}ˆﬁ¡ˆ·ˆõΩì‹óvèvŒéN–2ﬂHßg€«ysbıÒãÂ¨¿õ3Ö˛~íKd ‰Ó¿á4£ á.C°¸]ËFê"ÕüD¨O¸0˘•∂TGk+b™m1Ω"KxY⁄KW@∫Æ1w„”¬ç+I1∫Á++Àœ÷à‚”¸1îÓ
-PiüË¥÷/[ü‰Ùœﬂ†⁄◊∏—A·ps‹X'/˛U„¶∆rFﬁ:∏¿≤jî‚öLy¶À∆U˜ÜàÓÂˆÌku·Èˆ 
-
-˚N˜èùÎ∆Ucˇ∆äU≤	BÅO]ÚuøÒ·y˚KˇcB`ﬂÎı‹4E¥™)äÑﬁRå )ùd ;Uèéb‹X•”≤&t8cıå2eàîÎhÍZoêÅcN¯‹P’ À¨vf˘®ﬁu›ËXU7⁄Õ5‡o‘Û.˝∆∫<@æLx‚Ÿj{:¡ qu$°–<^3‘o¨/†Â{’t∂ΩË∑3”œ°ò^Ú«‡“¢ÿöÇÎaMtı¡¿3vF)/è…´C7µï≠˙.T˙ÑB|∞,„õ∆
-˛á/≠“/ñÀ∂ZÏ#ÿ5Únb_¨“gÖBÉ‚ˆ∞…!©}Ã.ih®`ﬁI¯#dâ'ïæ2˜Üï¡íø≠˘f¨Z.°^_Rs´€ì°vvcñ°Ñë]yÿƒÁ◊‚ﬁ{°[gŸüÈÔ◊π„œ±ˆŸc_0ÌA3ÜÈk◊ÅfL|äÜ¸f˛ÓÁó∑ÙË¬gÃæ∫ÿ\ç‘#R\LA)È#N#‘†ÏÉ¯ﬁDP,{7‚o„èû·èEÏ*è˙p&AËRª´–2î≥Ùﬂe—µÜE◊öRta≈ÅÃê∆≠>p\tÊúCÅÎÓ_*~˛¥VÑ≥xUsÑÄ(~ Kd|
-*7HñlÕÒ§!#¶wy∆’®j©œ0-{™4≈ûn-ïHV-*í1‹~À¢rÒ1#âÌ§¸Øñ	á?´°Âouñ≤E6\≠˝	-jœvv†_á˙◊7—¢∞=üe7 |ÀÎ+ÍÓ>©¶V#a› î∑_ß	ˇW£=Sy*œfaT•Íí^ÚÎ63˘nJV≥Õ=RFÜ¯Ÿlg‡c≠∞Z6KéÎ{b2ûs·ë2#ˇÒ3◊(]ä∑DI©Îcé‚óùä≥ïN∑É≥úÇp†älV.pñ+]m7•ﬂ\<›ﬁWg?≤6Í	L´âXÒP£\nƒXä|bÀÍgöÏhÿ≤äPÕ>´*“ü1∂'›>ﬁnrA˜–g0¡˚,[=Ggè‡Ì›ÔoWµ¡È€5∑AU≈®I:–lt§2Rb¿E≤tıãÅÒ äô‹Ùl…≥æAlúÓ$‹Ù'â˝"AKÙ#@J±./¸ë©¢eÑÆ´´ÍŸ3!äoÄèYôÅÂ´Ùh“ç–Rˆ©ZØ•VOsÓí%rz©ÂÀ‘π´ñZó,Ç .Îµ∏¢Âñ0%ˇcd.T≠•fˇ˘crî∞9_π€JÍZºX¶_ZΩŸ∫€ ﬁïFµ÷R°V⁄w[Ÿ˚œ®÷.÷JÁn+}´’:∆6∞0'©Âj‚†@Øà\◊Ò¥ç∆ê©Bc√vÓ<=rŒ∆Á$ˇY
-˝º∆&hé6aÑ·Q≈0ÎÒAükŸk˘è:~˘ÄY≈«ÀjﬁÈL$⁄À=äï*†ZˆÎÜ\PVùÃYwU@üØIkîF¯Sx%H#ˇ=ƒ[?n&v–‡R¯sù°|q@‘mD”BsL}%dâômyM’æA˝ ±”J¨¿zP
-2ÙlÅÖî€Œ∞æ N	ˆ,pzå∞
-ã∞∞•s¸)ª“ÅuèkZYÍ≠™'îã"‹Ωçbw1Èkûi!üA’≥›ΩqF⁄©6]∆˙öÁ;ï˘°“	O∏œ°õr”¥Øy ≈$ïŒ∑˙πv∫ç◊Ó¶ùo.…ÅM—o„Ñzûq5É…=µ„ø4xy˘•ƒ-_»2BÛç‰a neˇ¨F∫∑5bæjX`EÙ⁄Cıé˜ãÁ^°WóØÉG+«¨'ﬁºzT±Ωi¨k|-Gª{®µâ§äÜ¨Ã°  ∏µpÄ∑¶Z•ºMÄF'	–¿Í`^ÃÖ∫/°	≠HcëLÔL¯S∏¬¸Zfgæ≤ÖMÉ´\Âµ Ö$«V13Îåò-º‹êú√®¶™Íƒ™-‡g“è—˜mé¥Ü/ı5·q˝,”{“‰ê*\l)« ï|©√4„ÜÙU¸â ≈ŒâÁTÌ.M·)œ8b•äTr®dî*‚lXí±¨øñ™[î˘Æ0±9IwÀu≥`ï®w⁄∂Õ…}À∂ŒˇπSs“óÌ#7≈YôfÈ⁄í¿TãåƒÙaëµ∏Ç^¨†M›ì]ä4C7IcÇÓaï9nVõkÑ}kK4}öH™^Î à˝íyÌ•Lˆ, ?§ˆQı"=Ü—GH“◊SH˙z€ZπìguCX)ﬂåM$TÚsà’$&8∫…È–#ù®€|6§ﬁ!?†Uõ≠0ØéÇFa»é?aú»EiûLs…VÛªÙº˙Ïﬁºº˝‘√Ê_‘–¶ßnêT◊wü§ïHπ2˚ãUãπ'ã,ácŸQ¬ä'ûXçøæ∂¨só$%Òs§zNåX @óÁ{6Ù§î’X´’Píõ/|Zò∑M d=GñUÇrMƒ™‰pßüÙE≥ögìöõTTa»ïOå’Ë”#%!me Æ<*eQ!ˇ$eàÒ%ïÊÒ¶¶ËDãÔ=˙'>†*|ˆ≠∂)ø∆˛fÔ¡eäü`√cd3ïúïÑÀ6po¸ë—àTëŒ≤TV}urª≤ÌìÑdç≈Ylw[™Öt˝)∫çâ¸ ÂB%ÄÂ∆Är±»@äts˝Å©i◊SHq7ÒÑZ[¡©ÂΩï.X Pñ£\aı*]ŒF˙R/1â¸¯§ê‡9P@î¨sJQ'„—ë´KKöÙ⁄ù—<I!:D"˜, Z5dîœ”éÛÙÁÛ)Æ,¬ª°ìΩ;Øb¢àõÀí¢r)KëïÀ6ÑïÀOXä∞X±°´dÓ¬RÑ	1a7îÆNïp/òiÕEÙŸEë.∑!ˇ≤ÿU◊%≈]ﬂÿ´–ﬁ§ÈHÀ˙ÑhπzbüâNèˇÍ|äPu¡∑¿ÂË¥Œ!‘¯$c¿≥?zr#<`7B«d·“’,âøZ±ü§éf®…®\û€ì ñü@rÙ…L∆#¿Âı@¶ÏeZ∏‹∂ü©¿Úé*ß?e.õ#¨ıâôß6v†RùfçDWXc®ıƒ¥JÛã_÷,p≥B"ÅHcà∂ÉNËÛG'á˚áoò.¿Æ0µ¨–πJõ•dQ¡∫ÿî.Zı•,FÉûhãSñäôaïö(ïSW©ùR9u’Z+Yy™bÑ†lQ≈HLınÖD&óè±·ÙhÂ„ﬂã»«Ω_ˆ≤Ú±˝0Âc—*Beâ»ﬂJSñöaM>VQ‰h^‘= ˘òà¢X@VQ@âëò' 5≈î4Xà8vµ`e _A¡˙ D´ \ˇfÌ∑#èÓøy{&◊é•kÿ ÌP≠Ä-V®™<˘{q™˙VÛ"lÒ:{Í¶Ø≥ßn*ÒZïÄMDR,`ßØ÷ìòo5üü¨Û
->◊\rI:∂Ò £Å[º»/Ø&6K7¥ùëi U.ø(/(
-ó"´:Ÿßπ√W)•o∂UJ≈◊Ω*•cäkP≥“˘¬a∆—!¯s~øºŒ&z˚Î´ì˝]Óº´I∑Ñæ›{DÇ,qÔ±\<∂Æ=”E¶Ñjj|ıÓhÁOö¨(F:“’‰⁄ı<Ô/©˙c~∆ƒ%û>eûÆ»«H»∞˜3Ê)Ú	ÇúZ+∆XßV®Göm‹d<YpÒq]
-måï¶8¨RÜÄï,˘‘Y<ëôMY>ÜXW;ùúì`®MTì3woÃ¿^ﬁqJﬁùÖÛî6úÁ@•Ou¢¶ú99Q≈ÂB›Ø[7±ävRÏ.V˘÷Ìº¡≈€Á˜±Ïnbï[Ç¢ó¶¶Í•¿µ©©˙)Ë	û™Ø"ﬁ`MG”_û"ÁFÇÊ:Ñ)}3q
-√èt»î∏»#^ÂNqì'vˇ¨ºÃ3≈uûÏ˝ù‘ùÆ¬◊y™∫–√TÖÈÔÛî&®ÍÀ<^ÁQ›’—]ªôi*;nnó$*§u.W#*§w."*§wN◊ 
-^ÑP_◊[ì]k^Ü∞9·BÑ˘öT.J'BÑ∆∑…¿Í ‹qà±O˛ãÄ	Â´˘ñóT¯-à’Ù-µñëVˆcªq!¿t˙Û+[¥4¶≈˙¬L<I¬YT]8–ÃËôŒ3#¢¶ÛæÃà®)ù.E©Jq∆F∏hTqº°ŒFı6ÅõÏ=¿I0’ë”©;·†C9
-':d1 è:úoè;¸{j±fÜ&W|bP(~§D≥úqÔËaëÄï'Ù	=|Bü–√'Ù–¸ƒ˝¢á‚!3%zËNÅ&¡ëO·uï˘Äû√'¸	?|¬≠CÒ∂Ã◊ &â•Ïƒ$è˜√ÅÛq!u…g>¢x Uwgfv›äòC’=¡à9T›éò.˝â’›ã!‰=Z Qºoí#íH˜«"≤H‚«"˛MZ®ôAà|Æë}§Ö”\qÔ ¢˝Öå'¯	>|Çü‡√'¯–¸ƒ˝¬á…3%x8ö<L.˛=ÅáâR>Åá≥£ı	<ú-Ωè<3B|=‡aísﬁ<Ø∆>01§ÛÅ≈„®∫l≥!Áû`C#M˜i∫7»0aÂdX]¶á«∆ÿ]Î◊GGg{'x£lü¸äv∂Ovµ¢TÊ†Ä‚ê9 ·œ–CÍK^Œÿÿë›´˙T∫f®ßøöÅ†¥»W“Ö ÒÌ¡Ä¶—Ωî/&fEÕ_,˜W$åE
-4ÊÄúAe«û{#Ô5¬≤»È~¢A[G{GêˇêÏâê“x·PJ> î¢áõF°ÀhmæXó`ßÏ¬Î—ıx}≈¬ÇS&`U¥à´Cˇ!∂Ùí¥æeÒJöæP©s´iù€ÔN3v⁄M• ÷¸HâíßùßäKã?¨ô≤,n;WïWX≥eS›€v™*/Ë]`™RáæP‡çØpGµw‘‡2uÊÛ÷V Ä+Ê}KÀªπGÇ‡Üﬂ9Ωs!—.Ö:ﬁâ´¢zﬁVb*DP<OÓsôèR,˝»~Ω[™≈ÌÅû˘˛ÌˆŸÈˆÒ1:ÿ;=›~≥áéOˆ~Ÿﬂ{π~∂ﬂ	*ÊÌïs‡˜ú¡—´yí;:£ux◊XÚF°5V–oçœ·Á£¡›À˛ı‘Âg+Ë/g/«xa'Ë*†∞¶*úKLöÎ
-oc5ó˘º€ç8fË`]∂Û¶KÅ8#oœz#t·Ù»øø˘˛ˇã˜ÍM‘∏F+ì¥ç§#ÇYDo]∫N´Ü]ºæBvÒÏ‚U…«^ÿçnØ'∂ï%B“Ô_56Pˇ?ÌÁ&Ù-∑UI>Â•WäöÔ˚Nnè«˚]$w∑Üª[É
-¨ÉW°ì	YPï#—Ï-›Û¢ﬂ1ÿ"L¢Äá¢˚ã∆ï◊s∂8Ω¯$	CÁ“E«Å˚≈sØ∞Õ—Qvíµ6>¥Z /%÷Jõ'§U4‹∞xcbﬁ–lZ!:w/‡,Û«‘Í‡$)-
-Âú®?<üDë? ¥›åÅI…óôo˝VC∫ü_ﬁ÷à	ÀÉ˜â©]`˘Î*–æÙîP&⁄XA‘K$0~Ï6¢è¥V~}Ü9„ôÃàπr'q4ÅA˙AcÏ{IïY,íS*EnvRˇﬂˇ˛üô•§îÿ∆›?∆LŒ3úe≠j&‹Õ˝ È]Çj|‹˜G.zÌπòK≥Ä¿
-Ç $IEôË˙Xñ7…ÔÅ≈f8åú ÇœsaÇéF∞(wäR€` Ö.MA™ÄH˚5©#£?ËÂj ŒWãüî¢sÃ®©Jå∂j©ˆ{q’Z˚m¨“d7‡•π“áŒº@ù‘‚3-V’£s=<á–ßÖ≠ˇ¨∂√	Ë≈/ñI˚ ûΩ—x)&*e†ü¨åÅü/Œ`‚æ‰≥F;T#cX"ıù—%~∏Ê¶d}≠Ê61_∫Qì4™qFåÒ∏}Ãnr¡m^6—
-÷x[ÌŒÍ⁄˙3®˛ºù¸≠¶9)÷$«z+ã h]±Ò˘™Ó‘¸ø;	7AØm¥≈?Öü}ÏO"lÃπ\”°L£ÇÌ´ísLbß$^,¿&Á´≈NLçÏ gÚ\]¯RW˜L√¸Ÿ*”Bxñæ∏öÆLŸ»Ø˝ kê÷ì”JÉA6èÊ|ÜÛ?©sZW4z‰|Ò.l¿ÇΩ?>˜π
-‡œú‘¯Ó££àÌçÙŸp;˛ÿs{µ(ò<ÛÜ.Ê«ö†>∞7©ÓPG¯DZ—¥pßﬁ∫ÖKÉ°¡jáT;TøÚi-‚\‹hâ÷"ÍwähQçmN,⁄$2F1Hﬂ·©ªëœÉ÷ï:Jmôº@¯KU:ÁP€õ˝˘hás¿7§§7iÿ`—`5´ı ˙çrsgüÉUp◊Q¥û:(™x¿t–∑l¨ÒÑ/o[-’wŸC4™Û‡R≈‹í–ƒπlP9ˇ·ÓÖÎ∏Ìèπ≤ko•e=6'ºﬂ ñåY»ﬁhÑª`C^‹ÅÉÌ˙,√eÿGOhl·◊æ€dõ8?Bõ8	§Âq'„øOÈ¨ C¡ıA‚˜dı TGıÅvr»«RC)¨cçÏ&0ã÷Ù…7tvúQ◊hmùYÃ•Íd∏´Á%í4¿f‡=≠∂¸Á›ÂÀ:Z\Tûﬁ™ë˜õƒt	ﬂ{Qø∂∏“Y\îã~√.b@ÇÍVkIs@r"ü∑—ÏÕìÔ÷Z ûÔêãyAG¿=Ù/v≥íÙ.íÖß•Hˇ nUNoX≈+ÁÁ` ,◊)3-[@Æé*ﬁËß~ç√ÕÂÂ+ß9tóøΩ%M‹˝ª„Â∑∑Ó®Î˜‹üOˆw¸·1 (4wüshŸ∑3ˆöW†Ô9„q≥ÎóC,Ä¶&A5üÄˇpÕQ#§‘ëV„RJ©ÏÉ
-•J\âÿaÀå ÛLDêDTb`räI√kã˝çMAÇ`Ã¬“Õ >“"»Ö¿G¢‰<V˜	(ßRïåpëˆÈOvæƒü·ïº˚oˇ  ˇˇ =√∑9
+      {/* ALL MODALS & DIALOGS */}
+      <PatientDeskModals
+        allLabTestsText={allLabTestsText}
+        allMedicalReportResultsText={allMedicalReportResultsText}
+        appDate={appDate}
+        appError={appError}
+        appSuccess={appSuccess}
+        appointments={appointments}
+        canAdd={canAdd}
+        canBookAppointment={canBookAppointment}
+        canIssueToken={canIssueToken}
+        claimBillCustomOrg={claimBillCustomOrg}
+        claimBillDesignation={claimBillDesignation}
+        claimBillEmployeeId={claimBillEmployeeId}
+        claimBillOrg={claimBillOrg}
+        claimBillRemarks={claimBillRemarks}
+        clinicSettings={clinicSettings}
+        currentUser={currentUser}
+        dailyCollectionReportData={dailyCollectionReportData}
+        dailyCollectionReportFormat={dailyCollectionReportFormat}
+        deletePatientModalData={deletePatientModalData}
+        detailReportMode={detailReportMode}
+        detailReportSearch={detailReportSearch}
+        detailReportShiftFilter={detailReportShiftFilter}
+        directVisitShiftModal={directVisitShiftModal}
+        executeDeletePatientRecord={executeDeletePatientRecord}
+        executeSavePatientVisit={executeSavePatientVisit}
+        existingFee={existingFee}
+        fetchNhcArchive={fetchNhcArchive}
+        filteredPatients={filteredPatients}
+        focReason={focReason}
+        focWaivedClinicalFee={focWaivedClinicalFee}
+        focWaivedFileCardFee={focWaivedFileCardFee}
+        focWaivedOpdFee={focWaivedOpdFee}
+        futureBookingModal={futureBookingModal}
+        generateDailyCollectionReport={generateDailyCollectionReport}
+        getLabTestList={getLabTestList}
+        getPatientVisitDateOptions={getPatientVisitDateOptions}
+        getResolvedNhcPatientName={getResolvedNhcPatientName}
+        gridSelectorMode={gridSelectorMode}
+        gridSelectorPatientId={gridSelectorPatientId}
+        gridSelectorSelectedDate={gridSelectorSelectedDate}
+        gridViewEndDate={gridViewEndDate}
+        gridViewStartDate={gridViewStartDate}
+        groupedRxByDate={groupedRxByDate}
+        handleAddCustomLabTest={handleAddCustomLabTest}
+        handleBookAppointment={handleBookAppointment}
+        handleCleanPrintDailyCollectionReport={handleCleanPrintDailyCollectionReport}
+        handleConfirmDirectVisitToken={handleConfirmDirectVisitToken}
+        handleConfirmGridVisitSelection={handleConfirmGridVisitSelection}
+        handleIssueTokenForNewPatient={handleIssueTokenForNewPatient}
+        handlePrintClaimBill={handlePrintClaimBill}
+        handlePrintPreviousVisitPrescription={handlePrintPreviousVisitPrescription}
+        handleSaveFromRecentModal={handleSaveFromRecentModal}
+        handleSelectPatientFromModal={handleSelectPatientFromModal}
+        handleSelectPatientFromMultiModal={handleSelectPatientFromMultiModal}
+        handleSelectSmartMedicine={handleSelectSmartMedicine}
+        handleToggleLabTestAdvice={handleToggleLabTestAdvice}
+        historyAlertModalOpen={historyAlertModalOpen}
+        invoices={invoices}
+        isClaimBillModalOpen={isClaimBillModalOpen}
+        isDailyCollectionReportModalOpen={isDailyCollectionReportModalOpen}
+        isDetailReportModalOpen={isDetailReportModalOpen}
+        isFetchingPvHistory={isFetchingPvHistory}
+        isGridVisitSelectorModalOpen={isGridVisitSelectorModalOpen}
+        isMultiPatientModalOpen={isMultiPatientModalOpen}
+        isNewPatientSearchModalOpen={isNewPatientSearchModalOpen}
+        isOpdTokenModalOpen={isOpdTokenModalOpen}
+        isRecentVisitsModalOpen={isRecentVisitsModalOpen}
+        isReportDateModalOpen={isReportDateModalOpen}
+        isSearchLoadingModal={isSearchLoadingModal}
+        isSearchingArchive={isSearchingArchive}
+        isSubmittingToken={isSubmittingToken}
+        items={items}
+        labTests={labTests}
+        loadVisitIntoModalForm={loadVisitIntoModalForm}
+        modalCardPkr={modalCardPkr}
+        modalClinicalItems={modalClinicalItems}
+        modalClinicalMedicinePkr={modalClinicalMedicinePkr}
+        modalConsultationFee={modalConsultationFee}
+        modalEditingVisitId={modalEditingVisitId}
+        modalFilePkr={modalFilePkr}
+        modalLabTestAdvice={modalLabTestAdvice}
+        modalMedicalReportResult={modalMedicalReportResult}
+        modalPatentItems={modalPatentItems}
+        modalPatientId={modalPatientId}
+        modalPatientName={modalPatientName}
+        modalRemarks={modalRemarks}
+        modalSaveError={modalSaveError}
+        modalSaveSuccess={modalSaveSuccess}
+        modalSymptomsDiagnosis={modalSymptomsDiagnosis}
+        modalVisitDate={modalVisitDate}
+        mongoSmartLocatorList={mongoSmartLocatorList}
+        multiPatientModalFilter={multiPatientModalFilter}
+        multiPatientSearchQuery={multiPatientSearchQuery}
+        multiPatientSearchResults={multiPatientSearchResults}
+        newPatName={newPatName}
+        newPatPhone={newPatPhone}
+        newPatRemarks={newPatRemarks}
+        newPatientSearchQuery={newPatientSearchQuery}
+        nhcArchiveList={nhcArchiveList}
+        nhcPatients={nhcPatients}
+        opdTokenModalPatient={opdTokenModalPatient}
+        openWhatsAppUrl={openWhatsAppUrl}
+        patients={patients}
+        pvCardPkr={pvCardPkr}
+        pvClinicalMedicinePkr={pvClinicalMedicinePkr}
+        pvCustomTestInput={pvCustomTestInput}
+        pvFilePkr={pvFilePkr}
+        pvLabTestAdvice={pvLabTestAdvice}
+        pvLabTestModalOpen={pvLabTestModalOpen}
+        pvLabTestModalSearch={pvLabTestModalSearch}
+        pvNhcHistory={pvNhcHistory}
+        pvSmartLocatorModalOpen={pvSmartLocatorModalOpen}
+        pvSmartLocatorNotification={pvSmartLocatorNotification}
+        pvSmartLocatorSearch={pvSmartLocatorSearch}
+        pvSmartLocatorSelectedTag={pvSmartLocatorSelectedTag}
+        pvSmartLocatorTargetBox={pvSmartLocatorTargetBox}
+        pvVisitDate={pvVisitDate}
+        recentModalPatientOnly={recentModalPatientOnly}
+        recentModalSearch={recentModalSearch}
+        regSuccessData={regSuccessData}
+        regSuccessModalOpen={regSuccessModalOpen}
+        reportEndDate={reportEndDate}
+        reportStartDate={reportStartDate}
+        selectedPatientId={selectedPatientId}
+        selectedPvPatient={selectedPvPatient}
+        selectedReportTypeInModal={selectedReportTypeInModal}
+        setAppDate={setAppDate}
+        setClaimBillCustomOrg={setClaimBillCustomOrg}
+        setClaimBillDesignation={setClaimBillDesignation}
+        setClaimBillEmployeeId={setClaimBillEmployeeId}
+        setClaimBillOrg={setClaimBillOrg}
+        setClaimBillRemarks={setClaimBillRemarks}
+        setDailyCollectionEndDate={setDailyCollectionEndDate}
+        setDailyCollectionReportData={setDailyCollectionReportData}
+        setDailyCollectionReportFormat={setDailyCollectionReportFormat}
+        setDailyCollectionStartDate={setDailyCollectionStartDate}
+        setDeletePatientModalData={setDeletePatientModalData}
+        setDetailReportMode={setDetailReportMode}
+        setDetailReportSearch={setDetailReportSearch}
+        setDetailReportShiftFilter={setDetailReportShiftFilter}
+        setDirectVisitShiftModal={setDirectVisitShiftModal}
+        setExistingFee={setExistingFee}
+        setFocReason={setFocReason}
+        setFocWaivedClinicalFee={setFocWaivedClinicalFee}
+        setFocWaivedFileCardFee={setFocWaivedFileCardFee}
+        setFocWaivedOpdFee={setFocWaivedOpdFee}
+        setFutureBookingModal={setFutureBookingModal}
+        setGridSelectorSelectedDate={setGridSelectorSelectedDate}
+        setHidePreviousHistory={setHidePreviousHistory}
+        setHistoryAlertModalOpen={setHistoryAlertModalOpen}
+        setIsClaimBillModalOpen={setIsClaimBillModalOpen}
+        setIsDailyCollectionReportModalOpen={setIsDailyCollectionReportModalOpen}
+        setIsDetailReportModalOpen={setIsDetailReportModalOpen}
+        setIsGridVisitSelectorModalOpen={setIsGridVisitSelectorModalOpen}
+        setIsMultiPatientModalOpen={setIsMultiPatientModalOpen}
+        setIsNewPatientSearchModalOpen={setIsNewPatientSearchModalOpen}
+        setIsOpdTokenModalOpen={setIsOpdTokenModalOpen}
+        setIsRecentVisitsModalOpen={setIsRecentVisitsModalOpen}
+        setIsReportDateModalOpen={setIsReportDateModalOpen}
+        setModalCardPkr={setModalCardPkr}
+        setModalClinicalItems={setModalClinicalItems}
+        setModalClinicalMedicinePkr={setModalClinicalMedicinePkr}
+        setModalConsultationFee={setModalConsultationFee}
+        setModalFilePkr={setModalFilePkr}
+        setModalLabTestAdvice={setModalLabTestAdvice}
+        setModalMedicalReportResult={setModalMedicalReportResult}
+        setModalPatentItems={setModalPatentItems}
+        setModalPatientId={setModalPatientId}
+        setModalPatientName={setModalPatientName}
+        setModalRemarks={setModalRemarks}
+        setModalSymptomsDiagnosis={setModalSymptomsDiagnosis}
+        setModalVisitDate={setModalVisitDate}
+        setMultiPatientModalFilter={setMultiPatientModalFilter}
+        setNewPatName={setNewPatName}
+        setNewPatPhone={setNewPatPhone}
+        setNewPatRemarks={setNewPatRemarks}
+        setNewPatientSearchQuery={setNewPatientSearchQuery}
+        setPvClinicalItems={setPvClinicalItems}
+        setPvClinicalMedicineExpireDate={setPvClinicalMedicineExpireDate}
+        setPvCustomTestInput={setPvCustomTestInput}
+        setPvLabTestAdvice={setPvLabTestAdvice}
+        setPvLabTestModalOpen={setPvLabTestModalOpen}
+        setPvLabTestModalSearch={setPvLabTestModalSearch}
+        setPvMedicalReportResult={setPvMedicalReportResult}
+        setPvPatientItems={setPvPatientItems}
+        setPvSaveSuccess={setPvSaveSuccess}
+        setPvSmartLocatorModalOpen={setPvSmartLocatorModalOpen}
+        setPvSmartLocatorSearch={setPvSmartLocatorSearch}
+        setPvSmartLocatorSelectedTag={setPvSmartLocatorSelectedTag}
+        setPvSmartLocatorTargetBox={setPvSmartLocatorTargetBox}
+        setPvSymptomsDiagnosis={setPvSymptomsDiagnosis}
+        setRecentModalPatientOnly={setRecentModalPatientOnly}
+        setRecentModalSearch={setRecentModalSearch}
+        setRegSuccessData={setRegSuccessData}
+        setRegSuccessModalOpen={setRegSuccessModalOpen}
+        setReportEndDate={setReportEndDate}
+        setReportStartDate={setReportStartDate}
+        setSelectedReportTypeInModal={setSelectedReportTypeInModal}
+        setShift={setShift}
+        setShowFocFeeDetailsModal={setShowFocFeeDetailsModal}
+        setShowFollowUpConfirmModal={setShowFollowUpConfirmModal}
+        setSmsSentToast={setSmsSentToast}
+        setTokenIssueMode={setTokenIssueMode}
+        setWaCopied={setWaCopied}
+        setWaModalMessage={setWaModalMessage}
+        setWaModalMobile={setWaModalMobile}
+        setWaModalOpen={setWaModalOpen}
+        shift={shift}
+        showFocFeeDetailsModal={showFocFeeDetailsModal}
+        showFollowUpConfirmModal={showFollowUpConfirmModal}
+        smartLocatorMedicines={smartLocatorMedicines}
+        smsSentToast={smsSentToast}
+        tokenIssueMode={tokenIssueMode}
+        tokens={tokens}
+        visits={visits}
+        waCopied={waCopied}
+        waModalMessage={waModalMessage}
+        waModalMobile={waModalMobile}
+        waModalOpen={waModalOpen}
+        waModalPatientId={waModalPatientId}
+        waModalPatientName={waModalPatientName}
+      />
+    </div>
+  );
+}
