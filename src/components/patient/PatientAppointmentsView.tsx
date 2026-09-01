@@ -405,50 +405,6 @@ export default function PatientAppointmentsView({
               return clean;
             };
 
-            // Unified Appointment Records list (incorporating Appointments, Tokens & Visits)
-            const combinedApps: Appointment[] = [...(appointments || [])];
-
-            (tokens || []).forEach((tok) => {
-              const tokDateNorm = normalizeDateStr(tok.Date);
-              const exists = combinedApps.some((a) => isSamePatient(a.PatientID, tok.PatientID) && normalizeDateStr(a.AppointmentDate) === tokDateNorm);
-              if (!exists) {
-                combinedApps.push({
-                  AppointmentID: `APP-TOK-${tok.TokenNo}-${tokDateNorm}`,
-                  PatientID: tok.PatientID,
-                  AppointmentDate: tokDateNorm,
-                  Shift: tok.Shift || 1,
-                  Status: tok.Status === 2 ? 2 : tok.Status === 3 ? 3 : 1,
-                  Remarks: `Token #${tok.TokenNo} Schedule`,
-                  FeeCharged: 0,
-                  PaymentStatus: tok.Status === 2 ? 'Visited' : 'Pending'
-                });
-              }
-            });
-
-            (visits || []).forEach((vis) => {
-              const visDateNorm = normalizeDateStr(vis.VisitDate);
-              const exists = combinedApps.some((a) => isSamePatient(a.PatientID, vis.PatientID) && normalizeDateStr(a.AppointmentDate) === visDateNorm);
-              if (!exists) {
-                let visFee = Number(vis.ConsultationFee) || 0;
-                if (!visFee && vis.VisitRemarks) {
-                  const match = vis.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || 
-                                vis.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || 
-                                vis.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
-                  if (match) visFee = Number(match[1]);
-                }
-                combinedApps.push({
-                  AppointmentID: `APP-VIS-${vis.VisitID || Date.now()}`,
-                  PatientID: vis.PatientID,
-                  AppointmentDate: visDateNorm,
-                  Shift: 1,
-                  Status: 4,
-                  Remarks: vis.VisitRemarks || 'OPD Consultation Visit',
-                  FeeCharged: visFee,
-                  PaymentStatus: 'Paid'
-                });
-              }
-            });
-
             // Helper to get only the doctor's checkup consultation/OPD fee for this appointment
             const getDoctorCheckupFee = (app: Appointment): number => {
               const apptDateStr = normalizeDateStr(app.AppointmentDate);
@@ -490,16 +446,65 @@ export default function PatientAppointmentsView({
                 if (fee > 0) return fee;
               }
 
-              // 3. If the appointment entry was created directly from a doctor visit
+              // 3. If the appointment entry was created directly from a doctor visit or has FeeCharged
               if (app.AppointmentID && app.AppointmentID.startsWith('APP-VIS-')) {
                 return Number(app.FeeCharged) || 0;
               }
 
-              // Otherwise, if doctor has not yet conducted checkup & added fee, do NOT show uploaded/dummy fee
+              if (Number(app.FeeCharged) > 0) {
+                return Number(app.FeeCharged);
+              }
+
+              // Otherwise, if doctor has not yet conducted checkup & added fee, do NOT show
               return 0;
             };
 
-            const validApps = combinedApps;
+            // Unified Appointment Records list (Only include records where doctor entered OPD / App fee)
+            const combinedApps: Appointment[] = [];
+
+            // Add registered appointments that have OPD / App fee entered
+            (appointments || []).forEach(a => {
+              const fee = getDoctorCheckupFee(a) || Number(a.FeeCharged) || 0;
+              if (fee > 0) {
+                combinedApps.push({
+                  ...a,
+                  FeeCharged: fee
+                });
+              }
+            });
+
+            // Add doctor visits where OPD / App fee was entered
+            (visits || []).forEach((vis) => {
+              let visFee = Number(vis.ConsultationFee) || 0;
+              if (!visFee && vis.VisitRemarks) {
+                const match = vis.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || 
+                              vis.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || 
+                              vis.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
+                if (match) visFee = Number(match[1]);
+              }
+              if (visFee > 0) {
+                const visDateNorm = normalizeDateStr(vis.VisitDate);
+                const exists = combinedApps.some((a) => isSamePatient(a.PatientID, vis.PatientID) && normalizeDateStr(a.AppointmentDate) === visDateNorm);
+                if (!exists) {
+                  combinedApps.push({
+                    AppointmentID: `APP-VIS-${vis.VisitID || Date.now()}`,
+                    PatientID: vis.PatientID,
+                    AppointmentDate: visDateNorm,
+                    Shift: 1,
+                    Status: 4,
+                    Remarks: vis.VisitRemarks || 'OPD Consultation Visit',
+                    FeeCharged: visFee,
+                    PaymentStatus: 'Paid'
+                  });
+                }
+              }
+            });
+
+            // Strictly filter: ONLY show records where doctor OPD / App fee has been entered (> 0)
+            const validApps = combinedApps.filter((app) => {
+              const fee = getDoctorCheckupFee(app) || Number(app.FeeCharged) || 0;
+              return fee > 0;
+            });
 
             const filteredApps = validApps.filter((app) => {
               // 1. Shift filter
@@ -631,7 +636,7 @@ export default function PatientAppointmentsView({
                             <p className="font-bold text-xs text-slate-700">No appointment records found in selected view.</p>
                             {validApps.length > 0 ? (
                               <div className="mt-2 space-y-1">
-                                <p className="text-[11px] text-slate-500">There are {validApps.length} total appointments recorded outside this date range or shift.</p>
+                                <p className="text-[11px] text-slate-500">There are {validApps.length} appointment records with OPD / App fee recorded outside this date range or shift.</p>
                                 <button
                                   type="button"
                                   onClick={() => {
@@ -647,7 +652,9 @@ export default function PatientAppointmentsView({
                                 </button>
                               </div>
                             ) : (
-                              <p className="text-[11px] mt-1 text-slate-400">Click the "Add New Appointment" button below to create a new appointment record.</p>
+                              <p className="text-[11px] mt-1 text-slate-500 max-w-md mx-auto">
+                                Appointment records appear automatically when the doctor enters <strong>OPD / App (PKR)</strong> consultation fee during the patient visit, or when you add an appointment with a consultation fee.
+                              </p>
                             )}
                           </td>
                         </tr>

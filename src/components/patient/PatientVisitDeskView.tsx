@@ -189,6 +189,9 @@ export default function PatientVisitDeskView(props: any) {
     return validApp ? Number((validApp as any).PaidAmount || (validApp as any).ConsultationFee || validApp.FeeCharged || (validApp as any).Fee || 0) : 0;
   }, [patientAppointments]);
 
+  // State to toggle masking of Daily Collection in Patient Visit & Prescription Desk (masked *** by default)
+  const [isDailyCollectionVisible, setIsDailyCollectionVisible] = useState<boolean>(false);
+
   return (
     <div className="space-y-3" id="patient-visit-subtab">
           
@@ -207,18 +210,26 @@ export default function PatientVisitDeskView(props: any) {
                   </div>
                 </div>
 
-                {/* Shift-wise Daily Collection Display - Mobile Responsive */}
+                {/* Shift-wise Daily Collection Display - Masked with *** by default, shows payment details on click */}
                 <div 
-                  onClick={() => setShowDailyBreakdownMobile(prev => !prev)}
-                  className="group relative flex flex-wrap items-center justify-between sm:justify-start gap-1.5 bg-slate-900 text-white px-2.5 py-1 rounded-lg border border-emerald-500/40 shadow-2xs text-xs font-bold transition hover:bg-slate-800 cursor-pointer w-full sm:w-auto"
+                  onClick={() => setIsDailyCollectionVisible(prev => !prev)}
+                  className="group relative flex flex-wrap items-center justify-between sm:justify-start gap-1.5 bg-slate-900 text-white px-2.5 py-1 rounded-lg border border-emerald-500/40 shadow-2xs text-xs font-bold transition hover:bg-slate-800 cursor-pointer w-full sm:w-auto select-none"
+                  title={isDailyCollectionVisible ? "Click to mask daily collection details" : "Click to view daily collection & payment details"}
                 >
                   <div className="flex items-center space-x-1.5 shrink-0">
                     <Coins className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
                     <span className="text-emerald-300 font-extrabold text-[10px] uppercase tracking-wider whitespace-nowrap">
                       Daily Collection ({shift === 1 ? 'Morning' : 'Evening'}):
                     </span>
-                    <span className="text-amber-300 font-black text-xs font-mono whitespace-nowrap">
-                      PKR {shiftDailyCollection.grandTotal.toLocaleString()}
+                    <span className="text-amber-300 font-black text-xs font-mono whitespace-nowrap tracking-widest">
+                      {isDailyCollectionVisible ? `PKR ${shiftDailyCollection.grandTotal.toLocaleString()}` : '***'}
+                    </span>
+                    <span className="text-slate-400 hover:text-white transition ml-0.5" title={isDailyCollectionVisible ? "Hide payment amount" : "Show payment amount"}>
+                      {isDailyCollectionVisible ? (
+                        <Eye className="w-3.5 h-3.5 text-emerald-400" />
+                      ) : (
+                        <EyeOff className="w-3.5 h-3.5 text-amber-300/80" />
+                      )}
                     </span>
                   </div>
 
@@ -248,37 +259,52 @@ export default function PatientVisitDeskView(props: any) {
                     </div>
                   </div>
 
-                  {/* Hover & Tap Breakdown Tooltip */}
-                  <div className={`absolute top-full left-0 sm:left-auto right-0 sm:right-auto mt-1.5 ${showDailyBreakdownMobile ? 'flex' : 'hidden group-hover:flex'} flex-col bg-slate-900 text-white p-3 rounded-xl border border-slate-700 shadow-xl z-50 min-w-[240px] max-w-[calc(100vw-24px)] text-xs space-y-1.5 pointer-events-auto sm:pointer-events-none`}>
-                    <div className="font-extrabold text-emerald-400 border-b border-slate-800 pb-1 flex justify-between items-center text-[11px]">
-                      <span>Shift Revenue Breakdown</span>
-                      <span className="text-[9px] text-slate-400 uppercase font-mono">{shift === 1 ? 'Morning' : 'Evening'} Shift</span>
+                  {/* Click-to-reveal Breakdown Details Popover */}
+                  {isDailyCollectionVisible && (
+                    <div 
+                      onClick={(e) => e.stopPropagation()}
+                      className="absolute top-full left-0 sm:left-auto right-0 sm:right-auto mt-1.5 flex flex-col bg-slate-900 text-white p-3 rounded-xl border border-slate-700 shadow-xl z-50 min-w-[250px] max-w-[calc(100vw-24px)] text-xs space-y-1.5 animate-in fade-in zoom-in-95 duration-150 pointer-events-auto"
+                    >
+                      <div className="font-extrabold text-emerald-400 border-b border-slate-800 pb-1 flex justify-between items-center text-[11px]">
+                        <span>Shift Revenue Breakdown</span>
+                        <div className="flex items-center space-x-1.5">
+                          <span className="text-[9px] text-slate-400 uppercase font-mono">{shift === 1 ? 'Morning' : 'Evening'} Shift</span>
+                          <button
+                            type="button"
+                            onClick={() => setIsDailyCollectionVisible(false)}
+                            className="text-slate-400 hover:text-white p-0.5 transition cursor-pointer"
+                            title="Close / Mask"
+                          >
+                            <X className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                      <div className="flex justify-between text-slate-300 text-[11px]">
+                        <span>Clinical Medicine:</span>
+                        <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.clinicalMedsTotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-300 text-[11px]">
+                        <span>File Fee:</span>
+                        <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.fileTotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-300 text-[11px]">
+                        <span>Cards Fee:</span>
+                        <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.cardTotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-300 text-[11px]">
+                        <span>OPD / Tokens:</span>
+                        <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.opdTotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-slate-300 text-[11px]">
+                        <span>Store / Pharmacy:</span>
+                        <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.storePaymentTotal.toLocaleString()}</span>
+                      </div>
+                      <div className="flex justify-between text-amber-300 font-extrabold border-t border-slate-800 pt-1 text-xs">
+                        <span>Grand Total:</span>
+                        <span className="font-mono text-sm font-black">PKR {shiftDailyCollection.grandTotal.toLocaleString()}</span>
+                      </div>
                     </div>
-                    <div className="flex justify-between text-slate-300 text-[11px]">
-                      <span>Clinical Medicine:</span>
-                      <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.clinicalMedsTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300 text-[11px]">
-                      <span>File Fee:</span>
-                      <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.fileTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300 text-[11px]">
-                      <span>Cards Fee:</span>
-                      <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.cardTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300 text-[11px]">
-                      <span>OPD / Tokens:</span>
-                      <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.opdTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-slate-300 text-[11px]">
-                      <span>Store / Pharmacy:</span>
-                      <span className="font-mono font-bold text-white">PKR {shiftDailyCollection.storePaymentTotal.toLocaleString()}</span>
-                    </div>
-                    <div className="flex justify-between text-amber-300 font-extrabold border-t border-slate-800 pt-1 text-xs">
-                      <span>Grand Total:</span>
-                      <span className="font-mono text-sm font-black">PKR {shiftDailyCollection.grandTotal.toLocaleString()}</span>
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
 
