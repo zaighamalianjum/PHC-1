@@ -31,6 +31,8 @@ export interface Patient {
 export interface Appointment {
   AppointmentID: string;
   PatientID: string;
+  PatientName?: string;
+  PhoneMobile?: string;
   AppointmentDate: string;
   Shift: 1 | 2; // 1 = Morning, 2 = Evening
   Status: 1 | 2 | 3 | 4; // 1 = New, 2 = Visited, 3 = Cancel, 4 = Payment Posted

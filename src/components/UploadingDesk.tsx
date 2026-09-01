@@ -1699,6 +1699,8 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
       const cleanAppointments: Appointment[] = appointmentPreview.map((item, idx) => ({
         AppointmentID: item.AppointmentID || `APP-IMP-${Date.now()}-${idx + 1}`,
         PatientID: String(item.PatientID).trim(),
+        PatientName: item.PatientName || '',
+        PhoneMobile: item.PhoneMobile || '',
         AppointmentDate: item.AppointmentDate || new Date().toISOString().split('T')[0],
         Shift: item.Shift || 1,
         Status: item.Status || 2,
@@ -1727,6 +1729,54 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
 
       if (setAppointments) {
         setAppointments(updatedAppointments);
+      }
+
+      // 1b. Auto-sync with main patients list so patient names are permanently resolved
+      if (setPatients && patients) {
+        const patientMap = new Map<string, Patient>();
+        patients.forEach(p => {
+          if (p && p.PatientID) patientMap.set(String(p.PatientID).trim().toLowerCase(), p);
+        });
+
+        let patientsUpdated = false;
+        cleanAppointments.forEach(app => {
+          if (!app.PatientID || !app.PatientName) return;
+          const cleanId = String(app.PatientID).trim().toLowerCase();
+          const existingPat = patientMap.get(cleanId);
+          if (!existingPat) {
+            const newPat: Patient = {
+              PatientID: app.PatientID,
+              PatientName: app.PatientName,
+              Father_husband: '',
+              AgeYears: 0,
+              Sex: 'Male',
+              MaritalStatus: 'Single',
+              Occupation: '',
+              Address: '',
+              CityID: 1,
+              Country: 'Pakistan',
+              PhoneMobile: app.PhoneMobile || '',
+              RegistrationDate: app.AppointmentDate || new Date().toISOString().split('T')[0]
+            };
+            patientMap.set(cleanId, newPat);
+            patientsUpdated = true;
+          } else if ((!existingPat.PatientName || existingPat.PatientName.startsWith('Patient PAT-') || existingPat.PatientName === 'Patient Record') && app.PatientName) {
+            patientMap.set(cleanId, {
+              ...existingPat,
+              PatientName: app.PatientName,
+              PhoneMobile: existingPat.PhoneMobile || app.PhoneMobile || ''
+            });
+            patientsUpdated = true;
+          }
+        });
+
+        if (patientsUpdated) {
+          const updatedPatList = Array.from(patientMap.values());
+          setPatients(updatedPatList);
+          try {
+            localStorage.setItem('cms_patients', JSON.stringify(updatedPatList));
+          } catch (e) {}
+        }
       }
 
       // Safe local storage fallback

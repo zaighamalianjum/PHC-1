@@ -1445,7 +1445,8 @@ Healing Naturally. Restoring Balance.`;
   const getResolvedNhcPatientName = (
     nhcRecord: any,
     allPatients: Patient[] = [],
-    allNhcList: NhcPatientHistory[] = []
+    allNhcList: NhcPatientHistory[] = [],
+    allAppointments: Appointment[] = appointments || []
   ): string => {
     if (!nhcRecord) return '';
     // 1. Direct properties on nhcRecord
@@ -1455,23 +1456,44 @@ Healing Naturally. Restoring Balance.`;
       nhcRecord.Name ||
       nhcRecord.Patient_Name ||
       nhcRecord.patient_name;
-    if (directName && typeof directName === 'string' && directName.trim() && directName.trim() !== 'NHC Archive Patient' && directName.trim() !== 'NHC Record') {
+    if (
+      directName &&
+      typeof directName === 'string' &&
+      directName.trim() &&
+      directName.trim() !== 'NHC Archive Patient' &&
+      directName.trim() !== 'NHC Record' &&
+      !directName.trim().startsWith('Patient (PAT-') &&
+      !directName.trim().startsWith('Patient PAT-')
+    ) {
       return directName.trim();
     }
 
     // 2. Lookup in active patients list
     if (nhcRecord.PatientID) {
       const activeMatch = allPatients.find(p => p.PatientID === nhcRecord.PatientID);
-      if (activeMatch && activeMatch.PatientName && activeMatch.PatientName.trim()) {
+      if (activeMatch && activeMatch.PatientName && activeMatch.PatientName.trim() && !activeMatch.PatientName.startsWith('Patient PAT-')) {
         return activeMatch.PatientName.trim();
       }
 
-      // 3. Lookup in any other NHC record with the same PatientID that has a valid name
+      // 3. Lookup in appointments list (for uploaded or booked appointments)
+      const appMatch = (allAppointments || []).find(
+        a => (a.PatientID === nhcRecord.PatientID || String(a.PatientID).trim().toLowerCase() === String(nhcRecord.PatientID).trim().toLowerCase()) &&
+             (a as any).PatientName &&
+             typeof (a as any).PatientName === 'string' &&
+             (a as any).PatientName.trim() &&
+             !(a as any).PatientName.startsWith('Patient PAT-')
+      );
+      if (appMatch && (appMatch as any).PatientName) {
+        return (appMatch as any).PatientName.trim();
+      }
+
+      // 4. Lookup in any other NHC record with the same PatientID that has a valid name
       const namedNhc = allNhcList.find(
         item => item.PatientID === nhcRecord.PatientID && 
         (item.PatientName || (item as any).patientName || (item as any).Name) &&
         String(item.PatientName || (item as any).patientName || (item as any).Name).trim() !== 'NHC Archive Patient' &&
-        String(item.PatientName || (item as any).patientName || (item as any).Name).trim() !== 'NHC Record'
+        String(item.PatientName || (item as any).patientName || (item as any).Name).trim() !== 'NHC Record' &&
+        !String(item.PatientName || (item as any).patientName || (item as any).Name).trim().startsWith('Patient PAT-')
       );
       if (namedNhc) {
         const name = namedNhc.PatientName || (namedNhc as any).patientName || (namedNhc as any).Name;
@@ -1479,7 +1501,7 @@ Healing Naturally. Restoring Balance.`;
       }
     }
 
-    // 4. Fallback to Patient ID if no name is available at all
+    // 5. Fallback to Patient ID if no name is available at all
     return nhcRecord.PatientID ? `Patient (${nhcRecord.PatientID})` : 'Patient Record';
   };
 
@@ -1523,11 +1545,23 @@ Healing Naturally. Restoring Balance.`;
         seenIds.add(cleanId);
         const emrMatch = patients.find(p => p && String(p.PatientID).trim().toLowerCase() === cleanId);
         const nhcMatch = [...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory].find(n => n && String(n.PatientID).trim().toLowerCase() === cleanId);
+        const appMatch = (appointments || []).find(a => a && String(a.PatientID).trim().toLowerCase() === cleanId && (a as any).PatientName);
         
+        let resolvedName = (t as any).PatientName;
+        if (!resolvedName || resolvedName.startsWith('Patient PAT-') || resolvedName === 'Patient Record') {
+          resolvedName = (emrMatch && emrMatch.PatientName && !emrMatch.PatientName.startsWith('Patient PAT-'))
+            ? emrMatch.PatientName
+            : (appMatch && (appMatch as any).PatientName && !(appMatch as any).PatientName.startsWith('Patient PAT-'))
+            ? (appMatch as any).PatientName
+            : (nhcMatch && nhcMatch.PatientName && !nhcMatch.PatientName.startsWith('Patient PAT-'))
+            ? nhcMatch.PatientName
+            : `Patient ${t.PatientID}`;
+        }
+
         list.push({
           PatientID: t.PatientID,
-          PatientName: (t as any).PatientName || (emrMatch ? emrMatch.PatientName : nhcMatch ? nhcMatch.PatientName : `Patient ${t.PatientID}`),
-          PhoneMobile: emrMatch?.PhoneMobile || nhcMatch?.PhoneMobile || '',
+          PatientName: resolvedName,
+          PhoneMobile: emrMatch?.PhoneMobile || (appMatch as any)?.PhoneMobile || nhcMatch?.PhoneMobile || '',
           tokenNo: t.TokenNo,
           isNhc: !emrMatch && !!nhcMatch
         });
@@ -1926,13 +1960,29 @@ Healing Naturally. Restoring Balance.`;
     const cleanSel = String(pvSelectedPatientId).trim().toLowerCase();
     const alphaSel = cleanSel.replace(/[^0-9a-zA-Z]/g, '');
 
+    // 0. Match in appointments list (for uploaded or booked appointments)
+    const appMatch = (appointments || []).find((a) => {
+      if (!a || !a.PatientID) return false;
+      const pid = String(a.PatientID).trim().toLowerCase();
+      return pid === cleanSel || (alphaSel && pid.replace(/[^0-9a-zA-Z]/g, '') === alphaSel);
+    });
+
     // 1. Direct or normalized match in main patients list
     const pMatch = patients.find((p) => {
       if (!p || !p.PatientID) return false;
       const pid = String(p.PatientID).trim().toLowerCase();
       return pid === cleanSel || (alphaSel && pid.replace(/[^0-9a-zA-Z]/g, '') === alphaSel);
     });
-    if (pMatch) return pMatch;
+    if (pMatch) {
+      if ((!pMatch.PatientName || pMatch.PatientName.startsWith('Patient PAT-') || pMatch.PatientName === 'Patient Record') && appMatch && (appMatch as any).PatientName) {
+        return {
+          ...pMatch,
+          PatientName: (appMatch as any).PatientName,
+          PhoneMobile: pMatch.PhoneMobile || (appMatch as any).PhoneMobile || (appMatch as any).Phone || ''
+        };
+      }
+      return pMatch;
+    }
 
     // 2. Match in NHC / Archive / pvNhcHistory list
     const allNhc = [...(nhcPatients || []), ...nhcArchiveList, ...pvNhcHistory];
@@ -1943,9 +1993,13 @@ Healing Naturally. Restoring Balance.`;
     });
 
     if (nhcMatch) {
+      let resolvedName = getResolvedNhcPatientName(nhcMatch, patients, allNhc, appointments);
+      if ((!resolvedName || resolvedName.startsWith('Patient (') || resolvedName.startsWith('Patient PAT-') || resolvedName === 'Patient Record') && appMatch && (appMatch as any).PatientName) {
+        resolvedName = (appMatch as any).PatientName;
+      }
       const synthPatient: Patient = {
         PatientID: nhcMatch.PatientID,
-        PatientName: getResolvedNhcPatientName(nhcMatch, patients, allNhc),
+        PatientName: resolvedName,
         Father_husband: nhcMatch.Father_husband || '',
         AgeYears: nhcMatch.AgeYears || 0,
         Sex: (nhcMatch.Sex as any) || 'Male',
@@ -1954,13 +2008,32 @@ Healing Naturally. Restoring Balance.`;
         Address: nhcMatch.Address || '',
         CityID: 1,
         Country: 'Pakistan',
-        PhoneMobile: nhcMatch.PhoneMobile || '',
+        PhoneMobile: nhcMatch.PhoneMobile || (appMatch as any)?.PhoneMobile || (appMatch as any)?.Phone || '',
         RegistrationDate: nhcMatch.RegistrationDate || new Date().toISOString().split('T')[0]
       };
       return synthPatient;
     }
 
-    // 3. Fallback match in dropdown options
+    // 3. Match directly from appointment record
+    if (appMatch) {
+      const synthPatient: Patient = {
+        PatientID: appMatch.PatientID,
+        PatientName: (appMatch as any).PatientName || `Patient ${appMatch.PatientID}`,
+        Father_husband: '',
+        AgeYears: 0,
+        Sex: 'Male',
+        MaritalStatus: 'Single',
+        Occupation: '',
+        Address: '',
+        CityID: 1,
+        Country: 'Pakistan',
+        PhoneMobile: (appMatch as any).PhoneMobile || (appMatch as any).Phone || '',
+        RegistrationDate: appMatch.AppointmentDate || new Date().toISOString().split('T')[0]
+      };
+      return synthPatient;
+    }
+
+    // 4. Fallback match in dropdown options
     const optMatch = pvPatientDropdownOptions.find((p) => {
       if (!p || !p.PatientID) return false;
       const pid = String(p.PatientID).trim().toLowerCase();
@@ -2001,8 +2074,8 @@ Healing Naturally. Restoring Balance.`;
       labTestAdvice?: string;
     }[] = [];
 
-    const selPat = (patients || []).find(p => isSamePatient(p.PatientID, pvSelectedPatientId));
-    const selPatName = selPat?.PatientName;
+    const selPat = selectedPvPatient || (patients || []).find(p => isSamePatient(p.PatientID, pvSelectedPatientId));
+    const selPatName = selPat?.PatientName && !selPat.PatientName.startsWith('Patient PAT-') ? selPat.PatientName : undefined;
 
     // 1. From local EMR visits
     (visits || [])
@@ -2090,8 +2163,8 @@ Healing Naturally. Restoring Balance.`;
     }[] = [];
 
     const seenIds = new Set<string>();
-    const selPat = (patients || []).find(p => isSamePatient(p.PatientID, pvSelectedPatientId));
-    const selPatName = selPat?.PatientName;
+    const selPat = selectedPvPatient || (patients || []).find(p => isSamePatient(p.PatientID, pvSelectedPatientId));
+    const selPatName = selPat?.PatientName && !selPat.PatientName.startsWith('Patient PAT-') ? selPat.PatientName : undefined;
 
     (visits || [])
       .filter((v) => isSamePatient(v.PatientID, pvSelectedPatientId) || (selPatName && (v as any).PatientName && String((v as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))

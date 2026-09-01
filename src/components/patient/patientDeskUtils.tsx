@@ -295,7 +295,8 @@ export function matchPatientIdOrNameOnly(
 export function getResolvedNhcPatientName(
   nhcRecord: any,
   allPatients: Patient[] = [],
-  allNhcList: NhcPatientHistory[] = []
+  allNhcList: NhcPatientHistory[] = [],
+  allAppointments: Appointment[] = []
 ): string {
   if (!nhcRecord) return '';
   const directName =
@@ -309,15 +310,29 @@ export function getResolvedNhcPatientName(
     typeof directName === 'string' &&
     directName.trim() &&
     directName.trim() !== 'NHC Archive Patient' &&
-    directName.trim() !== 'NHC Record'
+    directName.trim() !== 'NHC Record' &&
+    !directName.trim().startsWith('Patient (PAT-') &&
+    !directName.trim().startsWith('Patient PAT-')
   ) {
     return directName.trim();
   }
 
   if (nhcRecord.PatientID) {
     const activeMatch = allPatients.find((p) => p.PatientID === nhcRecord.PatientID);
-    if (activeMatch && activeMatch.PatientName && activeMatch.PatientName.trim()) {
+    if (activeMatch && activeMatch.PatientName && activeMatch.PatientName.trim() && !activeMatch.PatientName.startsWith('Patient PAT-')) {
       return activeMatch.PatientName.trim();
+    }
+
+    const appMatch = (allAppointments || []).find(
+      (a) =>
+        (a.PatientID === nhcRecord.PatientID || String(a.PatientID).trim().toLowerCase() === String(nhcRecord.PatientID).trim().toLowerCase()) &&
+        (a as any).PatientName &&
+        typeof (a as any).PatientName === 'string' &&
+        (a as any).PatientName.trim() &&
+        !(a as any).PatientName.startsWith('Patient PAT-')
+    );
+    if (appMatch && (appMatch as any).PatientName) {
+      return (appMatch as any).PatientName.trim();
     }
 
     const namedNhc = allNhcList.find(
@@ -325,7 +340,8 @@ export function getResolvedNhcPatientName(
         item.PatientID === nhcRecord.PatientID &&
         (item.PatientName || (item as any).patientName || (item as any).Name) &&
         String(item.PatientName || (item as any).patientName || (item as any).Name).trim() !== 'NHC Archive Patient' &&
-        String(item.PatientName || (item as any).patientName || (item as any).Name).trim() !== 'NHC Record'
+        String(item.PatientName || (item as any).patientName || (item as any).Name).trim() !== 'NHC Record' &&
+        !String(item.PatientName || (item as any).patientName || (item as any).Name).trim().startsWith('Patient PAT-')
     );
     if (namedNhc) {
       const name = namedNhc.PatientName || (namedNhc as any).patientName || (namedNhc as any).Name;
