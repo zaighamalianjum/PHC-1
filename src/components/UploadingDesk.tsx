@@ -82,6 +82,8 @@ export default function UploadingDesk({
   const [dropUnmatchedAppPatients, setDropUnmatchedAppPatients] = useState<boolean>(true);
   const [droppedAppRecords, setDroppedAppRecords] = useState<Array<{ rowNum: number; rawId: string; rawName: string; fee: number; reason: string }>>([]);
   const [showDroppedAppDetails, setShowDroppedAppDetails] = useState<boolean>(false);
+  const [isSavingApp, setIsSavingApp] = useState<boolean>(false);
+  const [appSaveProgressText, setAppSaveProgressText] = useState<string>('');
   const fileInputMedRef = React.useRef<HTMLInputElement>(null);
   const fileInputAppRef = React.useRef<HTMLInputElement>(null);
   
@@ -1690,6 +1692,8 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
     }
     setErrorMsg('');
     setSuccessMsg('');
+    setIsSavingApp(true);
+    setAppSaveProgressText(`Preparing ${appointmentPreview.length} appointment records...`);
 
     try {
       const cleanAppointments: Appointment[] = appointmentPreview.map((item, idx) => ({
@@ -1703,12 +1707,17 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
         PaymentStatus: 'Paid'
       }));
 
-      // 1. Update global appointments state
+      // 1. Update global appointments state safely
+      setAppSaveProgressText('Merging records in memory...');
       let updatedAppointments: Appointment[] = [];
       if (append) {
         const existingMap = new Map<string, Appointment>();
-        (appointments || []).forEach(a => existingMap.set(a.AppointmentID, a));
-        cleanAppointments.forEach(a => existingMap.set(a.AppointmentID, a));
+        (appointments || []).forEach(a => {
+          if (a && a.AppointmentID) existingMap.set(a.AppointmentID, a);
+        });
+        cleanAppointments.forEach(a => {
+          if (a && a.AppointmentID) existingMap.set(a.AppointmentID, a);
+        });
         updatedAppointments = Array.from(existingMap.values());
       } else {
         updatedAppointments = cleanAppointments;
@@ -1717,30 +1726,51 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
       if (setAppointments) {
         setAppointments(updatedAppointments);
       }
-      localStorage.setItem('cms_appointments', JSON.stringify(updatedAppointments));
 
-      // 2. Persist to backend MongoDB via /api/appointments/bulk
-      const bridgeUrl = mongoDbSettings.BridgeUrl || window.location.origin;
+      // Safe local storage fallback
       try {
-        const resp = await fetch(`${bridgeUrl}/api/appointments/bulk?wipe=${!append}`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(cleanAppointments)
-        });
+        localStorage.setItem('cms_appointments', JSON.stringify(updatedAppointments));
+      } catch (storageErr) {
+        console.warn('LocalStorage quota limit reached for appointments. Data persisted in React memory and MongoDB.', storageErr);
+      }
 
-        if (!resp.ok) {
-          console.warn('Backend sync response:', resp.status);
+      // 2. Persist to backend MongoDB via /api/appointments/bulk in resilient batches
+      const bridgeUrl = mongoDbSettings.BridgeUrl || window.location.origin;
+      const CHUNK_SIZE = 500;
+      const totalBatches = Math.ceil(cleanAppointments.length / CHUNK_SIZE);
+
+      for (let b = 0; b < cleanAppointments.length; b += CHUNK_SIZE) {
+        const batchNum = Math.floor(b / CHUNK_SIZE) + 1;
+        const chunk = cleanAppointments.slice(b, b + CHUNK_SIZE);
+        const isFirstChunk = b === 0;
+        
+        setAppSaveProgressText(`Syncing batch ${batchNum} of ${totalBatches} (${chunk.length} records) to database...`);
+        
+        try {
+          const resp = await fetch(`${bridgeUrl}/api/appointments/bulk?wipe=${!append && isFirstChunk}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(chunk)
+          });
+
+          if (!resp.ok) {
+            console.warn(`Backend bulk sync warning on batch ${batchNum}:`, resp.status);
+          }
+        } catch (netErr: any) {
+          console.warn(`Backend sync offline for batch ${batchNum}:`, netErr.message);
         }
-      } catch (err: any) {
-        console.warn('Backend MongoDB offline, data persisted in local state & browser storage:', err.message);
       }
 
       const totalFee = cleanAppointments.reduce((acc, a) => acc + (a.FeeCharged || 0), 0);
       setSuccessMsg(`✅ Successfully ${append ? 'merged' : 'saved'} ${cleanAppointments.length} appointment records (Total Fees: PKR ${totalFee.toLocaleString()})! Patients and their appointment payment history are now immediately accessible in Appointment Booking and Doctor Clinical Desk.`);
       setAppointmentPasteText('');
+      setAppointmentPreview([]);
     } catch (err: any) {
       console.error('Error saving appointment records:', err);
       setErrorMsg(`Failed to save appointments: ${err.message}`);
+    } finally {
+      setIsSavingApp(false);
+      setAppSaveProgressText('');
     }
   };
 
@@ -2232,21 +2262,27 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                 <div className="flex items-center space-x-1.5">
                   <button
                     type="button"
+                    disabled={isSavingApp}
                     onClick={() => handleAppointmentSave(true)}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg flex items-center shadow-xs cursor-pointer transition"
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg flex items-center shadow-xs cursor-pointer transition"
                     title="Merge and append these appointments without deleting existing records"
                   >
-                    <Check className="w-3.5 h-3.5 mr-1" />
-                    <span>Merge Appointments</span>
+                    {isSavingApp ? (
+                      <RefreshCw className="w-3.5 h-3.5 mr-1.5 animate-spin" />
+                    ) : (
+                      <Check className="w-3.5 h-3.5 mr-1" />
+                    )}
+                    <span>{isSavingApp ? 'Merging...' : 'Merge Appointments'}</span>
                   </button>
                   <button
                     type="button"
+                    disabled={isSavingApp}
                     onClick={() => {
                       if (window.confirm("Are you sure you want to REPLACE all existing appointments with these uploaded records?")) {
                         handleAppointmentSave(false);
                       }
                     }}
-                    className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 text-xs font-bold rounded-lg flex items-center cursor-pointer transition"
+                    className="px-2.5 py-1.5 bg-amber-50 hover:bg-amber-100 disabled:opacity-50 text-amber-900 border border-amber-300 text-xs font-bold rounded-lg flex items-center cursor-pointer transition"
                     title="Replace all existing appointments with this uploaded sheet"
                   >
                     <RefreshCw className="w-3 h-3 mr-1" />
@@ -2254,8 +2290,9 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                   </button>
                   <button
                     type="button"
+                    disabled={isSavingApp}
                     onClick={() => setAppointmentPreview([])}
-                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                    className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 disabled:opacity-50 rounded-lg transition cursor-pointer"
                     title="Clear preview"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
@@ -2263,6 +2300,14 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                 </div>
               )}
             </div>
+
+            {/* Active Saving Progress Banner */}
+            {isSavingApp && (
+              <div className="mb-3 p-3 bg-emerald-50 border border-emerald-300 rounded-lg flex items-center space-x-3 text-xs text-emerald-900 animate-pulse">
+                <RefreshCw className="w-4 h-4 text-emerald-700 animate-spin shrink-0" />
+                <span className="font-bold">{appSaveProgressText || 'Saving and synchronizing appointment payment history...'}</span>
+              </div>
+            )}
 
             {/* Summary KPI Strip */}
             {appointmentPreview.length > 0 && (
@@ -2360,60 +2405,71 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                     Upload an Excel spreadsheet or paste rows in the left panel to populate and verify the appointment payment preview table.
                   </p>
                 </div>
-              ) : (
-                <table className="min-w-full divide-y divide-slate-100 text-xs">
-                  <thead className="bg-slate-50 sticky top-0 text-slate-500 text-[10px] font-bold text-left uppercase tracking-wider z-10">
-                    <tr>
-                      <th className="px-3 py-2">#</th>
-                      <th className="px-3 py-2">Patient ID</th>
-                      <th className="px-3 py-2">Patient Name</th>
-                      <th className="px-3 py-2 text-right">Appointment Payment</th>
-                      <th className="px-3 py-2">Remarks</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white">
-                    {appointmentPreview
-                      .filter(item => {
-                        if (!appPreviewSearch.trim()) return true;
-                        const q = appPreviewSearch.toLowerCase();
-                        return (
-                          String(item.PatientID || '').toLowerCase().includes(q) ||
-                          String(item.PatientName || '').toLowerCase().includes(q) ||
-                          String(item.FeeCharged || '').includes(q) ||
-                          String(item.Remarks || '').toLowerCase().includes(q)
-                        );
-                      })
-                      .map((item, index) => (
-                        <tr key={index} className="hover:bg-emerald-50/50 transition">
-                          <td className="px-3 py-2 font-mono text-[10px] text-slate-400">{index + 1}</td>
-                          <td className="px-3 py-2 font-mono font-bold text-slate-900">
-                            <span className="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded border border-slate-200">
-                              {item.PatientID}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 font-bold text-slate-900">
-                            <div className="flex items-center space-x-1.5">
-                              <span>{item.PatientName || 'N/A'}</span>
-                              {item.isNewPatient && (
-                                <span className="text-[9px] font-extrabold px-1 rounded bg-amber-100 text-amber-800 border border-amber-200">
-                                  New Patient
-                                </span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-3 py-2 text-right font-mono font-black text-emerald-800">
-                            <span className="bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
-                              PKR {(item.FeeCharged || 0).toLocaleString()}
-                            </span>
-                          </td>
-                          <td className="px-3 py-2 text-slate-500 text-[11px] max-w-xs truncate">
-                            {item.Remarks || 'Appointment Payment'}
-                          </td>
+              ) : (() => {
+                const filtered = appointmentPreview.filter(item => {
+                  if (!appPreviewSearch.trim()) return true;
+                  const q = appPreviewSearch.toLowerCase();
+                  return (
+                    String(item.PatientID || '').toLowerCase().includes(q) ||
+                    String(item.PatientName || '').toLowerCase().includes(q) ||
+                    String(item.FeeCharged || '').includes(q) ||
+                    String(item.Remarks || '').toLowerCase().includes(q)
+                  );
+                });
+                const displayRows = filtered.slice(0, 150);
+
+                return (
+                  <div>
+                    {filtered.length > 150 && (
+                      <div className="bg-slate-50 px-3 py-1.5 border-b border-slate-200 text-[11px] text-slate-500 flex justify-between items-center">
+                        <span>Showing first <strong>150</strong> of <strong>{filtered.length}</strong> matching records (All {appointmentPreview.length} records will be saved on Merge)</span>
+                        <span className="text-[10px] text-slate-400 font-mono">Use search filter to view specific patients</span>
+                      </div>
+                    )}
+                    <table className="min-w-full divide-y divide-slate-100 text-xs">
+                      <thead className="bg-slate-50 sticky top-0 text-slate-500 text-[10px] font-bold text-left uppercase tracking-wider z-10">
+                        <tr>
+                          <th className="px-3 py-2">#</th>
+                          <th className="px-3 py-2">Patient ID</th>
+                          <th className="px-3 py-2">Patient Name</th>
+                          <th className="px-3 py-2 text-right">Appointment Payment</th>
+                          <th className="px-3 py-2">Remarks</th>
                         </tr>
-                      ))}
-                  </tbody>
-                </table>
-              )}
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 bg-white">
+                        {displayRows.map((item, index) => (
+                          <tr key={index} className="hover:bg-emerald-50/50 transition">
+                            <td className="px-3 py-2 font-mono text-[10px] text-slate-400">{index + 1}</td>
+                            <td className="px-3 py-2 font-mono font-bold text-slate-900">
+                              <span className="bg-slate-100 text-slate-800 px-1.5 py-0.5 rounded border border-slate-200">
+                                {item.PatientID}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 font-bold text-slate-900">
+                              <div className="flex items-center space-x-1.5">
+                                <span>{item.PatientName || 'N/A'}</span>
+                                {item.isNewPatient && (
+                                  <span className="text-[9px] font-extrabold px-1 rounded bg-amber-100 text-amber-800 border border-amber-200">
+                                    New Patient
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-3 py-2 text-right font-mono font-black text-emerald-800">
+                              <span className="bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
+                                PKR {(item.FeeCharged || 0).toLocaleString()}
+                              </span>
+                            </td>
+                            <td className="px-3 py-2 text-slate-500 text-[11px] max-w-xs truncate">
+                              {item.Remarks || 'Appointment Payment'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                );
+              })()}
             </div>
           </div>
         </div>

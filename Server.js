@@ -1264,6 +1264,26 @@ app.delete('/api/appointments/:id', async (req, res) => {
 });
 
 // ------------------------------------------------------------------------------------------
+// 💳 APPOINTMENT & PATIENT PAYMENT HISTORY ALIASES (app_payment_history / app_appointment_history)
+// ------------------------------------------------------------------------------------------
+app.get(['/api/app_payment_history', '/api/app-payment-history', '/api/app_appointment_history', '/api/app-appointment-history'], async (req, res) => {
+  try {
+    const { patientId, startDate, endDate } = req.query;
+    const query = {};
+    if (patientId) query.PatientID = String(patientId).trim();
+    if (startDate || endDate) {
+      query.AppointmentDate = {};
+      if (startDate) query.AppointmentDate.$gte = String(startDate);
+      if (endDate) query.AppointmentDate.$lte = String(endDate);
+    }
+    const history = await db.collection('appointments').find(query).sort({ AppointmentDate: -1 }).toArray();
+    res.json(history);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ------------------------------------------------------------------------------------------
 // 🎫 DAILY RECEPTION QUEUE TOKENS
 // ------------------------------------------------------------------------------------------
 

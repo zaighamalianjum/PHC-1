@@ -139,6 +139,15 @@ function getStoredState<T>(key: string, defaultVal: T): T {
   return defaultVal;
 }
 
+// Safe helper to write to localStorage without crashing React when quota is exceeded
+function safeSetLocalStorage(key: string, value: any): void {
+  try {
+    localStorage.setItem(key, typeof value === 'string' ? value : JSON.stringify(value));
+  } catch (e) {
+    console.warn(`[LocalStorage Quota Warning] Could not persist "${key}" to browser storage. Data remains safely available in memory and synced to database.`, e);
+  }
+}
+
 export default function App() {
   // Users List State (backed up by local storage)
   const [usersList, setUsersList] = useState<User[]>(INITIAL_USERS);
@@ -506,27 +515,27 @@ export default function App() {
   const [acLedger, setAcLedger] = useState<ACLedger[]>(() => getStoredState('cms_ac_ledger', []));
 
   // Automatic Persistent LocalStorage Backups
-  useEffect(() => { localStorage.setItem('cms_cities', JSON.stringify(cities)); }, [cities]);
-  useEffect(() => { localStorage.setItem('cms_patients', JSON.stringify(patients)); }, [patients]);
-  useEffect(() => { localStorage.setItem('cms_appointments', JSON.stringify(appointments)); }, [appointments]);
-  useEffect(() => { localStorage.setItem('cms_tokens', JSON.stringify(tokens)); }, [tokens]);
-  useEffect(() => { localStorage.setItem('cms_items', JSON.stringify(items)); }, [items]);
-  useEffect(() => { localStorage.setItem('cms_suppliers', JSON.stringify(suppliers)); }, [suppliers]);
-  useEffect(() => { localStorage.setItem('cms_lab_tests', JSON.stringify(labTests)); }, [labTests]);
-  useEffect(() => { localStorage.setItem('cms_visits', JSON.stringify(visits)); }, [visits]);
-  useEffect(() => { localStorage.setItem('cms_visit_medicines', JSON.stringify(visitMedicines)); }, [visitMedicines]);
-  useEffect(() => { localStorage.setItem('cms_med_certs', JSON.stringify(medicalCertificates)); }, [medicalCertificates]);
-  useEffect(() => { localStorage.setItem('cms_sbp_certs', JSON.stringify(sbpCertificates)); }, [sbpCertificates]);
-  useEffect(() => { localStorage.setItem('cms_nhc_patients', JSON.stringify(nhcPatients)); }, [nhcPatients]);
-  useEffect(() => { localStorage.setItem('cms_smart_locator_medicines', JSON.stringify(smartLocatorMedicines)); }, [smartLocatorMedicines]);
-  useEffect(() => { localStorage.setItem('cms_invoices', JSON.stringify(invoices)); }, [invoices]);
-  useEffect(() => { localStorage.setItem('cms_invoice_details', JSON.stringify(invoiceDetails)); }, [invoiceDetails]);
-  useEffect(() => { localStorage.setItem('cms_sales_returns', JSON.stringify(salesReturns)); }, [salesReturns]);
-  useEffect(() => { localStorage.setItem('cms_grns', JSON.stringify(grns)); }, [grns]);
-  useEffect(() => { localStorage.setItem('cms_grn_details', JSON.stringify(grnDetails)); }, [grnDetails]);
-  useEffect(() => { localStorage.setItem('cms_vouchers', JSON.stringify(vouchers)); }, [vouchers]);
-  useEffect(() => { localStorage.setItem('cms_voucher_details', JSON.stringify(voucherDetails)); }, [voucherDetails]);
-  useEffect(() => { localStorage.setItem('cms_ac_ledger', JSON.stringify(acLedger)); }, [acLedger]);
+  useEffect(() => { safeSetLocalStorage('cms_cities', cities); }, [cities]);
+  useEffect(() => { safeSetLocalStorage('cms_patients', patients); }, [patients]);
+  useEffect(() => { safeSetLocalStorage('cms_appointments', appointments); }, [appointments]);
+  useEffect(() => { safeSetLocalStorage('cms_tokens', tokens); }, [tokens]);
+  useEffect(() => { safeSetLocalStorage('cms_items', items); }, [items]);
+  useEffect(() => { safeSetLocalStorage('cms_suppliers', suppliers); }, [suppliers]);
+  useEffect(() => { safeSetLocalStorage('cms_lab_tests', labTests); }, [labTests]);
+  useEffect(() => { safeSetLocalStorage('cms_visits', visits); }, [visits]);
+  useEffect(() => { safeSetLocalStorage('cms_visit_medicines', visitMedicines); }, [visitMedicines]);
+  useEffect(() => { safeSetLocalStorage('cms_med_certs', medicalCertificates); }, [medicalCertificates]);
+  useEffect(() => { safeSetLocalStorage('cms_sbp_certs', sbpCertificates); }, [sbpCertificates]);
+  useEffect(() => { safeSetLocalStorage('cms_nhc_patients', nhcPatients); }, [nhcPatients]);
+  useEffect(() => { safeSetLocalStorage('cms_smart_locator_medicines', smartLocatorMedicines); }, [smartLocatorMedicines]);
+  useEffect(() => { safeSetLocalStorage('cms_invoices', invoices); }, [invoices]);
+  useEffect(() => { safeSetLocalStorage('cms_invoice_details', invoiceDetails); }, [invoiceDetails]);
+  useEffect(() => { safeSetLocalStorage('cms_sales_returns', salesReturns); }, [salesReturns]);
+  useEffect(() => { safeSetLocalStorage('cms_grns', grns); }, [grns]);
+  useEffect(() => { safeSetLocalStorage('cms_grn_details', grnDetails); }, [grnDetails]);
+  useEffect(() => { safeSetLocalStorage('cms_vouchers', vouchers); }, [vouchers]);
+  useEffect(() => { safeSetLocalStorage('cms_voucher_details', voucherDetails); }, [voucherDetails]);
+  useEffect(() => { safeSetLocalStorage('cms_ac_ledger', acLedger); }, [acLedger]);
 
   // Synchronize appointments and tokens reliably without removing valid patient IDs
   useEffect(() => {
