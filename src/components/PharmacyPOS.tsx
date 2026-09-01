@@ -2178,35 +2178,35 @@ export default function PharmacyPOS({
       return;
     }
 
-    const printWin = window.open('', '_blank', 'width=650,height=900');
-    if (!printWin) {
-      window.print();
-      return;
-    }
-
     const parentStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
       .map(el => el.outerHTML)
       .join('\n');
 
-    printWin.document.write(`
+    const printHtml = `
       <!DOCTYPE html>
       <html>
         <head>
+          <meta charset="utf-8" />
           <title>Clinical Medicine Label Print (2" x 0.2" - 2x2 Grid on A4)</title>
           ${parentStyles}
           <style>
             @page {
-              size: A4;
+              size: A4 portrait;
               margin: 10mm;
+            }
+            * {
+              box-sizing: border-box;
+              -webkit-print-color-adjust: exact !important;
+              print-color-adjust: exact !important;
             }
             body {
               margin: 0;
-              padding: 0;
+              padding: 10mm;
               background: white;
               color: #000;
               font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
+              font-size: 8.5px;
+              line-height: 1.15;
             }
             .label-grid-page {
               display: grid;
@@ -2219,6 +2219,7 @@ export default function PharmacyPOS({
             }
             .label-grid-page:last-child {
               page-break-after: avoid;
+              margin-bottom: 0;
             }
             .label-sticker-page {
               width: 2in;
@@ -2228,8 +2229,10 @@ export default function PharmacyPOS({
               border: 1px dashed #475569;
               border-radius: 3px;
               padding: 2px 4px;
-              font-size: 9px;
-              line-height: 1.1;
+              font-size: 8.5px;
+              line-height: 1.15;
+              background: #fff;
+              color: #000;
             }
           </style>
         </head>
@@ -2238,15 +2241,48 @@ export default function PharmacyPOS({
             ${elem.innerHTML}
           </div>
           <script>
-            setTimeout(() => {
-              window.focus();
-              window.print();
-            }, 350);
+            window.onload = function() {
+              setTimeout(function() {
+                window.focus();
+                window.print();
+              }, 250);
+            };
           </script>
         </body>
       </html>
-    `);
-    printWin.document.close();
+    `;
+
+    const printWin = window.open('', '_blank', 'width=750,height=850');
+    if (printWin) {
+      printWin.document.open();
+      printWin.document.write(printHtml);
+      printWin.document.close();
+    } else {
+      let printIframe = document.getElementById('label-print-hidden-iframe') as HTMLIFrameElement | null;
+      if (!printIframe) {
+        printIframe = document.createElement('iframe');
+        printIframe.id = 'label-print-hidden-iframe';
+        printIframe.style.position = 'fixed';
+        printIframe.style.right = '0';
+        printIframe.style.bottom = '0';
+        printIframe.style.width = '0';
+        printIframe.style.height = '0';
+        printIframe.style.border = '0';
+        document.body.appendChild(printIframe);
+      }
+      const iframeDoc = printIframe.contentDocument || printIframe.contentWindow?.document;
+      if (iframeDoc) {
+        iframeDoc.open();
+        iframeDoc.write(printHtml);
+        iframeDoc.close();
+        setTimeout(() => {
+          printIframe?.contentWindow?.focus();
+          printIframe?.contentWindow?.print();
+        }, 350);
+      } else {
+        window.print();
+      }
+    }
   };
 
   // Load the prescribed medicines for the selected patient
@@ -5042,6 +5078,9 @@ export default function PharmacyPOS({
         setIsLabelPrintModalOpen={setIsLabelPrintModalOpen}
         labelPrintData={labelPrintData}
         clinicSettings={clinicSettings}
+        setLabelPrintData={setLabelPrintData}
+        handleCleanLabelPrint={handleCleanLabelPrint}
+        currentUser={currentUser}
       />
 
       {/* Pharmacy Invoice Print-Preview Modal Overlay (Supports A4 & Thermal POS Receipt) */}
