@@ -49,6 +49,11 @@ import {
   SRInvHeader,
   Visit
 } from '../types';
+import {
+  getEffectiveAppointmentFee,
+  isAppointmentRevenueEligible,
+  isImportedAppointment
+} from '../utils/appointmentRevenue';
 
 interface DashboardProps {
   patients: Patient[];
@@ -277,21 +282,26 @@ export default function Dashboard({
   const totalCardFileFeeCollection = morningCardFileFee + eveningCardFileFee;
 
   // --- 1. DAILY OPD COLLECTION SHIFT-WISE ---
-  const morningOpdApps = targetApps.filter((a) => (a.Shift || 1) === 1 && a.Status !== 3);
-  const eveningOpdApps = targetApps.filter((a) => a.Shift === 2 && a.Status !== 3);
+  // STRICT COMPLIANCE: Only count appointment payments if booked via app OR patient has been checked by doctor.
+  // Uploaded/imported records without a doctor checkup visit are strictly excluded from collections and revenues.
+  const morningOpdRevenueApps = targetApps.filter((a) => (a.Shift || 1) === 1 && a.Status !== 3 && isAppointmentRevenueEligible(a, targetVisits));
+  const eveningOpdRevenueApps = targetApps.filter((a) => a.Shift === 2 && a.Status !== 3 && isAppointmentRevenueEligible(a, targetVisits));
 
-  const morningOpdAppFees = morningOpdApps.reduce((acc, curr) => acc + (Number(curr.FeeCharged) || 0), 0);
-  const eveningOpdAppFees = eveningOpdApps.reduce((acc, curr) => acc + (Number(curr.FeeCharged) || 0), 0);
+  const morningOpdApps = morningOpdRevenueApps;
+  const eveningOpdApps = eveningOpdRevenueApps;
+
+  const morningOpdAppFees = morningOpdRevenueApps.reduce((acc, curr) => acc + getEffectiveAppointmentFee(curr, targetVisits), 0);
+  const eveningOpdAppFees = eveningOpdRevenueApps.reduce((acc, curr) => acc + getEffectiveAppointmentFee(curr, targetVisits), 0);
 
   const morningOpdVisitFees = targetVisits.filter((v) => getVisitShift(v) === 1 && (v as any).Status !== 3).reduce((acc, v) => {
     const fee = Number(v.ConsultationFee) || 0;
-    const hasAppFee = morningOpdApps.some(a => a.PatientID === v.PatientID && (Number(a.FeeCharged) || 0) > 0);
+    const hasAppFee = morningOpdRevenueApps.some(a => a.PatientID === v.PatientID && getEffectiveAppointmentFee(a, targetVisits) > 0);
     return acc + (hasAppFee ? 0 : fee);
   }, 0);
 
   const eveningOpdVisitFees = targetVisits.filter((v) => getVisitShift(v) === 2 && (v as any).Status !== 3).reduce((acc, v) => {
     const fee = Number(v.ConsultationFee) || 0;
-    const hasAppFee = eveningOpdApps.some(a => a.PatientID === v.PatientID && (Number(a.FeeCharged) || 0) > 0);
+    const hasAppFee = eveningOpdRevenueApps.some(a => a.PatientID === v.PatientID && getEffectiveAppointmentFee(a, targetVisits) > 0);
     return acc + (hasAppFee ? 0 : fee);
   }, 0);
 
@@ -406,7 +416,12 @@ export default function Dashboard({
     let totalUniqueVisits = 0;
 
     datesSet.forEach(dateStr => {
-      const shiftApps = targetApps.filter(a => getNormalizedYMD(a.AppointmentDate) === dateStr && (a.Shift || 1) === shiftNum && a.Status !== 3);
+      const shiftApps = targetApps.filter(a => 
+        getNormalizedYMD(a.AppointmentDate) === dateStr && 
+        (a.Shift || 1) === shiftNum && 
+        a.Status !== 3 &&
+        (!isImportedAppointment(a) || isAppointmentRevenueEligible(a, targetVisits))
+      );
       const shiftTokens = targetTokens.filter(t => getNormalizedYMD(t.Date) === dateStr && (t.Shift || 1) === shiftNum && t.Status !== 3);
       const shiftVisits = targetVisits.filter(v => getNormalizedYMD(v.VisitDate) === dateStr && getVisitShift(v) === shiftNum && (v as any).Status !== 3);
 
@@ -428,7 +443,11 @@ export default function Dashboard({
     });
 
     if (totalUniqueVisits === 0) {
-      const shiftApps = targetApps.filter(a => (a.Shift || 1) === shiftNum && a.Status !== 3);
+      const shiftApps = targetApps.filter(a => 
+        (a.Shift || 1) === shiftNum && 
+        a.Status !== 3 &&
+        (!isImportedAppointment(a) || isAppointmentRevenueEligible(a, targetVisits))
+      );
       const shiftTokens = targetTokens.filter(t => (t.Shift || 1) === shiftNum && t.Status !== 3);
       const shiftVisits = targetVisits.filter(v => getVisitShift(v) === shiftNum && (v as any).Status !== 3);
 

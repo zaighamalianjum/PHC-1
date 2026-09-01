@@ -57,6 +57,7 @@ import {
   MultiPatientSearchResult
 } from '../../types';
 import { formatDisplayDate, matchPatientRecord, matchPatientIdOrNameOnly, isSamePatient, formatReportDate, parseCleanVisitDate } from './patientDeskUtils';
+import { getEffectiveAppointmentFee, isAppointmentRevenueEligible } from '../../utils/appointmentRevenue';
 
 const WhatsAppIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -4213,15 +4214,15 @@ export default function PatientDeskModals(props: any) {
             });
           }
 
-          // Compute fees
-          let appOpdFee = pApps.reduce((sum, a) => sum + (Number(a.FeeCharged) || 0), 0);
+          // Compute fees (Strict rule: exclude unverified uploaded appointments)
+          let appOpdFee = pApps.filter(a => isAppointmentRevenueEligible(a, pVisits)).reduce((sum, a) => sum + getEffectiveAppointmentFee(a, pVisits), 0);
           pVisits.forEach(v => {
             let vFee = Number(v.ConsultationFee) || 0;
             if (!vFee && v.VisitRemarks) {
               const oMatch = v.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
               if (oMatch) vFee = Number(oMatch[1]);
             }
-            const hasAppFee = pApps.some(a => a.AppointmentDate === v.VisitDate && (Number(a.FeeCharged) || 0) > 0);
+            const hasAppFee = pApps.some(a => a.AppointmentDate === v.VisitDate && getEffectiveAppointmentFee(a, pVisits) > 0);
             if (!hasAppFee && vFee > 0) appOpdFee += vFee;
           });
 

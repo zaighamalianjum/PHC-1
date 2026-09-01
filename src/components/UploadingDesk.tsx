@@ -1704,7 +1704,9 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
         Status: item.Status || 2,
         Remarks: item.Remarks || 'Imported Appointment History',
         FeeCharged: Number(item.FeeCharged || 0),
-        PaymentStatus: 'Paid'
+        PaymentStatus: 'Paid',
+        IsImported: true,
+        Source: 'Uploaded'
       }));
 
       // 1. Update global appointments state safely

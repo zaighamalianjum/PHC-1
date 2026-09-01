@@ -49,6 +49,10 @@ import {
   ACLedger,
   TLAccount
 } from '../types';
+import {
+  getEffectiveAppointmentFee,
+  isAppointmentRevenueEligible
+} from '../utils/appointmentRevenue';
 import { INITIAL_TL_ACCOUNTS } from '../data/initialData';
 
 export type ReportType =
@@ -990,21 +994,22 @@ export default function ReportingDesk({
     const totalCardFileFeeCollection = morningCardFileFee + eveningCardFileFee;
 
     // OPD Consultation Fees Shift-wise (Appointments + Uncounted Visits)
-    const morningOpdApps = targetApps.filter((a) => (a.Shift || 1) === 1 && a.Status !== 3);
-    const eveningOpdApps = targetApps.filter((a) => a.Shift === 2 && a.Status !== 3);
+    // STRICT RULE: Uploaded/imported appointments without doctor visit checkup are excluded
+    const morningOpdRevenueApps = targetApps.filter((a) => (a.Shift || 1) === 1 && a.Status !== 3 && isAppointmentRevenueEligible(a, targetVisits));
+    const eveningOpdRevenueApps = targetApps.filter((a) => a.Shift === 2 && a.Status !== 3 && isAppointmentRevenueEligible(a, targetVisits));
 
-    const morningOpdAppFees = morningOpdApps.reduce((acc, curr) => acc + (Number(curr.FeeCharged) || Number(curr.FeeReceived) || Number(curr.Fee) || 0), 0);
-    const eveningOpdAppFees = eveningOpdApps.reduce((acc, curr) => acc + (Number(curr.FeeCharged) || Number(curr.FeeReceived) || Number(curr.Fee) || 0), 0);
+    const morningOpdAppFees = morningOpdRevenueApps.reduce((acc, curr) => acc + getEffectiveAppointmentFee(curr, targetVisits), 0);
+    const eveningOpdAppFees = eveningOpdRevenueApps.reduce((acc, curr) => acc + getEffectiveAppointmentFee(curr, targetVisits), 0);
 
     const morningOpdVisitFees = targetVisits.filter((v) => getVisitShift(v) === 1 && (v as any).Status !== 3).reduce((acc, v) => {
       const fee = Number(v.ConsultationFee) || (v.FeeReceived !== undefined ? Number(v.FeeReceived) : 0);
-      const hasAppFee = morningOpdApps.some(a => a.PatientID === v.PatientID && (Number(a.FeeCharged) || Number(a.FeeReceived) || 0) > 0);
+      const hasAppFee = morningOpdRevenueApps.some(a => a.PatientID === v.PatientID && getEffectiveAppointmentFee(a, targetVisits) > 0);
       return acc + (hasAppFee ? 0 : fee);
     }, 0);
 
     const eveningOpdVisitFees = targetVisits.filter((v) => getVisitShift(v) === 2 && (v as any).Status !== 3).reduce((acc, v) => {
       const fee = Number(v.ConsultationFee) || (v.FeeReceived !== undefined ? Number(v.FeeReceived) : 0);
-      const hasAppFee = eveningOpdApps.some(a => a.PatientID === v.PatientID && (Number(a.FeeCharged) || Number(a.FeeReceived) || 0) > 0);
+      const hasAppFee = eveningOpdRevenueApps.some(a => a.PatientID === v.PatientID && getEffectiveAppointmentFee(a, targetVisits) > 0);
       return acc + (hasAppFee ? 0 : fee);
     }, 0);
 
@@ -1386,10 +1391,10 @@ export default function ReportingDesk({
       const returnsForDate = effectiveSalesReturns.filter(r => parseCleanDate(r.ReturnDate || r.Date) === dateStr);
 
       // MORNING (Shift 1)
-      const mAppFromAppointments = appsForDate.filter(a => (a.Shift || a.shift || 1) === 1).reduce((sum, a) => sum + (Number(a.FeeCharged || a.FeeReceived || a.Fee) || 0), 0);
+      const mAppFromAppointments = appsForDate.filter(a => (a.Shift || a.shift || 1) === 1 && isAppointmentRevenueEligible(a, effectiveVisits)).reduce((sum, a) => sum + getEffectiveAppointmentFee(a, effectiveVisits), 0);
       const mAppFromVisits = visitsForDate.filter(v => getVisShift(v) === 1).reduce((sum, v) => {
         const fee = Number(v.ConsultationFee || v.FeeCharged || v.FeeReceived) || 0;
-        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && (a.Shift || 1) === 1 && (Number(a.FeeCharged || a.FeeReceived) || 0) > 0);
+        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && (a.Shift || 1) === 1 && getEffectiveAppointmentFee(a, effectiveVisits) > 0);
         return sum + (hasAppFee ? 0 : fee);
       }, 0);
       const mApp = mAppFromAppointments + mAppFromVisits;
@@ -1412,10 +1417,10 @@ export default function ReportingDesk({
       const morningTotal = morningClinic + morningStore;
 
       // EVENING (Shift 2)
-      const eAppFromAppointments = appsForDate.filter(a => (a.Shift || a.shift) === 2).reduce((sum, a) => sum + (Number(a.FeeCharged || a.FeeReceived || a.Fee) || 0), 0);
+      const eAppFromAppointments = appsForDate.filter(a => (a.Shift || a.shift) === 2 && isAppointmentRevenueEligible(a, effectiveVisits)).reduce((sum, a) => sum + getEffectiveAppointmentFee(a, effectiveVisits), 0);
       const eAppFromVisits = visitsForDate.filter(v => getVisShift(v) === 2).reduce((sum, v) => {
         const fee = Number(v.ConsultationFee || v.FeeCharged || v.FeeReceived) || 0;
-        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && a.Shift === 2 && (Number(a.FeeCharged || a.FeeReceived) || 0) > 0);
+        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && a.Shift === 2 && getEffectiveAppointmentFee(a, effectiveVisits) > 0);
         return sum + (hasAppFee ? 0 : fee);
       }, 0);
       const eApp = eAppFromAppointments + eAppFromVisits;

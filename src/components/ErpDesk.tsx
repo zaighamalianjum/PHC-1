@@ -76,6 +76,10 @@ import {
   UserRight,
   ClinicSettings
 } from '../types';
+import {
+  getEffectiveAppointmentFee,
+  isAppointmentRevenueEligible
+} from '../utils/appointmentRevenue';
 import { toMonthYearInput } from '../utils/pharmacyUtils';
 
 
@@ -813,9 +817,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     }> = [];
 
     // 1. Appointments (OPD Token Collections)
+    // STRICT RULE: Only include revenue if appointment is booked via app OR patient has been checked by doctor
     (appointments || []).forEach((app: any) => {
-      const amt = typeof app.FeeCharged === 'number' ? app.FeeCharged : (Number(app.FeeCharged) || 0);
-      if (amt > 0 && app.Status !== 3) {
+      if (app.Status === 3) return;
+      const amt = getEffectiveAppointmentFee(app, patientVisits);
+      if (amt > 0) {
         entries.push({
           id: `APP-${app.AppointmentID || app._id || Math.random()}`,
           date: app.AppointmentDate || app.BookingDate || new Date().toISOString().split('T')[0],

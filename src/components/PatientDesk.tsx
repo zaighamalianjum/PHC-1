@@ -87,6 +87,10 @@ import {
   isSamePatientOrName,
   parseCleanVisitDate
 } from './patient/patientDeskUtils';
+import {
+  getEffectiveAppointmentFee,
+  isAppointmentRevenueEligible
+} from '../utils/appointmentRevenue';
 import { getThermalSettings, generateThermalStyles } from '../utils/thermalPrinterConfig';
 import PatientDeskSubNav, { PatientDeskSubTab } from './patient/PatientDeskSubNav';
 import LargeScreenTokenDisplay from './patient/LargeScreenTokenDisplay';
@@ -3021,10 +3025,10 @@ Healing Naturally. Restoring Balance.`;
       const invoicesForDate = (invoices || []).filter(inv => parseCleanVisitDate(inv.InvoiceDate) === date && (inv.Status as number) !== 3);
 
       // MORNING (Shift 1)
-      const mAppFromAppointments = appsForDate.filter(a => a.Shift === 1).reduce((sum, a) => sum + (Number(a.FeeCharged) || 0), 0);
+      const mAppFromAppointments = appsForDate.filter(a => a.Shift === 1 && isAppointmentRevenueEligible(a, visitsForDate)).reduce((sum, a) => sum + getEffectiveAppointmentFee(a, visitsForDate), 0);
       const mAppFromVisits = visitsForDate.filter(v => getVisShift(v) === 1).reduce((sum, v) => {
         const fee = Number(v.ConsultationFee) || 0;
-        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && a.Shift === 1 && (Number(a.FeeCharged) || 0) > 0);
+        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && a.Shift === 1 && getEffectiveAppointmentFee(a, visitsForDate) > 0);
         return sum + (hasAppFee ? 0 : fee);
       }, 0);
       const mApp = mAppFromAppointments + mAppFromVisits;
@@ -3036,10 +3040,10 @@ Healing Naturally. Restoring Balance.`;
       const mTotal = mApp + mCmed + mCards + mFile + mStore;
 
       // EVENING (Shift 2)
-      const eAppFromAppointments = appsForDate.filter(a => a.Shift === 2).reduce((sum, a) => sum + (Number(a.FeeCharged) || 0), 0);
+      const eAppFromAppointments = appsForDate.filter(a => a.Shift === 2 && isAppointmentRevenueEligible(a, visitsForDate)).reduce((sum, a) => sum + getEffectiveAppointmentFee(a, visitsForDate), 0);
       const eAppFromVisits = visitsForDate.filter(v => getVisShift(v) === 2).reduce((sum, v) => {
         const fee = Number(v.ConsultationFee) || 0;
-        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && a.Shift === 2 && (Number(a.FeeCharged) || 0) > 0);
+        const hasAppFee = appsForDate.some(a => a.PatientID === v.PatientID && a.Shift === 2 && getEffectiveAppointmentFee(a, visitsForDate) > 0);
         return sum + (hasAppFee ? 0 : fee);
       }, 0);
       const eApp = eAppFromAppointments + eAppFromVisits;
@@ -3141,9 +3145,9 @@ Healing Naturally. Restoring Balance.`;
           }
         }
 
-        const appCharges = apps.filter(a => Number(a.FeeCharged || 0) > 0);
+        const appCharges = apps.filter(a => isAppointmentRevenueEligible(a, vis) && getEffectiveAppointmentFee(a, vis) > 0);
         if (appCharges.length > 0) {
-          items.push({ count: appCharges.length, description: 'Appointment Charges', amount: appCharges.reduce((sum, a) => sum + Number(a.FeeCharged || 0), 0) });
+          items.push({ count: appCharges.length, description: 'Appointment Charges', amount: appCharges.reduce((sum, a) => sum + getEffectiveAppointmentFee(a, vis), 0) });
         }
 
         if (items.length === 0 && visitedCount > 0) {
@@ -3221,25 +3225,28 @@ Healing Naturally. Restoring Balance.`;
         });
 
         appsInShift.forEach(a => {
-          const pid = a.PatientID || `APP-${a.AppointmentID}`;
-          if (!patientMap.has(pid)) {
-            const pt = (patients || []).find(p => isSamePatient(p.PatientID, a.PatientID));
-            patientMap.set(pid, {
-              patientId: a.PatientID || 'N/A',
-              patientName: pt?.PatientName || (a as any).PatientName || 'Appointment Patient',
-              age: pt?.AgeYears || 'N/A',
-              gender: pt?.Sex || 'N/A',
-              mobileNo: pt?.PhoneMobile || pt?.PhoneRes || (a as any).Phone || 'N/A',
-              clinicalFee: 0,
-              fileFee: 0,
-              cardFee: 0,
-              storePayment: 0,
-              totalPayment: 0
-            });
-          }
-          const rec = patientMap.get(pid);
-          if (rec.clinicalFee === 0 && Number(a.FeeCharged || 0) > 0) {
-            rec.clinicalFee += Number(a.FeeCharged || 0);
+          const appFee = getEffectiveAppointmentFee(a, visInShift);
+          if (appFee > 0) {
+            const pid = a.PatientID || `APP-${a.AppointmentID}`;
+            if (!patientMap.has(pid)) {
+              const pt = (patients || []).find(p => isSamePatient(p.PatientID, a.PatientID));
+              patientMap.set(pid, {
+                patientId: a.PatientID || 'N/A',
+                patientName: pt?.PatientName || (a as any).PatientName || 'Appointment Patient',
+                age: pt?.AgeYears || 'N/A',
+                gender: pt?.Sex || 'N/A',
+                mobileNo: pt?.PhoneMobile || pt?.PhoneRes || (a as any).Phone || 'N/A',
+                clinicalFee: 0,
+                fileFee: 0,
+                cardFee: 0,
+                storePayment: 0,
+                totalPayment: 0
+              });
+            }
+            const rec = patientMap.get(pid);
+            if (rec.clinicalFee === 0) {
+              rec.clinicalFee += appFee;
+            }
           }
         });
 

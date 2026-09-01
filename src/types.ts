@@ -37,6 +37,8 @@ export interface Appointment {
   Remarks: string;
   FeeCharged: number;
   PaymentStatus?: string;
+  IsImported?: boolean;
+  Source?: 'Booked' | 'Visit' | 'Uploaded' | string;
 }
 
 export interface Token {

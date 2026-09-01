@@ -29,6 +29,11 @@ import {
 } from 'lucide-react';
 import { Patient, Appointment, City, Token, NhcPatientHistory, Visit } from '../../types';
 import { formatDisplayDate, isSamePatient } from './patientDeskUtils';
+import {
+  getEffectiveAppointmentFee,
+  isImportedAppointment,
+  isExplicitlyBookedAppointment
+} from '../../utils/appointmentRevenue';
 
 interface PatientAppointmentsViewProps {
   appointments: Appointment[];
@@ -446,11 +451,22 @@ export default function PatientAppointmentsView({
                 if (fee > 0) return fee;
               }
 
-              // 3. If the appointment entry was created directly from a doctor visit or has FeeCharged
+              // 3. If the appointment entry was created directly from a doctor visit
               if (app.AppointmentID && app.AppointmentID.startsWith('APP-VIS-')) {
                 return Number(app.FeeCharged) || 0;
               }
 
+              // 4. If explicitly booked via Book Appointment & Schedule Desk
+              if (isExplicitlyBookedAppointment(app)) {
+                return Number(app.FeeCharged) || 0;
+              }
+
+              // 5. If imported/uploaded from excel, do NOT show payment until doctor conducts checkup
+              if (isImportedAppointment(app)) {
+                return 0;
+              }
+
+              // Default: if non-imported and has fee
               if (Number(app.FeeCharged) > 0) {
                 return Number(app.FeeCharged);
               }
@@ -459,12 +475,12 @@ export default function PatientAppointmentsView({
               return 0;
             };
 
-            // Unified Appointment Records list (Only include records where doctor entered OPD / App fee)
+            // Unified Appointment Records list (Only include records where doctor entered OPD / App fee or explicitly booked)
             const combinedApps: Appointment[] = [];
 
-            // Add registered appointments that have OPD / App fee entered
+            // Add registered appointments that have valid OPD / App fee
             (appointments || []).forEach(a => {
-              const fee = getDoctorCheckupFee(a) || Number(a.FeeCharged) || 0;
+              const fee = getDoctorCheckupFee(a);
               if (fee > 0) {
                 combinedApps.push({
                   ...a,

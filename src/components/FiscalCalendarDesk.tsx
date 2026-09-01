@@ -39,6 +39,7 @@ import {
   ErpExpense,
   ErpPayroll
 } from '../types';
+import { getEffectiveAppointmentFee } from '../utils/appointmentRevenue';
 
 interface FiscalCalendarDeskProps {
   currentUser: User | null;
@@ -486,9 +487,11 @@ export default function FiscalCalendarDesk({
       const d = app.AppointmentDate || app.BookingDate || app.Date || app.CreatedAt;
       if (isDateInRange(d)) {
         if (app.Status !== 3 && app.Status !== 'Cancelled') {
-          const fee = Number(app.FeeCharged) || Number(app.Fee) || Number(app.ConsultationFee) || Number(app.Amount) || 0;
-          opdTokensSum += fee;
-          appointmentsCount += 1;
+          const fee = getEffectiveAppointmentFee(app, allVisits);
+          if (fee > 0) {
+            opdTokensSum += fee;
+            appointmentsCount += 1;
+          }
         }
       }
     });
@@ -819,7 +822,7 @@ export default function FiscalCalendarDesk({
     allAppointments.forEach(app => {
       const d = app.AppointmentDate || app.BookingDate || app.Date || app.CreatedAt;
       if (isDateInRange(d) && app.Status !== 3 && app.Status !== 'Cancelled') {
-        const amt = Number(app.FeeCharged) || Number(app.Fee) || Number(app.ConsultationFee) || 0;
+        const amt = getEffectiveAppointmentFee(app, allVisits);
         if (amt > 0) {
           const ymd = normalizeDateToYMD(d) || startDate;
           rows.push({
