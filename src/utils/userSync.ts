@@ -17,13 +17,9 @@ export interface UserSyncEventPayload {
 }
 
 // Unique identifier for the current browser tab session to avoid self-processing loops
-const CURRENT_TAB_ID = typeof window !== 'undefined' 
-  ? (window.name || `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`)
+const CURRENT_TAB_ID = typeof window !== 'undefined'
+  ? `${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
   : 'server_tab';
-
-if (typeof window !== 'undefined' && !window.name) {
-  window.name = CURRENT_TAB_ID;
-}
 
 /**
  * Safely dispatches a custom event across all browsers without constructor errors
@@ -31,11 +27,25 @@ if (typeof window !== 'undefined' && !window.name) {
 export function dispatchSafeCustomEvent(eventName: string, detail?: any) {
   try {
     if (typeof window === 'undefined') return;
-    if (typeof CustomEvent === 'function') {
-      window.dispatchEvent(new CustomEvent(eventName, { detail }));
-    } else if (typeof document !== 'undefined' && typeof document.createEvent === 'function') {
-      const evt = document.createEvent('CustomEvent');
-      evt.initCustomEvent(eventName, false, false, detail);
+    let evt: any = null;
+    try {
+      if (typeof CustomEvent === 'function') {
+        evt = new CustomEvent(eventName, { detail });
+      }
+    } catch (_e) {
+      evt = null;
+    }
+
+    if (!evt && typeof document !== 'undefined' && typeof document.createEvent === 'function') {
+      try {
+        evt = document.createEvent('CustomEvent');
+        evt.initCustomEvent(eventName, false, false, detail);
+      } catch (_e) {
+        evt = null;
+      }
+    }
+
+    if (evt && typeof window.dispatchEvent === 'function') {
       window.dispatchEvent(evt);
     }
   } catch (e) {
@@ -55,51 +65,26 @@ export function broadcastUserSync(action: UserSyncEventPayload['action'], user?:
     sourceTabId: CURRENT_TAB_ID
   };
 
-  // 1. BroadcastChannel API for instantaneous tab-to-tab sync
-  try {
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window && typeof BroadcastChannel === 'function') {
-      const channel = new BroadcastChannel(USER_SYNC_CHANNEL_NAME);
-      channel.postMessage(payload);
-      channel.close();
-    }
-  } catch (e) {
-    // Ignore if not supported
-  }
-
-  // 2. LocalStorage storage event fallback (fires in other tabs of same browser)
+  // 1. LocalStorage storage event fallback (fires in other tabs of same browser)
   try {
     if (typeof window !== 'undefined' && window.localStorage) {
       localStorage.setItem(USER_SYNC_STORAGE_KEY, JSON.stringify(payload));
     }
   } catch (e) {}
 
-  // 3. Dispatch in-memory custom DOM events for same-window listeners
+  // 2. Dispatch in-memory custom DOM events for same-window listeners
   dispatchSafeCustomEvent('phc_local_user_updated', payload);
   dispatchSafeCustomEvent('phc_db_updated');
 }
 
 /**
- * Subscribes to user sync events across BroadcastChannel and Storage events from OTHER tabs.
+ * Subscribes to user sync events across Storage events from OTHER tabs.
  * Returns an unsubscription function for React useEffect cleanup.
  */
 export function subscribeToUserSync(onSync: (payload?: UserSyncEventPayload) => void): () => void {
   if (typeof window === 'undefined') {
     return () => {};
   }
-
-  let channel: BroadcastChannel | null = null;
-
-  // BroadcastChannel listener
-  try {
-    if ('BroadcastChannel' in window) {
-      channel = new BroadcastChannel(USER_SYNC_CHANNEL_NAME);
-      channel.onmessage = (event: MessageEvent) => {
-        if (event.data && event.data.sourceTabId !== CURRENT_TAB_ID) {
-          onSync(event.data);
-        }
-      };
-    }
-  } catch (e) {}
 
   // Storage event listener for other tabs in same browser
   const handleStorage = (event: StorageEvent) => {
@@ -118,11 +103,6 @@ export function subscribeToUserSync(onSync: (payload?: UserSyncEventPayload) => 
   window.addEventListener('storage', handleStorage);
 
   return () => {
-    if (channel) {
-      try {
-        channel.close();
-      } catch (e) {}
-    }
     window.removeEventListener('storage', handleStorage);
   };
 }

@@ -599,16 +599,24 @@ export default function PatientDeskModals(props: any) {
                                 Payment Received on Last Visit ({formatDisplayDate(group.date)}):
                               </span>
                               <span className="text-blue-300 font-bold">
-                                Appointment Fee: <strong className="text-white">PKR {Number(group.filePkr || 0).toLocaleString()}</strong>
+                                OPD Fee: <strong className="text-white">PKR {Number(group.filePkr || 0).toLocaleString()}</strong>
                               </span>
                               <span className="text-slate-500 mx-1.5">•</span>
                               <span className="text-amber-300 font-bold">
                                 Clinical Medicine: <strong className="text-white">PKR {Number(group.clinicalMedicinePkr || 0).toLocaleString()}</strong>
                               </span>
+                              {Number(group.cardPkr || 0) > 0 && (
+                                <>
+                                  <span className="text-slate-500 mx-1.5">•</span>
+                                  <span className="text-purple-300 font-bold">
+                                    Card: <strong className="text-white">PKR {Number(group.cardPkr || 0).toLocaleString()}</strong>
+                                  </span>
+                                </>
+                              )}
                             </div>
                           </div>
                           <div className="bg-emerald-600/90 text-white px-2.5 py-1 rounded-lg text-xs font-mono font-black border border-emerald-400/40 shrink-0">
-                            Total Paid: PKR {(Number(group.filePkr || 0) + Number(group.clinicalMedicinePkr || 0)).toLocaleString()}
+                            Total Paid: PKR {(Number(group.filePkr || 0) + Number(group.clinicalMedicinePkr || 0) + Number(group.cardPkr || 0)).toLocaleString()}
                           </div>
                         </div>
                       </div>

@@ -27,13 +27,14 @@ import {
   Table,
   UserPlus
 } from 'lucide-react';
-import { Patient, Appointment, City, Token, NhcPatientHistory } from '../../types';
+import { Patient, Appointment, City, Token, NhcPatientHistory, Visit } from '../../types';
 import { formatDisplayDate, isSamePatient } from './patientDeskUtils';
 
 interface PatientAppointmentsViewProps {
   appointments: Appointment[];
   patients: Patient[];
   nhcPatients?: NhcPatientHistory[];
+  visits?: Visit[];
   cities?: City[];
   tokens?: Token[];
   appDate?: string;
@@ -64,6 +65,7 @@ export default function PatientAppointmentsView({
   appointments = [],
   patients = [],
   nhcPatients = [],
+  visits = [],
   cities = [],
   tokens = [],
   appDate = new Date().toISOString().split('T')[0],
@@ -113,7 +115,6 @@ export default function PatientAppointmentsView({
   const canBookAppointment = canAddAppointment;
   const canCancelAppointment = canDeleteAppointment;
   const pvNhcHistory = nhcPatients || [];
-  const visits: any[] = [];
 
   const onAddPatient = () => {
     onOpenAddModal();
@@ -124,17 +125,46 @@ export default function PatientAppointmentsView({
   const getPatientLastFee = (patId: string) => {
     if (!patId) return tokenFeeToCharge || 0;
     const cleanId = String(patId).trim().toLowerCase();
-    const matchingApps = (appointments || []).filter(
-      (a) => String(a.PatientID).trim().toLowerCase() === cleanId && Number(a.FeeCharged) > 0
-    );
-    if (matchingApps.length > 0) {
-      const sorted = [...matchingApps].sort((a, b) => {
-        const da = new Date(a.AppointmentDate || '').getTime() || 0;
-        const db = new Date(b.AppointmentDate || '').getTime() || 0;
+
+    // 1. Check in real doctor visits first
+    const ptVisits = (visits || []).filter((v) => isSamePatient(v.PatientID, cleanId));
+    if (ptVisits.length > 0) {
+      const sorted = [...ptVisits].sort((a, b) => {
+        const da = new Date(a.VisitDate || '').getTime() || 0;
+        const db = new Date(b.VisitDate || '').getTime() || 0;
         return da - db;
       });
-      return Number(sorted[sorted.length - 1].FeeCharged);
+      const lastV = sorted[sorted.length - 1];
+      let fee = Number(lastV.ConsultationFee) || 0;
+      if (!fee && lastV.VisitRemarks) {
+        const match = lastV.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || 
+                      lastV.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || 
+                      lastV.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
+        if (match) fee = Number(match[1]);
+      }
+      if (fee > 0) return fee;
     }
+
+    // 2. Check in nhc patients history
+    const ptNhc = (nhcPatients || []).filter((nhc) => isSamePatient(nhc.PatientID, cleanId));
+    if (ptNhc.length > 0) {
+      const sorted = [...ptNhc].sort((a, b) => {
+        const da = new Date((a as any).date || (a as any).VisitDate || '').getTime() || 0;
+        const db = new Date((b as any).date || (b as any).VisitDate || '').getTime() || 0;
+        return da - db;
+      });
+      const lastNhc = sorted[sorted.length - 1];
+      let fee = Number((lastNhc as any).ConsultationFee) || Number((lastNhc as any).fee) || Number((lastNhc as any).FeeCharged) || 0;
+      const rem = (lastNhc as any).VisitRemarks || (lastNhc as any).Remarks || '';
+      if (!fee && rem) {
+        const match = rem.match(/OPD Fee PKR\s*(\d+)/i) || 
+                      rem.match(/Consultation Fee PKR\s*(\d+)/i) || 
+                      rem.match(/OPD PKR\s*(\d+)/i);
+        if (match) fee = Number(match[1]);
+      }
+      if (fee > 0) return fee;
+    }
+
     return tokenFeeToCharge || 0;
   };
 
@@ -399,6 +429,13 @@ export default function PatientAppointmentsView({
               const visDateNorm = normalizeDateStr(vis.VisitDate);
               const exists = combinedApps.some((a) => isSamePatient(a.PatientID, vis.PatientID) && normalizeDateStr(a.AppointmentDate) === visDateNorm);
               if (!exists) {
+                let visFee = Number(vis.ConsultationFee) || 0;
+                if (!visFee && vis.VisitRemarks) {
+                  const match = vis.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || 
+                                vis.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || 
+                                vis.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
+                  if (match) visFee = Number(match[1]);
+                }
                 combinedApps.push({
                   AppointmentID: `APP-VIS-${vis.VisitID || Date.now()}`,
                   PatientID: vis.PatientID,
@@ -406,20 +443,63 @@ export default function PatientAppointmentsView({
                   Shift: 1,
                   Status: 4,
                   Remarks: vis.VisitRemarks || 'OPD Consultation Visit',
-                  FeeCharged: Number(vis.ConsultationFee) || 0,
+                  FeeCharged: visFee,
                   PaymentStatus: 'Paid'
                 });
               }
             });
 
-            const validApps = combinedApps.filter((app) => {
+            // Helper to get only the doctor's checkup consultation/OPD fee for this appointment
+            const getDoctorCheckupFee = (app: Appointment): number => {
               const apptDateStr = normalizeDateStr(app.AppointmentDate);
-              const matchingVisit = (visits || []).find(v => isSamePatient(v.PatientID, app.PatientID) && v.VisitDate && normalizeDateStr(v.VisitDate) === apptDateStr);
-              const feeVal = (Number(app.FeeCharged) > 0)
-                ? Number(app.FeeCharged)
-                : (Number(matchingVisit?.ConsultationFee) || 0);
-              return feeVal > 0;
-            });
+              
+              // 1. Look in recorded visits (from doctor clinical desk)
+              const matchingVisits = (visits || []).filter(v => 
+                isSamePatient(v.PatientID, app.PatientID) && 
+                v.VisitDate && 
+                normalizeDateStr(v.VisitDate) === apptDateStr
+              );
+
+              for (const v of matchingVisits) {
+                let fee = Number(v.ConsultationFee) || 0;
+                if (!fee && v.VisitRemarks) {
+                  const match = v.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || 
+                                v.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || 
+                                v.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
+                  if (match) fee = Number(match[1]);
+                }
+                if (fee > 0) return fee;
+              }
+
+              // 2. Look in NHC Patients history
+              const matchingNhc = (nhcPatients || []).filter(nhc => 
+                isSamePatient(nhc.PatientID, app.PatientID) && 
+                ((nhc as any).date || (nhc as any).VisitDate) && 
+                normalizeDateStr((nhc as any).date || (nhc as any).VisitDate) === apptDateStr
+              );
+
+              for (const nhc of matchingNhc) {
+                let fee = Number((nhc as any).ConsultationFee) || Number((nhc as any).fee) || 0;
+                const rem = (nhc as any).VisitRemarks || (nhc as any).Remarks || '';
+                if (!fee && rem) {
+                  const match = rem.match(/OPD Fee PKR\s*(\d+)/i) || 
+                                rem.match(/Consultation Fee PKR\s*(\d+)/i) || 
+                                rem.match(/OPD PKR\s*(\d+)/i);
+                  if (match) fee = Number(match[1]);
+                }
+                if (fee > 0) return fee;
+              }
+
+              // 3. If the appointment entry was created directly from a doctor visit
+              if (app.AppointmentID && app.AppointmentID.startsWith('APP-VIS-')) {
+                return Number(app.FeeCharged) || 0;
+              }
+
+              // Otherwise, if doctor has not yet conducted checkup & added fee, do NOT show uploaded/dummy fee
+              return 0;
+            };
+
+            const validApps = combinedApps;
 
             const filteredApps = validApps.filter((app) => {
               // 1. Shift filter
@@ -578,10 +658,7 @@ export default function PatientAppointmentsView({
                           const patientNameStr = pat?.PatientName || app.PatientID;
                           const mobileStr = pat?.PhoneMobile || 'N/A';
                           const apptDateStr = normalizeDateStr(app.AppointmentDate);
-                          const matchingVisit = visits.find(v => isSamePatient(v.PatientID, app.PatientID) && v.VisitDate && normalizeDateStr(v.VisitDate) === apptDateStr);
-                          const feeVal = (Number(app.FeeCharged) > 0)
-                            ? Number(app.FeeCharged)
-                            : (matchingVisit?.ConsultationFee || 0);
+                          const feeVal = getDoctorCheckupFee(app);
 
                           return (
                             <tr
@@ -614,8 +691,16 @@ export default function PatientAppointmentsView({
                               </td>
 
                               {/* Appointment Fees */}
-                              <td className="py-2.5 px-3 border-r border-slate-200 text-right font-mono font-black text-emerald-900 text-xs">
-                                PKR {Number(feeVal).toLocaleString()}
+                              <td className="py-2.5 px-3 border-r border-slate-200 text-right font-mono text-xs">
+                                {feeVal > 0 ? (
+                                  <span className="font-bold text-emerald-900 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200 font-mono">
+                                    PKR {Number(feeVal).toLocaleString()}
+                                  </span>
+                                ) : (
+                                  <span className="text-[11px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded font-mono font-medium">
+                                    PKR 0
+                                  </span>
+                                )}
                               </td>
 
                               {/* Shift */}

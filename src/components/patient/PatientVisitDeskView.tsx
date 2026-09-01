@@ -2,7 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  */
-import React from 'react';
+import React, { useState } from 'react';
 import {
   Stethoscope,
   Coins,
@@ -538,16 +538,11 @@ export default function PatientVisitDeskView(props: any) {
                         {lastAppointmentFee > 0 && (
                           <span
                             className="text-[10px] bg-emerald-100 text-emerald-950 font-black px-2 py-0.2 rounded-md font-mono flex items-center border border-emerald-300 shadow-2xs cursor-pointer hover:bg-emerald-200 transition"
-                            title={`Previous appointment fee recorded for this patient: PKR ${lastAppointmentFee}. Click to use as OPD fee.`}
+                            title={`Appointment payment on record for this patient: PKR ${lastAppointmentFee}. Click to apply as OPD fee.`}
                             onClick={() => setPvOpdFeePkr(String(lastAppointmentFee))}
                           >
                             <Coins className="w-3 h-3 mr-1 text-emerald-700" />
-                            <span>Last Appt Fee: PKR {lastAppointmentFee.toLocaleString()}</span>
-                            {patientAppointments[0]?.AppointmentDate && (
-                              <span className="ml-1 text-emerald-800/80 font-semibold">
-                                ({formatDisplayDate(patientAppointments[0].AppointmentDate)})
-                              </span>
-                            )}
+                            <span>Appointment Fee: PKR {lastAppointmentFee.toLocaleString()}</span>
                           </span>
                         )}
                       </div>
@@ -686,63 +681,18 @@ export default function PatientVisitDeskView(props: any) {
                 <div className="w-5 h-5 border-2 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
                 <p className="text-xs font-bold text-indigo-800">Fetching Previous PHC Patient History...</p>
               </div>
-            ) : combinedPreviousHistory.length === 0 && patientAppointments.length === 0 ? (
+            ) : combinedPreviousHistory.length === 0 ? (
               <div className="text-center py-6 bg-amber-50/50 rounded-lg border border-amber-200/60 p-3">
                 <p className="text-xs font-bold text-amber-800">No History Records Found for Patient</p>
-                <p className="text-[10px] text-amber-600 mt-0.5">There are no previous consultation or appointment records for this patient.</p>
+                <p className="text-[10px] text-amber-600 mt-0.5">There are no previous consultation or prescription records for this patient.</p>
               </div>
             ) : (
               /* FULL-WIDTH HISTORY DETAILS LAYOUT */
               <div className="w-full space-y-2.5 min-h-[200px]">
-                {/* 📅 APPOINTMENT PAYMENT HISTORY BANNER FOR DOCTOR */}
-                {patientAppointments.length > 0 && (
-                  <div className="bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200 text-emerald-950 font-medium space-y-1.5 shadow-2xs">
-                    <div className="flex items-center justify-between border-b border-emerald-200/80 pb-1">
-                      <div className="flex items-center space-x-1.5 font-bold text-emerald-900 text-xs">
-                        <Coins className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
-                        <span>Previous Appointment Payment History ({patientAppointments.length} Record{patientAppointments.length > 1 ? 's' : ''}):</span>
-                      </div>
-                      <span className="text-[10px] font-black text-emerald-800 bg-white px-2 py-0.5 rounded border border-emerald-300">
-                        Last Fee: PKR {lastAppointmentFee.toLocaleString()}
-                      </span>
-                    </div>
-                    <div className="divide-y divide-emerald-100 text-[10.5px]">
-                      {patientAppointments.slice(0, 5).map((app, appIdx) => (
-                        <div key={`app-hist-${app.AppointmentID || appIdx}`} className="py-1 flex items-center justify-between">
-                          <div className="flex items-center space-x-2 text-slate-700">
-                            <span className="font-bold text-slate-900 font-mono">{formatDisplayDate(app.AppointmentDate)}</span>
-                            <span className="text-[9px] px-1 rounded bg-slate-100 text-slate-700 font-semibold uppercase">
-                              {app.Shift === 1 ? 'Morning' : 'Evening'}
-                            </span>
-                            {app.Remarks && <span className="text-slate-500 italic truncate max-w-[140px]">({app.Remarks})</span>}
-                          </div>
-                          <div className="flex items-center space-x-1.5">
-                            <span className="font-mono font-black text-emerald-900 bg-emerald-100/70 px-1.5 py-0.2 rounded border border-emerald-300">
-                              PKR {(app.FeeCharged || 0).toLocaleString()}
-                            </span>
-                            <button
-                              type="button"
-                              onClick={() => setPvOpdFeePkr(String(app.FeeCharged || 0))}
-                              className="text-[9px] font-bold text-emerald-800 hover:text-emerald-950 bg-white hover:bg-emerald-100 px-1.5 py-0.2 rounded border border-emerald-300 transition cursor-pointer"
-                              title="Set current OPD fee to this amount"
-                            >
-                              Apply
-                            </button>
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-
                 {displayedPreviousHistory.length === 0 && combinedPreviousHistory.length > 0 ? (
                   <div className="text-center py-8 bg-amber-50/50 rounded-lg border border-amber-200 p-3">
                     <p className="text-xs font-bold text-amber-800">No Records Found for Selected Date</p>
                     <p className="text-[10px] text-amber-600 mt-0.5">Please select another visit date from the top dropdown.</p>
-                  </div>
-                ) : displayedPreviousHistory.length === 0 && combinedPreviousHistory.length === 0 ? (
-                  <div className="text-center py-4 bg-slate-50 rounded-lg border border-slate-200 p-2 text-[10px] text-slate-500">
-                    No previous prescriptions recorded. Appointment payment history is shown above.
                   </div>
                 ) : (
                     <>
@@ -965,35 +915,10 @@ export default function PatientVisitDeskView(props: any) {
 
                             {/* DOCTOR VISIT PAYMENT BREAKDOWN BADGE */}
                             {(() => {
-                              const visitDateClean = parseCleanVisitDate(group.date);
-                              let resolvedFilePkr = Number(group.filePkr || 0);
-
-                              if (!resolvedFilePkr) {
-                                const matchedApp = (props.appointments || []).find((a: Appointment) =>
-                                  (isSamePatient(a.PatientID, selectedPvPatient?.PatientID) || (selectedPvPatient?.PatientName && (a as any).PatientName && String((a as any).PatientName).trim().toLowerCase() === String(selectedPvPatient.PatientName).trim().toLowerCase())) &&
-                                  parseCleanVisitDate(a.AppointmentDate) === visitDateClean
-                                );
-                                if (matchedApp) {
-                                  resolvedFilePkr = Number((matchedApp as any).PaidAmount || (matchedApp as any).ConsultationFee || matchedApp.FeeCharged || (matchedApp as any).Fee || 0);
-                                }
-                              }
-
-                              if (!resolvedFilePkr) {
-                                const matchedTok = (props.tokens || []).find((t: Token) =>
-                                  (isSamePatient(t.PatientID, selectedPvPatient?.PatientID) || (selectedPvPatient?.PatientName && (t as any).PatientName && String((t as any).PatientName).trim().toLowerCase() === String(selectedPvPatient.PatientName).trim().toLowerCase())) &&
-                                  parseCleanVisitDate(t.Date) === visitDateClean
-                                );
-                                if (matchedTok) {
-                                  resolvedFilePkr = Number((matchedTok as any).Fee || (matchedTok as any).PaidAmount || 0);
-                                }
-                              }
-
-                              if (!resolvedFilePkr && lastAppointmentFee > 0 && props.groupedRxByDate?.length <= 1) {
-                                resolvedFilePkr = lastAppointmentFee;
-                              }
-
+                              const resolvedOpdFee = Number(group.filePkr || 0);
                               const resolvedClinPkr = Number(group.clinicalMedicinePkr || 0);
-                              const totalPaidPkr = resolvedFilePkr + resolvedClinPkr;
+                              const resolvedCardPkr = Number(group.cardPkr || 0);
+                              const totalPaidPkr = resolvedOpdFee + resolvedClinPkr + resolvedCardPkr;
 
                               return (
                                 <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white rounded-lg p-2 flex flex-wrap items-center justify-between gap-1.5 shadow-2xs border border-indigo-900/40">
@@ -1006,12 +931,20 @@ export default function PatientVisitDeskView(props: any) {
                                         Payment Received on this Visit:
                                       </span>
                                       <span className="text-blue-300 font-bold">
-                                        Appointment: <strong className="text-white">PKR {resolvedFilePkr.toLocaleString()}</strong>
+                                        OPD Fee: <strong className="text-white">PKR {resolvedOpdFee.toLocaleString()}</strong>
                                       </span>
                                       <span className="text-slate-500 mx-1.5">•</span>
                                       <span className="text-amber-300 font-bold">
                                         Clinical Meds: <strong className="text-white">PKR {resolvedClinPkr.toLocaleString()}</strong>
                                       </span>
+                                      {resolvedCardPkr > 0 && (
+                                        <>
+                                          <span className="text-slate-500 mx-1.5">•</span>
+                                          <span className="text-purple-300 font-bold">
+                                            Card: <strong className="text-white">PKR {resolvedCardPkr.toLocaleString()}</strong>
+                                          </span>
+                                        </>
+                                      )}
                                     </div>
                                   </div>
                                   <div className="bg-emerald-600/90 text-white px-2 py-0.5 rounded text-[10px] font-mono font-black border border-emerald-400/40 shrink-0">
@@ -2320,14 +2253,13 @@ export default function PatientVisitDeskView(props: any) {
                             <div className="space-y-0.5">
                               <p className="text-[10px] text-slate-700 font-bold">کلینک اپائنٹمنٹ اور دیگر معلومات کیلئے</p>
                               <div className="inline-block border-2 border-slate-900 text-slate-950 font-mono font-black text-xs px-3 py-0.5 rounded-full mt-0.5">
-                                +92-311-4000608
+                                0300-4202383
                               </div>
                             </div>
 
                             {/* Address & Email */}
                             <div className="text-[10px] text-slate-700 pt-2 border-t border-slate-200 space-y-0.5">
                               <p className="font-semibold">10 شالیمار روڈ، گڑھی شاہو، لاہور-39</p>
-                              <p className="font-mono">+92 42 3631 2924, 3630 2873</p>
                               <p className="font-mono text-slate-600 text-[9px]">punjabhomeopathic@gmail.com</p>
                             </div>
 

@@ -6,6 +6,7 @@
 import React, { useState, useEffect } from 'react';
 import { BackupProgressModal } from './BackupProgressModal';
 import { MainMenuConfigModal, MainMenuDefinition } from './MainMenuConfigModal';
+import { ThermalPrinterSettingsTab } from './settings/ThermalPrinterSettingsTab';
 import { 
   Building, 
   UserCheck, 
@@ -110,7 +111,7 @@ export default function SettingsDesk({
   patients = []
 }: SettingsDeskProps) {
   // Tabs: settings details vs user management vs access control vs cities
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'details' | 'users' | 'access' | 'cities' | 'sms' | 'mongodb' | 'maintenance'>('details');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'details' | 'users' | 'access' | 'thermal' | 'cities' | 'sms' | 'mongodb' | 'maintenance'>('details');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Cities Management State
@@ -324,7 +325,7 @@ export default function SettingsDesk({
       menuRightId: 'settings',
       icon: Settings,
       color: 'slate',
-      desc: 'Clinic profile setup, SMS gateway, Google Drive backups & user access management',
+      desc: 'Clinic profile setup, SMS gateway, system database backups & user access management',
       subMenus: [
         { key: 'canViewSettingsDesk', label: 'Clinic Configuration Panel', icon: Settings, desc: 'Configure clinic branding, SMS & database connections' }
       ],
@@ -1272,6 +1273,7 @@ export default function SettingsDesk({
 
   const settingsNavTabs = [
     { id: 'details', label: 'Clinic Details', shortLabel: 'Details', icon: Building, desc: 'Clinic Profile, Timings & Receipt Config' },
+    { id: 'thermal', label: 'Thermal Printer Settings', shortLabel: 'Thermal POS', icon: Printer, desc: 'Paper Roll Width, Margins, Scale & Cutter Feed Setup' },
     { id: 'users', label: `Staff Accounts (${usersList.length})`, shortLabel: `Staff (${usersList.length})`, icon: UserCheck, desc: 'Doctor, Dispenser & Receptionist Logins' },
     { id: 'access', label: 'User Access Control', shortLabel: 'Access', icon: ShieldCheck, desc: 'Granular Role Permissions & Feature Rights' },
     { id: 'sms', label: 'SMS Config', shortLabel: 'SMS', icon: MessageSquare, desc: 'Branded SMS Gateway & Alerts' },
@@ -2223,7 +2225,11 @@ export default function SettingsDesk({
                   onClick={() => {
                     const updated = { ...accessPermissions };
                     MAIN_MENU_CONFIGS.forEach(m => {
-                      updated[m.permKey] = true;
+                      if (m.id === 'dashboard' && selectedAccessUser?.Role !== 'Administrator') {
+                        updated[m.permKey] = false;
+                      } else {
+                        updated[m.permKey] = true;
+                      }
                     });
                     setAccessPermissions(updated);
                   }}
@@ -2250,7 +2256,12 @@ export default function SettingsDesk({
 
             {/* Main Menu Cards Grid */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {MAIN_MENU_CONFIGS.map((menu) => {
+              {MAIN_MENU_CONFIGS.filter(menu => {
+                if (selectedAccessUser?.Role !== 'Administrator' && menu.id === 'dashboard') {
+                  return false;
+                }
+                return true;
+              }).map((menu) => {
                 const isMainAllowed = !!accessPermissions[menu.permKey];
                 
                 // Count enabled sub-menus
@@ -3372,6 +3383,11 @@ export default function SettingsDesk({
             </div>
           </div>
         </div>
+      )}
+
+      {/* View: Thermal Printer Hardware Settings */}
+      {activeSettingsTab === 'thermal' && (
+        <ThermalPrinterSettingsTab clinicSettings={clinicSettings} />
       )}
 
       {/* Backup Progress Modal */}

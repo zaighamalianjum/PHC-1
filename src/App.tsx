@@ -76,12 +76,11 @@ import {
   X,
   Stethoscope,
   Maximize2,
-  Minimize2,
-  CloudUpload
+  Minimize2
 } from 'lucide-react';
 import UnauthorizedModal from './components/UnauthorizedModal';
+import DashboardPasswordModal from './components/DashboardPasswordModal';
 import GlobalSearchHeader from './components/GlobalSearchHeader';
-import { CloudBackupModal } from './components/CloudBackupModal';
 import PwaInstallModal from './components/PwaInstallModal';
 import LoginDesk from './components/LoginDesk';
 import { TopProgressBar, GlobalLoadingOverlay } from './components/LoadingIndicator';
@@ -343,6 +342,9 @@ export default function App() {
   // Store Medicine Mobile PWA Install Modal State
   const [showPwaInstallModal, setShowPwaInstallModal] = useState<boolean>(false);
 
+  // Dashboard Password Verification Modal State
+  const [showDashboardPasswordModal, setShowDashboardPasswordModal] = useState<boolean>(false);
+
   const handleTabChange = (tabId: string, patientId?: string, subTab?: string) => {
     setIsMobileMenuOpen(false);
     if (patientId !== undefined) {
@@ -356,15 +358,28 @@ export default function App() {
       setActiveTab('patients');
       return;
     }
+
+    // Intercept Dashboard navigation: Only allowed for Administrator and always requires password verification
+    if (tabId === 'dashboard') {
+      if (currentUser.Role !== 'Administrator') {
+        setUnauthorizedModalState({
+          isOpen: true,
+          title: 'Dashboard Access Restricted',
+          message: 'The Executive Dashboard is strictly confidential and restricted to the Administrator account only.'
+        });
+        return;
+      }
+      // Trigger password prompt popup every time user attempts to switch to dashboard
+      setShowDashboardPasswordModal(true);
+      return;
+    }
+
     if (tabId === activeTab && patientId === undefined && subTab === undefined) return;
     setActiveTab(tabId);
   };
 
   // User Profile Popover Modal State
   const [showProfileModal, setShowProfileModal] = useState<boolean>(false);
-
-  // Cloud DB Backup Modal State
-  const [showCloudBackupModal, setShowCloudBackupModal] = useState<boolean>(false);
 
   // App-Wide Native Full Screen State & Listener
   const [isAppFullScreen, setIsAppFullScreen] = useState<boolean>(false);
@@ -2580,19 +2595,6 @@ export default function App() {
               </h1>
             </div>
             <div className="flex items-center space-x-1 sm:space-x-2 lg:space-x-2.5 text-xs shrink-0">
-              {/* DB Cloud Backup Button - Collapsed icon pill by default, expands smoothly on hover */}
-              <button
-                onClick={() => setShowCloudBackupModal(true)}
-                className="group flex items-center space-x-1 bg-gradient-to-r from-blue-700/80 via-indigo-700/80 to-sky-700/80 hover:from-blue-600 hover:via-indigo-600 hover:to-sky-600 active:from-blue-800 active:to-indigo-800 text-white font-extrabold text-[10px] px-1.5 sm:px-2 py-1 rounded-md border border-sky-400/30 hover:border-sky-400/70 shadow-xs transition-all duration-300 cursor-pointer shrink-0"
-                title="DB Cloud Backup - Export database snapshot to Google Drive"
-                id="top-cloud-backup-btn"
-              >
-                <CloudUpload className="w-3.5 h-3.5 text-sky-300 group-hover:text-white shrink-0 animate-pulse transition-colors" />
-                <div className="max-w-0 overflow-hidden group-hover:max-w-[140px] focus-within:max-w-[140px] transition-all duration-300 ease-in-out flex items-center opacity-0 group-hover:opacity-100 focus-within:opacity-100">
-                  <span className="uppercase tracking-wider text-[9.5px] whitespace-nowrap pl-0.5">DB Cloud Backup</span>
-                </div>
-              </button>
-
               {/* Refresh All Button - Collapsed icon pill by default, expands smoothly on hover */}
               <button
                 onClick={refreshAllData}
@@ -3168,20 +3170,23 @@ export default function App() {
           )}
         </div>
 
-        {/* Google Drive Cloud Backup Modal */}
-        <CloudBackupModal
-          isOpen={showCloudBackupModal}
-          onClose={() => setShowCloudBackupModal(false)}
-          targetDbName={mongoDbSettings.DatabaseName || 'PharmacyPOSDB'}
-          suggestedEmail="Punjabhomeopathic@gmail.com"
-        />
-
         {/* Global Unauthorized Popup Modal */}
         <UnauthorizedModal
           isOpen={unauthorizedModalState.isOpen}
           onClose={() => setUnauthorizedModalState({ isOpen: false })}
           title={unauthorizedModalState.title}
           message={unauthorizedModalState.message}
+        />
+
+        {/* Admin Dashboard Password Verification Modal */}
+        <DashboardPasswordModal
+          isOpen={showDashboardPasswordModal}
+          onClose={() => setShowDashboardPasswordModal(false)}
+          onSuccess={() => {
+            setShowDashboardPasswordModal(false);
+            setActiveTab('dashboard');
+          }}
+          currentUser={currentUser}
         />
 
         {/* PWA Mobile App Install / QR Guide Modal */}

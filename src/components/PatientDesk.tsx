@@ -87,10 +87,10 @@ import {
   isSamePatientOrName,
   parseCleanVisitDate
 } from './patient/patientDeskUtils';
+import { getThermalSettings, generateThermalStyles } from '../utils/thermalPrinterConfig';
 import PatientDeskSubNav, { PatientDeskSubTab } from './patient/PatientDeskSubNav';
 import LargeScreenTokenDisplay from './patient/LargeScreenTokenDisplay';
 import PatientRegisterView from './patient/PatientRegisterView';
-import PatientProfileView from './patient/PatientProfileView';
 import InstantTokenIssueView from './patient/InstantTokenIssueView';
 import RegistrationSuccessModal from './patient/RegistrationSuccessModal';
 import EMRDesk from './EMRDesk';
@@ -739,16 +739,8 @@ export default function PatientDesk({
       }
     });
 
-    let appointmentFeesTotal = 0;
-    (appointments || []).forEach((app) => {
-      const appDate = app.AppointmentDate ? app.AppointmentDate.split('T')[0] : '';
-      const appShift = app.Shift || 1;
-      if (appDate === targetDate && appShift === targetShift && app.Status !== 3) {
-        appointmentFeesTotal += Number(app.FeeCharged) || 0;
-      }
-    });
-
-    const opdTotal = Math.max(opdConsultationTotal, appointmentFeesTotal) || (opdConsultationTotal + appointmentFeesTotal);
+    // OPD Total only includes actual consultation fees charged by doctor during visits
+    const opdTotal = opdConsultationTotal;
 
     let storePaymentTotal = 0;
     (invoices || []).forEach((inv) => {
@@ -2040,9 +2032,9 @@ Healing Naturally. Restoring Balance.`;
         }
       });
 
-    // 2. From NHC Patient History archive
+    // 2. From NHC Patient History archive (only if actual patient matches)
     pvNhcHistory
-      .filter((nhc) => isSamePatient(nhc.PatientID, pvSelectedPatientId) || !nhc.PatientID || (selPatName && (nhc.PatientName || (nhc as any).patientName) && String(nhc.PatientName || (nhc as any).patientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
+      .filter((nhc) => (nhc.PatientID && isSamePatient(nhc.PatientID, pvSelectedPatientId)) || (selPatName && (nhc.PatientName || (nhc as any).patientName) && String(nhc.PatientName || (nhc as any).patientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
       .forEach((nhc) => {
         let cMed = nhc.clinicalMedication || nhc.ClinicalMedication || '';
         let pMed = nhc.patientMedication || nhc.PatientMedication || '';
@@ -2074,42 +2066,6 @@ Healing Naturally. Restoring Balance.`;
             patientMedication: pMed || 'None recorded',
             medicalReportResult: mrRes !== 'N/A' ? mrRes : 'N/A',
             labTestAdvice: labAdv !== 'N/A' ? labAdv : 'N/A'
-          });
-        }
-      });
-
-    // 3. From Appointments
-    (appointments || [])
-      .filter((a) => isSamePatient(a.PatientID, pvSelectedPatientId) || (selPatName && (a as any).PatientName && String((a as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
-      .forEach((a) => {
-        const appDate = parseCleanVisitDate(a.AppointmentDate);
-        if (appDate) {
-          historyItems.push({
-            date: appDate,
-            source: 'Appointment Record',
-            symptoms: a.Remarks || 'OPD Appointment Scheduled / Visited',
-            clinicalMedication: 'None recorded',
-            patientMedication: 'None recorded',
-            medicalReportResult: 'N/A',
-            labTestAdvice: 'N/A'
-          });
-        }
-      });
-
-    // 4. From Tokens
-    (tokens || [])
-      .filter((t) => isSamePatient(t.PatientID, pvSelectedPatientId) || (selPatName && (t as any).PatientName && String((t as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
-      .forEach((t) => {
-        const tokDate = parseCleanVisitDate(t.Date);
-        if (tokDate) {
-          historyItems.push({
-            date: tokDate,
-            source: 'OPD Token Queue',
-            symptoms: 'OPD Token Issued',
-            clinicalMedication: 'None recorded',
-            patientMedication: 'None recorded',
-            medicalReportResult: 'N/A',
-            labTestAdvice: 'N/A'
           });
         }
       });
@@ -2151,7 +2107,7 @@ Healing Naturally. Restoring Balance.`;
       });
 
     pvNhcHistory
-      .filter((nhc) => isSamePatient(nhc.PatientID, pvSelectedPatientId) || !nhc.PatientID || (selPatName && (nhc.PatientName || (nhc as any).patientName) && String(nhc.PatientName || (nhc as any).patientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
+      .filter((nhc) => (nhc.PatientID && isSamePatient(nhc.PatientID, pvSelectedPatientId)) || (selPatName && (nhc.PatientName || (nhc as any).patientName) && String(nhc.PatientName || (nhc as any).patientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
       .forEach((nhc, idx) => {
         const vId = ('VisitID' in nhc && nhc.VisitID) ? nhc.VisitID : ('date' in nhc ? `NHC-${nhc.date}` : `NHC-${idx}`);
         if (!seenIds.has(vId)) {
@@ -2164,24 +2120,6 @@ Healing Naturally. Restoring Balance.`;
               date: cleanNhcDate,
               symptoms: nhc.SymptomsDiagnosis || nhc.Diagnosis || nhc.Symptoms || nhc.symptoms || 'Routine Consultation',
               nhcObj: nhc,
-            });
-          }
-        }
-      });
-
-    (appointments || [])
-      .filter((a) => isSamePatient(a.PatientID, pvSelectedPatientId) || (selPatName && (a as any).PatientName && String((a as any).PatientName).trim().toLowerCase() === String(selPatName).trim().toLowerCase()))
-      .forEach((a, idx) => {
-        const aId = a.AppointmentID || `APP-${a.PatientID}-${idx}`;
-        if (!seenIds.has(aId)) {
-          seenIds.add(aId);
-          const aDate = parseCleanVisitDate(a.AppointmentDate);
-          if (aDate) {
-            list.push({
-              id: aId,
-              date: aDate,
-              symptoms: a.Remarks || 'OPD Appointment Scheduled',
-              appObj: a,
             });
           }
         }
@@ -2356,10 +2294,10 @@ Healing Naturally. Restoring Balance.`;
         if (v.ClinicalMedicinePayment && v.ClinicalMedicinePayment !== '0') {
           dateClinPkr = String(v.ClinicalMedicinePayment);
         }
-        if ((v as any).FileFee && (v as any).FileFee !== '0') {
-          dateFilePkr = String((v as any).FileFee);
-        } else if (v.ConsultationFee && v.ConsultationFee !== 0) {
+        if (v.ConsultationFee !== undefined && v.ConsultationFee !== null && Number(v.ConsultationFee) > 0) {
           dateFilePkr = String(v.ConsultationFee);
+        } else if ((v as any).FileFee && (v as any).FileFee !== '0') {
+          dateFilePkr = String((v as any).FileFee);
         }
         if ((v as any).CardFee && (v as any).CardFee !== '0') {
           dateCardPkr = String((v as any).CardFee);
@@ -2374,8 +2312,8 @@ Healing Naturally. Restoring Balance.`;
             if (cPkr) dateClinPkr = cPkr[1];
           }
           if (!dateFilePkr || dateFilePkr === '0') {
-            const fPkr = rem.match(/File PKR\s*(\d+)/);
-            if (fPkr) dateFilePkr = fPkr[1];
+            const opdMatch = rem.match(/OPD Fee PKR\s*(\d+)/i) || rem.match(/Consultation Fee PKR\s*(\d+)/i) || rem.match(/OPD PKR\s*(\d+)/i) || rem.match(/File PKR\s*(\d+)/i);
+            if (opdMatch) dateFilePkr = opdMatch[1];
           }
           if (!dateCardPkr || dateCardPkr === '0') {
             const kPkr = rem.match(/Card PKR\s*(\d+)/);
@@ -2468,10 +2406,16 @@ Healing Naturally. Restoring Balance.`;
         if (!dateClinPkr && (nhc as any).ClinicalMedicinePayment && (nhc as any).ClinicalMedicinePayment !== '0') {
           dateClinPkr = String((nhc as any).ClinicalMedicinePayment);
         }
-        if (!dateFilePkr && (nhc as any).FileFee && (nhc as any).FileFee !== '0') {
-          dateFilePkr = String((nhc as any).FileFee);
-        } else if (!dateFilePkr && (nhc as any).ConsultationFee && (nhc as any).ConsultationFee !== 0) {
-          dateFilePkr = String((nhc as any).ConsultationFee);
+        if (!dateFilePkr || dateFilePkr === '0') {
+          if ((nhc as any).ConsultationFee !== undefined && (nhc as any).ConsultationFee !== null && Number((nhc as any).ConsultationFee) > 0) {
+            dateFilePkr = String((nhc as any).ConsultationFee);
+          } else if ((nhc as any).fee !== undefined && (nhc as any).fee !== null && Number((nhc as any).fee) > 0) {
+            dateFilePkr = String((nhc as any).fee);
+          } else if ((nhc as any).FeeCharged !== undefined && (nhc as any).FeeCharged !== null && Number((nhc as any).FeeCharged) > 0) {
+            dateFilePkr = String((nhc as any).FeeCharged);
+          } else if ((nhc as any).FileFee && (nhc as any).FileFee !== '0') {
+            dateFilePkr = String((nhc as any).FileFee);
+          }
         }
         if (!dateCardPkr && (nhc as any).CardFee && (nhc as any).CardFee !== '0') {
           dateCardPkr = String((nhc as any).CardFee);
@@ -2486,8 +2430,8 @@ Healing Naturally. Restoring Balance.`;
             if (cPkr) dateClinPkr = cPkr[1];
           }
           if (!dateFilePkr || dateFilePkr === '0') {
-            const fPkr = rem.match(/File PKR\s*(\d+)/);
-            if (fPkr) dateFilePkr = fPkr[1];
+            const opdMatch = rem.match(/OPD Fee PKR\s*(\d+)/i) || rem.match(/Consultation Fee PKR\s*(\d+)/i) || rem.match(/OPD PKR\s*(\d+)/i) || rem.match(/File PKR\s*(\d+)/i);
+            if (opdMatch) dateFilePkr = opdMatch[1];
           }
           if (!dateCardPkr || dateCardPkr === '0') {
             const kPkr = rem.match(/Card PKR\s*(\d+)/);
@@ -2638,6 +2582,8 @@ Healing Naturally. Restoring Balance.`;
     const shiftText = data.shift === 1 ? 'MORNING SHIFT (08:30 AM - 12:00 PM)' : 'EVENING SHIFT (04:30 PM - 09:00 PM)';
     const dateStr = data.date || new Date().toISOString().split('T')[0];
     const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+    const thermalConf = getThermalSettings();
+    const thermalCss = generateThermalStyles(thermalConf);
 
     printWin.document.write(`
       <!DOCTYPE html>
@@ -2646,76 +2592,20 @@ Healing Naturally. Restoring Balance.`;
           <title>Token Slip #${data.tokenNo} - ${data.patientName}</title>
           <meta charset="utf-8" />
           <style>
-            * {
-              box-sizing: border-box !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            @media print {
-              @page {
-                size: 80mm auto;
-                margin: 0;
-              }
-              html, body {
-                width: 100% !important;
-                max-width: 100% !important;
-                min-width: 100% !important;
-                margin: 0 !important;
-                padding: 1.5mm 1mm !important;
-              }
-              .no-print {
-                display: none !important;
-              }
-            }
-            html, body {
-              width: 100%;
-              max-width: 76mm;
-              min-width: 72mm;
-              margin: 0 auto;
-              padding: 4px 2mm;
-              color: #000000;
-              background: #ffffff;
-              font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace;
-              font-size: 11.5px;
-              line-height: 1.25;
-              word-wrap: break-word;
-              overflow-wrap: break-word;
-            }
-            .text-center { text-align: center; }
-            .full-width { width: 100%; box-sizing: border-box; }
-            .clinic-header { text-align: center; margin-bottom: 3px; width: 100%; }
-            .clinic-name { font-size: 13.5px; font-weight: 900; text-transform: uppercase; margin: 0; line-height: 1.15; font-family: 'Arial Black', Arial, sans-serif; word-break: break-word; }
-            .clinic-sub { font-size: 9.5px; font-weight: bold; color: #111; margin-top: 1.5px; text-transform: uppercase; word-break: break-word; }
-            .divider { border-top: 1.5px dashed #000000; margin: 4px 0; width: 100%; }
-            
-            .token-card {
-              border: 2px solid #000000;
-              padding: 6px 4px;
-              margin: 5px 0;
-              text-align: center;
-              border-radius: 4px;
-              background: #ffffff;
-              width: 100%;
-              box-sizing: border-box;
-            }
-            .token-title { font-size: 11px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; font-family: sans-serif; }
-            .token-number { font-size: 38px; font-weight: 900; font-family: Arial, sans-serif; margin: 2px 0; line-height: 1; }
-            .token-shift { font-size: 9.5px; font-weight: 800; text-transform: uppercase; background: #000000; color: #ffffff; padding: 2.5px 6px; display: inline-block; border-radius: 2px; margin-top: 2px; word-break: break-word; }
-            
-            .detail-row { display: flex; justify-content: space-between; align-items: baseline; margin: 2.5px 0; font-size: 11px; width: 100%; }
+            ${thermalCss}
+            .detail-row { display: flex; justify-content: space-between; align-items: baseline; margin: 2.5px 0; font-size: ${Math.max(9.5, thermalConf.baseFontSize - 1)}px; width: 100%; }
             .detail-label { font-weight: bold; width: 38%; flex-shrink: 0; }
             .detail-val { font-weight: bold; width: 62%; text-align: right; word-break: break-word; }
-            
-            .fee-box { font-size: 13px; font-weight: 900; text-align: center; padding: 4px; border: 1.5px solid #000000; margin-top: 5px; width: 100%; box-sizing: border-box; }
-            .footer-msg { font-size: 9px; text-align: center; margin-top: 6px; font-weight: bold; line-height: 1.35; width: 100%; word-break: break-word; }
+            .fee-box { font-size: ${thermalConf.baseFontSize + 2}px; font-weight: 900; text-align: center; padding: 4px; border: 1.5px solid #000000; margin-top: 5px; width: 100%; box-sizing: border-box; }
+            .footer-msg { font-size: ${Math.max(8.5, thermalConf.baseFontSize - 2.5)}px; text-align: center; margin-top: 6px; font-weight: bold; line-height: 1.35; width: 100%; word-break: break-word; }
           </style>
         </head>
         <body>
           <div class="clinic-header">
             <h2 class="clinic-name">${clinicName}</h2>
             <div class="clinic-sub">OPD CONSULTATION TOKEN SLIP</div>
-            <div style="font-size: 8.5px; margin-top: 2px;">${cAddress}</div>
-            <div style="font-size: 8.5px; font-weight: bold;">📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
+            ${thermalConf.showHeaderAddress ? `<div style="font-size: ${Math.max(8.5, thermalConf.baseFontSize - 2.5)}px; margin-top: 2px;">${cAddress}</div>` : ''}
+            ${thermalConf.showHeaderPhone ? `<div style="font-size: ${Math.max(8.5, thermalConf.baseFontSize - 2.5)}px; font-weight: bold;">📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>` : ''}
           </div>
 
           <div class="divider"></div>
@@ -6043,13 +5933,17 @@ Healing Naturally. Restoring Balance.`;
   // Advanced Token queue handlers
   const speakVoice = (tok: Token) => {
     try {
-      if (typeof window !== 'undefined' && 'speechSynthesis' in window && typeof (window as any).SpeechSynthesisUtterance === 'function') {
+      if (typeof window !== 'undefined' && 'speechSynthesis' in window && (window as any).SpeechSynthesisUtterance) {
         const name = getPatientName(tok.PatientID);
         const text = `Attention please, Token number ${tok.TokenNo}, patient ${name}, please proceed to the doctor's room.`;
-        const utterance = new (window as any).SpeechSynthesisUtterance(text);
-        utterance.rate = 0.95; // clear and slightly slower for readability
-        utterance.pitch = 1.0;
-        window.speechSynthesis.speak(utterance);
+        try {
+          const utterance = new (window as any).SpeechSynthesisUtterance(text);
+          utterance.rate = 0.95; // clear and slightly slower for readability
+          utterance.pitch = 1.0;
+          window.speechSynthesis.speak(utterance);
+        } catch (_uttErr) {
+          // Fallback if SpeechSynthesisUtterance has an illegal constructor in sandboxed context
+        }
       }
     } catch (e) {
       console.warn('Voice announcement error:', e);
@@ -6224,43 +6118,6 @@ Healing Naturally. Restoring Balance.`;
           setActiveSubTab={handleSubTabChange}
           handleImportNhcPatientToRegister={handleImportNhcPatientToRegister}
           getResolvedNhcPatientName={getResolvedNhcPatientName}
-        />
-      )}
-
-      {/* PATIENT PROFILE SUB-TAB VIEW */}
-      {activeSubTab === 'profile' && (
-        <PatientProfileView
-          patients={patients}
-          visits={visits}
-          visitMedicines={visitMedicines}
-          appointments={appointments}
-          tokens={tokens}
-          cities={cities}
-          nhcPatients={nhcPatients}
-          selectedPatientId={searchTerm || pvSelectedPatientId}
-          setSelectedPatientId={(id) => {
-            setSearchTerm(id);
-            setPvSelectedPatientId(id);
-          }}
-          onOpenVisitDesk={(patId) => {
-            setPvPatientSearch(patId);
-            setPvSelectedPatientId(patId);
-            setActiveSubTab('patient_visit');
-          }}
-          onOpenTokenIssue={(patId) => {
-            setSelectedPatientId(patId);
-            setActiveSubTab('token_issue');
-          }}
-          onOpenBookAppointment={(patId) => {
-            setSelectedPatientId(patId);
-            setActiveSubTab('appointments');
-          }}
-          onEditPatient={(pat) => {
-            handleStartEditPatient(pat);
-            setActiveSubTab('register');
-          }}
-          clinicSettings={clinicSettings}
-          currentUser={currentUser}
         />
       )}
 
@@ -6448,6 +6305,7 @@ Healing Naturally. Restoring Balance.`;
           appointments={appointments}
           patients={patients}
           nhcPatients={nhcPatients}
+          visits={visits}
           cities={cities}
           tokens={tokens}
           appDate={appDate}

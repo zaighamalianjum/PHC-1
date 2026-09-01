@@ -171,7 +171,13 @@ export function playBeepSound(type: 'success' | 'error' = 'success') {
     if (typeof window === 'undefined') return;
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx || typeof AudioCtx !== 'function') return;
-    const ctx = new AudioCtx();
+    let ctx: AudioContext | null = null;
+    try {
+      ctx = new AudioCtx();
+    } catch (_ctxErr) {
+      return;
+    }
+    if (!ctx) return;
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 

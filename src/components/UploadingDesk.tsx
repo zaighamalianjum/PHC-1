@@ -1193,53 +1193,42 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
   // ------------------------------------------------------------------------------------------
   const handleDownloadAppointmentSample = () => {
     import('xlsx').then((XLSX) => {
-      const todayStr = new Date().toISOString().split('T')[0];
       const sampleData = [
         {
           "Patient ID": "MR-1001",
           "Patient Name": "Muhammad Ali",
           "Appointment Payment": 1000,
-          "Appointment Date": todayStr,
-          "Shift": 1,
-          "Remarks": "Routine Checkup"
+          "Remarks": "Regular Patient"
         },
         {
           "Patient ID": "MR-1002",
           "Patient Name": "Fatima Bibi",
           "Appointment Payment": 500,
-          "Appointment Date": todayStr,
-          "Shift": 2,
-          "Remarks": "Follow-up Visit"
+          "Remarks": "Follow-up"
         },
         {
           "Patient ID": "MR-1003",
           "Patient Name": "Dr. Tariq Mahmood",
           "Appointment Payment": 1500,
-          "Appointment Date": todayStr,
-          "Shift": 1,
           "Remarks": "Specialist Consultation"
         },
         {
           "Patient ID": "MR-1004",
           "Patient Name": "Zainab Tariq",
           "Appointment Payment": 1000,
-          "Appointment Date": todayStr,
-          "Shift": 2,
-          "Remarks": "Regular Follow-up"
+          "Remarks": "Regular Patient"
         },
         {
           "Patient ID": "MR-1005",
           "Patient Name": "Bilal Ahmed",
           "Appointment Payment": 500,
-          "Appointment Date": todayStr,
-          "Shift": 1,
           "Remarks": "General OPD"
         }
       ];
 
       const ws = XLSX.utils.json_to_sheet(sampleData);
       const wb = XLSX.utils.book_new();
-      XLSX.utils.book_append_sheet(wb, ws, "Appointment_History");
+      XLSX.utils.book_append_sheet(wb, ws, "Appointment_Payment_History");
       XLSX.writeFile(wb, "Patient_Appointment_Payment_Template.xlsx");
     });
   };
@@ -1730,43 +1719,7 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
       }
       localStorage.setItem('cms_appointments', JSON.stringify(updatedAppointments));
 
-      // 2. Auto-seed / register any new patients so they appear in patient search across the app
-      if (setPatients) {
-        const existingPatientIds = new Set((patients || []).map(p => String(p.PatientID).trim().toLowerCase()));
-        const newPatientsToAdd: Patient[] = [];
-
-        appointmentPreview.forEach(app => {
-          const pid = String(app.PatientID).trim();
-          const cleanPid = pid.toLowerCase();
-          if (!existingPatientIds.has(cleanPid)) {
-            existingPatientIds.add(cleanPid);
-            newPatientsToAdd.push({
-              PatientID: pid,
-              PatientName: app.PatientName || `Patient ${pid}`,
-              Father_husband: 'N/A',
-              AgeYears: 30,
-              Sex: 'Male',
-              MaritalStatus: 'Single',
-              Occupation: 'N/A',
-              Address: 'N/A',
-              CityID: 1,
-              Country: 'Pakistan',
-              PhoneMobile: app.PhoneMobile || '03000000000',
-              RegistrationDate: app.AppointmentDate || new Date().toISOString().split('T')[0]
-            });
-          }
-        });
-
-        if (newPatientsToAdd.length > 0) {
-          setPatients(prev => {
-            const merged = [...prev, ...newPatientsToAdd];
-            localStorage.setItem('cms_patients', JSON.stringify(merged));
-            return merged;
-          });
-        }
-      }
-
-      // 3. Persist to backend MongoDB via /api/appointments/bulk
+      // 2. Persist to backend MongoDB via /api/appointments/bulk
       const bridgeUrl = mongoDbSettings.BridgeUrl || window.location.origin;
       try {
         const resp = await fetch(`${bridgeUrl}/api/appointments/bulk?wipe=${!append}`, {
@@ -2143,12 +2096,12 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                 </button>
               </div>
               <p className="font-bold text-slate-700 bg-white/80 p-1.5 rounded border border-emerald-200">
-                PatientID | PatientName | AppointmentPayment | Date | Shift | Remarks
+                PatientID | PatientName | AppointmentPayment | Remarks
               </p>
               <div className="text-[9px] text-emerald-800/80 space-y-0.5">
                 <div>• <span className="font-bold">PatientID & PatientName:</span> Matched with your registered patient database</div>
-                <div>• <span className="font-bold">AppointmentPayment:</span> e.g. 1000 or 500 (Consultation / Appointment fee)</div>
-                <div>• <span className="font-bold">Date & Shift:</span> Optional (Defaults to today & morning shift)</div>
+                <div>• <span className="font-bold">AppointmentPayment:</span> e.g. 1000 or 500 (Appointment / Consultation fee amount)</div>
+                <div>• <span className="font-bold">Remarks:</span> Optional notes or remarks</div>
               </div>
             </div>
 
@@ -2240,7 +2193,7 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
               <textarea
                 value={appointmentPasteText}
                 onChange={(e) => setAppointmentPasteText(e.target.value)}
-                placeholder="MR-1001	Muhammad Ali	1000	2026-08-30	1	Routine Visit&#10;MR-1002	Fatima Bibi	500	2026-08-30	2	Follow-up"
+                placeholder="MR-1001	Muhammad Ali	1000	Regular Patient&#10;MR-1002	Fatima Bibi	500	Follow-up"
                 rows={5}
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-mono text-[10px] focus:ring-1 focus:ring-emerald-500 focus:outline-none placeholder:text-slate-300"
               />
@@ -2414,9 +2367,7 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                       <th className="px-3 py-2">#</th>
                       <th className="px-3 py-2">Patient ID</th>
                       <th className="px-3 py-2">Patient Name</th>
-                      <th className="px-3 py-2 text-right">Payment / Fee</th>
-                      <th className="px-3 py-2">Appt Date</th>
-                      <th className="px-3 py-2">Shift</th>
+                      <th className="px-3 py-2 text-right">Appointment Payment</th>
                       <th className="px-3 py-2">Remarks</th>
                     </tr>
                   </thead>
@@ -2455,18 +2406,8 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
                               PKR {(item.FeeCharged || 0).toLocaleString()}
                             </span>
                           </td>
-                          <td className="px-3 py-2 font-mono text-slate-600 text-[11px]">
-                            {item.AppointmentDate || 'Today'}
-                          </td>
-                          <td className="px-3 py-2">
-                            <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded uppercase ${
-                              item.Shift === 1 ? 'bg-amber-50 text-amber-800 border border-amber-200' : 'bg-indigo-50 text-indigo-800 border border-indigo-200'
-                            }`}>
-                              {item.Shift === 1 ? 'Morning' : 'Evening'}
-                            </span>
-                          </td>
                           <td className="px-3 py-2 text-slate-500 text-[11px] max-w-xs truncate">
-                            {item.Remarks || 'Excel Upload'}
+                            {item.Remarks || 'Appointment Payment'}
                           </td>
                         </tr>
                       ))}

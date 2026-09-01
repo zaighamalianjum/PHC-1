@@ -139,7 +139,7 @@ export default function PatientGridView(props: any) {
           }
         }
 
-        // Filter patients
+        // Filter patients - ONLY show patients who have at least one doctor checkup / visit
         let rawFilteredPatients = masterPatientsList.filter((pt) => {
           const ptVisits = (visits || []).filter(v => isSamePatient(v.PatientID, pt.PatientID));
           const ptVisitIds = new Set(ptVisits.map(v => String(v.VisitID || '').trim().toLowerCase()).filter(Boolean));
@@ -154,26 +154,19 @@ export default function PatientGridView(props: any) {
           });
           const allPtVisits = [...ptVisits, ...ptNhc];
 
+          // STRICT CHECK: Must have at least one doctor checkup / consultation visit
+          if (allPtVisits.length === 0) {
+            return false;
+          }
+
           if (effStart || effEnd) {
-            const ptRegDate = parseDateToISOKey(pt.RegistrationDate);
-            const matchesRegDate = ptRegDate && (!effStart || ptRegDate >= effStart) && (!effEnd || ptRegDate <= effEnd);
-            
             const matchesVisitDate = allPtVisits.some(v => {
               const rawV = ('VisitDate' in v && v.VisitDate) ? v.VisitDate : ('date' in v ? (v as any).date : '');
               const vDate = parseDateToISOKey(rawV);
               return vDate && (!effStart || vDate >= effStart) && (!effEnd || vDate <= effEnd);
             });
 
-            const ptApps = (appointments || []).filter(a => isSamePatient(a.PatientID, pt.PatientID) && a.Status !== 3);
-            const matchesAppDate = ptApps.some(a => {
-              const aDate = parseDateToISOKey(a.AppointmentDate);
-              return aDate && (!effStart || aDate >= effStart) && (!effEnd || aDate <= effEnd);
-            });
-
-            // Only show by Reg Date if patient is newly registered with ZERO visits yet
-            const isNewRegInDate = matchesRegDate && allPtVisits.length === 0;
-
-            if (!matchesVisitDate && !matchesAppDate && !isNewRegInDate) {
+            if (!matchesVisitDate) {
               return false;
             }
           }
@@ -583,33 +576,25 @@ export default function PatientGridView(props: any) {
                         const medStr = pMeds.map(m => `${m.MedicineDetail} (${m.Dosage || '1-0-1'})`).join(', ') || 'N/A';
                         const symptomsText = isVisitNewer ? (lastV?.SymptomsDiagnosis || 'N/A') : (lastNhc?.symptoms || 'N/A');
 
-                        const appDates = new Set(pApps.map(a => parseDateToISOKey(a.AppointmentDate)));
-
-                        let appOpdTotal = pApps.reduce((acc, a) => acc + (Number(a.FeeCharged) || Number((a as any).ConsultationFee) || 0), 0);
+                        let appOpdTotal = 0;
 
                         pVisits.forEach(v => {
-                          const vDate = parseDateToISOKey(v.VisitDate);
                           let vFee = Number(v.ConsultationFee) || 0;
                           if (!vFee && v.VisitRemarks) {
                             const oMatch = v.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
                             if (oMatch) vFee = Number(oMatch[1]);
                           }
-                          if (!appDates.has(vDate) && vFee > 0) {
-                            appOpdTotal += vFee;
-                          }
+                          appOpdTotal += vFee;
                         });
 
                         pNhc.forEach(nhc => {
-                          const nDate = (nhc as any).date || (nhc as any).VisitDate || '';
                           let nhcFee = Number((nhc as any).ConsultationFee) || Number((nhc as any).fee) || Number((nhc as any).FeeCharged) || 0;
                           const rem = (nhc as any).VisitRemarks || (nhc as any).Remarks || '';
                           if (!nhcFee && rem) {
                             const oMatch = rem.match(/OPD Fee PKR\s*(\d+)/i) || rem.match(/Consultation Fee PKR\s*(\d+)/i) || rem.match(/OPD PKR\s*(\d+)/i);
                             if (oMatch) nhcFee = Number(oMatch[1]);
                           }
-                          if (!appDates.has(nDate) && nhcFee > 0) {
-                            appOpdTotal += nhcFee;
-                          }
+                          appOpdTotal += nhcFee;
                         });
 
                         let clinMedsTotal = pVisits.reduce((acc, v) => {
@@ -832,33 +817,25 @@ export default function PatientGridView(props: any) {
                         const clinicalMeds = matchedMedicines.filter(m => m.MedicineType === 'C');
                         const patentMeds = matchedMedicines.filter(m => m.MedicineType === 'P');
 
-                        const appDates = new Set(ptApps.map(a => parseDateToISOKey(a.AppointmentDate)));
-
-                        let appOpdTotal = ptApps.reduce((acc, a) => acc + (Number(a.FeeCharged) || Number((a as any).ConsultationFee) || 0), 0);
+                        let appOpdTotal = 0;
 
                         ptVisits.forEach(v => {
-                          const vDate = v.VisitDate ? v.VisitDate.split('T')[0] : '';
                           let vFee = Number(v.ConsultationFee) || 0;
                           if (!vFee && v.VisitRemarks) {
                             const oMatch = v.VisitRemarks.match(/OPD Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/Consultation Fee PKR\s*(\d+)/i) || v.VisitRemarks.match(/OPD PKR\s*(\d+)/i);
                             if (oMatch) vFee = Number(oMatch[1]);
                           }
-                          if (!appDates.has(vDate) && vFee > 0) {
-                            appOpdTotal += vFee;
-                          }
+                          appOpdTotal += vFee;
                         });
 
                         ptNhc.forEach(nhc => {
-                          const nDate = (nhc as any).date || (nhc as any).VisitDate || '';
                           let nhcFee = Number((nhc as any).ConsultationFee) || Number((nhc as any).fee) || Number((nhc as any).FeeCharged) || 0;
                           const rem = (nhc as any).VisitRemarks || (nhc as any).Remarks || '';
                           if (!nhcFee && rem) {
                             const oMatch = rem.match(/OPD Fee PKR\s*(\d+)/i) || rem.match(/Consultation Fee PKR\s*(\d+)/i) || rem.match(/OPD PKR\s*(\d+)/i);
                             if (oMatch) nhcFee = Number(oMatch[1]);
                           }
-                          if (!appDates.has(nDate) && nhcFee > 0) {
-                            appOpdTotal += nhcFee;
-                          }
+                          appOpdTotal += nhcFee;
                         });
 
                         let clinMedsTotal = ptVisits.reduce((acc, v) => {

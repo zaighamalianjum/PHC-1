@@ -427,6 +427,31 @@ export interface MongoDbSettings {
   BridgeUrl?: string;
 }
 
+export interface ThermalPrinterSettings {
+  paperWidth: number; // e.g. 80, 76, 58, 57 (in mm)
+  printableWidth: number; // e.g. 76, 72, 70, 68, 54, 48 (in mm)
+  paperHeightMode: 'auto' | 'fixed';
+  fixedHeightMm: number; // e.g. 200, 250, 300
+  marginTop: number; // in mm
+  marginBottom: number; // in mm (feed before cutter)
+  marginLeft: number; // in mm
+  marginRight: number; // in mm
+  scalePercent: number; // e.g. 80, 85, 90, 95, 100, 105, 110
+  baseFontSize: number; // in pt/px, e.g. 9.5, 10.5, 11.5, 12.5, 13.5
+  lineHeight: number; // e.g. 1.15, 1.25, 1.35, 1.50
+  fontFamily: 'monospace' | 'sans-serif' | 'courier';
+  headerTitleSize: number; // e.g. 12, 13.5, 15, 16.5, 18
+  showHeaderLogoText: boolean;
+  showHeaderAddress: boolean;
+  showHeaderPhone: boolean;
+  dividerStyle: 'dashed' | 'dotted' | 'solid' | 'double';
+  tokenCardStyle: 'boxed' | 'inverted' | 'simple';
+  showCutLine: boolean;
+  showFooterTimestamp: boolean;
+  footerCustomMessage: string;
+  autoPrintPopup: boolean;
+}
+
 export interface NhcPatientHistory {
   _id?: string;
   VisitID?: string;

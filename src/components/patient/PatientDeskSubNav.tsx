@@ -3,7 +3,6 @@ import {
   Users,
   ListOrdered,
   UserPlus,
-  UserCheck,
   Ticket,
   Stethoscope,
   LayoutGrid,
@@ -16,7 +15,6 @@ import { User } from '../../types';
 export type PatientDeskSubTab =
   | 'queue'
   | 'register'
-  | 'profile'
   | 'token_issue'
   | 'patient_visit'
   | 'grid_view'
@@ -85,18 +83,6 @@ export default function PatientDeskSubNav({
             >
               <UserPlus className="w-3.5 h-3.5" />
               <span>Registration Form</span>
-            </button>
-          )}
-
-          {canAccessRegister && (
-            <button
-              onClick={() => setActiveSubTab('profile')}
-              className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
-                activeSubTab === 'profile' ? 'bg-white text-indigo-600 shadow-xs' : 'text-slate-600 hover:text-slate-900'
-              }`}
-            >
-              <UserCheck className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Patient Profile</span>
             </button>
           )}
 

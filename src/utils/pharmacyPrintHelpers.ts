@@ -5,6 +5,7 @@
 
 import { Patient, Item, InvoiceHeader, InvoiceDetail, User, UserRight } from '../types';
 import { numToWords } from './pharmacyUtils';
+import { getThermalSettings, generateThermalStyles } from './thermalPrinterConfig';
 
 export interface PharmacyPrintContext {
   currentUser?: User;
@@ -548,6 +549,8 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
     const cashierName = currentUser?.FullName || currentUser?.LoginName || 'Pharmacist on Duty';
     const patientDisplay = billData.patient ? billData.patient.PatientName : 'Walk-in Customer';
     const patientIdDisplay = billData.patient ? ` (ID: ${billData.patient.PatientID})` : '';
+    const thermalConf = getThermalSettings();
+    const thermalCss = generateThermalStyles(thermalConf);
 
     printWin.document.write(`
       <!DOCTYPE html>
@@ -556,78 +559,28 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
           <title>Thermal Receipt - ${billData.invoiceNo}</title>
           <meta charset="utf-8" />
           <style>
-            * {
-              box-sizing: border-box !important;
-              -webkit-print-color-adjust: exact !important;
-              print-color-adjust: exact !important;
-            }
-            @media print {
-              @page {
-                size: 80mm auto;
-                margin: 0;
-              }
-              html, body {
-                width: 100% !important;
-                max-width: 100% !important;
-                min-width: 100% !important;
-                margin: 0 !important;
-                padding: 1.5mm 1mm !important;
-              }
-              .no-print {
-                display: none !important;
-              }
-            }
-            html, body {
-              width: 100%;
-              max-width: 76mm;
-              min-width: 72mm;
-              margin: 0 auto;
-              padding: 4px 2mm;
-              color: #000000;
-              background: #ffffff;
-              font-family: 'Courier New', Courier, 'Lucida Console', Monaco, monospace;
-              font-size: 11.5px;
-              line-height: 1.25;
-              word-wrap: break-word;
-              overflow-wrap: break-word;
-            }
-            .text-center { text-align: center; }
-            .text-right { text-align: right; }
-            .text-bold { font-weight: 900; }
-            .full-width { width: 100%; box-sizing: border-box; }
-            
-            .clinic-header { text-align: center; margin-bottom: 3px; width: 100%; }
-            .clinic-name { font-size: 13.5px; font-weight: 900; text-transform: uppercase; margin: 0; line-height: 1.15; font-family: 'Arial Black', Arial, sans-serif; word-break: break-word; }
-            .clinic-sub { font-size: 9.5px; font-weight: bold; color: #111; margin-top: 1.5px; word-break: break-word; }
-            
-            .divider-solid { border-top: 1.5px solid #000000; margin: 4px 0; width: 100%; }
-            .divider-dashed { border-top: 1.5px dashed #000000; margin: 4px 0; width: 100%; }
-            .receipt-title { font-size: 11.5px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; text-align: center; margin: 3px 0; font-family: sans-serif; }
-            
-            .meta-row { display: flex; justify-content: space-between; align-items: baseline; font-size: 10.5px; margin: 2px 0; width: 100%; }
+            ${thermalCss}
+            .meta-row { display: flex; justify-content: space-between; align-items: baseline; font-size: ${Math.max(9.5, thermalConf.baseFontSize - 1)}px; margin: 2px 0; width: 100%; }
             .meta-label { font-weight: bold; width: 34%; flex-shrink: 0; }
             .meta-val { font-weight: bold; width: 66%; text-align: right; word-break: break-word; }
-            
-            /* Table (Utilizes full 100% 80mm printable width, 48-column CPL equivalent) */
-            .items-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: 11px; margin: 4px 0; box-sizing: border-box; }
-            .items-table th { text-align: left; border-bottom: 1.5px dashed #000000; padding: 3px 1px; font-size: 10px; font-weight: 900; }
+            .items-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-size: ${thermalConf.baseFontSize}px; margin: 4px 0; box-sizing: border-box; }
+            .items-table th { text-align: left; border-bottom: 1.5px dashed #000000; padding: 3px 1px; font-size: ${Math.max(9.5, thermalConf.baseFontSize - 1)}px; font-weight: 900; }
             .items-table td { padding: 2px 1px; vertical-align: top; word-break: break-word; }
-            
-            .total-box { font-size: 13.5px; font-weight: 900; text-align: right; padding: 4px 0; width: 100%; }
-            .footer-msg { font-size: 9px; text-align: center; margin-top: 6px; font-weight: bold; line-height: 1.35; width: 100%; word-break: break-word; }
-            .barcode-box { text-align: center; font-family: monospace; font-size: 13px; letter-spacing: 2px; font-weight: 900; margin: 4px 0; width: 100%; }
+            .total-box { font-size: ${thermalConf.baseFontSize + 2}px; font-weight: 900; text-align: right; padding: 4px 0; width: 100%; }
+            .footer-msg { font-size: ${Math.max(8.5, thermalConf.baseFontSize - 2.5)}px; text-align: center; margin-top: 6px; font-weight: bold; line-height: 1.35; width: 100%; word-break: break-word; }
+            .barcode-box { text-align: center; font-family: monospace; font-size: ${thermalConf.baseFontSize + 1}px; letter-spacing: 2px; font-weight: 900; margin: 4px 0; width: 100%; }
           </style>
         </head>
         <body>
           <div class="clinic-header">
             <h2 class="clinic-name">${clinicName}</h2>
-            <div class="clinic-sub">${cAddress}</div>
-            <div class="clinic-sub">📞 ${cPhone} | 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
+            ${thermalConf.showHeaderAddress ? `<div class="clinic-sub">${cAddress}</div>` : ''}
+            ${thermalConf.showHeaderPhone ? `<div class="clinic-sub">📞 ${cPhone} | 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>` : ''}
           </div>
           
-          <div class="divider-solid"></div>
-          <div class="receipt-title">*** CUSTOMER RECEIPT ***</div>
-          <div class="divider-solid"></div>
+          <div class="divider"></div>
+          <div class="text-center text-bold" style="font-size: ${thermalConf.baseFontSize}px; text-transform: uppercase; letter-spacing: 1px; margin: 3px 0;">*** CUSTOMER RECEIPT ***</div>
+          <div class="divider"></div>
 
           <div class="meta-row">
             <span class="meta-label">Invoice No:</span>
