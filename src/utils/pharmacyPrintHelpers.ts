@@ -86,10 +86,10 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
     }
 
     const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
-    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "10 Shalimar Road, Garhi Shahu, Lahore";
+    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan";
     const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-311-4000608";
     const clinicWebsite = clinicSettings?.Website || "https://punjabhomeopathic.pk";
-    const clinicTagline = clinicSettings?.ClinicLogoText || "Consultation, Clinical Compounding & Retail Pharmacy";
+    const clinicTagline = clinicSettings?.ClinicLogoText || "HEALING NATURALLY. RESTORING BALANCE.";
     const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
     const printTimeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
 
@@ -540,7 +540,7 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
 
     const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || '+92-311-4000608';
-    const cAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const shiftText = billData.shift === 1 ? 'MORNING SHIFT (1)' : 'EVENING SHIFT (2)';
     const dateStr = billData.invoiceDate || new Date().toISOString().split('T')[0];
@@ -789,7 +789,7 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
     }
 
     const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
-    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "10 Shalimar Road, Garhi Shahu, Lahore";
+    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan";
     const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-311-4000608";
     const clinicWebsite = clinicSettings?.Website || "https://punjabhomeopathic.pk";
     const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';

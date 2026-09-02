@@ -216,6 +216,18 @@ export const CashBookPnlTab: React.FC<CashBookPnlTabProps> = ({
                 />
               </div>
 
+              <div className="lg:col-span-2 space-y-1">
+                <label className="text-xs font-bold text-purple-900 flex items-center gap-1">
+                  <span>P&amp;L Month</span>
+                </label>
+                <input
+                  type="month"
+                  value={quickOutflowForm.accountingMonth || (quickOutflowForm.date ? quickOutflowForm.date.slice(0, 7) : new Date().toISOString().slice(0, 7))}
+                  onChange={(e) => setQuickOutflowForm({ ...quickOutflowForm, accountingMonth: e.target.value })}
+                  className="w-full text-xs font-black p-2 bg-purple-50/70 border border-purple-300 rounded-lg focus:ring-2 focus:ring-purple-500 text-purple-950 font-mono"
+                />
+              </div>
+
               <div className="lg:col-span-3">
                 <button
                   type="submit"

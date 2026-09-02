@@ -1123,8 +1123,10 @@ export default function ReportingDesk({
     (effectiveExpenses || []).forEach((exp: any, idx: number) => {
       const eAmt = Number(exp.Amount || exp.ExpenseAmount || exp.TotalAmount || 0);
       if (eAmt > 0) {
-        const d = parseCleanDate(exp.ExpenseDate || exp.Date || exp.CreatedAt);
-        if (isWithinDateRange(d)) {
+        const rawD = parseCleanDate(exp.ExpenseDate || exp.Date || exp.CreatedAt);
+        const accMonth = exp.AccountingMonth;
+        const d = (accMonth && !rawD.startsWith(accMonth)) ? `${accMonth}-28` : rawD;
+        if (isWithinDateRange(d) || (accMonth && isWithinDateRange(`${accMonth}-15`))) {
           const rawId = (exp.ExpenseID || exp._id || `EXP-${idx}`).toString();
           const cleanId = rawId ? (rawId.startsWith('EXP-') ? rawId : `EXP-${rawId}`) : `EXP-${idx}`;
           cashBookOutflowEntries.push({
@@ -1177,8 +1179,10 @@ export default function ReportingDesk({
 
         if (!isActualOutflow) return;
 
-        const d = parseCleanDate(tx.Date || tx.TransactionDate || tx.CreatedAt);
-        if (!isWithinDateRange(d)) return;
+        const rawD = parseCleanDate(tx.Date || tx.TransactionDate || tx.CreatedAt);
+        const accMonth = tx.AccountingMonth;
+        const d = (accMonth && !rawD.startsWith(accMonth)) ? `${accMonth}-28` : rawD;
+        if (!isWithinDateRange(d) && !(accMonth && isWithinDateRange(`${accMonth}-15`))) return;
 
         const rawTxId = (tx.TransactionID || tx._id || `TXN-${idx}`).toString();
         const rawRefNo = (tx.ReferenceNo || '').toString();
@@ -2569,7 +2573,7 @@ export default function ReportingDesk({
     const cName = clinicSettings?.ClinicName || 'Punjab Homeopathic Clinic & Pharmacy';
     const cWeb = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
-    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
 
     const clinicHeaderMeta = [
       `"${cName}"`,
@@ -2607,7 +2611,7 @@ export default function ReportingDesk({
 
     const clinicName = savedSettings?.ClinicName || (clinicSettings as any)?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC';
     const logoSrc = savedSettings?.ClinicLogoImage || (clinicSettings as any)?.ClinicLogoImage || '/nhc_logo.svg';
-    const clinicAddress = savedSettings?.ClinicAddress || (clinicSettings as any)?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const clinicAddress = savedSettings?.ClinicAddress || (clinicSettings as any)?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const clinicPhone = savedSettings?.PhoneMobile || (clinicSettings as any)?.PhoneMobile || '+92-311-4000608';
     const clinicWebsite = savedSettings?.Website || (clinicSettings as any)?.Website || 'https://punjabhomeopathic.pk';
 
@@ -4291,7 +4295,7 @@ export default function ReportingDesk({
                 HEALING NATURALLY. RESTORING BALANCE.
               </p>
               <div className="text-[11px] font-bold text-slate-800 mt-1 flex flex-wrap items-center gap-x-2 gap-y-1">
-                <span>{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore'}</span>
+                <span>{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</span>
                 <span className="text-slate-400">•</span>
                 <a
                   href={`tel:${(clinicSettings?.PhoneMobile || '+92-311-4000608').replace(/[^0-9+]/g, '')}`}

@@ -440,16 +440,22 @@ export default function App() {
           if (!parsed.PhoneMobile || parsed.PhoneMobile === '+92-300-4208323' || parsed.PhoneMobile === '0300-1234567') {
             parsed.PhoneMobile = '+92-311-4000608';
           }
+          if (!parsed.ClinicAddress || parsed.ClinicAddress === '10 Shalimar Road, Garhi Shahu, Lahore') {
+            parsed.ClinicAddress = '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
+          }
+          if (!parsed.ClinicLogoText || parsed.ClinicLogoText === 'PHC' || parsed.ClinicLogoText === 'Punjab Homeopathic Clinic') {
+            parsed.ClinicLogoText = 'HEALING NATURALLY. RESTORING BALANCE.';
+          }
           return parsed;
         }
       } catch (e) {}
     }
     return {
       ClinicName: 'Punjab Homeopathic Clinic',
-      ClinicLogoText: 'PHC',
+      ClinicLogoText: 'HEALING NATURALLY. RESTORING BALANCE.',
       DoctorName: 'Dr. Ejaz Ahmad, D.H.M.S (Pak)',
       DoctorSignatureText: 'Registered Homeopathic Medical Practitioner No: 48776',
-      ClinicAddress: '10 Shalimar Road, Garhi Shahu, Lahore',
+      ClinicAddress: '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan',
       PhoneMobile: '+92-311-4000608',
       Website: 'https://punjabhomeopathic.pk',
       OPDFee: 1500,

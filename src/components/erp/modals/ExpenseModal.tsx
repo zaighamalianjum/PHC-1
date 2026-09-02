@@ -262,23 +262,115 @@ export const ExpenseModal: React.FC<ExpenseModalProps> = ({
             <input
               type="text"
               required
-              value={expenseForm.Description}
+              value={expenseForm.Description || ''}
               onChange={e => setExpenseForm({ ...expenseForm, Description: e.target.value })}
-              placeholder=""
+              placeholder="e.g. Clinic electricity bill, staff refreshments, building maintenance"
               className="w-full mt-1 p-2 border rounded-xl text-xs"
             />
           </div>
 
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-bold text-slate-600">Amount (Rs.)</label>
+              <input
+                type="number"
+                required
+                min="1"
+                value={expenseForm.Amount || ''}
+                onChange={e => setExpenseForm({ ...expenseForm, Amount: Number(e.target.value) })}
+                placeholder="Rs."
+                className="w-full mt-1 p-2 border rounded-xl text-xs font-bold font-mono text-slate-900"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-slate-600">Payment Method</label>
+              <select
+                value={expenseForm.PaymentMethod || 'Cash'}
+                onChange={e => setExpenseForm({ ...expenseForm, PaymentMethod: e.target.value as any })}
+                className="w-full mt-1 p-2 border rounded-xl text-xs bg-white font-medium"
+              >
+                <option value="Cash">Cash</option>
+                <option value="Bank">Bank Transfer</option>
+                <option value="Cheque">Cheque</option>
+                <option value="Online">Online</option>
+              </select>
+            </div>
+          </div>
+
           <div>
-            <label className="text-xs font-bold text-slate-600">Amount (Rs.)</label>
+            <label className="text-xs font-bold text-slate-600">Expense / Paid Date</label>
             <input
-              type="number"
+              type="date"
               required
-              value={expenseForm.Amount || ''}
-              onChange={e => setExpenseForm({ ...expenseForm, Amount: Number(e.target.value) })}
-              placeholder=""
-              className="w-full mt-1 p-2 border rounded-xl text-xs"
+              value={expenseForm.ExpenseDate || new Date().toISOString().split('T')[0]}
+              onChange={e => setExpenseForm({ ...expenseForm, ExpenseDate: e.target.value })}
+              className="w-full mt-1 p-2 border rounded-xl text-xs font-medium"
             />
+          </div>
+
+          {/* ACCOUNTING / EXPENSE MONTH SELECTOR */}
+          <div className="bg-purple-50/80 border border-purple-200 rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-black text-purple-950 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-purple-600"></span>
+                  P&amp;L Accounting Month (حساب کا مہینہ)
+                </label>
+                <p className="text-[10px] text-purple-700">
+                  Yeh expense kis mahine ke Profit &amp; Loss report mein count ho?
+                </p>
+              </div>
+              <input
+                type="month"
+                value={expenseForm.AccountingMonth || (expenseForm.ExpenseDate ? expenseForm.ExpenseDate.slice(0, 7) : new Date().toISOString().slice(0, 7))}
+                onChange={e => setExpenseForm({ ...expenseForm, AccountingMonth: e.target.value })}
+                className="text-xs font-black p-1 bg-white border border-purple-300 rounded-lg text-purple-950 focus:ring-2 focus:ring-purple-500 font-mono"
+              />
+            </div>
+
+            {/* Quick month pills */}
+            {(() => {
+              const now = new Date();
+              const curY = now.getFullYear();
+              const curM = now.getMonth() + 1;
+              const monthsList: { key: string; label: string; sub: string }[] = [];
+              for (let i = 0; i < 4; i++) {
+                const d = new Date(curY, curM - 1 - i, 1);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                const label = d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+                const sub = i === 0 ? 'Current' : (i === 1 ? 'Prev' : '');
+                monthsList.push({ key, label, sub });
+              }
+              const selectedMonth = expenseForm.AccountingMonth || (expenseForm.ExpenseDate ? expenseForm.ExpenseDate.slice(0, 7) : new Date().toISOString().slice(0, 7));
+
+              return (
+                <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                  <span className="text-[10px] font-bold text-purple-800 mr-1">Quick Select:</span>
+                  {monthsList.map(m => {
+                    const isSel = selectedMonth === m.key;
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => setExpenseForm({ ...expenseForm, AccountingMonth: m.key })}
+                        className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition border cursor-pointer flex items-center gap-1 ${
+                          isSel
+                            ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
+                            : 'bg-white hover:bg-purple-100/70 text-purple-900 border-purple-200'
+                        }`}
+                      >
+                        <span>{m.label}</span>
+                        {m.sub && (
+                          <span className={`text-[8px] px-1 py-0.2 rounded font-mono ${isSel ? 'bg-purple-900/60 text-purple-200' : 'bg-purple-100 text-purple-700'}`}>
+                            {m.sub}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="flex justify-end space-x-2 pt-3">

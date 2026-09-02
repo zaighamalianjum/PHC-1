@@ -2048,11 +2048,14 @@ export default function PatientVisitDeskView(props: any) {
                             <span className="text-2xl sm:text-3xl font-serif text-red-900 font-black tracking-tight">{clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}</span>
                           </h1>
                           <p className="text-[10px] font-extrabold text-rose-700 tracking-widest uppercase mt-0.5">HEALING NATURALLY. RESTORING BALANCE.</p>
-                          <div className="flex justify-center space-x-8 text-xs font-bold text-slate-800 mt-1">
-                            <span>PHC Reg. # <span className="underline decoration-slate-800">R-__________</span></span>
-                            <span>PHC License #: ___________________</span>
+                          <div className="text-[11px] font-bold text-slate-800 mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
+                            <span>{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</span>
+                            <span className="text-slate-400">•</span>
+                            <span>📞 {clinicSettings?.PhoneMobile || '+92-311-4000608'}</span>
+                            <span className="text-slate-400">•</span>
+                            <span>🌐 {(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}</span>
                           </div>
-                          <p className="text-[10.5px] font-bold text-teal-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
+                          <p className="text-[10px] font-bold text-teal-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
                         </div>
 
                         {/* Right Spacer for balanced centering */}
@@ -2346,11 +2349,14 @@ export default function PatientVisitDeskView(props: any) {
                             <span className="text-2xl sm:text-3xl font-serif text-red-900 font-black tracking-tight">{clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}</span>
                           </h1>
                           <p className="text-[10px] font-extrabold text-rose-700 tracking-widest uppercase mt-0.5">HEALING NATURALLY. RESTORING BALANCE.</p>
-                          <div className="flex justify-center space-x-8 text-xs font-bold text-slate-800 mt-1">
-                            <span>PHC Reg. # <span className="underline decoration-slate-800">R-__________</span></span>
-                            <span>PHC License #: ___________________</span>
+                          <div className="text-[11px] font-bold text-slate-800 mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
+                            <span>{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</span>
+                            <span className="text-slate-400">•</span>
+                            <span>📞 {clinicSettings?.PhoneMobile || '+92-311-4000608'}</span>
+                            <span className="text-slate-400">•</span>
+                            <span>🌐 {(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}</span>
                           </div>
-                          <p className="text-[10.5px] font-bold text-teal-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
+                          <p className="text-[10px] font-bold text-teal-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
                         </div>
                         <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
                       </div>
@@ -2520,11 +2526,14 @@ export default function PatientVisitDeskView(props: any) {
                               <span className="text-2xl sm:text-3xl font-serif text-red-900 font-black tracking-tight">{clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}</span>
                             </h1>
                             <p className="text-[10px] font-extrabold text-rose-700 tracking-widest uppercase mt-0.5">HEALING NATURALLY. RESTORING BALANCE.</p>
-                            <div className="flex justify-center space-x-8 text-xs font-bold text-slate-800 mt-1">
-                              <span>PHC Reg. # <span className="underline decoration-slate-800">R-__________</span></span>
-                              <span>Official Cash Receipt</span>
+                            <div className="text-[11px] font-bold text-slate-800 mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
+                              <span>{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</span>
+                              <span className="text-slate-400">•</span>
+                              <span>📞 {clinicSettings?.PhoneMobile || '+92-311-4000608'}</span>
+                              <span className="text-slate-400">•</span>
+                              <span>🌐 {(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}</span>
                             </div>
-                            <p className="text-[10.5px] font-bold text-purple-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
+                            <p className="text-[10px] font-bold text-purple-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
                           </div>
                           <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
                         </div>

@@ -134,7 +134,7 @@ export interface WhatsAppPurchaseOrderPayload {
 
 export function generateWhatsAppPurchaseOrderText(data: WhatsAppPurchaseOrderPayload): string {
   const clinic = data.clinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-  const address = data.clinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+  const address = data.clinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
   const clinicPhone = data.clinicPhone || '+92-311-4000608';
   const isCash = String(data.paymentMethod || data.paymentTerms || '').trim().toLowerCase() === 'cash';
 

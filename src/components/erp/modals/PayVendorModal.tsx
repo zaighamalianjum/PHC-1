@@ -10,6 +10,7 @@ interface PayVendorModalProps {
     amount?: number;
     paymentMethod?: 'Cash' | 'Credit' | 'Bank' | 'Bank Transfer' | 'Cheque' | 'Online' | 'Online/Card';
     date?: string;
+    accountingMonth?: string; // e.g. "2026-08" for P&L posting
     description?: string;
   } | null;
   setPayVendorModalData: (data: any) => void;
@@ -414,7 +415,7 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">Payment Date</label>
+                  <label className="text-xs font-bold text-slate-700 mb-1 block">Actual Payment Date (ادائیگی کی تاریخ)</label>
                   <input
                     type="date"
                     required
@@ -422,6 +423,84 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                     onChange={e => setPayVendorModalData({ ...payVendorModalData, date: e.target.value })}
                     className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
+                  <p className="text-[10px] text-slate-500 mt-1">
+                    Jis din physically cash/bank se payment di gayi.
+                  </p>
+                </div>
+              </div>
+
+              {/* ACCOUNTING MONTH / P&L PERIOD SELECTOR */}
+              <div className="bg-purple-50/80 border border-purple-200 rounded-xl p-3.5 space-y-2.5">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5">
+                  <div>
+                    <label className="text-xs font-black text-purple-950 flex items-center gap-1.5">
+                      <span className="w-2 h-2 rounded-full bg-purple-600 animate-pulse"></span>
+                      Accounting Month / P&L Posting Period (حساب کا مہینہ)
+                    </label>
+                    <p className="text-[10px] text-purple-700 font-medium">
+                      Profit &amp; Loss report mein yeh expense kis month count hoga?
+                    </p>
+                  </div>
+                  
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="month"
+                      value={payVendorModalData.accountingMonth || (payVendorModalData.date ? payVendorModalData.date.slice(0, 7) : new Date().toISOString().slice(0, 7))}
+                      onChange={e => setPayVendorModalData({ ...payVendorModalData, accountingMonth: e.target.value })}
+                      className="text-xs font-black p-1.5 bg-white border border-purple-300 rounded-lg text-purple-950 focus:ring-2 focus:ring-purple-500 focus:outline-none font-mono"
+                    />
+                  </div>
+                </div>
+
+                {/* Quick month pills */}
+                {(() => {
+                  const now = new Date();
+                  const curY = now.getFullYear();
+                  const curM = now.getMonth() + 1;
+                  const monthsList: { key: string; label: string; sub: string }[] = [];
+                  for (let i = 0; i < 5; i++) {
+                    const d = new Date(curY, curM - 1 - i, 1);
+                    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                    const label = d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+                    const sub = i === 0 ? 'Current' : (i === 1 ? 'Previous' : '');
+                    monthsList.push({ key, label, sub });
+                  }
+                  const selectedMonth = payVendorModalData.accountingMonth || (payVendorModalData.date ? payVendorModalData.date.slice(0, 7) : new Date().toISOString().slice(0, 7));
+
+                  return (
+                    <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                      <span className="text-[10px] font-bold text-purple-800 mr-1">Quick Select:</span>
+                      {monthsList.map(m => {
+                        const isSel = selectedMonth === m.key;
+                        return (
+                          <button
+                            key={m.key}
+                            type="button"
+                            onClick={() => setPayVendorModalData({ ...payVendorModalData, accountingMonth: m.key })}
+                            className={`px-2.5 py-1 text-xs font-bold rounded-lg transition border cursor-pointer flex items-center gap-1 ${
+                              isSel
+                                ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
+                                : 'bg-white hover:bg-purple-100/70 text-purple-900 border-purple-200'
+                            }`}
+                          >
+                            <span>{m.label}</span>
+                            {m.sub && (
+                              <span className={`text-[9px] px-1 py-0.2 rounded font-mono ${isSel ? 'bg-purple-900/60 text-purple-200' : 'bg-purple-100 text-purple-700'}`}>
+                                {m.sub}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                <div className="text-[11px] text-purple-800 bg-white/70 p-2 rounded-lg border border-purple-100 flex items-start gap-1.5">
+                  <span className="font-bold text-purple-900 shrink-0">💡 Note:</span>
+                  <span>
+                    Agar credit bill <strong>August</strong> ka ho aur payment <strong>September</strong> mein ki ja rahi ho, to yahan se <strong>August</strong> select karen. Is se monthly P&amp;L aur Cash Outflow mein yeh expense August ke hisab mein hi count hoga.
+                  </span>
                 </div>
               </div>
 

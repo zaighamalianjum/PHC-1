@@ -58,12 +58,12 @@ export const VendorPrintStatementModal: React.FC<VendorPrintStatementModalProps>
           {/* OFFICIAL PUNJAB HOMEOPATHIC CLINIC A4 LETTERHEAD HEADER */}
           {(() => {
             const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-            const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY • RESTORING BALANCE';
+            const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
             const cDoc = clinicSettings?.DoctorName || '';
             const cDocSub = clinicSettings?.DoctorSignatureText || '';
-            const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
-            const cPhone = clinicSettings?.ClinicPhone || '0300-4134444 / 042-36304444';
-            const cEmail = clinicSettings?.ClinicEmail || 'info@punjabclinic.pk';
+            const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
+            const cPhone = clinicSettings?.PhoneMobile || clinicSettings?.ClinicPhone || '+92-311-4000608';
+            const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
             return (
               <div className="border-b-2 border-slate-900 pb-5">
@@ -95,7 +95,7 @@ export const VendorPrintStatementModal: React.FC<VendorPrintStatementModalProps>
                       )}
                       <div className="text-[10px] text-slate-600 mt-1.5 space-y-0.5 leading-relaxed">
                         <p>📍 {cAddr}</p>
-                        <p>📞 Phone / Mobile: <span className="font-semibold text-slate-800">{cPhone}</span> | ✉️ {cEmail}</p>
+                        <p>📞 Phone / Helpline: <span className="font-semibold text-slate-800">{cPhone}</span> | 🌐 {cWebsite.replace(/^https?:\/\//, '')}</p>
                       </div>
                     </div>
                   </div>

@@ -174,14 +174,79 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
           </div>
 
           <div>
-            <label className="text-xs font-bold text-slate-600">Date</label>
+            <label className="text-xs font-bold text-slate-600">Transaction / Payment Date</label>
             <input
               type="date"
               required
-              value={txnForm.Date || ''}
+              value={txnForm.Date || new Date().toISOString().split('T')[0]}
               onChange={e => setTxnForm({ ...txnForm, Date: e.target.value })}
               className="w-full mt-1 p-2 border rounded-xl text-xs"
             />
+          </div>
+
+          {/* ACCOUNTING MONTH SELECTOR */}
+          <div className="bg-purple-50/80 border border-purple-200 rounded-xl p-3 space-y-2">
+            <div className="flex items-center justify-between">
+              <div>
+                <label className="text-xs font-black text-purple-950 flex items-center gap-1">
+                  <span className="w-2 h-2 rounded-full bg-purple-600"></span>
+                  P&amp;L Accounting Month (حساب کا مہینہ)
+                </label>
+                <p className="text-[10px] text-purple-700">
+                  Yeh transaction kis month ke P&amp;L report mein count ho?
+                </p>
+              </div>
+              <input
+                type="month"
+                value={txnForm.AccountingMonth || (txnForm.Date ? txnForm.Date.slice(0, 7) : new Date().toISOString().slice(0, 7))}
+                onChange={e => setTxnForm({ ...txnForm, AccountingMonth: e.target.value })}
+                className="text-xs font-black p-1 bg-white border border-purple-300 rounded-lg text-purple-950 focus:ring-2 focus:ring-purple-500 font-mono"
+              />
+            </div>
+
+            {/* Quick month pills */}
+            {(() => {
+              const now = new Date();
+              const curY = now.getFullYear();
+              const curM = now.getMonth() + 1;
+              const monthsList: { key: string; label: string; sub: string }[] = [];
+              for (let i = 0; i < 4; i++) {
+                const d = new Date(curY, curM - 1 - i, 1);
+                const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+                const label = d.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+                const sub = i === 0 ? 'Current' : (i === 1 ? 'Prev' : '');
+                monthsList.push({ key, label, sub });
+              }
+              const selectedMonth = txnForm.AccountingMonth || (txnForm.Date ? txnForm.Date.slice(0, 7) : new Date().toISOString().slice(0, 7));
+
+              return (
+                <div className="flex flex-wrap items-center gap-1 pt-0.5">
+                  <span className="text-[10px] font-bold text-purple-800 mr-1">Quick Select:</span>
+                  {monthsList.map(m => {
+                    const isSel = selectedMonth === m.key;
+                    return (
+                      <button
+                        key={m.key}
+                        type="button"
+                        onClick={() => setTxnForm({ ...txnForm, AccountingMonth: m.key })}
+                        className={`px-2 py-0.5 text-[11px] font-bold rounded-lg transition border cursor-pointer flex items-center gap-1 ${
+                          isSel
+                            ? 'bg-purple-700 text-white border-purple-800 shadow-xs'
+                            : 'bg-white hover:bg-purple-100/70 text-purple-900 border-purple-200'
+                        }`}
+                      >
+                        <span>{m.label}</span>
+                        {m.sub && (
+                          <span className={`text-[8px] px-1 py-0.2 rounded font-mono ${isSel ? 'bg-purple-900/60 text-purple-200' : 'bg-purple-100 text-purple-700'}`}>
+                            {m.sub}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })()}
           </div>
 
           <div className="flex justify-end space-x-2 pt-3 border-t">

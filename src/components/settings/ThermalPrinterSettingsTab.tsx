@@ -116,7 +116,7 @@ export const ThermalPrinterSettingsTab: React.FC<ThermalPrinterSettingsTabProps>
 
   const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
   const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
-  const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+  const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
   const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
   return (

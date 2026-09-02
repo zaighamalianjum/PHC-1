@@ -597,6 +597,8 @@ export interface ErpTransaction {
   PaymentMethod: 'Cash' | 'Bank' | 'Cheque' | 'Online';
   ReferenceNo?: string;
   Date: string;
+  AccountingMonth?: string; // e.g. "2026-08" for P&L accrual/accounting allocation
+  ActualPaymentDate?: string; // e.g. "2026-09-02"
   CreatedBy: string;
   VendorID?: string;
   VendorName?: string;
@@ -639,6 +641,8 @@ export interface ErpExpense {
   Description: string;
   Amount: number;
   ExpenseDate: string;
+  AccountingMonth?: string; // e.g. "2026-08" for P&L period
+  ActualPaymentDate?: string; // e.g. "2026-09-02"
   PaymentMethod: 'Cash' | 'Bank' | 'Cheque' | 'Online';
   ReceiptRef?: string;
 }

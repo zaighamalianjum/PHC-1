@@ -363,6 +363,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     payee: string;
     paymentMethod: 'Cash' | 'Bank' | 'Online';
     date: string;
+    accountingMonth?: string;
     description: string;
   }>({
     category: 'Building Rent & Maintenance',
@@ -370,6 +371,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     payee: '',
     paymentMethod: 'Cash',
     date: new Date().toISOString().split('T')[0],
+    accountingMonth: new Date().toISOString().slice(0, 7),
     description: ''
   });
 
@@ -1188,12 +1190,31 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       else if (expCatRaw.includes('Tea') || expCatRaw.includes('Refreshment')) expCatMapped = 'Refreshment';
       else if (expCatRaw.includes('Repair') || expCatRaw.includes('Maintenance')) expCatMapped = 'Maintenance';
 
+      const rawDate = quickOutflowForm.date || new Date().toISOString().split('T')[0];
+      const accMonth = quickOutflowForm.accountingMonth || rawDate.slice(0, 7);
+      let effectiveDate = rawDate;
+      if (accMonth && !rawDate.startsWith(accMonth)) {
+        const [yearStr, monthStr] = accMonth.split('-');
+        const y = parseInt(yearStr, 10);
+        const m = parseInt(monthStr, 10);
+        const lastDay = new Date(y, m, 0).getDate();
+        effectiveDate = `${accMonth}-${String(lastDay).padStart(2, '0')}`;
+      }
+      const monthName = new Date(`${accMonth}-01`).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      const periodNote = accMonth && !rawDate.startsWith(accMonth)
+        ? ` [Accounting Month: ${monthName} | Paid Date: ${rawDate}]`
+        : '';
+
+      const descBase = quickOutflowForm.description ? `${quickOutflowForm.description} (Paid to: ${quickOutflowForm.payee})` : `${expCatRaw} to ${quickOutflowForm.payee || 'Payee'}`;
+
       const newExp: ErpExpense = {
         ExpenseID: `EXP-${Date.now().toString().slice(-6)}`,
         Category: expCatMapped,
-        Description: quickOutflowForm.description ? `${quickOutflowForm.description} (Paid to: ${quickOutflowForm.payee})` : `${expCatRaw} to ${quickOutflowForm.payee || 'Payee'}`,
+        Description: descBase + periodNote,
         Amount: amt,
-        ExpenseDate: quickOutflowForm.date || new Date().toISOString().split('T')[0],
+        ExpenseDate: effectiveDate,
+        AccountingMonth: accMonth,
+        ActualPaymentDate: rawDate,
         PaymentMethod: quickOutflowForm.paymentMethod as any || 'Cash',
         ReceiptRef: `REC-${Math.floor(1000 + Math.random() * 9000)}`
       };
@@ -1207,6 +1228,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         PaymentMethod: newExp.PaymentMethod,
         ReferenceNo: newExp.ExpenseID,
         Date: newExp.ExpenseDate,
+        AccountingMonth: accMonth,
+        ActualPaymentDate: rawDate,
         CreatedBy: currentUser?.FullName || 'Admin',
         VendorName: quickOutflowForm.payee || 'Expense Account'
       };
@@ -1223,6 +1246,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         payee: '',
         paymentMethod: 'Cash',
         date: new Date().toISOString().split('T')[0],
+        accountingMonth: new Date().toISOString().slice(0, 7),
         description: ''
       });
 
@@ -1248,7 +1272,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
     const cDoc = clinicSettings?.DoctorName || '';
     const cDocSub = clinicSettings?.DoctorSignatureText || '';
-    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
@@ -3498,7 +3522,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     if (!selectedPoForWhatsApp) return;
 
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
 
     const url = generateWhatsAppPurchaseOrderUrl({
@@ -4330,6 +4354,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
+    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
     let totalOrderedQty = 0;
     let totalReceivedQty = 0;
@@ -4612,7 +4639,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             <div class="clinic-info">
               <h1 class="clinic-name">${cName}</h1>
               <div class="clinic-tagline">${cTag}</div>
-              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">${cAddr} &nbsp;|&nbsp; 📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
               <div class="clinic-timings">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
               </div>
@@ -4773,7 +4800,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY • RESTORING BALANCE';
     const cDoc = clinicSettings?.DoctorName || '';
     const cDocSub = clinicSettings?.DoctorSignatureText || '';
-    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
@@ -5042,7 +5069,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY • RESTORING BALANCE';
     const cDoc = clinicSettings?.DoctorName || '';
     const cDocSub = clinicSettings?.DoctorSignatureText || '';
-    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
@@ -5262,7 +5289,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const handleConfirmPayVendor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!payVendorModalData) return;
-    const { vendor, invNo, amount, paymentMethod, date, description, category } = payVendorModalData;
+    const { vendor, invNo, amount, paymentMethod, date, accountingMonth, description, category } = payVendorModalData;
 
     if (!invNo || invNo.trim() === '') {
       return alert('Vendor Invoice Number is required to process vendor bill payment.');
@@ -5275,15 +5302,35 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     try {
       const isCash = paymentMethod === 'Cash';
       const defaultCat = isCash ? 'Spot Cash Vendor Payment' : 'Supplier Credit Bill Payment';
+      const rawDate = date || new Date().toISOString().split('T')[0];
+      const accMonth = accountingMonth || rawDate.slice(0, 7);
+
+      let effectiveDate = rawDate;
+      if (accMonth && !rawDate.startsWith(accMonth)) {
+        const [yearStr, monthStr] = accMonth.split('-');
+        const y = parseInt(yearStr, 10);
+        const m = parseInt(monthStr, 10);
+        const lastDay = new Date(y, m, 0).getDate();
+        effectiveDate = `${accMonth}-${String(lastDay).padStart(2, '0')}`;
+      }
+      const monthName = new Date(`${accMonth}-01`).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      const periodNote = accMonth && !rawDate.startsWith(accMonth)
+        ? ` [Accounting Month: ${monthName} | Paid Date: ${rawDate}]`
+        : '';
+
+      const baseDesc = description || `Payment against Vendor Invoice #${invNo.trim()} for ${vendor.VendorName} (${isCash ? 'Cash Payment' : 'Credit Settlement'})`;
+
       const newTxn: ErpTransaction = {
         TransactionID: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
         Type: 'VendorPayment',
         Category: category || defaultCat,
-        Description: description || `Payment against Vendor Invoice #${invNo.trim()} for ${vendor.VendorName} (${isCash ? 'Cash Payment' : 'Credit Settlement'})`,
+        Description: baseDesc + periodNote,
         Amount: Number(amount),
         PaymentMethod: paymentMethod || (isCash ? 'Cash' : 'Bank'),
         ReferenceNo: invNo.trim(),
-        Date: date || new Date().toISOString().split('T')[0],
+        Date: effectiveDate,
+        AccountingMonth: accMonth,
+        ActualPaymentDate: rawDate,
         CreatedBy: currentUser?.FullName || 'Admin',
         VendorID: vendor.VendorID || '',
         VendorName: vendor.VendorName || ''
@@ -5321,15 +5368,32 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     setIsSubmitting(true);
     try {
+      const rawDate = txnForm.Date || new Date().toISOString().split('T')[0];
+      const accMonth = txnForm.AccountingMonth || rawDate.slice(0, 7);
+      let effectiveDate = rawDate;
+      if (accMonth && !rawDate.startsWith(accMonth)) {
+        const [yearStr, monthStr] = accMonth.split('-');
+        const y = parseInt(yearStr, 10);
+        const m = parseInt(monthStr, 10);
+        const lastDay = new Date(y, m, 0).getDate();
+        effectiveDate = `${accMonth}-${String(lastDay).padStart(2, '0')}`;
+      }
+      const monthName = new Date(`${accMonth}-01`).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      const periodNote = accMonth && !rawDate.startsWith(accMonth)
+        ? ` [Accounting Month: ${monthName} | Paid Date: ${rawDate}]`
+        : '';
+
       const newTxn: ErpTransaction = {
         TransactionID: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
         Type: txnForm.Type || 'Expense',
         Category: txnForm.Category,
-        Description: txnForm.Description || '',
+        Description: (txnForm.Description || '') + periodNote,
         Amount: Number(txnForm.Amount),
         PaymentMethod: txnForm.PaymentMethod || 'Cash',
         ReferenceNo: txnForm.ReferenceNo || 'N/A',
-        Date: txnForm.Date || new Date().toISOString().split('T')[0],
+        Date: effectiveDate,
+        AccountingMonth: accMonth,
+        ActualPaymentDate: rawDate,
         CreatedBy: currentUser?.FullName || 'Admin',
         VendorID: txnForm.VendorID || '',
         VendorName: txnForm.VendorName || ''
@@ -5645,12 +5709,29 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     setIsSubmitting(true);
     try {
+      const rawDate = expenseForm.ExpenseDate || new Date().toISOString().split('T')[0];
+      const accMonth = expenseForm.AccountingMonth || rawDate.slice(0, 7);
+      let effectiveDate = rawDate;
+      if (accMonth && !rawDate.startsWith(accMonth)) {
+        const [yearStr, monthStr] = accMonth.split('-');
+        const y = parseInt(yearStr, 10);
+        const m = parseInt(monthStr, 10);
+        const lastDay = new Date(y, m, 0).getDate();
+        effectiveDate = `${accMonth}-${String(lastDay).padStart(2, '0')}`;
+      }
+      const monthName = new Date(`${accMonth}-01`).toLocaleString('en-US', { month: 'long', year: 'numeric' });
+      const periodNote = accMonth && !rawDate.startsWith(accMonth)
+        ? ` [Accounting Month: ${monthName} | Paid Date: ${rawDate}]`
+        : '';
+
       const newExpense: ErpExpense = {
         ExpenseID: `EXP-${Math.floor(100 + Math.random() * 900)}`,
         Category: expenseForm.Category || 'Other',
-        Description: expenseForm.Description,
+        Description: (expenseForm.Description || '') + periodNote,
         Amount: Number(expenseForm.Amount),
-        ExpenseDate: expenseForm.ExpenseDate || new Date().toISOString().split('T')[0],
+        ExpenseDate: effectiveDate,
+        AccountingMonth: accMonth,
+        ActualPaymentDate: rawDate,
         PaymentMethod: expenseForm.PaymentMethod || 'Cash',
         ReceiptRef: expenseForm.ReceiptRef || 'N/A'
       };
@@ -5668,6 +5749,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         PaymentMethod: newExpense.PaymentMethod,
         ReferenceNo: newExpense.ExpenseID,
         Date: newExpense.ExpenseDate,
+        AccountingMonth: accMonth,
+        ActualPaymentDate: rawDate,
         CreatedBy: currentUser?.FullName || 'Admin'
       };
       await saveToDatabase('erp_transactions', expTxn);
@@ -5755,6 +5838,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
+    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
     const isCashOrder = String(po.PaymentMethod || (po as any).PaymentTerms || '').trim().toLowerCase() === 'cash';
     const poBannerTitle = isCashOrder ? 'Cash Order PO' : 'Credit Order PO';
@@ -6227,7 +6313,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             <div class="clinic-info">
               <h1 class="clinic-name">${cName}</h1>
               <div class="clinic-tagline">${cTag}</div>
-              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">10 Shalimar Road, Garhi Shahu, Lahore</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">${cAddr} &nbsp;|&nbsp; 📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
               <div class="clinic-timings">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
               </div>

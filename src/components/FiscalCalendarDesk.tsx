@@ -569,7 +569,8 @@ export default function FiscalCalendarDesk({
 
     allExpenses.forEach(exp => {
       const d = exp.ExpenseDate || exp.Date || exp.CreatedAt;
-      if (isDateInRange(d)) {
+      const isPeriodMatch = isDateInRange(d) || (exp.AccountingMonth && startDate.startsWith(exp.AccountingMonth));
+      if (isPeriodMatch) {
         const amt = Number(exp.Amount) || Number(exp.ExpenseAmount) || Number(exp.TotalAmount) || 0;
         operationalExpensesSum += amt;
         expensesCount += 1;
@@ -611,7 +612,8 @@ export default function FiscalCalendarDesk({
 
     allTransactions.forEach(t => {
       const d = t.Date || t.TransactionDate || t.CreatedAt;
-      if (isDateInRange(d)) {
+      const isPeriodMatch = isDateInRange(d) || (t.AccountingMonth && startDate.startsWith(t.AccountingMonth));
+      if (isPeriodMatch) {
         const isVendor = t.Type === 'VendorPayment' || t.Type === 'VENDOR_PAYMENT' || (t.Category && t.Category.toLowerCase().includes('supplier'));
         if (isVendor) {
           vendorPaymentsSum += (Number(t.Amount) || 0);
@@ -1019,7 +1021,7 @@ export default function FiscalCalendarDesk({
 
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cTag = (clinicSettings as any)?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
-    const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const cPhone = (clinicSettings as any)?.PhoneNo || (clinicSettings as any)?.Phone || clinicSettings?.PhoneMobile || '+92-311-4000608';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
@@ -1286,7 +1288,7 @@ export default function FiscalCalendarDesk({
     if (!printWin) return alert('Popup blocked. Please allow popups to print Annual Financial Report.');
 
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore';
+    const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const cPhone = (clinicSettings as any)?.PhoneNo || (clinicSettings as any)?.Phone || clinicSettings?.PhoneMobile || '+92-311-4000608';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 

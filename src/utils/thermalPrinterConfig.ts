@@ -367,7 +367,7 @@ export function printThermalTestSlip(s: ThermalPrinterSettings, clinic: any, sam
 
   const clinicName = clinic?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
   const cPhone = clinic?.PhoneMobile || clinic?.PhoneNo || '+92-311-4000608';
-  const cAddress = clinic?.ClinicAddress || clinic?.Address || '10 Shalimar Road, Garhi Shahu, Lahore';
+  const cAddress = clinic?.ClinicAddress || clinic?.Address || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
   const cWebsite = clinic?.Website || 'https://punjabhomeopathic.pk';
   const dateStr = new Date().toISOString().split('T')[0];
   const timeStr = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
