@@ -1293,6 +1293,108 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
     return { patById, patByName, normalize };
   };
 
+  // Asynchronously match missing patients against backend MongoDB (nhc_patient_history & patients collections)
+  const matchPatientsAsync = async (
+    unmatchedQueries: Array<{ PatientID?: string; PatientName?: string }>,
+    patById: Map<string, Patient>,
+    patByName: Map<string, Patient>
+  ): Promise<{ [key: string]: Patient }> => {
+    if (unmatchedQueries.length === 0) return {};
+    const bridgeUrl = mongoDbSettings?.BridgeUrl || window.location.origin;
+    const normalize = (s: string) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+    const newMatches: { [key: string]: Patient } = {};
+    const discoveredPatients: Patient[] = [];
+
+    try {
+      // 1. Try bulk match endpoint
+      const res = await fetch(`${bridgeUrl}/api/patients/match-bulk`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ items: unmatchedQueries })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.matches) {
+          Object.entries(data.matches).forEach(([k, pat]: [string, any]) => {
+            if (pat && pat.PatientID) {
+              newMatches[k] = pat;
+              patById.set(normalize(pat.PatientID), pat);
+              patById.set(String(pat.PatientID).trim().toLowerCase(), pat);
+              if (pat.PatientName) {
+                patByName.set(normalize(pat.PatientName), pat);
+                patByName.set(String(pat.PatientName).trim().toLowerCase(), pat);
+              }
+              discoveredPatients.push(pat);
+            }
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('Bulk match API call error, trying fallback query:', e);
+    }
+
+    // 2. Individual fallback for remaining unmatched queries against /api/nhc-patient-history
+    for (const q of unmatchedQueries) {
+      const qKey = `${q.PatientID || ''}___${q.PatientName || ''}`;
+      const normId = normalize(q.PatientID || '');
+      const normName = normalize(q.PatientName || '');
+      if (newMatches[qKey] || (normId && newMatches[normId]) || (normName && newMatches[normName])) {
+        continue;
+      }
+      const term = q.PatientID || q.PatientName;
+      if (!term) continue;
+      try {
+        const nhcRes = await fetch(`${bridgeUrl}/api/nhc-patient-history?q=${encodeURIComponent(term)}&limit=5`);
+        if (nhcRes.ok) {
+          const nhcList = await nhcRes.json();
+          if (Array.isArray(nhcList) && nhcList.length > 0) {
+            const match = nhcList.find((n: any) => 
+              (q.PatientID && normalize(n.PatientID) === normalize(q.PatientID)) ||
+              (q.PatientName && normalize(n.PatientName) === normalize(q.PatientName))
+            ) || nhcList[0];
+
+            if (match) {
+              const synthPat: Patient = {
+                PatientID: match.PatientID || q.PatientID || `PAT-${Date.now()}`,
+                PatientName: match.PatientName || q.PatientName || `Patient ${match.PatientID}`,
+                Father_husband: match.Father_husband || '',
+                AgeYears: match.AgeYears || 0,
+                Sex: (match.Sex as any) || 'Male',
+                MaritalStatus: 'Single',
+                Occupation: '',
+                Address: match.Address || '',
+                CityID: 1,
+                Country: 'Pakistan',
+                PhoneMobile: match.PhoneMobile || '',
+                RegistrationDate: match.RegistrationDate || new Date().toISOString().split('T')[0]
+              };
+              newMatches[qKey] = synthPat;
+              if (q.PatientID) newMatches[normalize(q.PatientID)] = synthPat;
+              if (q.PatientName) newMatches[normalize(q.PatientName)] = synthPat;
+              patById.set(normalize(synthPat.PatientID), synthPat);
+              patById.set(String(synthPat.PatientID).trim().toLowerCase(), synthPat);
+              if (synthPat.PatientName) {
+                patByName.set(normalize(synthPat.PatientName), synthPat);
+                patByName.set(String(synthPat.PatientName).trim().toLowerCase(), synthPat);
+              }
+              discoveredPatients.push(synthPat);
+            }
+          }
+        }
+      } catch (err) {}
+    }
+
+    if (discoveredPatients.length > 0 && setPatients) {
+      setPatients((prev: Patient[]) => {
+        const existingIds = new Set(prev.map(p => normalize(p.PatientID)));
+        const toAdd = discoveredPatients.filter(p => !existingIds.has(normalize(p.PatientID)));
+        return toAdd.length > 0 ? [...prev, ...toAdd] : prev;
+      });
+    }
+
+    return newMatches;
+  };
+
   const handleAppointmentFileRead = (file: File) => {
     if (!file) return;
     const fileExt = file.name.split('.').pop()?.toLowerCase();
@@ -1409,6 +1511,16 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
           const droppedList: Array<{ rowNum: number; rawId: string; rawName: string; fee: number; reason: string }> = [];
           const { patById, patByName, normalize } = getPatientLookupMaps();
 
+          const tempRows: Array<{
+            i: number;
+            rawId: string;
+            rawName: string;
+            rawPay: string;
+            rawDate: string;
+            rawShift: string;
+            rawRem: string;
+          }> = [];
+
           for (let i = startIndex; i < rawData.length; i++) {
             const row = rawData[i];
             if (!row || row.length === 0) continue;
@@ -1422,109 +1534,127 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
 
             if (!rawId && !rawName && !rawPay) continue;
 
-            const cleanedPay = Number(rawPay.replace(/[^0-9.]/g, '')) || 0;
+            tempRows.push({ i, rawId, rawName, rawPay, rawDate, rawShift, rawRem });
+          }
 
-            // Resolve Patient from existing database
-            let matchedPat: Patient | undefined = undefined;
+          // Asynchronously query database for missing/unmatched patients
+          const unmatchedItems = tempRows
+            .filter(r => (!r.rawId || !patById.has(normalize(r.rawId))) && (!r.rawName || !patByName.has(normalize(r.rawName))))
+            .map(r => ({ PatientID: r.rawId, PatientName: r.rawName }));
 
-            // 1. Try ID lookup
-            if (rawId) {
-              matchedPat = patById.get(normalize(rawId)) || patById.get(rawId.toLowerCase());
+          (async () => {
+            if (unmatchedItems.length > 0) {
+              await matchPatientsAsync(unmatchedItems, patById, patByName);
             }
 
-            // 2. Try Name lookup
-            if (!matchedPat && rawName) {
-              matchedPat = patByName.get(normalize(rawName)) || patByName.get(rawName.toLowerCase());
-            }
+            for (const item of tempRows) {
+              const { i, rawId, rawName, rawPay, rawDate, rawShift, rawRem } = item;
+              const cleanedPay = Number(rawPay.replace(/[^0-9.]/g, '')) || 0;
 
-            // 3. If rawId is text and no rawName was present, check if rawId is actually a patient name
-            if (!matchedPat && rawId && !rawName) {
-              matchedPat = patByName.get(normalize(rawId)) || patByName.get(rawId.toLowerCase());
-            }
+              // Resolve Patient from existing database
+              let matchedPat: Patient | undefined = undefined;
 
-            // 4. Fuzzy Substring Match on Patient Name
-            if (!matchedPat && rawName) {
-              const normName = normalize(rawName);
-              if (normName.length >= 3) {
-                for (const [k, p] of patByName.entries()) {
-                  if (k.length >= 3 && (k.includes(normName) || normName.includes(k))) {
-                    matchedPat = p;
-                    break;
+              // 1. Try ID lookup
+              if (rawId) {
+                matchedPat = patById.get(normalize(rawId)) || patById.get(rawId.toLowerCase());
+              }
+
+              // 2. Try Name lookup
+              if (!matchedPat && rawName) {
+                matchedPat = patByName.get(normalize(rawName)) || patByName.get(rawName.toLowerCase());
+              }
+
+              // 3. If rawId is text and no rawName was present, check if rawId is actually a patient name
+              if (!matchedPat && rawId && !rawName) {
+                matchedPat = patByName.get(normalize(rawId)) || patByName.get(rawId.toLowerCase());
+              }
+
+              // 4. Fuzzy Substring Match on Patient Name
+              if (!matchedPat && rawName) {
+                const normName = normalize(rawName);
+                if (normName.length >= 3) {
+                  for (const [k, p] of patByName.entries()) {
+                    if (k.length >= 3 && (k.includes(normName) || normName.includes(k))) {
+                      matchedPat = p;
+                      break;
+                    }
                   }
                 }
               }
-            }
 
-            // 🛑 DROP ROW IF PATIENT NOT FOUND AND DROP TOGGLE IS ACTIVE
-            if (!matchedPat && dropUnmatchedAppPatients) {
-              droppedList.push({
-                rowNum: i + 1,
-                rawId: rawId || 'N/A',
-                rawName: rawName || 'N/A',
-                fee: cleanedPay,
-                reason: 'Patient ID or Name not found in system database'
-              });
-              continue; // Drop this row
-            }
+              // 🛑 DROP ROW IF PATIENT NOT FOUND AND DROP TOGGLE IS ACTIVE
+              if (!matchedPat && dropUnmatchedAppPatients) {
+                droppedList.push({
+                  rowNum: i + 1,
+                  rawId: rawId || 'N/A',
+                  rawName: rawName || 'N/A',
+                  fee: cleanedPay,
+                  reason: 'Patient ID or Name not found in system database'
+                });
+                continue; // Drop this row
+              }
 
-            // Resolve final Patient ID and Patient Name
-            const finalPatientId = matchedPat ? matchedPat.PatientID : (rawId || `PAT-${Date.now().toString().slice(-4)}-${i}`);
-            const finalPatientName = rawName ? rawName : (matchedPat ? matchedPat.PatientName : `Patient ${finalPatientId}`);
+              // Resolve final Patient ID and Patient Name
+              const finalPatientId = matchedPat ? matchedPat.PatientID : (rawId || `PAT-${Date.now().toString().slice(-4)}-${i}`);
+              const finalPatientName = (matchedPat && matchedPat.PatientName && !matchedPat.PatientName.startsWith('Patient PAT-')) 
+                ? matchedPat.PatientName 
+                : (rawName ? rawName : (matchedPat ? matchedPat.PatientName : `Patient ${finalPatientId}`));
 
-            // Parse date
-            let appDateStr = new Date().toISOString().split('T')[0];
-            if (rawDate) {
-              if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
-                appDateStr = rawDate.slice(0, 10);
-              } else if (!isNaN(Number(rawDate)) && Number(rawDate) > 30000) {
-                // Excel serial date number
-                const parsedExcelDate = new Date(Math.round((Number(rawDate) - 25569) * 86400 * 1000));
-                if (!isNaN(parsedExcelDate.getTime())) {
-                  appDateStr = parsedExcelDate.toISOString().split('T')[0];
-                }
-              } else {
-                const d = new Date(rawDate);
-                if (!isNaN(d.getTime())) {
-                  appDateStr = d.toISOString().split('T')[0];
+              // Parse date
+              let appDateStr = new Date().toISOString().split('T')[0];
+              if (rawDate) {
+                if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
+                  appDateStr = rawDate.slice(0, 10);
+                } else if (!isNaN(Number(rawDate)) && Number(rawDate) > 30000) {
+                  // Excel serial date number
+                  const parsedExcelDate = new Date(Math.round((Number(rawDate) - 25569) * 86400 * 1000));
+                  if (!isNaN(parsedExcelDate.getTime())) {
+                    appDateStr = parsedExcelDate.toISOString().split('T')[0];
+                  }
+                } else {
+                  const d = new Date(rawDate);
+                  if (!isNaN(d.getTime())) {
+                    appDateStr = d.toISOString().split('T')[0];
+                  }
                 }
               }
+
+              const shiftVal: 1 | 2 = (rawShift.includes('2') || rawShift.toLowerCase().includes('eve')) ? 2 : 1;
+
+              parsedList.push({
+                AppointmentID: `APP-IMP-${Date.now().toString().slice(-4)}-${i}`,
+                PatientID: finalPatientId,
+                PatientName: finalPatientName,
+                PhoneMobile: matchedPat?.PhoneMobile || '',
+                FeeCharged: cleanedPay,
+                AppointmentDate: appDateStr,
+                Shift: shiftVal,
+                Status: 2,
+                Remarks: rawRem || 'Excel Uploaded Appointment',
+                isNewPatient: !matchedPat
+              });
             }
 
-            const shiftVal: 1 | 2 = (rawShift.includes('2') || rawShift.toLowerCase().includes('eve')) ? 2 : 1;
+            setDroppedAppRecords(droppedList);
 
-            parsedList.push({
-              AppointmentID: `APP-IMP-${Date.now().toString().slice(-4)}-${i}`,
-              PatientID: finalPatientId,
-              PatientName: finalPatientName,
-              PhoneMobile: matchedPat?.PhoneMobile || '',
-              FeeCharged: cleanedPay,
-              AppointmentDate: appDateStr,
-              Shift: shiftVal,
-              Status: 2,
-              Remarks: rawRem || 'Excel Uploaded Appointment',
-              isNewPatient: !matchedPat
-            });
-          }
+            if (parsedList.length === 0) {
+              if (droppedList.length > 0) {
+                setErrorMsg(`All ${droppedList.length} rows were dropped because none of the patient records matched registered patients in the database. Please verify your patient names/IDs or uncheck 'Drop Unmatched Patients'.`);
+              } else {
+                setErrorMsg('Could not find any valid appointment records in the uploaded file.');
+              }
+              return;
+            }
 
-          setDroppedAppRecords(droppedList);
-
-          if (parsedList.length === 0) {
+            setAppointmentPreview(parsedList);
+            const totalFee = parsedList.reduce((acc, a) => acc + (a.FeeCharged || 0), 0);
+            
+            let msg = `Successfully parsed ${parsedList.length} appointment records from "${file.name}" (Total Fee: PKR ${totalFee.toLocaleString()}).`;
             if (droppedList.length > 0) {
-              setErrorMsg(`All ${droppedList.length} rows were dropped because none of the patient records matched registered patients in the database. Please verify your patient names/IDs or uncheck 'Drop Unmatched Patients'.`);
-            } else {
-              setErrorMsg('Could not find any valid appointment records in the uploaded file.');
+              msg += ` ⚠️ Note: ${droppedList.length} unmatched rows were dropped.`;
             }
-            return;
-          }
-
-          setAppointmentPreview(parsedList);
-          const totalFee = parsedList.reduce((acc, a) => acc + (a.FeeCharged || 0), 0);
-          
-          let msg = `Successfully parsed ${parsedList.length} appointment records from "${file.name}" (Total Fee: PKR ${totalFee.toLocaleString()}).`;
-          if (droppedList.length > 0) {
-            msg += ` ⚠️ Note: ${droppedList.length} unmatched rows were dropped.`;
-          }
-          setSuccessMsg(msg);
+            setSuccessMsg(msg);
+          })();
         });
       } catch (err: any) {
         console.error('Failed to parse appointment spreadsheet:', err);
@@ -1534,7 +1664,7 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
     reader.readAsArrayBuffer(file);
   };
 
-  const handleAppointmentProcess = () => {
+  const handleAppointmentProcess = async () => {
     if (!appointmentPasteText.trim()) {
       setErrorMsg('Please paste text or rows into the box before parsing.');
       return;
@@ -1553,6 +1683,16 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
     if (firstLineLower.includes('patient') || firstLineLower.includes('name') || firstLineLower.includes('fee') || firstLineLower.includes('payment') || firstLineLower.includes('mr#')) {
       startIdx = 1;
     }
+
+    const tempRows: Array<{
+      i: number;
+      rawId: string;
+      rawName: string;
+      rawPay: string;
+      rawDate: string;
+      rawShift: string;
+      rawRem: string;
+    }> = [];
 
     for (let i = startIdx; i < lines.length; i++) {
       const line = lines[i].trim();
@@ -1593,6 +1733,20 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
         rawPay = parts[1] || '0';
       }
 
+      tempRows.push({ i, rawId, rawName, rawPay, rawDate, rawShift, rawRem });
+    }
+
+    // Query database for missing/unmatched patients asynchronously
+    const unmatchedItems = tempRows
+      .filter(r => (!r.rawId || !patById.has(normalize(r.rawId))) && (!r.rawName || !patByName.has(normalize(r.rawName))))
+      .map(r => ({ PatientID: r.rawId, PatientName: r.rawName }));
+
+    if (unmatchedItems.length > 0) {
+      await matchPatientsAsync(unmatchedItems, patById, patByName);
+    }
+
+    for (const item of tempRows) {
+      const { i, rawId, rawName, rawPay, rawDate, rawShift, rawRem } = item;
       const cleanedPay = Number(rawPay.replace(/[^0-9.]/g, '')) || 0;
 
       // Resolve Patient from existing database
@@ -1639,7 +1793,9 @@ NHC-1003\tZainab Khan\tIrfan\t12\tFemale\t03451122334\t2026-07-12\tSore Throat\t
       }
 
       const finalPatientId = matchedPat ? matchedPat.PatientID : (rawId || `PAT-${Date.now().toString().slice(-4)}-${i}`);
-      const finalPatientName = rawName ? rawName : (matchedPat ? matchedPat.PatientName : `Patient ${finalPatientId}`);
+      const finalPatientName = (matchedPat && matchedPat.PatientName && !matchedPat.PatientName.startsWith('Patient PAT-'))
+        ? matchedPat.PatientName
+        : (rawName ? rawName : (matchedPat ? matchedPat.PatientName : `Patient ${finalPatientId}`));
 
       let appDateStr = new Date().toISOString().split('T')[0];
       if (rawDate) {

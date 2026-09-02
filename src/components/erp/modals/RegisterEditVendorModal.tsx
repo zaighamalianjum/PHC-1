@@ -1,5 +1,5 @@
 import React from 'react';
-import { Building2, X, Pencil, Save, RefreshCw, PhoneCall } from 'lucide-react';
+import { Building2, X, Pencil, Save, RefreshCw, PhoneCall, Lock } from 'lucide-react';
 import { ErpVendor } from '../../../types';
 
 interface RegisterEditVendorModalProps {

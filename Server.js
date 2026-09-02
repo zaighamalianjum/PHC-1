@@ -834,6 +834,113 @@ app.get('/api/patients/:id', async (req, res) => {
   }
 });
 
+// Bulk match patients across both patients and nhc_patient_history
+app.post('/api/patients/match-bulk', async (req, res) => {
+  try {
+    const { items } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.json({ matches: {} });
+    }
+
+    const matches = {};
+    const normalize = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '').trim();
+
+    for (const item of items) {
+      const rawId = item.PatientID ? String(item.PatientID).trim() : '';
+      const rawName = item.PatientName ? String(item.PatientName).trim() : '';
+      const key = `${rawId}___${rawName}`;
+
+      if (!rawId && !rawName) continue;
+
+      let found = null;
+
+      // 1. Search in patients collection
+      if (rawId) {
+        const cleanId = rawId.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        found = await db.collection('patients').findOne({
+          $or: [
+            { PatientID: rawId },
+            { PatientID: new RegExp(`^${cleanId}$`, 'i') }
+          ]
+        });
+      }
+
+      if (!found && rawName) {
+        const cleanName = rawName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        found = await db.collection('patients').findOne({
+          $or: [
+            { PatientName: rawName },
+            { PatientName: new RegExp(`^${cleanName}$`, 'i') }
+          ]
+        });
+      }
+
+      // 2. Search in nhc_patient_history collection
+      if (!found && rawId) {
+        const cleanId = rawId.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const nhcRec = await db.collection('nhc_patient_history').findOne({
+          $or: [
+            { PatientID: rawId },
+            { PatientID: new RegExp(`^${cleanId}$`, 'i') }
+          ]
+        });
+        if (nhcRec) {
+          found = {
+            PatientID: nhcRec.PatientID,
+            PatientName: nhcRec.PatientName || rawName || `Patient ${nhcRec.PatientID}`,
+            Father_husband: nhcRec.Father_husband || '',
+            AgeYears: nhcRec.AgeYears || 0,
+            Sex: nhcRec.Sex || 'Male',
+            MaritalStatus: nhcRec.MaritalStatus || 'Single',
+            Occupation: nhcRec.Occupation || '',
+            Address: nhcRec.Address || '',
+            CityID: 1,
+            Country: 'Pakistan',
+            PhoneMobile: nhcRec.PhoneMobile || '',
+            RegistrationDate: nhcRec.RegistrationDate || nhcRec.VisitDate || new Date().toISOString().split('T')[0]
+          };
+        }
+      }
+
+      if (!found && rawName) {
+        const cleanName = rawName.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&');
+        const nhcRec = await db.collection('nhc_patient_history').findOne({
+          $or: [
+            { PatientName: rawName },
+            { PatientName: new RegExp(`^${cleanName}$`, 'i') }
+          ]
+        });
+        if (nhcRec) {
+          found = {
+            PatientID: nhcRec.PatientID || rawId || `PAT-${Date.now()}`,
+            PatientName: nhcRec.PatientName || rawName,
+            Father_husband: nhcRec.Father_husband || '',
+            AgeYears: nhcRec.AgeYears || 0,
+            Sex: nhcRec.Sex || 'Male',
+            MaritalStatus: nhcRec.MaritalStatus || 'Single',
+            Occupation: nhcRec.Occupation || '',
+            Address: nhcRec.Address || '',
+            CityID: 1,
+            Country: 'Pakistan',
+            PhoneMobile: nhcRec.PhoneMobile || '',
+            RegistrationDate: nhcRec.RegistrationDate || nhcRec.VisitDate || new Date().toISOString().split('T')[0]
+          };
+        }
+      }
+
+      if (found) {
+        matches[key] = found;
+        if (rawId) matches[normalize(rawId)] = found;
+        if (rawName) matches[normalize(rawName)] = found;
+      }
+    }
+
+    res.json({ matches });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // Insert Patient
 app.post('/api/patients', async (req, res) => {
   try {
