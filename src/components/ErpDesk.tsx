@@ -2082,7 +2082,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       Address: '',
       TaxID: '',
       Balance: 0,
-      Status: 'Active'
+      Status: 'Active',
+      LogoUrl: '',
+      LogoImage: ''
     });
     setShowVendorModal(true);
   };
@@ -2099,7 +2101,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       Address: vendor.Address || '',
       TaxID: vendor.TaxID || '',
       Balance: vendor.Balance || 0,
-      Status: vendor.Status || 'Active'
+      Status: vendor.Status || 'Active',
+      LogoUrl: vendor.LogoUrl || vendor.LogoImage || '',
+      LogoImage: vendor.LogoImage || vendor.LogoUrl || ''
     });
     setShowVendorModal(true);
   };
@@ -2139,13 +2143,15 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         const updatedVendor: ErpVendor = {
           ...editingVendor,
           VendorName: vendorForm.VendorName.trim(),
-          ContactPerson: vendorForm.ContactPerson || 'N/A',
-          Phone: vendorForm.Phone || 'N/A',
+          ContactPerson: vendorForm.ContactPerson || '',
+          Phone: vendorForm.Phone || '',
           Email: vendorForm.Email || '',
           Address: vendorForm.Address || 'Lahore, Pakistan',
           TaxID: vendorForm.TaxID || '',
           Balance: Number(vendorForm.Balance) || 0,
-          Status: (vendorForm.Status as 'Active' | 'Inactive') || 'Active'
+          Status: (vendorForm.Status as 'Active' | 'Inactive') || 'Active',
+          LogoUrl: vendorForm.LogoUrl || vendorForm.LogoImage || '',
+          LogoImage: vendorForm.LogoImage || vendorForm.LogoUrl || ''
         };
 
         await saveToDatabase('erp_vendors', updatedVendor, 'PUT');
@@ -2168,7 +2174,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
         setShowVendorModal(false);
         setEditingVendor(null);
-        setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, Status: 'Active' });
+        setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, Status: 'Active', LogoUrl: '', LogoImage: '' });
         setSyncMessage('Vendor details updated successfully in database!');
         setTimeout(() => setSyncMessage(null), 3000);
       } else {
@@ -2176,20 +2182,22 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         const newVendor: ErpVendor = {
           VendorID: vendorForm.VendorID || `VND-${Math.floor(100 + Math.random() * 900)}`,
           VendorName: vendorForm.VendorName.trim(),
-          ContactPerson: vendorForm.ContactPerson || 'N/A',
-          Phone: vendorForm.Phone || 'N/A',
+          ContactPerson: vendorForm.ContactPerson || '',
+          Phone: vendorForm.Phone || '',
           Email: vendorForm.Email || '',
           Address: vendorForm.Address || 'Lahore, Pakistan',
           TaxID: vendorForm.TaxID || '',
           Balance: Number(vendorForm.Balance) || 0,
-          Status: (vendorForm.Status as 'Active' | 'Inactive') || 'Active'
+          Status: (vendorForm.Status as 'Active' | 'Inactive') || 'Active',
+          LogoUrl: vendorForm.LogoUrl || vendorForm.LogoImage || '',
+          LogoImage: vendorForm.LogoImage || vendorForm.LogoUrl || ''
         };
 
         await saveToDatabase('erp_vendors', newVendor, 'POST');
         setVendors(prev => [newVendor, ...prev]);
         setShowVendorModal(false);
         setEditingVendor(null);
-        setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, Status: 'Active' });
+        setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, Status: 'Active', LogoUrl: '', LogoImage: '' });
         setSyncMessage('Vendor saved successfully!');
         setTimeout(() => setSyncMessage(null), 3000);
       }
@@ -3120,9 +3128,14 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     setShowPoModal(true);
   };
 
-  const handleOpenQuickAddMedModal = (initialName?: string) => {
+  const handleOpenQuickAddMedModal = (initialOrItem?: any) => {
+    if (initialOrItem && typeof initialOrItem === 'object' && (initialOrItem.ItemID || initialOrItem.ItemName || initialOrItem.Name)) {
+      handleOpenEditMedModal(initialOrItem);
+      return;
+    }
+
     setEditingQuickMed(null);
-    const rawName = (initialName || medicineSearchTerm || '').trim();
+    const rawName = (typeof initialOrItem === 'string' ? initialOrItem : (initialOrItem?.ItemName || medicineSearchTerm || '')).trim();
     const suggestedCategory = rawName ? resolveSmartMedicineCategory(undefined, undefined, undefined, rawName) : (poCategoryFilter !== 'all' ? poCategoryFilter : 'BM Drops');
     
     setQuickMedForm({
@@ -4762,8 +4775,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
 
             <div class="stamp-box">
-              <span>PHC OFFICIAL STAMP</span>
-              <span style="font-size: 7px; color: #94a3b8; margin-top: 2px;">[ SEAL & STAMP ]</span>
+              <span>OFFICIAL SEAL & STAMP</span>
+              <span style="font-size: 7px; color: #94a3b8; margin-top: 2px;">[ AUTHORIZED SIGNATURE ]</span>
             </div>
 
             <div class="sig-box" style="width: 250px;">
@@ -5835,8 +5848,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const printWin = window.open('', '_blank', 'width=950,height=900');
     if (!printWin) return alert('Popup blocked. Allow popups to print Purchase Order.');
 
-    const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
+    const rawClinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
+    const cName = rawClinicName.replace(/\s*\(PHC\)/gi, '').replace(/\bPHC\b/g, '').trim();
+    const cTag = (clinicSettings?.ClinicLogoText && clinicSettings?.ClinicLogoText !== 'PHC') ? clinicSettings?.ClinicLogoText : 'HEALING NATURALLY. RESTORING BALANCE.';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
     const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
@@ -5865,6 +5879,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       (po.VendorID && (v.VendorID === po.VendorID || (v as any).SupplierID === po.VendorID)) ||
       (po.VendorName && v.VendorName && v.VendorName.trim().toLowerCase() === po.VendorName.trim().toLowerCase())
     );
+
+    const vendorLogoSrc = targetVendor?.LogoUrl || targetVendor?.LogoImage || (po as any).VendorLogoUrl || '';
+    const vendorContactPerson = targetVendor?.ContactPerson || (po as any).ContactPerson || '';
+    const vendorPhone = targetVendor?.Phone || '';
+    const vendorAddress = targetVendor?.Address || '';
+    const vendorTaxId = targetVendor?.TaxID || '';
 
     // Calculate aggregated received quantity per item
     const receivedQtyMap: Record<string, number> = {};
@@ -6052,19 +6072,21 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               border-bottom: 3px double #064e3b;
               padding-bottom: 10px;
               margin-bottom: 12px;
-              gap: 12px;
+              gap: 16px;
             }
             .logo-col {
-              width: 80px;
-              height: 80px;
+              width: 150px;
+              height: 150px;
               display: flex;
               align-items: center;
               justify-content: center;
               flex-shrink: 0;
             }
             .logo-img {
-              max-width: 100%;
-              max-height: 100%;
+              max-width: 150px;
+              max-height: 150px;
+              width: auto;
+              height: auto;
               object-fit: contain;
             }
             .clinic-info {
@@ -6305,21 +6327,27 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           </style>
         </head>
         <body>
-          <!-- A4 Official Letterhead Header -->
+          <!-- A4 Official Letterhead Header (Dual Brand: Punjab Homeopathic + Vendor Logo) -->
           <div class="letterhead-header">
             <div class="logo-col">
-              <img src="${logoSrc}" alt="PHC Logo" class="logo-img" />
+              <img src="${logoSrc}" alt="Logo" class="logo-img" />
             </div>
             <div class="clinic-info">
               <h1 class="clinic-name">${cName}</h1>
               <div class="clinic-tagline">${cTag}</div>
-              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">${cAddr} &nbsp;|&nbsp; 📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">
+                ${cAddr} &nbsp;|&nbsp; 📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}
+              </div>
               <div class="clinic-timings">
                 Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
               </div>
             </div>
-            <div class="logo-col" style="visibility: hidden;">
-              <img src="${logoSrc}" alt="PHC Logo" class="logo-img" />
+            <div class="logo-col" style="text-align: center;">
+              ${vendorLogoSrc ? `
+                <img src="${vendorLogoSrc}" alt="Logo" class="logo-img" style="border-radius: 8px;" />
+              ` : `
+                <div style="width: 150px; height: 150px;"></div>
+              `}
             </div>
           </div>
 
@@ -6331,16 +6359,16 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
                 ${isCashOrder ? '💵 Spot Cash' : '💳 Credit (Payable)'}
               </span>
             </div>
-            <span class="report-banner-ref">REF: PHC-PO-${po.POID}</span>
+            <span class="report-banner-ref">REF: PO-${po.POID}</span>
           </div>
 
           <div class="meta-grid">
             <div class="meta-item">
-              <span class="meta-label">PO Ref Number</span>
-              <span class="meta-value" style="color: #4338ca;">${po.POID}</span>
+              <span class="meta-label">Purchase Order Ref</span>
+              <span class="meta-value" style="color: #4338ca; font-weight: 800;">${po.POID}</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Order Type / Terms</span>
+              <span class="meta-label">Payment Terms</span>
               <span class="meta-value" style="color: ${isCashOrder ? '#047857' : '#4338ca'}; font-weight: 800;">
                 ${isCashOrder ? '💵 Cash Order PO (Spot Paid)' : '💳 Credit Order PO (Vendor Payable)'}
               </span>
@@ -6351,11 +6379,19 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
             <div class="meta-item">
               <span class="meta-label">Expected Delivery</span>
-              <span class="meta-value">${po.ExpectedDeliveryDate || 'Immediate'}</span>
+              <span class="meta-value">${po.ExpectedDeliveryDate || 'Immediate / On Demand'}</span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Supplier / Vendor</span>
-              <span class="meta-value" style="color: #0f172a;">${po.VendorName} (${po.VendorID || 'N/A'})</span>
+              <span class="meta-label">Supplier / Vendor Name</span>
+              <span class="meta-value" style="color: #0f172a; font-weight: 800;">${po.VendorName}</span>
+              ${po.VendorID ? `<span style="font-size: 9px; color: #64748b; font-family: monospace;">ID: ${po.VendorID}</span>` : ''}
+            </div>
+            <div class="meta-item">
+              <span class="meta-label">Vendor Contact Person</span>
+              <span class="meta-value" style="color: #1e293b; font-weight: 700;">
+                ${vendorContactPerson ? `👤 ${vendorContactPerson}` : 'Authorized Representative'}
+              </span>
+              ${vendorPhone ? `<span style="font-size: 9px; color: #4338ca; font-weight: 600;">📞 ${vendorPhone}</span>` : ''}
             </div>
             <div class="meta-item">
               <span class="meta-label">PO Status</span>
@@ -6364,16 +6400,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
               </span>
             </div>
             <div class="meta-item">
-              <span class="meta-label">Total Line Items</span>
-              <span class="meta-value" style="color: #881337;">${po.Items.length} Medicines</span>
+              <span class="meta-label">Total Ordered Items</span>
+              <span class="meta-value" style="color: #881337; font-weight: 800;">${po.Items.length} Medicines</span>
             </div>
             <div class="meta-item">
               <span class="meta-label">Audit Prepared By</span>
-              <span class="meta-value">${currentUser?.FullName || 'Staff Accountant'}</span>
-            </div>
-            <div class="meta-item">
-              <span class="meta-label">Responsible Manager</span>
-              <span class="meta-value" style="color: #881337;">Mr. Zaigham Ali Anjum</span>
+              <span class="meta-value">${currentUser?.FullName || 'Procurement Officer'}</span>
             </div>
           </div>
 
@@ -6422,8 +6454,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             </div>
 
             <div class="stamp-box">
-              <span>PHC OFFICIAL STAMP</span>
-              <span style="font-size: 7px; color: #94a3b8; margin-top: 2px;">[ SEAL & STAMP ]</span>
+              <span>OFFICIAL SEAL & STAMP</span>
+              <span style="font-size: 7px; color: #94a3b8; margin-top: 2px;">[ AUTHORIZED SIGNATURE ]</span>
             </div>
 
             <div class="sig-box" style="width: 250px;">

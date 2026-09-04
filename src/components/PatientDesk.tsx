@@ -1148,6 +1148,7 @@ export default function PatientDesk({
     setPvFilePkr(group.filePkr !== undefined && group.filePkr !== null ? group.filePkr : '');
     setPvCardPkr(group.cardPkr !== undefined && group.cardPkr !== null ? group.cardPkr : '');
 
+    setActiveSubTab('patient_visit');
     setPvPrescriptionModalOpen(true);
     setPvSaveSuccess(`Loaded prescription from ${group.date} for re-printing.`);
     setTimeout(() => setPvSaveSuccess(''), 4000);
@@ -1158,6 +1159,7 @@ export default function PatientDesk({
       setPvSaveError('Please select a patient first to print.');
       return;
     }
+    setActiveSubTab('patient_visit');
     setPrintDocType(docType);
     setPvPrescriptionModalOpen(true);
   };
@@ -2058,7 +2060,22 @@ Healing Naturally. Restoring Balance.`;
       return synthPatient;
     }
 
-    return undefined;
+    // 5. Ultimate fallback: synthesize patient from ID so selectedPvPatient is never undefined
+    const foundVisit = (visits || []).find(v => isSamePatient(v.PatientID, pvSelectedPatientId));
+    return {
+      PatientID: pvSelectedPatientId,
+      PatientName: (foundVisit as any)?.PatientName || `Patient ${pvSelectedPatientId}`,
+      Father_husband: '',
+      AgeYears: 0,
+      Sex: 'Male',
+      MaritalStatus: 'Single',
+      Occupation: '',
+      Address: '',
+      CityID: 1,
+      Country: 'Pakistan',
+      PhoneMobile: '',
+      RegistrationDate: new Date().toISOString().split('T')[0]
+    };
   })();
 
   const combinedPreviousHistory = (() => {
@@ -5268,6 +5285,8 @@ Healing Naturally. Restoring Balance.`;
       }
     } else if (gridSelectorMode === 'PRINT') {
       setIsGridVisitSelectorModalOpen(false);
+      setIsRecentVisitsModalOpen(false);
+      setIsMultiPatientModalOpen(false);
 
       if (matchedOpt?.vObj || matchedOpt?.nhcObj) {
         handleEditVisit(matchedOpt.vObj || matchedOpt.nhcObj);
@@ -5281,8 +5300,12 @@ Healing Naturally. Restoring Balance.`;
         }
       }
 
+      setActiveSubTab('patient_visit');
       setPrintDocType('A5_VISIT_SLIP');
       setPvPrescriptionModalOpen(true);
+      setTimeout(() => {
+        handleCleanPrintTab('A5_VISIT_SLIP');
+      }, 350);
     }
   };
 
@@ -5395,6 +5418,7 @@ Healing Naturally. Restoring Balance.`;
 
     if (andPrint) {
       setIsRecentVisitsModalOpen(false);
+      setActiveSubTab('patient_visit');
       setPrintDocType('A5_VISIT_SLIP');
       setPvPrescriptionModalOpen(true);
     } else {

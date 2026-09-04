@@ -67,6 +67,10 @@ export interface Item {
   MfgDate?: string; // e.g. Mfg: 05-26
   ExpDate?: string; // e.g. Exp: 05-31
   Batches?: ItemBatch[]; // Multi-batch / Lot history
+  IsDead?: boolean; // True if item is marked as Dead / Obsolete item
+  DeadReason?: string; // Optional remarks or reason for being dead (e.g. Expired, Damaged, Discontinued)
+  DeadMarkedDate?: string; // Date when item was flagged as dead
+  Status?: string; // Optional string status e.g. 'Active' | 'Dead'
 }
 
 export interface ItemBatch {
@@ -400,6 +404,7 @@ export interface ClinicSettings {
   OPDFee: number;
   ClinicLogoImage?: string;
   LetterHeadImage?: string;
+  PrescriptionLogoImage?: string;
   ClinicalLabelImage?: string;
 }
 
@@ -525,6 +530,8 @@ export interface ErpVendor {
   TaxID?: string;
   Balance: number;
   Status: 'Active' | 'Inactive';
+  LogoUrl?: string;
+  LogoImage?: string;
 }
 
 export interface ErpPurchaseOrderItem {

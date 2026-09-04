@@ -124,11 +124,22 @@ export const VendorsTab: React.FC<VendorsTabProps> = ({
               return (
                 <tr key={idx} className="hover:bg-slate-50/80 transition">
                   <td className="p-3">
-                    <div className="font-bold text-slate-900 flex items-center space-x-2">
-                      <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
-                        {v.VendorID || 'N/A'}
-                      </span>
-                      <span>{v.VendorName}</span>
+                    <div className="flex items-center space-x-2.5">
+                      <div className="w-8 h-8 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center overflow-hidden shrink-0">
+                        {(v.LogoUrl || v.LogoImage) ? (
+                          <img src={v.LogoUrl || v.LogoImage} alt={v.VendorName} className="w-full h-full object-contain" />
+                        ) : (
+                          <span className="text-xs font-black text-slate-400">{(v.VendorName || 'V').charAt(0).toUpperCase()}</span>
+                        )}
+                      </div>
+                      <div>
+                        <div className="font-bold text-slate-900 flex items-center space-x-1.5">
+                          <span className="font-mono text-[10px] bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded border border-slate-200">
+                            {v.VendorID || 'N/A'}
+                          </span>
+                          <span>{v.VendorName}</span>
+                        </div>
+                      </div>
                     </div>
                   </td>
                   <td className="p-3 text-slate-600">{v.ContactPerson || '-'}</td>

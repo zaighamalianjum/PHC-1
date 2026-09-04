@@ -111,7 +111,7 @@ export default function SettingsDesk({
   patients = []
 }: SettingsDeskProps) {
   // Tabs: settings details vs user management vs access control vs cities
-  const [activeSettingsTab, setActiveSettingsTab] = useState<'details' | 'users' | 'access' | 'thermal' | 'cities' | 'sms' | 'mongodb' | 'maintenance'>('details');
+  const [activeSettingsTab, setActiveSettingsTab] = useState<'details' | 'prescription_logo' | 'users' | 'access' | 'thermal' | 'cities' | 'sms' | 'mongodb' | 'maintenance'>('details');
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
 
   // Cities Management State
@@ -831,6 +831,7 @@ export default function SettingsDesk({
   const [website, setWebsite] = useState(clinicSettings.Website || 'https://punjabhomeopathic.pk');
   const [opdFee, setOpdFee] = useState(clinicSettings.OPDFee);
   const [clinicLogoImage, setClinicLogoImage] = useState<string>(clinicSettings.ClinicLogoImage || '');
+  const [prescriptionLogoImage, setPrescriptionLogoImage] = useState<string>(clinicSettings.PrescriptionLogoImage || clinicSettings.LetterHeadImage || '');
   const [letterHeadImage, setLetterHeadImage] = useState<string>(clinicSettings.LetterHeadImage || '');
   const [clinicalLabelImage, setClinicalLabelImage] = useState<string>(clinicSettings.ClinicalLabelImage || '');
   // User list states
@@ -867,6 +868,7 @@ export default function SettingsDesk({
       OPDFee: Number(opdFee) || 1500,
       ClinicLogoImage: clinicLogoImage,
       LetterHeadImage: letterHeadImage,
+      PrescriptionLogoImage: prescriptionLogoImage,
       ClinicalLabelImage: clinicalLabelImage
     };
 
@@ -1273,6 +1275,7 @@ export default function SettingsDesk({
 
   const settingsNavTabs = [
     { id: 'details', label: 'Clinic Details', shortLabel: 'Details', icon: Building, desc: 'Clinic Profile, Timings & Receipt Config' },
+    { id: 'prescription_logo', label: 'Prescription Logo & Branding', shortLabel: 'Rx Logo', icon: FileText, desc: 'Upload Secondary Brand / Logo for Prescription Letterhead' },
     { id: 'thermal', label: 'Thermal Printer Settings', shortLabel: 'Thermal POS', icon: Printer, desc: 'Paper Roll Width, Margins, Scale & Cutter Feed Setup' },
     { id: 'users', label: `Staff Accounts (${usersList.length})`, shortLabel: `Staff (${usersList.length})`, icon: UserCheck, desc: 'Doctor, Dispenser & Receptionist Logins' },
     { id: 'access', label: 'User Access Control', shortLabel: 'Access', icon: ShieldCheck, desc: 'Granular Role Permissions & Feature Rights' },
@@ -1534,7 +1537,7 @@ export default function SettingsDesk({
                   <div className="flex items-center space-x-2">
                     <Building className="w-4 h-4 text-teal-600" />
                     <div>
-                      <h4 className="font-bold text-slate-800 text-xs">Clinic Brand Logo</h4>
+                      <h4 className="font-bold text-slate-800 text-xs">Clinic Main Logo (Left Side)</h4>
                       <p className="text-[10px] text-slate-500 font-medium">Header logo, login screen & visit slips</p>
                     </div>
                   </div>
@@ -1597,6 +1600,76 @@ export default function SettingsDesk({
                   </div>
                 )}
               </div>
+
+              {/* Card 2: Prescription Secondary Logo Upload (Right Side Dual Header) */}
+              <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <FileText className="w-4 h-4 text-rose-600" />
+                    <div>
+                      <h4 className="font-bold text-slate-800 text-xs">Prescription Secondary Logo (Right Side)</h4>
+                      <p className="text-[10px] text-slate-500 font-medium">Opposite side of PHC logo on prescription</p>
+                    </div>
+                  </div>
+                  {prescriptionLogoImage && (
+                    <span className="text-[9px] font-extrabold bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full uppercase">
+                      Active
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-[11px] font-bold text-slate-600">
+                    Upload Prescription Dual Logo (PNG / SVG / JPEG)
+                  </label>
+                  <input
+                    type="file"
+                    accept="image/*"
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        if (file.size > 5 * 1024 * 1024) {
+                          alert('Image file size should be less than 5MB');
+                          return;
+                        }
+                        const reader = new FileReader();
+                        reader.onloadend = () => {
+                          setPrescriptionLogoImage(reader.result as string);
+                        };
+                        reader.readAsDataURL(file);
+                      }
+                    }}
+                    className="w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-lg file:border-0 file:text-xs file:font-bold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100 cursor-pointer"
+                  />
+                </div>
+
+                {prescriptionLogoImage ? (
+                  <div className="relative border border-slate-200 rounded-lg overflow-hidden bg-white p-2">
+                    <div className="h-32 w-full flex items-center justify-center bg-slate-50 rounded overflow-hidden p-2">
+                      <img
+                        src={prescriptionLogoImage}
+                        alt="Prescription Secondary Logo Preview"
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    </div>
+                    <div className="mt-2 flex justify-between items-center text-xxs">
+                      <span className="text-slate-500 font-medium">Prescription Logo Active</span>
+                      <button
+                        type="button"
+                        onClick={() => setPrescriptionLogoImage('')}
+                        className="text-rose-600 hover:text-rose-800 font-bold flex items-center px-2 py-0.5 bg-rose-50 rounded hover:bg-rose-100 transition"
+                      >
+                        <Trash2 className="w-3 h-3 mr-1" />
+                        Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3 border border-dashed border-slate-300 rounded-lg text-center text-slate-400 text-xxs italic">
+                    No prescription secondary logo uploaded. Header will remain standard.
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
@@ -1610,6 +1683,220 @@ export default function SettingsDesk({
             </button>
           </div>
         </form>
+      )}
+
+      {/* View: Dedicated Prescription Logo & Dual Header Branding Tab */}
+      {activeSettingsTab === 'prescription_logo' && (
+        <div className="space-y-6 max-w-5xl">
+          {/* Header Banner */}
+          <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div className="flex items-center space-x-3">
+              <div className="p-3 bg-rose-50 text-rose-700 rounded-xl border border-rose-100 shrink-0">
+                <FileText className="w-6 h-6" />
+              </div>
+              <div>
+                <h3 className="text-base font-black text-slate-900 font-serif">Prescription Dual Logo & Header Branding</h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Upload and customize your secondary logo / pharmacy emblem to appear on the opposite (right) side of the main Punjab Homeopathic Clinic logo.
+                </p>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleSaveClinicSettings}
+              className="px-5 py-2.5 bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold rounded-xl flex items-center space-x-2 transition shadow-sm self-start sm:self-auto shrink-0"
+            >
+              <Save className="w-4 h-4 text-white" />
+              <span>Save & Apply Logo</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            {/* Upload & Controls Card */}
+            <div className="lg:col-span-5 space-y-4">
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
+                <div className="border-b border-slate-100 pb-2.5 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Upload className="w-4 h-4 text-rose-600" />
+                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">Logo File Upload</h4>
+                  </div>
+                  {prescriptionLogoImage ? (
+                    <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full uppercase border border-emerald-300 flex items-center">
+                      <Check className="w-3 h-3 mr-1 text-emerald-600" /> Logo Attached
+                    </span>
+                  ) : (
+                    <span className="text-[10px] font-extrabold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full uppercase">
+                      No File
+                    </span>
+                  )}
+                </div>
+
+                <div className="space-y-2">
+                  <label className="block text-xs font-bold text-slate-700">
+                    Select Logo File (PNG, SVG, JPEG, WebP)
+                  </label>
+                  <p className="text-[11px] text-slate-500 leading-normal">
+                    Recommended: Transparent PNG or crisp SVG with square or balanced aspect ratio. Max file size: 5MB.
+                  </p>
+                  <div className="mt-2">
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          if (file.size > 5 * 1024 * 1024) {
+                            alert('Image file size should be less than 5MB');
+                            return;
+                          }
+                          const reader = new FileReader();
+                          reader.onloadend = () => {
+                            setPrescriptionLogoImage(reader.result as string);
+                          };
+                          reader.readAsDataURL(file);
+                        }
+                      }}
+                      className="w-full text-xs text-slate-500 file:mr-3 file:py-2.5 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100 cursor-pointer border border-dashed border-slate-300 rounded-xl p-2 bg-slate-50/50"
+                    />
+                  </div>
+                </div>
+
+                {/* Uploaded Thumbnail Card */}
+                {prescriptionLogoImage ? (
+                  <div className="border border-rose-200 rounded-xl p-3 bg-rose-50/30 space-y-2.5">
+                    <div className="h-36 w-full flex items-center justify-center bg-white rounded-lg border border-slate-200 p-2 shadow-2xs">
+                      <img
+                        src={prescriptionLogoImage}
+                        alt="Prescription Secondary Logo Preview"
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] font-bold text-slate-700">Custom Secondary Logo</span>
+                      <button
+                        type="button"
+                        onClick={() => setPrescriptionLogoImage('')}
+                        className="text-rose-700 hover:text-rose-900 font-bold text-xs flex items-center px-2.5 py-1 bg-white border border-rose-200 rounded-lg hover:bg-rose-50 transition"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-1 text-rose-600" />
+                        Remove Logo
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-6 border-2 border-dashed border-slate-200 rounded-xl text-center space-y-2 bg-slate-50">
+                    <Image className="w-8 h-8 text-slate-300 mx-auto" />
+                    <p className="text-xs text-slate-500 font-medium">
+                      No secondary logo uploaded yet.
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      When uploaded, it will automatically render on the right-hand side of all prescription headers opposite the main clinic logo.
+                    </p>
+                  </div>
+                )}
+
+                <div className="pt-2">
+                  <button
+                    type="button"
+                    onClick={handleSaveClinicSettings}
+                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center justify-center space-x-2 transition shadow-xs"
+                  >
+                    <Save className="w-4 h-4 text-white" />
+                    <span>Apply & Save to System</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Live Dual Header Preview */}
+            <div className="lg:col-span-7 space-y-4">
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-3">
+                <div className="border-b border-slate-100 pb-2 flex items-center justify-between">
+                  <div className="flex items-center space-x-2">
+                    <Eye className="w-4 h-4 text-blue-600" />
+                    <h4 className="text-xs font-black text-slate-800 uppercase tracking-wider">
+                      Live Prescription Letterhead Header Preview
+                    </h4>
+                  </div>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase font-mono">A4 Header Simulation</span>
+                </div>
+
+                <p className="text-[11px] text-slate-500">
+                  This is exactly how your official header appears with both logos rendered side-by-side during printouts:
+                </p>
+
+                {/* Simulated Prescription Header */}
+                <div className="p-4 bg-white border-2 border-teal-800 rounded-xl shadow-xs space-y-2">
+                  <div className="flex items-center justify-between border-b-2 border-teal-800 pb-3 gap-2">
+                    {/* Left: PHC Logo */}
+                    <div className="w-16 h-16 shrink-0 flex items-center justify-center p-1 bg-slate-50 rounded-lg border border-slate-200">
+                      <img
+                        src={clinicLogoImage || clinicSettings.ClinicLogoImage || "/nhc_logo.svg"}
+                        alt="Punjab Homeopathic Logo"
+                        className="max-h-full max-w-full object-contain"
+                      />
+                    </div>
+
+                    {/* Center: Clinic Information */}
+                    <div className="text-center flex-1 px-2">
+                      <h1 className="font-serif uppercase tracking-tight text-lg sm:text-xl font-black text-red-900 leading-tight">
+                        {clinicName || clinicSettings.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}
+                      </h1>
+                      <p className="text-[9px] font-extrabold text-rose-700 tracking-widest uppercase mt-0.5">
+                        {logoText || clinicSettings.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.'}
+                      </p>
+                      <p className="text-[10px] font-bold text-slate-800 mt-1">
+                        {doctorName || clinicSettings.DoctorName || 'Dr. Ejaz Ahmad, D.H.M.S (Pak)'} &nbsp;|&nbsp; {signature || clinicSettings.DoctorSignatureText || 'Registered Homeopathic Medical Practitioner No: 48776'}
+                      </p>
+                      <div className="text-[9px] text-slate-600 mt-0.5 flex flex-wrap items-center justify-center gap-x-1.5">
+                        <span>{address || clinicSettings.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</span>
+                        <span>•</span>
+                        <span>📞 {phone || clinicSettings.PhoneMobile || '+92-311-4000608'}</span>
+                      </div>
+                      <p className="text-[9px] font-bold text-teal-950 mt-0.5 uppercase tracking-tight">
+                        Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
+                      </p>
+                    </div>
+
+                    {/* Right: Secondary Prescription Logo */}
+                    <div className="w-16 h-16 shrink-0 flex items-center justify-center p-1 bg-slate-50 rounded-lg border border-slate-200 text-center">
+                      {prescriptionLogoImage ? (
+                        <img
+                          src={prescriptionLogoImage}
+                          alt="Prescription Secondary Logo"
+                          className="max-h-full max-w-full object-contain"
+                        />
+                      ) : (
+                        <div className="text-[9px] text-slate-400 font-bold uppercase flex flex-col items-center justify-center">
+                          <Image className="w-4 h-4 text-slate-300 mb-0.5" />
+                          <span>Logo Space</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-[10px] text-slate-400 text-center italic pt-1">
+                    (Patient demographic details, RX remedies, clinical compounding formulations, and dosage notes follow below)
+                  </div>
+                </div>
+
+                {/* Helpful Guidelines Card */}
+                <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-1.5">
+                  <span className="font-extrabold text-slate-800 text-[11px] block uppercase tracking-wider">
+                    Prescription Header Layout Details:
+                  </span>
+                  <ul className="list-disc pl-4 text-slate-600 text-[11px] space-y-1">
+                    <li><strong>Left Side:</strong> Official Punjab Homeopathic Clinic Emblem.</li>
+                    <li><strong>Center:</strong> Complete Clinic Title, Healing Tagline, Doctor Credentials &amp; Timings.</li>
+                    <li><strong>Right Side:</strong> Your uploaded secondary brand logo / partner certification emblem.</li>
+                    <li>Both logos are automatically scaled to high-resolution vector proportions (80x80px print standard).</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
 
 

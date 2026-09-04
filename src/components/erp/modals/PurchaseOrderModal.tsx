@@ -809,7 +809,7 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                         <th className="p-2.5 w-24 text-center">Required Qty</th>
                         <th className="p-2.5 w-36 text-center">Unit Price (GRN / Rate)</th>
                         <th className="p-2.5 w-28 text-right">Est. Total</th>
-                        <th className="p-2.5 w-12 text-center">Action</th>
+                        <th className="p-2.5 w-20 text-center">Action</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -934,14 +934,30 @@ export const PurchaseOrderModal: React.FC<PurchaseOrderModalProps> = ({
                                 </span>
                               </td>
                               <td className="p-2 text-center">
-                                <button
-                                  type="button"
-                                  onClick={() => handleRemovePoItem(originalIndex)}
-                                  className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
-                                  title="Remove item"
-                                >
-                                  <Trash2 className="w-4 h-4" />
-                                </button>
+                                <div className="flex items-center justify-center space-x-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const matchedInv = inventoryItems.find((inv: any) => 
+                                        (item.ItemID && inv.ItemID === item.ItemID) || 
+                                        (inv.ItemName && inv.ItemName.toLowerCase() === (item.ItemName || '').toLowerCase())
+                                      );
+                                      handleOpenQuickAddMedicineModal(matchedInv || item);
+                                    }}
+                                    className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg transition cursor-pointer"
+                                    title={`Edit master details for "${item.ItemName}"`}
+                                  >
+                                    <Pencil className="w-4 h-4" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRemovePoItem(originalIndex)}
+                                    className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition cursor-pointer"
+                                    title="Remove item"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );

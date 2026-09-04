@@ -1678,7 +1678,7 @@ export default function PatientVisitDeskView(props: any) {
       )}
 
       {/* PATIENT VISIT PRESCRIPTION PRINT MODAL */}
-      {pvPrescriptionModalOpen && selectedPvPatient && (
+      {pvPrescriptionModalOpen && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto print:p-0 print:static print:bg-transparent print:overflow-visible">
           
           {/* Style tag for print paper dimensions */}
@@ -1743,7 +1743,7 @@ export default function PatientVisitDeskView(props: any) {
                   Print Patient Document
                 </h4>
                 <span className="text-[10px] bg-slate-800 text-emerald-300 font-mono px-2 py-0.5 rounded border border-slate-700">
-                  {selectedPvPatient.PatientName} ({selectedPvPatient.PatientID})
+                  {selectedPvPatient?.PatientName || 'Patient'} ({selectedPvPatient?.PatientID || ''})
                 </span>
               </div>
 
@@ -2007,21 +2007,52 @@ export default function PatientVisitDeskView(props: any) {
                       </div>
                     </div>
 
-                    {/* Charges / Remarks Footer */}
-                    <div className="pt-1.5 border-t-2 border-slate-800 flex justify-between items-center text-[10px]">
-                      <div className="font-mono text-[10px]">
-                        <span className="font-bold uppercase text-slate-500 mr-1.5">Charges (PKR):</span>
-                        <span>OPD/App: <strong>{pvOpdFeePkr || 0}</strong></span> &nbsp;|&nbsp; 
-                        <span>Clinical: <strong>{pvClinicalMedicinePkr || 0}</strong></span> &nbsp;|&nbsp; 
-                        <span>File: <strong>{pvFilePkr || 0}</strong></span> &nbsp;|&nbsp; 
-                        <span>Card: <strong>{pvCardPkr || 0}</strong></span> &nbsp;|&nbsp; 
-                        <span className="text-emerald-900 font-bold bg-emerald-100 px-1.5 py-0.2 rounded">
-                          Total: PKR {(Number(pvOpdFeePkr)||0) + (Number(pvClinicalMedicinePkr)||0) + (Number(pvFilePkr)||0) + (Number(pvCardPkr)||0)}
-                        </span>
+                    {/* Prominent Standard-sized Bold Payment Breakdown & Total */}
+                    <div className="bg-slate-50 p-2 sm:p-2.5 rounded-lg border border-slate-300 font-mono">
+                      <div className="flex justify-between items-center flex-wrap gap-1.5">
+                        <div className="flex items-center space-x-2 text-slate-900 font-bold text-[11px] sm:text-xs">
+                          <span className="font-black uppercase text-slate-800 tracking-wider">Charges (PKR):</span>
+                          <span>OPD/App: <strong className="text-slate-950 font-black">{pvOpdFeePkr || 0}</strong></span>
+                          <span className="text-slate-400">|</span>
+                          <span>Clinical: <strong className="text-slate-950 font-black">{pvClinicalMedicinePkr || 0}</strong></span>
+                          <span className="text-slate-400">|</span>
+                          <span>File: <strong className="text-slate-950 font-black">{pvFilePkr || 0}</strong></span>
+                          <span className="text-slate-400">|</span>
+                          <span>Card: <strong className="text-slate-950 font-black">{pvCardPkr || 0}</strong></span>
+                        </div>
+                        <div className="text-xs sm:text-sm font-black text-emerald-950 bg-emerald-100 border border-emerald-400 px-3 py-1 rounded font-mono shadow-2xs">
+                          TOTAL: PKR {(Number(pvOpdFeePkr)||0) + (Number(pvClinicalMedicinePkr)||0) + (Number(pvFilePkr)||0) + (Number(pvCardPkr)||0)}
+                        </div>
                       </div>
-                      <div className="text-slate-500 text-[9px] italic">
-                        Printed via PHC Clinical CMS
+                    </div>
+
+                    {/* Doctor Details, Stamp & Consultant Signature Block */}
+                    <div className="pt-2 border-t-2 border-slate-900 flex justify-between items-end text-xs">
+                      {/* Left: Doctor Details */}
+                      <div className="space-y-0.5 text-left text-red-900 pr-2 font-sans">
+                        <h5 className="font-black text-red-900 text-xs sm:text-sm font-serif leading-tight">
+                          Dr. Ejaz Ahmad <span className="text-[10px] font-sans not-italic font-black text-red-900">(PUNJAB HOMEOPATHIC)</span>
+                        </h5>
+                        <p className="text-red-900 font-bold text-[10.5px] leading-tight">Consultant Homeopathic Medical Practitioner</p>
+                        <p className="text-red-900 font-bold text-[10px] leading-tight">D.H.M.S (Pak)</p>
+                        <p className="text-[10px] text-red-900 font-bold leading-tight">
+                          Registered Homeopathic Medical Practitioner No: <strong className="text-red-900 font-black">48776</strong>
+                        </p>
                       </div>
+
+                      {/* Right: Signature & Stamp Line */}
+                      <div className="text-center w-40 sm:w-48 space-y-1 shrink-0">
+                        <div className="h-9 sm:h-10 border-b-2 border-slate-800 flex items-end justify-center pb-0.5 font-serif italic text-slate-500 font-semibold text-[10px]">
+                          Doctor's Stamp &amp; Signature
+                        </div>
+                        <span className="text-[10px] font-black text-slate-900 block uppercase tracking-wider">Consultant Signature</span>
+                      </div>
+                    </div>
+
+                    {/* Bottom Micro Footer */}
+                    <div className="flex justify-between items-center text-[9px] text-slate-500 font-medium pt-0.5 border-t border-slate-200">
+                      <span>Printed via PHC Clinical CMS</span>
+                      <span>Clinic Timings: Morning 8:30 AM - 12:00 PM | Evening 4:30 - 9:00 PM (Sunday Closed)</span>
                     </div>
 
                   </div>
@@ -2035,7 +2066,7 @@ export default function PatientVisitDeskView(props: any) {
                   <div className="w-full max-w-[210mm] h-[297mm] max-h-[297mm] mx-auto p-5 sm:p-6 print:p-5 border border-slate-300 print:border-none text-slate-900 font-sans space-y-2.5 flex flex-col justify-between bg-white box-border overflow-hidden print:overflow-hidden">
                     
                     <div className="space-y-3">
-                      {/* Top Header Section with PHC Official Logo on Left & Clinic Title */}
+                      {/* Top Header Section with PHC Official Logo on Left, Clinic Title in Center & Prescription Logo on Right */}
                       <div className="flex items-center justify-between border-b-2 border-teal-800 pb-2 gap-2">
                         {/* PHC Official Logo Left */}
                         <div className="flex items-center space-x-2 shrink-0">
@@ -2058,8 +2089,19 @@ export default function PatientVisitDeskView(props: any) {
                           <p className="text-[10px] font-bold text-teal-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
                         </div>
 
-                        {/* Right Spacer for balanced centering */}
-                        <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
+                        {/* Right: Secondary Prescription Logo if uploaded, or balanced spacer */}
+                        <div className="w-20 h-20 shrink-0 flex items-center justify-center">
+                          {(clinicSettings?.PrescriptionLogoImage || clinicSettings?.LetterHeadImage) ? (
+                            <img
+                              src={clinicSettings.PrescriptionLogoImage || clinicSettings.LetterHeadImage}
+                              alt="Prescription Secondary Logo"
+                              style={{ width: '80px', height: '80px', maxHeight: '80px', maxWidth: '80px', objectFit: 'contain' }}
+                              className="w-20 h-20 object-contain"
+                            />
+                          ) : (
+                            <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Patient Details Section */}
@@ -2358,7 +2400,19 @@ export default function PatientVisitDeskView(props: any) {
                           </div>
                           <p className="text-[10px] font-bold text-teal-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
                         </div>
-                        <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
+                        {/* Right: Secondary Prescription Logo if uploaded, or balanced spacer */}
+                        <div className="w-20 h-20 shrink-0 flex items-center justify-center">
+                          {(clinicSettings?.PrescriptionLogoImage || clinicSettings?.LetterHeadImage) ? (
+                            <img
+                              src={clinicSettings.PrescriptionLogoImage || clinicSettings.LetterHeadImage}
+                              alt="Prescription Secondary Logo"
+                              style={{ width: '80px', height: '80px', maxHeight: '80px', maxWidth: '80px', objectFit: 'contain' }}
+                              className="w-20 h-20 object-contain"
+                            />
+                          ) : (
+                            <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
+                          )}
+                        </div>
                       </div>
 
                       {/* Patient Details Section */}
@@ -2535,7 +2589,19 @@ export default function PatientVisitDeskView(props: any) {
                             </div>
                             <p className="text-[10px] font-bold text-purple-950 mt-1 uppercase tracking-tight">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</p>
                           </div>
-                          <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
+                          {/* Right: Secondary Prescription Logo if uploaded, or balanced spacer */}
+                          <div className="w-20 h-20 shrink-0 flex items-center justify-center">
+                            {(clinicSettings?.PrescriptionLogoImage || clinicSettings?.LetterHeadImage) ? (
+                              <img
+                                src={clinicSettings.PrescriptionLogoImage || clinicSettings.LetterHeadImage}
+                                alt="Prescription Secondary Logo"
+                                style={{ width: '80px', height: '80px', maxHeight: '80px', maxWidth: '80px', objectFit: 'contain' }}
+                                className="w-20 h-20 object-contain"
+                              />
+                            ) : (
+                              <div className="w-20 h-20 shrink-0 hidden sm:block"></div>
+                            )}
+                          </div>
                         </div>
 
                         {/* Invoice Title Banner */}

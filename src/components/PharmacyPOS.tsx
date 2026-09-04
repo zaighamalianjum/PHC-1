@@ -54,7 +54,10 @@ import {
   CheckCheck,
   Layers3,
   Smartphone,
-  FlaskConical
+  FlaskConical,
+  AlertOctagon,
+  Ban,
+  Archive
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
@@ -102,6 +105,7 @@ import PharmacyInvoiceLogsTab from './pharmacy/PharmacyInvoiceLogsTab';
 import PharmacyReturnsTab from './pharmacy/PharmacyReturnsTab';
 import PharmacyClinicalLabelsTab from './pharmacy/PharmacyClinicalLabelsTab';
 import PharmacyBulkExpiryModal from './pharmacy/PharmacyBulkExpiryModal';
+import PharmacyDeadItemsModal from './pharmacy/PharmacyDeadItemsModal';
 import { ClinicalMedicinePrescriptionTab } from './pharmacy/ClinicalMedicinePrescriptionTab';
 
 export { isBatchExpired, isBatchNearExpiry, getItemExpirySummary };
@@ -899,9 +903,77 @@ export default function PharmacyPOS({
   // Add Medicine Popup Modal & Grid Filters States
   const [isAddMedicineModalOpen, setIsAddMedicineModalOpen] = useState(false);
   const [isBulkExpiryModalOpen, setIsBulkExpiryModalOpen] = useState(false);
+  const [isDeadItemsModalOpen, setIsDeadItemsModalOpen] = useState(false);
   const [invCategoryFilter, setInvCategoryFilter] = useState<string>('BM Drops');
   const [invLowStockFilter, setInvLowStockFilter] = useState<boolean>(false);
+  const [invDeadFilterScope, setInvDeadFilterScope] = useState<'ALL' | 'ACTIVE_ONLY' | 'DEAD_ONLY'>('ALL');
   const [categorySidebarSearch, setCategorySidebarSearch] = useState<string>('');
+
+  // Handle Single Item Dead Status Update
+  const handleUpdateItemDeadStatus = async (itemId: string, isDead: boolean, reason?: string) => {
+    if (!setItems) return;
+
+    let targetUpdatedItem: Item | null = null;
+    const nowIso = new Date().toISOString();
+
+    setItems(prev => {
+      return prev.map(itm => {
+        if (itm.ItemID !== itemId) return itm;
+        const updated: Item = {
+          ...itm,
+          IsDead: isDead,
+          DeadReason: isDead ? (reason || itm.DeadReason || 'Manual Dead Marking') : '',
+          DeadMarkedDate: isDead ? (itm.DeadMarkedDate || nowIso) : undefined,
+          Status: isDead ? 'Dead' : 'Active'
+        };
+        targetUpdatedItem = updated;
+        return updated;
+      });
+    });
+
+    if (targetUpdatedItem) {
+      syncItemToBackend('UPDATE', targetUpdatedItem);
+    }
+  };
+
+  // Bulk Dead Status Update Handler across multiple items
+  const handleBulkUpdateDeadStatus = async (
+    updates: { itemId: string; isDead: boolean; reason?: string }[]
+  ) => {
+    if (!setItems || updates.length === 0) return;
+
+    const updatesMap = new Map<string, { isDead: boolean; reason?: string }>();
+    updates.forEach(u => updatesMap.set(u.itemId, u));
+
+    const updatedItemsList: Item[] = [];
+    const nowIso = new Date().toISOString();
+
+    setItems(prev => {
+      return prev.map(itm => {
+        const up = updatesMap.get(itm.ItemID);
+        if (!up) return itm;
+
+        const updated: Item = {
+          ...itm,
+          IsDead: up.isDead,
+          DeadReason: up.isDead ? (up.reason || itm.DeadReason || 'Manual Dead Marking') : '',
+          DeadMarkedDate: up.isDead ? (itm.DeadMarkedDate || nowIso) : undefined,
+          Status: up.isDead ? 'Dead' : 'Active'
+        };
+
+        updatedItemsList.push(updated);
+        return updated;
+      });
+    });
+
+    // Synchronize items with backend
+    for (const updatedItem of updatedItemsList) {
+      syncItemToBackend('UPDATE', updatedItem);
+    }
+
+    setInvSuccessMsg(`✅ Dead status updated for ${updates.length} medicines!`);
+    setTimeout(() => setInvSuccessMsg(''), 5000);
+  };
 
   // Bulk Expiry Date Update Handler across multiple items
   const handleBulkUpdateExpiry = async (
@@ -3950,6 +4022,19 @@ export default function PharmacyPOS({
               <div className="flex items-center space-x-2 shrink-0 self-end md:self-auto">
                 <button
                   type="button"
+                  onClick={() => setIsDeadItemsModalOpen(true)}
+                  className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded-xl flex items-center transition cursor-pointer font-bold text-xs shadow-sm"
+                  title="Open Dead Items & Obsolete Inventory Grid-view Popup"
+                >
+                  <AlertOctagon className="w-4 h-4 mr-1.5 text-rose-300" />
+                  <span>Dead Items</span>
+                  <span className="ml-1.5 px-1.5 py-0.2 bg-rose-900 text-rose-100 text-[10px] font-mono font-black rounded-full border border-rose-600">
+                    {items.filter(i => Boolean(i.IsDead || i.Status === 'Dead' || i.Status === 'DEAD')).length}
+                  </span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => setIsBulkExpiryModalOpen(true)}
                   className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl flex items-center transition cursor-pointer font-bold text-xs shadow-sm"
                   title="Bulk Update Medicine Expiry Dates (Month-Year)"
@@ -4055,6 +4140,55 @@ export default function PharmacyPOS({
                     </button>
                   </div>
 
+                  {/* Dead Status Filter Scope */}
+                  <div className="flex items-center space-x-1 bg-slate-800 p-0.5 rounded-lg border border-slate-700">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInvDeadFilterScope('ALL');
+                        setInvCurrentPage(1);
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer ${
+                        invDeadFilterScope === 'ALL'
+                          ? 'bg-indigo-600 text-white'
+                          : 'text-slate-300 hover:text-white'
+                      }`}
+                    >
+                      All
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInvDeadFilterScope('ACTIVE_ONLY');
+                        setInvCurrentPage(1);
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer ${
+                        invDeadFilterScope === 'ACTIVE_ONLY'
+                          ? 'bg-emerald-600 text-white'
+                          : 'text-emerald-300 hover:text-white hover:bg-emerald-950/40'
+                      }`}
+                    >
+                      Active
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setInvDeadFilterScope('DEAD_ONLY');
+                        setInvCurrentPage(1);
+                      }}
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
+                        invDeadFilterScope === 'DEAD_ONLY'
+                          ? 'bg-rose-600 text-white'
+                          : 'text-rose-300 hover:text-white hover:bg-rose-950/40'
+                      }`}
+                    >
+                      <span>💀 Dead</span>
+                      <span className="px-1 py-0.2 bg-rose-800 text-white rounded text-[9px] font-mono">
+                        {items.filter(i => Boolean(i.IsDead || i.Status === 'Dead' || i.Status === 'DEAD')).length}
+                      </span>
+                    </button>
+                  </div>
+
                   <button
                     type="button"
                     onClick={() => {
@@ -4103,6 +4237,16 @@ export default function PharmacyPOS({
 
                   <button
                     type="button"
+                    onClick={() => setIsDeadItemsModalOpen(true)}
+                    className="px-3 py-1.5 bg-rose-700 hover:bg-rose-600 text-white border border-rose-600 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
+                    title="Open Dead Items Grid-view Popup & Manager"
+                  >
+                    <AlertOctagon className="w-3.5 h-3.5 mr-1.5 text-rose-300" />
+                    <span>Dead Items</span>
+                  </button>
+
+                  <button
+                    type="button"
                     onClick={() => setIsBulkExpiryModalOpen(true)}
                     className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white border border-amber-500 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
                     title="Open Bulk Expiry Date Updater for medicines"
@@ -4121,6 +4265,14 @@ export default function PharmacyPOS({
                           if (invExpiryFilterScope === 'EXPIRED' && expSum.status !== 'EXPIRED' && expSum.status !== 'PARTIAL_EXPIRED') return false;
                           if (invExpiryFilterScope === 'NEAR_EXPIRY' && expSum.status !== 'NEAR_EXPIRY') return false;
                           if (invExpiryFilterScope === 'ACTIVE' && expSum.status !== 'ACTIVE') return false;
+                        }
+                        if (invDeadFilterScope === 'ACTIVE_ONLY') {
+                          const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+                          if (isDead) return false;
+                        }
+                        if (invDeadFilterScope === 'DEAD_ONLY') {
+                          const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+                          if (!isDead) return false;
                         }
                         if (invCategoryFilter !== 'ALL') {
                           if (invCategoryFilter === 'C') {
@@ -4146,13 +4298,14 @@ export default function PharmacyPOS({
                         return true;
                       });
 
-                      const headers = ["S.No", "Item ID", "Medicine Name", "Category/Unit", "Type", "Current Stock", "Min Threshold", "Reorder Qty", "Unit Cost (Rs)", "Retail Price (Rs)", "Batch No", "Exp Date", "Batches Count"];
+                      const headers = ["S.No", "Item ID", "Medicine Name", "Category/Unit", "Type", "Status", "Current Stock", "Min Threshold", "Reorder Qty", "Unit Cost (Rs)", "Retail Price (Rs)", "Batch No", "Exp Date", "Batches Count", "Dead Reason"];
                       const rows = processedForExport.map((itm, idx) => [
                         idx + 1,
                         `"${itm.ItemID.replace(/"/g, '""')}"`,
                         `"${itm.ItemName.replace(/"/g, '""')}"`,
                         `"${(itm.Unit || 'Tab').replace(/"/g, '""')}"`,
                         itm.MedicineType === 'C' ? 'Clinical' : 'Patent',
+                        (itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD') ? 'Dead' : 'Active',
                         itm.CStock,
                         (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1,
                         itm.ReorderQty || 0,
@@ -4160,7 +4313,8 @@ export default function PharmacyPOS({
                         itm.Price,
                         `"${(itm.BatchNo || '').replace(/"/g, '""')}"`,
                         `"${(itm.ExpDate || '').replace(/"/g, '""')}"`,
-                        Array.isArray(itm.Batches) ? itm.Batches.length : (itm.ExpDate ? 1 : 0)
+                        Array.isArray(itm.Batches) ? itm.Batches.length : (itm.ExpDate ? 1 : 0),
+                        `"${(itm.DeadReason || '').replace(/"/g, '""')}"`
                       ]);
                       const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
                       const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
@@ -4203,6 +4357,14 @@ export default function PharmacyPOS({
                     if (invExpiryFilterScope === 'EXPIRED' && expSum.status !== 'EXPIRED' && expSum.status !== 'PARTIAL_EXPIRED') return false;
                     if (invExpiryFilterScope === 'NEAR_EXPIRY' && expSum.status !== 'NEAR_EXPIRY') return false;
                     if (invExpiryFilterScope === 'ACTIVE' && expSum.status !== 'ACTIVE') return false;
+                  }
+                  if (invDeadFilterScope === 'ACTIVE_ONLY') {
+                    const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+                    if (isDead) return false;
+                  }
+                  if (invDeadFilterScope === 'DEAD_ONLY') {
+                    const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+                    if (!isDead) return false;
                   }
                   if (invCategoryFilter !== 'ALL') {
                     if (invCategoryFilter === 'C') {
@@ -4370,6 +4532,14 @@ export default function PharmacyPOS({
                                       }`}>
                                         {isClinical ? 'Clinical' : 'Patent'}
                                       </span>
+                                      {(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD') && (
+                                        <span 
+                                          className="px-1.5 py-0.2 bg-rose-100 text-rose-900 border border-rose-300 rounded font-black uppercase text-[8px] flex items-center space-x-0.5"
+                                          title={itm.DeadReason ? `Dead Item: ${itm.DeadReason}` : 'Dead Item'}
+                                        >
+                                          <span>💀 Dead Item</span>
+                                        </span>
+                                      )}
                                       {isLowStock && (
                                         <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded font-black uppercase text-[8px] animate-pulse">
                                           Low Stock
@@ -4386,6 +4556,21 @@ export default function PharmacyPOS({
 
                                 {/* Quick Action Icons on Top Right */}
                                 <div className="flex items-center space-x-1 shrink-0 bg-slate-50 p-1 rounded-lg border border-slate-200">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+                                      handleUpdateItemDeadStatus(itm.ItemID, !isDead);
+                                    }}
+                                    className={`p-1.5 rounded transition cursor-pointer ${
+                                      (itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD')
+                                        ? 'text-rose-600 bg-rose-100 hover:bg-rose-200'
+                                        : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                                    }`}
+                                    title={(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD') ? "Marked as Dead Item (Click to restore Active)" : "Click to mark as Dead Item"}
+                                  >
+                                    <AlertOctagon className="w-4 h-4" />
+                                  </button>
                                   <button
                                     type="button"
                                     onClick={() => handleOpenBatchManager(itm)}
@@ -4591,6 +4776,16 @@ export default function PharmacyPOS({
                                     <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
                                       <span className="text-xs">{itm.ItemName}</span>
                                       
+                                      {/* Dead Item Badge */}
+                                      {(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD') && (
+                                        <span
+                                          className="px-1.5 py-0.2 bg-rose-100 text-rose-900 rounded text-[9px] font-black border border-rose-300 flex items-center space-x-0.5"
+                                          title={itm.DeadReason ? `Dead Item: ${itm.DeadReason}` : 'Marked as Dead Item'}
+                                        >
+                                          <span>💀 DEAD ITEM</span>
+                                        </span>
+                                      )}
+
                                       {/* Batch Count Pill */}
                                       {Array.isArray(itm.Batches) && itm.Batches.length > 0 ? (
                                         <button
@@ -4827,6 +5022,21 @@ export default function PharmacyPOS({
                                   {/* Actions */}
                                   <td className="px-2 py-1 text-center">
                                     <div className="flex justify-center items-center space-x-1">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+                                          handleUpdateItemDeadStatus(itm.ItemID, !isDead);
+                                        }}
+                                        className={`p-1 rounded transition cursor-pointer ${
+                                          (itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD')
+                                            ? 'text-rose-600 bg-rose-100 hover:bg-rose-200'
+                                            : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
+                                        }`}
+                                        title={(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD') ? "Marked as Dead Item (Click to mark Active)" : "Click to mark as Dead Item"}
+                                      >
+                                        <AlertOctagon className="w-3.5 h-3.5" />
+                                      </button>
                                       <button
                                         type="button"
                                         onClick={() => handleOpenBatchManager(itm)}
@@ -5266,6 +5476,16 @@ export default function PharmacyPOS({
         items={items}
         categories={categories}
         onBulkUpdateExpiry={handleBulkUpdateExpiry}
+      />
+
+      {/* Dead Items & Obsolete Inventory Manager Modal */}
+      <PharmacyDeadItemsModal
+        isOpen={isDeadItemsModalOpen}
+        onClose={() => setIsDeadItemsModalOpen(false)}
+        items={items}
+        categories={categories}
+        onUpdateItemDeadStatus={handleUpdateItemDeadStatus}
+        onBulkUpdateDeadStatus={handleBulkUpdateDeadStatus}
       />
     </div>
   );

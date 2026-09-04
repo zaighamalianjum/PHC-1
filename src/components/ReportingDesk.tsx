@@ -2762,6 +2762,57 @@ export default function ReportingDesk({
           </tfoot>
         </table>
       `;
+    } else if (activeReport === 'purchase_orders') {
+      tableHtml = `
+        <table class="report-table">
+          <thead>
+            <tr>
+              <th>PO ID</th>
+              <th>Supplier / Vendor</th>
+              <th style="text-align: center">Order Date</th>
+              <th style="text-align: center">Expected Delivery</th>
+              <th style="text-align: center">Items Count</th>
+              <th style="text-align: right">Total Amount (Rs.)</th>
+              <th style="text-align: center">PO Status</th>
+              <th style="text-align: center">GRN Receipt</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${poData.map(p => `
+              <tr>
+                <td>
+                  <b>${p.POID}</b>
+                  <span class="badge ${p.PaymentMethod === 'Cash' || (p as any).PaymentTerms === 'Cash' ? 'badge-green' : 'badge-indigo'}" style="margin-left: 4px; font-size: 8px;">
+                    ${p.PaymentMethod === 'Cash' || (p as any).PaymentTerms === 'Cash' ? 'CASH' : 'CREDIT'}
+                  </span>
+                </td>
+                <td><b>${p.VendorName}</b></td>
+                <td style="text-align: center">${p.OrderDate}</td>
+                <td style="text-align: center">${p.ExpectedDeliveryDate || 'Immediate'}</td>
+                <td style="text-align: center; font-weight: 700;">${p.Items?.length || 0}</td>
+                <td style="text-align: right; font-weight: 900; color: #0f172a;">Rs. ${(p.TotalAmount || 0).toLocaleString()}</td>
+                <td style="text-align: center">
+                  <span class="badge ${p.Status === 'Received' ? 'badge-green' : p.Status === 'Partially Received' ? 'badge-amber' : 'badge-indigo'}">
+                    ${p.Status || 'Pending'}
+                  </span>
+                </td>
+                <td style="text-align: center">
+                  ${p.linkedGrn ? `<span class="badge badge-green">GRN #${p.linkedGrn.GRNID}</span>` : `<span class="badge badge-amber">Pending GRN</span>`}
+                </td>
+              </tr>
+            `).join('')}
+          </tbody>
+          <tfoot>
+            <tr style="background: #f1f5f9; font-weight: bold;">
+              <td colspan="5" style="text-align: right">TOTAL PURCHASE ORDERS VALUE:</td>
+              <td style="text-align: right; color: #4338ca; font-size: 13px; font-weight: 900;">Rs. ${poSummary.totalPoAmount.toLocaleString()}</td>
+              <td colspan="2" style="text-align: center; font-size: 10px; color: #64748b;">
+                ${poSummary.receivedCount} Received / ${poSummary.pendingCount} Pending
+              </td>
+            </tr>
+          </tfoot>
+        </table>
+      `;
     } else if (activeReport === 'current_stock') {
       tableHtml = `
         <table class="report-table">
@@ -3517,8 +3568,8 @@ export default function ReportingDesk({
 
           <!-- Official Report Banner & Meta Details -->
           <div class="report-banner">
-            <span class="report-banner-title">OFFICIAL CLINIC & FINANCIAL AUDIT STATEMENT</span>
-            <span class="report-banner-ref">REF: PHC-RPT-${Date.now().toString().slice(-6)}</span>
+            <span class="report-banner-title">OFFICIAL FINANCIAL & PROCUREMENT AUDIT STATEMENT</span>
+            <span class="report-banner-ref">REF: RPT-${Date.now().toString().slice(-6)}</span>
           </div>
 
           <div class="meta-grid">
@@ -4323,7 +4374,7 @@ export default function ReportingDesk({
               OFFICIAL FINANCIAL AUDIT REPORT
             </span>
             <p className="text-[10px] text-slate-500 font-mono font-bold mt-1">
-              REF: PHC-RPT-{Date.now().toString().slice(-6)}
+              REF: RPT-{Date.now().toString().slice(-6)}
             </p>
             <p className="text-[10px] text-slate-600 font-bold mt-0.5">
               Period: {startDate} to {endDate}

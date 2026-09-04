@@ -1,5 +1,5 @@
-import React from 'react';
-import { Building2, X, Pencil, Save, RefreshCw, PhoneCall, Lock } from 'lucide-react';
+import React, { useRef } from 'react';
+import { Building2, X, Pencil, Save, RefreshCw, PhoneCall, Lock, Image as ImageIcon, Upload, Trash2 } from 'lucide-react';
 import { ErpVendor } from '../../../types';
 
 interface RegisterEditVendorModalProps {
@@ -27,7 +27,43 @@ export const RegisterEditVendorModal: React.FC<RegisterEditVendorModalProps> = (
   vendors,
   handleOpenEditVendor,
 }) => {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   if (!showVendorModal) return null;
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      alert('Logo file size must be less than 2MB');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const base64 = event.target?.result as string;
+      if (base64) {
+        setVendorForm((prev: any) => ({
+          ...prev,
+          LogoUrl: base64,
+          LogoImage: base64
+        }));
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveLogo = () => {
+    setVendorForm((prev: any) => ({
+      ...prev,
+      LogoUrl: '',
+      LogoImage: ''
+    }));
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
   return (
         <div className="fixed inset-0 bg-slate-900/50 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fadeIn">
           <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 space-y-4 max-h-[90vh] overflow-y-auto">
@@ -179,6 +215,66 @@ export const RegisterEditVendorModal: React.FC<RegisterEditVendorModalProps> = (
                   placeholder="e.g. Plot 14-B, Industrial Area, Kot Lakhpat, Lahore"
                   className="w-full mt-1 p-2.5 border border-slate-200 bg-white rounded-xl text-xs text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
                 />
+              </div>
+
+              {/* Vendor Company Logo Upload Section */}
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide flex items-center space-x-1.5">
+                    <ImageIcon className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>Vendor / Company Logo (Shows on Official PO Header)</span>
+                  </label>
+                  <span className="text-[10px] text-slate-400 font-medium">PNG, JPG or SVG (Max 2MB)</span>
+                </div>
+
+                <div className="flex items-center space-x-3">
+                  <div className="w-14 h-14 rounded-xl border border-slate-200 bg-white flex items-center justify-center p-1.5 overflow-hidden shrink-0 shadow-2xs">
+                    {(vendorForm.LogoUrl || vendorForm.LogoImage) ? (
+                      <img
+                        src={vendorForm.LogoUrl || vendorForm.LogoImage}
+                        alt="Vendor Logo"
+                        className="w-full h-full object-contain"
+                      />
+                    ) : (
+                      <Building2 className="w-6 h-6 text-slate-300" />
+                    )}
+                  </div>
+
+                  <div className="flex-1 space-y-1">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      accept="image/*"
+                      onChange={handleLogoUpload}
+                      className="hidden"
+                      id="vendor-logo-file-input"
+                    />
+                    <div className="flex items-center space-x-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-lg text-xs font-bold transition flex items-center space-x-1.5 cursor-pointer shadow-2xs"
+                      >
+                        <Upload className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>{(vendorForm.LogoUrl || vendorForm.LogoImage) ? 'Change Logo' : 'Upload Company Logo'}</span>
+                      </button>
+                      {(vendorForm.LogoUrl || vendorForm.LogoImage) && (
+                        <button
+                          type="button"
+                          onClick={handleRemoveLogo}
+                          className="px-2.5 py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 border border-rose-200 rounded-lg text-xs font-bold transition flex items-center space-x-1 cursor-pointer"
+                          title="Remove logo"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Remove</span>
+                        </button>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-slate-500">
+                      When printed, this logo will appear on the top right of the Purchase Order beside Punjab Homeopathic's official emblem.
+                    </p>
+                  </div>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
