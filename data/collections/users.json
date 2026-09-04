@@ -11,11 +11,24 @@
   {
     "UserID": "USR-002",
     "LoginName": "doctor",
-    "FullName": "Dr. Amna Malik",
+    "FullName": "Dr. Fatima Noor",
     "PasswordHash": "doctor123",
     "Role": "Doctor",
     "AssignedShift": 1,
-    "_id": "5ev8nnzw7"
+    "_id": "5ev8nnzw7",
+    "Permissions": {
+      "canViewPatientDesk": true,
+      "canViewEMRDesk": true,
+      "canViewPharmacyPOS": false,
+      "canViewAccountingDesk": false,
+      "canViewReportingDesk": false,
+      "canViewUploadingDesk": false,
+      "canViewSettingsDesk": false,
+      "canViewQueryHandlerDesk": false,
+      "canViewNhcHistoryDesk": true,
+      "canViewErpDesk": false
+    },
+    "AccessApprovalStatus": "Approved"
   },
   {
     "UserID": "USR-003",
@@ -33,7 +46,12 @@
     "PasswordHash": "rec123",
     "Role": "Receptionist",
     "AssignedShift": 1,
-    "_id": "2phqemfly"
+    "_id": "2phqemfly",
+    "Permissions": {
+      "canViewPatientDesk": true,
+      "canViewPharmacyPOS": false,
+      "canAccessTokenIssue": true
+    }
   },
   {
     "UserID": "USR-005",

@@ -57,7 +57,8 @@ import {
   FlaskConical,
   AlertOctagon,
   Ban,
-  Archive
+  Archive,
+  Package
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
@@ -904,9 +905,10 @@ export default function PharmacyPOS({
   const [isAddMedicineModalOpen, setIsAddMedicineModalOpen] = useState(false);
   const [isBulkExpiryModalOpen, setIsBulkExpiryModalOpen] = useState(false);
   const [isDeadItemsModalOpen, setIsDeadItemsModalOpen] = useState(false);
-  const [invCategoryFilter, setInvCategoryFilter] = useState<string>('BM Drops');
+  const [invCategoryFilter, setInvCategoryFilter] = useState<string>('ALL');
+  const [invStockFilter, setInvStockFilter] = useState<'ALL' | 'IN_STOCK' | 'LOW_STOCK' | 'ZERO_STOCK'>('ALL');
   const [invLowStockFilter, setInvLowStockFilter] = useState<boolean>(false);
-  const [invDeadFilterScope, setInvDeadFilterScope] = useState<'ALL' | 'ACTIVE_ONLY' | 'DEAD_ONLY'>('ALL');
+  const [invDeadFilterScope, setInvDeadFilterScope] = useState<'ALL' | 'ACTIVE_ONLY' | 'DEAD_ONLY'>('ACTIVE_ONLY');
   const [categorySidebarSearch, setCategorySidebarSearch] = useState<string>('');
 
   // Handle Single Item Dead Status Update
@@ -1071,8 +1073,8 @@ export default function PharmacyPOS({
   // Navigation categories memo for Side Navigation Bar of Medicine Categories & PO Required Quantity Manager
   const navCategories = useMemo(() => {
     const defaultList = [
-      { id: 'BM Drops', label: 'BM Drops', isFeatured: true },
       { id: 'ALL', label: 'All Categories' },
+      { id: 'BM Drops', label: 'BM Drops', isFeatured: true },
       { id: 'C', label: 'Clinical Compounding (/C)' },
       { id: 'P', label: 'Patent Medicine (/P)' },
       { id: 'Q D DROPS', label: 'Q D DROPS (Mother Tincture)' },
@@ -1110,10 +1112,99 @@ export default function PharmacyPOS({
       return acc + rq;
     }, 0);
 
-    const lowStockCount = catItems.filter((itm) => itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)).length;
+    const lowStockCount = catItems.filter((itm) => {
+      const stock = Number(itm.CStock ?? (itm as any).Stock ?? 0);
+      const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? Number(itm.MinStock) : 1;
+      return stock <= minStock;
+    }).length;
 
     return { catItemsCount: catItems.length, totalReqQty, lowStockCount };
   }, [items]);
+
+  // Overall Inventory Statistics for Accurate Dynamic Filter Badges
+  const inventoryStats = useMemo(() => {
+    let totalCatalog = items.length;
+    let activeCount = 0;
+    let deadCount = 0;
+
+    let activeInStockCount = 0;
+    let activeLowStockCount = 0;
+    let activeZeroStockCount = 0;
+
+    let allInStockCount = 0;
+    let allLowStockCount = 0;
+    let allZeroStockCount = 0;
+
+    let deadInStockCount = 0;
+    let deadLowStockCount = 0;
+    let deadZeroStockCount = 0;
+
+    items.forEach((itm) => {
+      const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+      const stock = Number(itm.CStock ?? (itm as any).Stock ?? 0);
+      const minThreshold = (itm.MinStock !== undefined && itm.MinStock !== null) ? Number(itm.MinStock) : 1;
+      const isLow = stock <= minThreshold;
+      const isZero = stock <= 0;
+      const isInStock = stock > 0;
+
+      if (isInStock) allInStockCount++;
+      if (isLow) allLowStockCount++;
+      if (isZero) allZeroStockCount++;
+
+      if (isDead) {
+        deadCount++;
+        if (isInStock) deadInStockCount++;
+        if (isLow) deadLowStockCount++;
+        if (isZero) deadZeroStockCount++;
+      } else {
+        activeCount++;
+        if (isInStock) activeInStockCount++;
+        if (isLow) activeLowStockCount++;
+        if (isZero) activeZeroStockCount++;
+      }
+    });
+
+    return {
+      totalCatalog,
+      activeCount,
+      deadCount,
+      activeInStockCount,
+      activeLowStockCount,
+      activeZeroStockCount,
+      allInStockCount,
+      allLowStockCount,
+      allZeroStockCount,
+      deadInStockCount,
+      deadLowStockCount,
+      deadZeroStockCount,
+    };
+  }, [items]);
+
+  // Dynamic counts according to current Dead Status Scope
+  const currentScopeCounts = useMemo(() => {
+    if (invDeadFilterScope === 'ACTIVE_ONLY') {
+      return {
+        total: inventoryStats.activeCount,
+        inStock: inventoryStats.activeInStockCount,
+        lowStock: inventoryStats.activeLowStockCount,
+        zeroStock: inventoryStats.activeZeroStockCount,
+      };
+    } else if (invDeadFilterScope === 'DEAD_ONLY') {
+      return {
+        total: inventoryStats.deadCount,
+        inStock: inventoryStats.deadInStockCount,
+        lowStock: inventoryStats.deadLowStockCount,
+        zeroStock: inventoryStats.deadZeroStockCount,
+      };
+    } else {
+      return {
+        total: inventoryStats.totalCatalog,
+        inStock: inventoryStats.allInStockCount,
+        lowStock: inventoryStats.allLowStockCount,
+        zeroStock: inventoryStats.allZeroStockCount,
+      };
+    }
+  }, [invDeadFilterScope, inventoryStats]);
 
   const handleAddCategory = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -3042,7 +3133,15 @@ export default function PharmacyPOS({
       filteredInvoices.some((inv) => inv.InvoiceNo === d.InvoiceNo)
     );
     const totalUnits = invDetailsForFiltered.reduce((sum, d) => sum + (Number(d.Qty) || 0), 0);
-    const grossAmount = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.GAmount) || 0), 0);
+    const grossAmount = filteredInvoices.reduce((sum, inv) => {
+      const invNet = Number(inv.NetAmount ?? (inv as any).Total ?? 0);
+      const invDisc = Number(inv.Discount || 0);
+      let invGross = Number(inv.GAmount ?? (inv as any).GrossAmount ?? 0);
+      if (invGross <= 0 || (invGross === invNet && invDisc > 0)) {
+        invGross = invNet + invDisc;
+      }
+      return sum + invGross;
+    }, 0);
     const discount = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.Discount) || 0), 0);
     const netAmount = filteredInvoices.reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
 
@@ -4148,13 +4247,17 @@ export default function PharmacyPOS({
                         setInvDeadFilterScope('ALL');
                         setInvCurrentPage(1);
                       }}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer ${
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
                         invDeadFilterScope === 'ALL'
                           ? 'bg-indigo-600 text-white'
                           : 'text-slate-300 hover:text-white'
                       }`}
+                      title="Show entire catalog (Active and Dead items)"
                     >
-                      All
+                      <span>All</span>
+                      <span className="px-1 py-0.2 bg-slate-900/60 text-slate-300 rounded text-[9px] font-mono">
+                        {inventoryStats.totalCatalog}
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -4162,13 +4265,19 @@ export default function PharmacyPOS({
                         setInvDeadFilterScope('ACTIVE_ONLY');
                         setInvCurrentPage(1);
                       }}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer ${
+                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
                         invDeadFilterScope === 'ACTIVE_ONLY'
-                          ? 'bg-emerald-600 text-white'
+                          ? 'bg-emerald-600 text-white shadow-xs'
                           : 'text-emerald-300 hover:text-white hover:bg-emerald-950/40'
                       }`}
+                      title="Show only Active running medicines (Recommended)"
                     >
-                      Active
+                      <span>Active</span>
+                      <span className={`px-1 py-0.2 rounded text-[9px] font-mono ${
+                        invDeadFilterScope === 'ACTIVE_ONLY' ? 'bg-emerald-800 text-white' : 'bg-emerald-950 text-emerald-300'
+                      }`}>
+                        {inventoryStats.activeCount}
+                      </span>
                     </button>
                     <button
                       type="button"
@@ -4178,34 +4287,60 @@ export default function PharmacyPOS({
                       }}
                       className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
                         invDeadFilterScope === 'DEAD_ONLY'
-                          ? 'bg-rose-600 text-white'
+                          ? 'bg-rose-600 text-white shadow-xs'
                           : 'text-rose-300 hover:text-white hover:bg-rose-950/40'
                       }`}
+                      title="Show only Dead/Obsolete medicines"
                     >
                       <span>💀 Dead</span>
-                      <span className="px-1 py-0.2 bg-rose-800 text-white rounded text-[9px] font-mono">
-                        {items.filter(i => Boolean(i.IsDead || i.Status === 'Dead' || i.Status === 'DEAD')).length}
+                      <span className={`px-1 py-0.2 rounded text-[9px] font-mono ${
+                        invDeadFilterScope === 'DEAD_ONLY' ? 'bg-rose-800 text-white' : 'bg-rose-950 text-rose-300'
+                      }`}>
+                        {inventoryStats.deadCount}
                       </span>
                     </button>
+                  </div>
+
+                  {/* Stock Level Selector matching Dead Items Manager */}
+                  <div className="flex items-center space-x-1 bg-slate-800 px-2 py-1 rounded-lg border border-slate-700">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Stock:</span>
+                    <select
+                      value={invStockFilter}
+                      onChange={(e) => {
+                        const val = e.target.value as 'ALL' | 'IN_STOCK' | 'LOW_STOCK' | 'ZERO_STOCK';
+                        setInvStockFilter(val);
+                        setInvLowStockFilter(val === 'LOW_STOCK');
+                        setInvCurrentPage(1);
+                      }}
+                      className="bg-slate-900 text-white text-xs font-bold rounded px-2 py-0.5 border border-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-400 cursor-pointer"
+                      title="Filter medicines by current stock status"
+                    >
+                      <option value="ALL">All Stock Levels ({currentScopeCounts.total})</option>
+                      <option value="IN_STOCK">In Stock (&gt; 0 Qty) ({currentScopeCounts.inStock})</option>
+                      <option value="LOW_STOCK">Low Stock (&le; Min) ({currentScopeCounts.lowStock})</option>
+                      <option value="ZERO_STOCK">Out of Stock (0 Qty) ({currentScopeCounts.zeroStock})</option>
+                    </select>
                   </div>
 
                   <button
                     type="button"
                     onClick={() => {
-                      setInvLowStockFilter(!invLowStockFilter);
+                      const next = !(invLowStockFilter || invStockFilter === 'LOW_STOCK');
+                      setInvLowStockFilter(next);
+                      setInvStockFilter(next ? 'LOW_STOCK' : 'ALL');
                       setInvCurrentPage(1);
                     }}
                     className={`px-3 py-1.5 rounded-lg flex items-center transition cursor-pointer font-bold text-xs border ${
-                      invLowStockFilter
+                      (invLowStockFilter || invStockFilter === 'LOW_STOCK')
                         ? 'bg-rose-600 text-white border-rose-500 shadow-xs ring-2 ring-rose-400'
                         : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
                     }`}
                     title="Toggle filter to display only low stock items"
                   >
                     <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-rose-400 shrink-0" />
-                    <span>Low Stock Only</span>
+                    <span>{(invLowStockFilter || invStockFilter === 'LOW_STOCK') ? 'Low Stock Active' : 'Low Stock Only'}</span>
                     <span className="ml-1.5 px-1.5 py-0.2 bg-rose-500 text-white text-[10px] font-black rounded-full font-mono">
-                      {items.filter(itm => itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)).length}
+                      {currentScopeCounts.lowStock}
                     </span>
                   </button>
 
@@ -4213,17 +4348,17 @@ export default function PharmacyPOS({
                     type="button"
                     onClick={() => handlePrintStockGrid()}
                     className={`px-3 py-1.5 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs border ${
-                      invLowStockFilter
+                      (invLowStockFilter || invStockFilter === 'LOW_STOCK')
                         ? 'bg-rose-700 hover:bg-rose-600 text-white border-rose-600 ring-2 ring-rose-400/50'
                         : 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500'
                     }`}
-                    title={invLowStockFilter ? "Print Low Stock Items List on A4 Paper" : "Print Filtered Stock Grid on A4 Paper"}
+                    title={(invLowStockFilter || invStockFilter === 'LOW_STOCK') ? "Print Low Stock Items List on A4 Paper" : "Print Filtered Stock Grid on A4 Paper"}
                   >
                     <Printer className="w-3.5 h-3.5 mr-1.5" />
-                    <span>{invLowStockFilter ? 'Print Low Stock (A4)' : 'Print Stock Report (A4)'}</span>
+                    <span>{(invLowStockFilter || invStockFilter === 'LOW_STOCK') ? 'Print Low Stock (A4)' : 'Print Stock Report (A4)'}</span>
                   </button>
 
-                  {!invLowStockFilter && (
+                  {!(invLowStockFilter || invStockFilter === 'LOW_STOCK') && (
                     <button
                       type="button"
                       onClick={() => handlePrintStockGrid(true)}
@@ -4259,7 +4394,14 @@ export default function PharmacyPOS({
                     type="button"
                     onClick={() => {
                       const processedForExport = items.filter((itm) => {
-                        if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
+                        const stock = Number(itm.CStock ?? (itm as any).Stock ?? 0);
+                        const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? Number(itm.MinStock) : 1;
+
+                        if (invStockFilter === 'IN_STOCK' && stock <= 0) return false;
+                        if (invStockFilter === 'ZERO_STOCK' && stock > 0) return false;
+                        if (invStockFilter === 'LOW_STOCK' && stock > minStock) return false;
+                        if (invLowStockFilter && stock > minStock) return false;
+
                         if (invExpiryFilterScope !== 'ALL') {
                           const expSum = getItemExpirySummary(itm);
                           if (invExpiryFilterScope === 'EXPIRED' && expSum.status !== 'EXPIRED' && expSum.status !== 'PARTIAL_EXPIRED') return false;
@@ -4306,7 +4448,7 @@ export default function PharmacyPOS({
                         `"${(itm.Unit || 'Tab').replace(/"/g, '""')}"`,
                         itm.MedicineType === 'C' ? 'Clinical' : 'Patent',
                         (itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD') ? 'Dead' : 'Active',
-                        itm.CStock,
+                        Number(itm.CStock ?? (itm as any).Stock ?? 0),
                         (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1,
                         itm.ReorderQty || 0,
                         itm.PurchasePrice,
@@ -4351,7 +4493,14 @@ export default function PharmacyPOS({
               {/* Excel Spreadsheet Table Container */}
               {(() => {
                 const processedItems = items.filter((itm) => {
-                  if (invLowStockFilter && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
+                  const stock = Number(itm.CStock ?? (itm as any).Stock ?? 0);
+                  const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? Number(itm.MinStock) : 1;
+
+                  if (invStockFilter === 'IN_STOCK' && stock <= 0) return false;
+                  if (invStockFilter === 'ZERO_STOCK' && stock > 0) return false;
+                  if (invStockFilter === 'LOW_STOCK' && stock > minStock) return false;
+                  if (invLowStockFilter && stock > minStock) return false;
+
                   if (invExpiryFilterScope !== 'ALL') {
                     const expSum = getItemExpirySummary(itm);
                     if (invExpiryFilterScope === 'EXPIRED' && expSum.status !== 'EXPIRED' && expSum.status !== 'PARTIAL_EXPIRED') return false;
@@ -4391,8 +4540,8 @@ export default function PharmacyPOS({
                 });
 
                 processedItems.sort((a, b) => {
-                  let valA: any = a[invSortField];
-                  let valB: any = b[invSortField];
+                  let valA: any = invSortField === 'CStock' ? Number(a.CStock ?? (a as any).Stock ?? 0) : a[invSortField];
+                  let valB: any = invSortField === 'CStock' ? Number(b.CStock ?? (b as any).Stock ?? 0) : b[invSortField];
                   if (valA === undefined || valA === null) valA = '';
                   if (valB === undefined || valB === null) valB = '';
                   if (typeof valA === 'string') valA = valA.toLowerCase();
@@ -4403,8 +4552,8 @@ export default function PharmacyPOS({
                   return 0;
                 });
 
-                const totalValuationCost = processedItems.reduce((acc, itm) => acc + (itm.PurchasePrice * itm.CStock), 0);
-                const totalValuationRetail = processedItems.reduce((acc, itm) => acc + (itm.Price * itm.CStock), 0);
+                const totalValuationCost = processedItems.reduce((acc, itm) => acc + (Number(itm.PurchasePrice || 0) * Number(itm.CStock ?? (itm as any).Stock ?? 0)), 0);
+                const totalValuationRetail = processedItems.reduce((acc, itm) => acc + (Number(itm.Price || 0) * Number(itm.CStock ?? (itm as any).Stock ?? 0)), 0);
 
                 const toggleSort = (field: typeof invSortField) => {
                   if (invSortField === field) {
@@ -4445,6 +4594,51 @@ export default function PharmacyPOS({
                 return (
                   <div className="flex flex-col space-y-3">
                     
+                    {/* Active Filter Notification Alert Banner */}
+                    {(invLowStockFilter || invStockFilter === 'LOW_STOCK') && (
+                      <div className="flex flex-wrap items-center justify-between p-3 px-4 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 text-xs shadow-xs">
+                        <div className="flex items-center space-x-2">
+                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                          <span>
+                            <strong>Low Stock Filter Active:</strong> Displaying only <strong>{processedItems.length}</strong> low stock medicine{processedItems.length === 1 ? '' : 's'} (Current Stock &le; Min Threshold).
+                            {currentScopeCounts.inStock > processedItems.length && (
+                              <span className="ml-1 text-rose-700">
+                                ({currentScopeCounts.inStock - processedItems.length} active in-stock medicines are currently hidden by this filter).
+                              </span>
+                            )}
+                          </span>
+                        </div>
+                        <div className="flex items-center space-x-2 mt-2 sm:mt-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInvLowStockFilter(false);
+                              setInvStockFilter('ALL');
+                              setInvCurrentPage(1);
+                            }}
+                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer flex items-center space-x-1"
+                          >
+                            <span>Show All Active In-Stock ({currentScopeCounts.inStock} Items)</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInvLowStockFilter(false);
+                              setInvStockFilter('ALL');
+                              setInvCategoryFilter('ALL');
+                              setInvSearchQuery('');
+                              setInvExpiryFilterScope('ALL');
+                              setInvDeadFilterScope('ACTIVE_ONLY');
+                              setInvCurrentPage(1);
+                            }}
+                            className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                          >
+                            Clear All Filters
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     {/* Top Quick Pagination & Stats Bar */}
                     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 py-0.5 text-xs text-slate-700">
                       <div className="flex items-center space-x-2 flex-wrap">
@@ -4490,14 +4684,33 @@ export default function PharmacyPOS({
                     {/* Mobile View: High-Density Card Rows (Shown on < md screens) */}
                     <div className="block md:hidden space-y-2.5">
                       {paginatedItems.length === 0 ? (
-                        <div className="p-8 text-center text-slate-400 font-bold bg-white rounded-xl border border-slate-200 text-xs">
-                          {invLowStockFilter 
-                            ? 'All inventory medicines are currently above reorder levels! No low stock items found.'
-                            : 'No medicines match the search or category filter.'}
+                        <div className="p-8 text-center text-slate-400 font-bold bg-white rounded-xl border border-slate-200 text-xs space-y-3">
+                          <Package className="w-8 h-8 text-slate-300 mx-auto mb-1" />
+                          <p className="text-slate-700 font-bold">
+                            {(invLowStockFilter || invStockFilter === 'LOW_STOCK')
+                              ? 'All inventory medicines are currently above reorder levels! No low stock items found.'
+                              : 'No medicines match the search or category filter.'}
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInvLowStockFilter(false);
+                              setInvStockFilter('ALL');
+                              setInvCategoryFilter('ALL');
+                              setInvSearchQuery('');
+                              setInvExpiryFilterScope('ALL');
+                              setInvCurrentPage(1);
+                            }}
+                            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs inline-block"
+                          >
+                            Show All Active Stock ({inventoryStats.activeInStockCount} Medicines)
+                          </button>
                         </div>
                       ) : (
                         paginatedItems.map((itm, idx) => {
-                          const isLowStock = itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1);
+                          const itemStock = Number(itm.CStock ?? (itm as any).Stock ?? 0);
+                          const itemMinStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? Number(itm.MinStock) : 1;
+                          const isLowStock = itemStock <= itemMinStock;
                           const isClinical = itm.MedicineType === 'C';
                           const absoluteRowNumber = startIndex + idx + 1;
 
@@ -4613,7 +4826,7 @@ export default function PharmacyPOS({
                                       type="button"
                                       onClick={() => {
                                         if (setItems) {
-                                          const newStock = Math.max(0, itm.CStock - 1);
+                                          const newStock = Math.max(0, itemStock - 1);
                                           const updated = { ...itm, CStock: newStock };
                                           setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
                                           syncItemToBackend('UPDATE', updated);
@@ -4626,7 +4839,7 @@ export default function PharmacyPOS({
                                     <input
                                       type="number"
                                       min="0"
-                                      value={itm.CStock}
+                                      value={itemStock}
                                       onChange={(e) => {
                                         const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
                                         if (setItems) {
@@ -4645,7 +4858,7 @@ export default function PharmacyPOS({
                                       type="button"
                                       onClick={() => {
                                         if (setItems) {
-                                          const newStock = itm.CStock + 1;
+                                          const newStock = itemStock + 1;
                                           const updated = { ...itm, CStock: newStock };
                                           setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
                                           syncItemToBackend('UPDATE', updated);
@@ -4743,14 +4956,37 @@ export default function PharmacyPOS({
                           {paginatedItems.length === 0 ? (
                             <tr>
                               <td colSpan={11} className="px-6 py-12 text-center text-slate-400 font-bold bg-white">
-                                {invLowStockFilter 
-                                  ? 'All inventory medicines are currently above reorder levels! No low stock items found.'
-                                  : 'No medicines match the search or category filter.'}
+                                <div className="flex flex-col items-center justify-center space-y-2">
+                                  <Package className="w-8 h-8 text-slate-300 mb-1" />
+                                  <p className="text-sm font-bold text-slate-700">
+                                    {(invLowStockFilter || invStockFilter === 'LOW_STOCK')
+                                      ? 'All inventory medicines are currently above reorder levels! No low stock items found.'
+                                      : 'No medicines match the search or category filter.'}
+                                  </p>
+                                  <div className="flex items-center space-x-2 pt-2">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setInvLowStockFilter(false);
+                                        setInvStockFilter('ALL');
+                                        setInvCategoryFilter('ALL');
+                                        setInvSearchQuery('');
+                                        setInvExpiryFilterScope('ALL');
+                                        setInvCurrentPage(1);
+                                      }}
+                                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
+                                    >
+                                      Show All Active Stock ({inventoryStats.activeInStockCount} Medicines)
+                                    </button>
+                                  </div>
+                                </div>
                               </td>
                             </tr>
                           ) : (
                             paginatedItems.map((itm, idx) => {
-                              const isLowStock = itm.CStock <= ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1);
+                              const itemStock = Number(itm.CStock ?? (itm as any).Stock ?? 0);
+                              const itemMinStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? Number(itm.MinStock) : 1;
+                              const isLowStock = itemStock <= itemMinStock;
                               const isClinical = itm.MedicineType === 'C';
                               const absoluteRowNumber = startIndex + idx + 1;
 
@@ -4893,7 +5129,7 @@ export default function PharmacyPOS({
                                         type="button"
                                         onClick={() => {
                                           if (setItems) {
-                                            const newStock = Math.max(0, itm.CStock - 1);
+                                            const newStock = Math.max(0, itemStock - 1);
                                             const updated = { ...itm, CStock: newStock };
                                             setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
                                             syncItemToBackend('UPDATE', updated);
@@ -4907,7 +5143,7 @@ export default function PharmacyPOS({
                                       <input
                                         type="number"
                                         min="0"
-                                        value={itm.CStock}
+                                        value={itemStock}
                                         onChange={(e) => {
                                           const val = e.target.value === '' ? 0 : Math.max(0, Number(e.target.value));
                                           if (setItems) {
@@ -4927,7 +5163,7 @@ export default function PharmacyPOS({
                                         type="button"
                                         onClick={() => {
                                           if (setItems) {
-                                            const newStock = itm.CStock + 1;
+                                            const newStock = itemStock + 1;
                                             const updated = { ...itm, CStock: newStock };
                                             setItems(prev => prev.map(i => i.ItemID === itm.ItemID ? updated : i));
                                             syncItemToBackend('UPDATE', updated);

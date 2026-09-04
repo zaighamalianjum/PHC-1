@@ -107,6 +107,18 @@ export function subscribeToUserSync(onSync: (payload?: UserSyncEventPayload) => 
   };
 }
 
+function stableStringify(obj: any): string {
+  if (obj === null || obj === undefined) return '';
+  if (typeof obj !== 'object') return String(obj);
+  if (Array.isArray(obj)) return JSON.stringify(obj.map(item => typeof item === 'object' ? JSON.parse(stableStringify(item)) : item));
+  const keys = Object.keys(obj).sort();
+  const sorted: Record<string, any> = {};
+  for (const k of keys) {
+    sorted[k] = obj[k];
+  }
+  return JSON.stringify(sorted);
+}
+
 /**
  * Compares two User objects to check if any critical security/permission/identity properties changed.
  */
@@ -121,18 +133,18 @@ export function haveUserPermissionsChanged(u1: User | null | undefined, u2: User
   if (u1.AccessApprovalStatus !== u2.AccessApprovalStatus) return true;
 
   // Compare AllowedUserIDs
-  const a1 = JSON.stringify(u1.AllowedUserIDs || []);
-  const a2 = JSON.stringify(u2.AllowedUserIDs || []);
+  const a1 = stableStringify(u1.AllowedUserIDs || []);
+  const a2 = stableStringify(u2.AllowedUserIDs || []);
   if (a1 !== a2) return true;
 
   // Compare Permissions object
-  const p1 = JSON.stringify(u1.Permissions || {});
-  const p2 = JSON.stringify(u2.Permissions || {});
+  const p1 = stableStringify(u1.Permissions || {});
+  const p2 = stableStringify(u2.Permissions || {});
   if (p1 !== p2) return true;
 
   // Compare UserRights array
-  const r1 = JSON.stringify(u1.UserRights || []);
-  const r2 = JSON.stringify(u2.UserRights || []);
+  const r1 = stableStringify(u1.UserRights || []);
+  const r2 = stableStringify(u2.UserRights || []);
   if (r1 !== r2) return true;
 
   return false;

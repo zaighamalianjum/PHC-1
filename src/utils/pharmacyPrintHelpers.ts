@@ -733,7 +733,15 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
     // Totals
     const totalInvoicesCount = reportInvoices.length;
     const totalUnitsSold = reportDetails.reduce((sum, d) => sum + (Number(d.Qty) || 0), 0);
-    const grossSalesSum = reportInvoices.reduce((sum, inv) => sum + (Number(inv.GAmount) || 0), 0);
+    const grossSalesSum = reportInvoices.reduce((sum, inv) => {
+      const invNet = Number(inv.NetAmount || 0);
+      const invDisc = Number(inv.Discount || 0);
+      let invGross = Number(inv.GAmount || 0);
+      if (invGross <= 0 || (invGross === invNet && invDisc > 0)) {
+        invGross = invNet + invDisc;
+      }
+      return sum + invGross;
+    }, 0);
     const totalDiscountSum = reportInvoices.reduce((sum, inv) => sum + (Number(inv.Discount) || 0), 0);
     const netSalesSum = reportInvoices.reduce((sum, inv) => sum + (Number(inv.NetAmount) || 0), 0);
 
@@ -1120,7 +1128,7 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
                     <td><span style="font-weight: bold; color: ${inv.shift === 1 ? '#c2410c' : '#7e22ce'}">${inv.shift === 1 ? 'Morning (1)' : 'Evening (2)'}</span></td>
                     <td><strong>${patientName}</strong></td>
                     <td class="col-center font-bold">${invItemCount}</td>
-                    <td class="col-right">Rs. ${(inv.GAmount || 0).toLocaleString()}</td>
+                    <td class="col-right">Rs. ${(inv.GAmount && inv.GAmount > (inv.NetAmount || 0) ? inv.GAmount : ((inv.NetAmount || 0) + (inv.Discount || 0))).toLocaleString()}</td>
                     <td class="col-right" style="color: ${inv.Discount ? '#dc2626' : '#64748b'}">${inv.Discount ? `Rs. ${inv.Discount.toLocaleString()}` : '-'}</td>
                     <td class="col-right col-bold" style="color: #047857;">Rs. ${(inv.NetAmount || 0).toLocaleString()}</td>
                   </tr>

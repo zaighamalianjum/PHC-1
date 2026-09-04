@@ -688,10 +688,12 @@ app.post('/api/auth/login', async (req, res) => {
     if (!LoginName || !PasswordHash) {
       return res.status(400).json({ error: 'Username and password are required.' });
     }
-    const user = await db.collection('users').findOne({ 
-      LoginName: LoginName.trim(), 
-      PasswordHash: PasswordHash 
-    });
+    const cleanLogin = LoginName.trim();
+    // Case-insensitive match for username
+    const allUsers = await db.collection('users').find({}).toArray();
+    const user = allUsers.find(u => 
+      u && u.LoginName && u.LoginName.toLowerCase() === cleanLogin.toLowerCase() && u.PasswordHash === PasswordHash
+    );
     if (!user) {
       return res.status(401).json({ error: 'Invalid login username or password.' });
     }
@@ -704,26 +706,56 @@ app.post('/api/auth/login', async (req, res) => {
 // Create/Register profile
 app.post('/api/users', async (req, res) => {
   try {
-    const user = req.body;
+    const user = { ...req.body };
+    delete user._id; // Never overwrite _id
     if (!user.UserID) user.UserID = `USR-${Date.now().toString().slice(-4)}`;
     await db.collection('users').updateOne(
       { UserID: user.UserID },
       { $set: user },
       { upsert: true }
     );
-    res.json({ success: true, message: 'User profile saved.', data: user });
+    const saved = await db.collection('users').findOne({ UserID: user.UserID });
+    res.json({ success: true, message: 'User profile saved.', data: saved || user, user: saved || user });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-// Update profile details
+// Update profile details and permissions
 app.put('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    const updateData = req.body;
-    const result = await db.collection('users').updateOne({ UserID: id }, { $set: updateData });
-    res.json({ success: true, message: 'User profile modified.', result });
+    const updateData = { ...req.body };
+    delete updateData._id; // NEVER modify _id in Mongo
+
+    // Match by UserID, _id, or LoginName
+    const query = {
+      $or: [
+        { UserID: id },
+        { _id: id },
+        { LoginName: id },
+        { LoginName: id.toLowerCase() }
+      ]
+    };
+    
+    let result = await db.collection('users').updateOne(query, { $set: updateData });
+    if (result.matchedCount === 0 && updateData.UserID) {
+      result = await db.collection('users').updateOne(
+        { UserID: updateData.UserID },
+        { $set: updateData },
+        { upsert: true }
+      );
+    }
+
+    const savedUser = await db.collection('users').findOne({
+      $or: [
+        { UserID: updateData.UserID || id },
+        { _id: id },
+        { LoginName: updateData.LoginName || id }
+      ]
+    });
+
+    res.json({ success: true, message: 'User profile modified.', result, user: savedUser });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -733,7 +765,13 @@ app.put('/api/users/:id', async (req, res) => {
 app.delete('/api/users/:id', async (req, res) => {
   try {
     const { id } = req.params;
-    await db.collection('users').deleteOne({ UserID: id });
+    await db.collection('users').deleteOne({
+      $or: [
+        { UserID: id },
+        { _id: id },
+        { LoginName: id }
+      ]
+    });
     res.json({ success: true, message: 'User profile deleted.' });
   } catch (err) {
     res.status(500).json({ error: err.message });

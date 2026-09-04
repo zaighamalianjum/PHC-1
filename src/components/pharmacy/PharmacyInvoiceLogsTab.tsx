@@ -113,14 +113,28 @@ export const PharmacyInvoiceLogsTab: React.FC<PharmacyInvoiceLogsTabProps> = ({
 
     filteredInvoices.forEach((inv) => {
       const details = invoiceDetails.filter((d) => d.InvoiceNo === inv.InvoiceNo);
+      let detailsGross = 0;
       details.forEach((d) => {
         totalUnits += Number(d.Qty || 0);
+        detailsGross += (Number(d.Qty || 0) * Number(d.Price || 0));
       });
-      grossAmount += Number(inv.GrossAmount || inv.NetAmount || 0);
-      discount += Number(inv.Discount || 0);
-      netAmount += Number(inv.NetAmount || 0);
-      if (inv.shift === 1) shift1Net += Number(inv.NetAmount || 0);
-      if (inv.shift === 2) shift2Net += Number(inv.NetAmount || 0);
+
+      const invNet = Number(inv.NetAmount ?? (inv as any).Total ?? 0);
+      const invDisc = Number(inv.Discount || 0);
+      // Accurate gross calculation:
+      // In InvoiceHeader, GAmount is Gross Amount before discount.
+      // If GAmount is missing, 0, or improperly stored equal to NetAmount while Discount > 0,
+      // fallback to detailsGross or (NetAmount + Discount).
+      let invGross = Number(inv.GAmount ?? (inv as any).GrossAmount ?? 0);
+      if (invGross <= 0 || (invGross === invNet && invDisc > 0)) {
+        invGross = detailsGross > 0 ? detailsGross : (invNet + invDisc);
+      }
+
+      grossAmount += invGross;
+      discount += invDisc;
+      netAmount += invNet;
+      if (inv.shift === 1) shift1Net += invNet;
+      if (inv.shift === 2) shift2Net += invNet;
     });
 
     return {
@@ -327,18 +341,24 @@ export const PharmacyInvoiceLogsTab: React.FC<PharmacyInvoiceLogsTabProps> = ({
             <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
               <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Invoices Filtered</span>
               <div className="text-lg font-black text-slate-900 mt-0.5">{periodSalesSummary.totalInvoices} Bills</div>
+              <span className="text-[9.5px] font-medium text-slate-400 block mt-0.5">Dispatched receipts</span>
             </div>
             <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
               <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Medicine Units Sold</span>
               <div className="text-lg font-black text-sky-900 mt-0.5">{periodSalesSummary.totalUnits.toLocaleString()} Units</div>
+              <span className="text-[9.5px] font-medium text-sky-600/70 block mt-0.5">Dispensed items</span>
             </div>
             <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
               <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Gross Sales</span>
-              <div className="text-lg font-black text-slate-700 mt-0.5">Rs. {periodSalesSummary.grossAmount.toLocaleString()}</div>
+              <div className="text-lg font-black text-slate-800 mt-0.5 font-mono">Rs. {periodSalesSummary.grossAmount.toLocaleString()}</div>
+              <span className="text-[9.5px] font-medium text-slate-500 block mt-0.5">Pre-discount subtotal</span>
             </div>
             <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
               <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Total Discounts</span>
-              <div className="text-lg font-black text-rose-600 mt-0.5">- Rs. {periodSalesSummary.discount.toLocaleString()}</div>
+              <div className="text-lg font-black text-rose-600 mt-0.5 font-mono">- Rs. {periodSalesSummary.discount.toLocaleString()}</div>
+              <span className="text-[9.5px] font-medium text-rose-500 block mt-0.5">
+                {periodSalesSummary.grossAmount > 0 ? ((periodSalesSummary.discount / periodSalesSummary.grossAmount) * 100).toFixed(1) : '0'}% conceded
+              </span>
             </div>
             <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl col-span-2 sm:col-span-1">
               <span className="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider block">Net Realized Cash</span>
@@ -420,8 +440,16 @@ export const PharmacyInvoiceLogsTab: React.FC<PharmacyInvoiceLogsTabProps> = ({
                             })}
                           </div>
                         </td>
-                        <td className="py-3 text-right font-mono font-bold text-sm text-slate-900">
-                          Rs. {inv.NetAmount.toLocaleString()}
+                        <td className="py-3 text-right font-mono text-slate-900">
+                          <span className="font-bold text-sm block">Rs. {Number(inv.NetAmount || 0).toLocaleString()}</span>
+                          {Number(inv.Discount || 0) > 0 && (
+                            <span className="text-[10px] text-rose-600 font-medium block">
+                              Disc: -Rs. {Number(inv.Discount).toLocaleString()}
+                              <span className="text-slate-400 font-sans ml-1 text-[9px]">
+                                (Gross: Rs. {Number(inv.GAmount && inv.GAmount > inv.NetAmount ? inv.GAmount : (Number(inv.NetAmount || 0) + Number(inv.Discount || 0))).toLocaleString()})
+                              </span>
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 text-center">
                           <div className="flex items-center justify-center space-x-1">

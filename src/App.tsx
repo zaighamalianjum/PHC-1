@@ -677,7 +677,12 @@ export default function App() {
     // 1. Check custom permissions object if configured on user
     if (currentUser.Permissions) {
       if (menuId === 'patients') return !!currentUser.Permissions.canViewPatientDesk;
-      if (menuId === 'patient_visit') return !!currentUser.Permissions.canViewPatientDesk;
+      if (menuId === 'patient_visit') {
+        if (currentUser.Permissions.canAccessPatientVisitDesk !== undefined) {
+          return !!currentUser.Permissions.canAccessPatientVisitDesk;
+        }
+        return !!currentUser.Permissions.canViewPatientDesk || !!currentUser.Permissions.canViewEMRDesk || currentUser.Role === 'Doctor';
+      }
       if (menuId === 'emr') return !!currentUser.Permissions.canViewEMRDesk;
       if (menuId === 'erp_system') return currentUser.Permissions.canViewErpDesk !== false && (currentUser.Role === 'Accountant' || !!currentUser.Permissions.canViewErpDesk);
       if (menuId === 'pharmacy') return !!currentUser.Permissions.canViewPharmacyPOS;

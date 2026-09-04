@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { BackupProgressModal } from './BackupProgressModal';
 import { MainMenuConfigModal, MainMenuDefinition } from './MainMenuConfigModal';
 import { ThermalPrinterSettingsTab } from './settings/ThermalPrinterSettingsTab';
@@ -17,6 +17,7 @@ import {
   Settings, 
   Lock, 
   Briefcase, 
+  BookOpen,
   MessageSquare, 
   Database, 
   Server, 
@@ -126,65 +127,344 @@ export default function SettingsDesk({
   const [selectedAccessUserId, setSelectedAccessUserId] = useState<string>(usersList[0]?.UserID || 'USR-01');
   const selectedAccessUser = usersList.find(u => u.UserID === selectedAccessUserId) || usersList[0];
 
-  // Default permission template
-  const defaultPermissionTemplate: NonNullable<User['Permissions']> = {
-    canViewDashboard: true,
-    canViewPatientDesk: true,
-    canViewEMRDesk: true,
-    canViewPharmacyPOS: true,
-    canViewAccountingDesk: true,
-    canViewReportingDesk: true,
-    canViewUploadingDesk: true,
-    canViewSettingsDesk: true,
-    canViewQueryHandlerDesk: true,
-    canViewNhcHistoryDesk: true,
-    canViewErpDesk: true,
+  // Helper to generate precise role-based default permissions
+  const getRoleDefaultPermissions = (role: User['Role']): NonNullable<User['Permissions']> => {
+    if (role === 'Administrator') {
+      return {
+        canViewDashboard: true,
+        canViewPatientDesk: true,
+        canViewEMRDesk: true,
+        canViewPharmacyPOS: true,
+        canViewAccountingDesk: true,
+        canViewReportingDesk: true,
+        canViewUploadingDesk: true,
+        canViewSettingsDesk: true,
+        canViewQueryHandlerDesk: true,
+        canViewNhcHistoryDesk: true,
+        canViewErpDesk: true,
+        canAccessWaitingQueue: true,
+        canAccessPatientRegistration: true,
+        canAccessTokenIssue: true,
+        canAccessPatientVisitDesk: true,
+        canAccessGridView: true,
+        canAccessAppointmentsDesk: true,
+        canAccessLargeScreenDisplay: true,
+        canAccessClinicalMedicine: true,
+        canAccessStoreMedicine: true,
+        canAccessSalesReturns: true,
+        canAccessStockManager: true,
+        canAccessInvoiceLogs: true,
+        canAccessMedicineLabels: true,
+        canViewPwaInstall: true,
+        canAccessErpOverview: true,
+        canAccessErpFiscalCalendar: true,
+        canAccessErpCashBook: true,
+        canAccessErpVendors: true,
+        canAccessErpVendorStatement: true,
+        canAccessErpPoGrn: true,
+        canAccessErpLedger: true,
+        canAccessErpHrPayroll: true,
+        canAccessErpExpensesAssets: true,
+        canAccessErpReporting: true,
+        canAddPatient: true,
+        canEditPatient: true,
+        canIssueToken: true,
+        canBookAppointment: true,
+        canCancelAppointment: true,
+        canDeleteToken: true,
+        canCallServeToken: true,
+        canEditStockLevel: true,
+        canPrintPrescription: true,
+        canPrintLabAdvice: true,
+        canPrintVisitSlip: true,
+        canPrintTokenSlip: true,
+        canPrintPOSInvoice: true,
+        canPrintVouchers: true,
+        canPrintFinancialReports: true,
+        canExportCSVExcel: true
+      };
+    }
 
-    canAccessWaitingQueue: true,
-    canAccessPatientRegistration: true,
-    canAccessTokenIssue: true,
-    canAccessPatientVisitDesk: true,
-    canAccessGridView: true,
-    canAccessAppointmentsDesk: true,
-    canAccessLargeScreenDisplay: true,
+    if (role === 'Doctor') {
+      return {
+        canViewDashboard: false,
+        canViewPatientDesk: true,
+        canViewEMRDesk: true,
+        canViewPharmacyPOS: false,
+        canViewAccountingDesk: false,
+        canViewReportingDesk: false,
+        canViewUploadingDesk: false,
+        canViewSettingsDesk: false,
+        canViewQueryHandlerDesk: false,
+        canViewNhcHistoryDesk: true,
+        canViewErpDesk: false,
+        canAccessWaitingQueue: true,
+        canAccessPatientRegistration: false,
+        canAccessTokenIssue: false,
+        canAccessPatientVisitDesk: true,
+        canAccessGridView: true,
+        canAccessAppointmentsDesk: true,
+        canAccessLargeScreenDisplay: true,
+        canAccessClinicalMedicine: false,
+        canAccessStoreMedicine: false,
+        canAccessSalesReturns: false,
+        canAccessStockManager: false,
+        canAccessInvoiceLogs: false,
+        canAccessMedicineLabels: false,
+        canViewPwaInstall: false,
+        canAccessErpOverview: false,
+        canAccessErpFiscalCalendar: false,
+        canAccessErpCashBook: false,
+        canAccessErpVendors: false,
+        canAccessErpVendorStatement: false,
+        canAccessErpPoGrn: false,
+        canAccessErpLedger: false,
+        canAccessErpHrPayroll: false,
+        canAccessErpExpensesAssets: false,
+        canAccessErpReporting: false,
+        canAddPatient: false,
+        canEditPatient: false,
+        canIssueToken: false,
+        canBookAppointment: true,
+        canCancelAppointment: false,
+        canDeleteToken: false,
+        canCallServeToken: true,
+        canEditStockLevel: false,
+        canPrintPrescription: true,
+        canPrintLabAdvice: true,
+        canPrintVisitSlip: true,
+        canPrintTokenSlip: false,
+        canPrintPOSInvoice: false,
+        canPrintVouchers: false,
+        canPrintFinancialReports: false,
+        canExportCSVExcel: true
+      };
+    }
 
-    canAccessClinicalMedicine: true,
-    canAccessStoreMedicine: true,
-    canAccessSalesReturns: true,
-    canAccessStockManager: true,
-    canAccessInvoiceLogs: true,
-    canAccessMedicineLabels: true,
-    canViewPwaInstall: true,
+    if (role === 'Receptionist') {
+      return {
+        canViewDashboard: false,
+        canViewPatientDesk: true,
+        canViewEMRDesk: false,
+        canViewPharmacyPOS: false,
+        canViewAccountingDesk: false,
+        canViewReportingDesk: false,
+        canViewUploadingDesk: false,
+        canViewSettingsDesk: false,
+        canViewQueryHandlerDesk: false,
+        canViewNhcHistoryDesk: false,
+        canViewErpDesk: false,
+        canAccessWaitingQueue: true,
+        canAccessPatientRegistration: true,
+        canAccessTokenIssue: true,
+        canAccessPatientVisitDesk: false,
+        canAccessGridView: false,
+        canAccessAppointmentsDesk: true,
+        canAccessLargeScreenDisplay: true,
+        canAccessClinicalMedicine: false,
+        canAccessStoreMedicine: false,
+        canAccessSalesReturns: false,
+        canAccessStockManager: false,
+        canAccessInvoiceLogs: false,
+        canAccessMedicineLabels: false,
+        canViewPwaInstall: false,
+        canAccessErpOverview: false,
+        canAccessErpFiscalCalendar: false,
+        canAccessErpCashBook: false,
+        canAccessErpVendors: false,
+        canAccessErpVendorStatement: false,
+        canAccessErpPoGrn: false,
+        canAccessErpLedger: false,
+        canAccessErpHrPayroll: false,
+        canAccessErpExpensesAssets: false,
+        canAccessErpReporting: false,
+        canAddPatient: true,
+        canEditPatient: true,
+        canIssueToken: true,
+        canBookAppointment: true,
+        canCancelAppointment: true,
+        canDeleteToken: true,
+        canCallServeToken: true,
+        canEditStockLevel: false,
+        canPrintPrescription: false,
+        canPrintLabAdvice: false,
+        canPrintVisitSlip: false,
+        canPrintTokenSlip: true,
+        canPrintPOSInvoice: false,
+        canPrintVouchers: false,
+        canPrintFinancialReports: false,
+        canExportCSVExcel: false
+      };
+    }
 
-    canAccessErpOverview: true,
-    canAccessErpFiscalCalendar: true,
-    canAccessErpCashBook: true,
-    canAccessErpVendors: true,
-    canAccessErpVendorStatement: true,
-    canAccessErpPoGrn: true,
-    canAccessErpLedger: true,
-    canAccessErpHrPayroll: true,
-    canAccessErpExpensesAssets: true,
-    canAccessErpReporting: true,
+    if (role === 'Pharmacist') {
+      return {
+        canViewDashboard: false,
+        canViewPatientDesk: false,
+        canViewEMRDesk: false,
+        canViewPharmacyPOS: true,
+        canViewAccountingDesk: false,
+        canViewReportingDesk: false,
+        canViewUploadingDesk: false,
+        canViewSettingsDesk: false,
+        canViewQueryHandlerDesk: false,
+        canViewNhcHistoryDesk: false,
+        canViewErpDesk: false,
+        canAccessWaitingQueue: false,
+        canAccessPatientRegistration: false,
+        canAccessTokenIssue: false,
+        canAccessPatientVisitDesk: false,
+        canAccessGridView: false,
+        canAccessAppointmentsDesk: false,
+        canAccessLargeScreenDisplay: false,
+        canAccessClinicalMedicine: true,
+        canAccessStoreMedicine: true,
+        canAccessSalesReturns: true,
+        canAccessStockManager: true,
+        canAccessInvoiceLogs: true,
+        canAccessMedicineLabels: true,
+        canViewPwaInstall: true,
+        canAccessErpOverview: false,
+        canAccessErpFiscalCalendar: false,
+        canAccessErpCashBook: false,
+        canAccessErpVendors: false,
+        canAccessErpVendorStatement: false,
+        canAccessErpPoGrn: false,
+        canAccessErpLedger: false,
+        canAccessErpHrPayroll: false,
+        canAccessErpExpensesAssets: false,
+        canAccessErpReporting: false,
+        canAddPatient: false,
+        canEditPatient: false,
+        canIssueToken: false,
+        canBookAppointment: false,
+        canCancelAppointment: false,
+        canDeleteToken: false,
+        canCallServeToken: false,
+        canEditStockLevel: true,
+        canPrintPrescription: false,
+        canPrintLabAdvice: false,
+        canPrintVisitSlip: false,
+        canPrintTokenSlip: false,
+        canPrintPOSInvoice: true,
+        canPrintVouchers: false,
+        canPrintFinancialReports: true,
+        canExportCSVExcel: true
+      };
+    }
 
-    canAddPatient: true,
-    canEditPatient: true,
-    canIssueToken: true,
-    canBookAppointment: true,
-    canCancelAppointment: true,
-    canDeleteToken: true,
-    canCallServeToken: true,
-    canEditStockLevel: true,
+    if (role === 'Accountant') {
+      return {
+        canViewDashboard: false,
+        canViewPatientDesk: false,
+        canViewEMRDesk: false,
+        canViewPharmacyPOS: false,
+        canViewAccountingDesk: true,
+        canViewReportingDesk: true,
+        canViewUploadingDesk: false,
+        canViewSettingsDesk: false,
+        canViewQueryHandlerDesk: false,
+        canViewNhcHistoryDesk: false,
+        canViewErpDesk: true,
+        canAccessWaitingQueue: false,
+        canAccessPatientRegistration: false,
+        canAccessTokenIssue: false,
+        canAccessPatientVisitDesk: false,
+        canAccessGridView: false,
+        canAccessAppointmentsDesk: false,
+        canAccessLargeScreenDisplay: false,
+        canAccessClinicalMedicine: false,
+        canAccessStoreMedicine: false,
+        canAccessSalesReturns: false,
+        canAccessStockManager: false,
+        canAccessInvoiceLogs: false,
+        canAccessMedicineLabels: false,
+        canViewPwaInstall: false,
+        canAccessErpOverview: true,
+        canAccessErpFiscalCalendar: true,
+        canAccessErpCashBook: true,
+        canAccessErpVendors: true,
+        canAccessErpVendorStatement: true,
+        canAccessErpPoGrn: true,
+        canAccessErpLedger: true,
+        canAccessErpHrPayroll: true,
+        canAccessErpExpensesAssets: true,
+        canAccessErpReporting: true,
+        canAddPatient: false,
+        canEditPatient: false,
+        canIssueToken: false,
+        canBookAppointment: false,
+        canCancelAppointment: false,
+        canDeleteToken: false,
+        canCallServeToken: false,
+        canEditStockLevel: false,
+        canPrintPrescription: false,
+        canPrintLabAdvice: false,
+        canPrintVisitSlip: false,
+        canPrintTokenSlip: false,
+        canPrintPOSInvoice: false,
+        canPrintVouchers: true,
+        canPrintFinancialReports: true,
+        canExportCSVExcel: true
+      };
+    }
 
-    canPrintPrescription: true,
-    canPrintLabAdvice: true,
-    canPrintVisitSlip: true,
-    canPrintTokenSlip: true,
-    canPrintPOSInvoice: true,
-    canPrintVouchers: true,
-    canPrintFinancialReports: true,
-    canExportCSVExcel: true
+    return {
+      canViewDashboard: false,
+      canViewPatientDesk: false,
+      canViewEMRDesk: false,
+      canViewPharmacyPOS: false,
+      canViewAccountingDesk: false,
+      canViewReportingDesk: false,
+      canViewUploadingDesk: false,
+      canViewSettingsDesk: false,
+      canViewQueryHandlerDesk: false,
+      canViewNhcHistoryDesk: false,
+      canViewErpDesk: false,
+      canAccessWaitingQueue: false,
+      canAccessPatientRegistration: false,
+      canAccessTokenIssue: false,
+      canAccessPatientVisitDesk: false,
+      canAccessGridView: false,
+      canAccessAppointmentsDesk: false,
+      canAccessLargeScreenDisplay: false,
+      canAccessClinicalMedicine: false,
+      canAccessStoreMedicine: false,
+      canAccessSalesReturns: false,
+      canAccessStockManager: false,
+      canAccessInvoiceLogs: false,
+      canAccessMedicineLabels: false,
+      canViewPwaInstall: false,
+      canAccessErpOverview: false,
+      canAccessErpFiscalCalendar: false,
+      canAccessErpCashBook: false,
+      canAccessErpVendors: false,
+      canAccessErpVendorStatement: false,
+      canAccessErpPoGrn: false,
+      canAccessErpLedger: false,
+      canAccessErpHrPayroll: false,
+      canAccessErpExpensesAssets: false,
+      canAccessErpReporting: false,
+      canAddPatient: false,
+      canEditPatient: false,
+      canIssueToken: false,
+      canBookAppointment: false,
+      canCancelAppointment: false,
+      canDeleteToken: false,
+      canCallServeToken: false,
+      canEditStockLevel: false,
+      canPrintPrescription: false,
+      canPrintLabAdvice: false,
+      canPrintVisitSlip: false,
+      canPrintTokenSlip: false,
+      canPrintPOSInvoice: false,
+      canPrintVouchers: false,
+      canPrintFinancialReports: false,
+      canExportCSVExcel: false
+    };
   };
+
+  const defaultPermissionTemplate = getRoleDefaultPermissions(selectedAccessUser?.Role || 'Administrator');
 
   // Main Menus with their sub-menus, item privileges, and descriptions definition
   const MAIN_MENU_CONFIGS: MainMenuDefinition[] = [
@@ -284,6 +564,24 @@ export default function SettingsDesk({
         { key: 'canPrintPOSInvoice', label: 'Print Pharmacy POS Thermal Invoice', icon: Printer, desc: 'Allow printing customer receipts on POS thermal printer' },
         { key: 'canPrintFinancialReports', label: 'Print Inventory Stock Valuation Reports', icon: Printer, desc: 'Allow printing inventory stock balance reports' },
         { key: 'canExportCSVExcel', label: 'Export Medicine Catalog to CSV/Excel', icon: Upload, desc: 'Allow downloading medicine stock inventory list' }
+      ]
+    },
+    {
+      id: 'accounts',
+      name: 'Double-Entry Accounting & Ledger Desk',
+      permKey: 'canViewAccountingDesk',
+      menuRightId: 'accounts',
+      icon: BookOpen,
+      color: 'amber',
+      desc: 'Double-entry accounting, chart of accounts, general ledger journals & cash/bank vouchers',
+      subMenus: [
+        { key: 'canAccessErpLedger', label: 'Financial Ledger & Journals', icon: Receipt, desc: 'Double-entry transaction audit trails & general ledger journals' },
+        { key: 'canAccessErpCashBook', label: 'Clinic Cash & Bank Vouchers', icon: Landmark, desc: 'Cash payment, bank receipt & journal vouchers' }
+      ],
+      actionItems: [
+        { key: 'canPrintVouchers', label: 'Print Payment & Journal Vouchers', icon: Printer, desc: 'Allow printing Cash Payment Vouchers & Journal Vouchers' },
+        { key: 'canPrintFinancialReports', label: 'Print Financial Statements & Ledgers', icon: Printer, desc: 'Allow printing trial balance, ledgers & P&L statements' },
+        { key: 'canExportCSVExcel', label: 'Export Accounts Data to CSV/Excel', icon: Upload, desc: 'Allow exporting accounting transactions' }
       ]
     },
     {
@@ -387,20 +685,28 @@ export default function SettingsDesk({
   // Active Main Menu being configured in Pop-up Modal
   const [configuringMainMenuId, setConfiguringMainMenuId] = useState<string | null>(null);
 
-  // Synchronize state whenever selectedAccessUserId changes
+  // Track the ID of the user whose permissions are currently loaded in form state
+  const lastLoadedUserIdRef = useRef<string>('');
+
+  // Synchronize state when selectedAccessUserId switches to a new user
   useEffect(() => {
-    if (selectedAccessUser) {
+    if (!selectedAccessUser) return;
+    
+    // Only reload form state if the user selection actually switched or is first initialized
+    if (lastLoadedUserIdRef.current !== selectedAccessUser.UserID) {
+      lastLoadedUserIdRef.current = selectedAccessUser.UserID;
+      const roleDefaults = getRoleDefaultPermissions(selectedAccessUser.Role);
       setAccessPermissions({
-        ...defaultPermissionTemplate,
+        ...roleDefaults,
         ...(selectedAccessUser.Permissions || {})
       });
       setAccessUserRights(selectedAccessUser.UserRights || ROLE_RIGHTS[selectedAccessUser.Role] || ROLE_RIGHTS['Administrator']);
       setAccessAllowedUserIDs(selectedAccessUser.AllowedUserIDs || ['ALL']);
-      setAccessApprovalStatus(selectedAccessUser.AccessApprovalStatus || (selectedAccessUser.Role === 'Administrator' ? 'Approved' : 'Approved'));
+      setAccessApprovalStatus(selectedAccessUser.AccessApprovalStatus || 'Approved');
       setAccessApprovedBy(selectedAccessUser.AccessApprovedBy || (selectedAccessUser.Role === 'Administrator' ? 'System Administrator' : 'Administrator'));
       setAccessApprovedAt(selectedAccessUser.AccessApprovedAt || selectedAccessUser.CreatedAt || '');
     }
-  }, [selectedAccessUserId, usersList]);
+  }, [selectedAccessUserId, selectedAccessUser]);
 
   const handleToggleDeskPermission = (key: keyof NonNullable<User['Permissions']>) => {
     if (selectedAccessUser?.Role === 'Administrator') return;
@@ -741,7 +1047,11 @@ export default function SettingsDesk({
     }
   };
 
-  const handleSaveAccessPermissions = (status?: 'Pending' | 'Approved' | 'Rejected') => {
+  const handleSaveAccessPermissions = (
+    status?: 'Pending' | 'Approved' | 'Rejected',
+    overridePermissions?: NonNullable<User['Permissions']>,
+    overrideRights?: UserRight[]
+  ) => {
     if (!selectedAccessUser) return;
     if (selectedAccessUser.Role === 'Administrator') {
       setErrorMsg('Administrator access profile is locked and cannot be modified. Admin accounts maintain full system permissions by default.');
@@ -754,10 +1064,13 @@ export default function SettingsDesk({
     const adminName = currentUser.FullName || currentUser.LoginName || 'Administrator';
     const approvedTimestamp = newApprovalStatus === 'Approved' ? (accessApprovedAt || new Date().toISOString()) : '';
 
+    const permsToSave = overridePermissions || accessPermissions;
+    const rightsToSave = overrideRights || accessUserRights;
+
     const updatedUser: User = {
       ...selectedAccessUser,
-      Permissions: accessPermissions,
-      UserRights: accessUserRights,
+      Permissions: permsToSave,
+      UserRights: rightsToSave,
       AllowedUserIDs: accessAllowedUserIDs,
       AccessApprovalStatus: newApprovalStatus,
       AccessApprovedBy: newApprovalStatus === 'Approved' ? (accessApprovedBy || adminName) : undefined,
@@ -770,27 +1083,49 @@ export default function SettingsDesk({
       setAccessApprovedAt(approvedTimestamp);
     }
 
-    setUsersList(prev => prev.map(u => u.UserID === selectedAccessUser.UserID ? updatedUser : u));
+    // 1. Immediate optimistic local update in usersList
+    setUsersList(prev => prev.map(u => (u.UserID === selectedAccessUser.UserID || u.LoginName === selectedAccessUser.LoginName) ? updatedUser : u));
     broadcastUserSync('PERMISSIONS_UPDATED', updatedUser, selectedAccessUser.UserID);
 
-    const bridgeUrl = mongoDbSettings.BridgeUrl || (typeof window !== 'undefined' ? window.location.origin : '');
-    if (bridgeUrl && typeof navigator !== 'undefined' && navigator.onLine) {
-      fetch(`${bridgeUrl}/api/users/${selectedAccessUser.UserID}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedUser)
-      })
-        .then(res => res.json())
-        .then(() => {
-          broadcastUserSync('PERMISSIONS_UPDATED', updatedUser, selectedAccessUser.UserID);
-          setSuccessMsg(`Access Profile & Permissions for "${selectedAccessUser.FullName}" (${newApprovalStatus.toUpperCase()}) saved & synced successfully!`);
-        })
-        .catch(err => {
-          setSuccessMsg(`Saved locally! (Database sync pending network reconnection: ${err.message})`);
-        });
-    } else {
-      setSuccessMsg(`Access Profile & Permissions for "${selectedAccessUser.FullName}" saved locally and applied successfully!`);
+    // If current logged-in user is the one being modified, update their session too
+    if (currentUser.UserID === selectedAccessUser.UserID || currentUser.LoginName === selectedAccessUser.LoginName) {
+      sessionStorage.setItem('cms_current_user', JSON.stringify(updatedUser));
+      try {
+        window.dispatchEvent(new CustomEvent('phc_local_user_updated', { detail: updatedUser }));
+      } catch (_) {}
     }
+
+    // 2. Persist to server
+    const bridgeUrl = mongoDbSettings.BridgeUrl || (typeof window !== 'undefined' ? window.location.origin : '');
+    const endpointUrl = bridgeUrl ? `${bridgeUrl}/api/users/${encodeURIComponent(selectedAccessUser.UserID)}` : `/api/users/${encodeURIComponent(selectedAccessUser.UserID)}`;
+
+    fetch(endpointUrl, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedUser)
+    })
+      .then(async res => {
+        if (!res.ok) {
+          const errText = await res.text().catch(() => '');
+          throw new Error(`Server returned ${res.status}: ${errText || res.statusText}`);
+        }
+        return res.json();
+      })
+      .then((data) => {
+        const authoritative = data.user || updatedUser;
+        setUsersList(prev => prev.map(u => (u.UserID === selectedAccessUser.UserID || u.LoginName === selectedAccessUser.LoginName) ? authoritative : u));
+        broadcastUserSync('PERMISSIONS_UPDATED', authoritative, selectedAccessUser.UserID);
+        try {
+          window.dispatchEvent(new CustomEvent('phc_db_updated', { detail: { collection: 'users' } }));
+        } catch (_) {}
+        setSuccessMsg(`Access Profile & Permissions for "${selectedAccessUser.FullName}" (${newApprovalStatus.toUpperCase()}) saved & synced successfully to database!`);
+        setTimeout(() => setSuccessMsg(''), 5000);
+      })
+      .catch(err => {
+        console.warn('Database user sync notice:', err);
+        setSuccessMsg(`Saved locally! (Database sync notification: ${err.message})`);
+        setTimeout(() => setSuccessMsg(''), 5000);
+      });
   };
 
   const handleApproveAndGrantAccess = () => {
