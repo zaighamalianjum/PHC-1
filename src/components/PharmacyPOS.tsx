@@ -107,6 +107,7 @@ import PharmacyReturnsTab from './pharmacy/PharmacyReturnsTab';
 import PharmacyClinicalLabelsTab from './pharmacy/PharmacyClinicalLabelsTab';
 import PharmacyBulkExpiryModal from './pharmacy/PharmacyBulkExpiryModal';
 import PharmacyDeadItemsModal from './pharmacy/PharmacyDeadItemsModal';
+import PharmacyCustomReportsModal from './pharmacy/PharmacyCustomReportsModal';
 import { ClinicalMedicinePrescriptionTab } from './pharmacy/ClinicalMedicinePrescriptionTab';
 
 export { isBatchExpired, isBatchNearExpiry, getItemExpirySummary };
@@ -1972,7 +1973,11 @@ export default function PharmacyPOS({
     handlePrintThermalReceipt,
     handlePrintDailySalesReport,
     handlePrintStockGrid,
-    handleOpenPoPrintWindow
+    handleOpenPoPrintWindow,
+    handlePrintDeadStockReport,
+    handlePrintCurrentStockReport,
+    handlePrintReorderQtyReport,
+    handlePrintMinThresholdReport
   } = createPharmacyPrintHelpers({
     currentUser,
     userRights,
@@ -1994,6 +1999,7 @@ export default function PharmacyPOS({
     poPrintLayout,
     getFilteredPoItems
   });
+  const [isCustomReportsModalOpen, setIsCustomReportsModalOpen] = useState(false);
   const [storeBasket, setStoreBasket] = useState<{ ItemID: string; Qty: number; Price: number; MedicineType?: 'C' | 'P' | 'S' }[]>([]);
   const [storeRowItemId, setStoreRowItemId] = useState('');
   const [storeRowQty, setStoreRowQty] = useState<number>(1);
@@ -2077,6 +2083,16 @@ export default function PharmacyPOS({
       // Matched Item handling
       if (autoAddOnScan) {
         if (activeSubTab === 'store_sales') {
+          const isDead = Boolean(matched.IsDead || matched.Status === 'Dead' || matched.Status === 'DEAD');
+          if (isDead) {
+            playBeepSound('error');
+            setScanToastMsg({
+              text: `Cannot sell dead/obsolete item: "${matched.ItemName}" (${matched.ItemID})`,
+              type: 'error'
+            });
+            return;
+          }
+
           const existingBasketQty = storeBasket.find((b) => b.ItemID === matched.ItemID)?.Qty || 0;
           if (existingBasketQty + 1 > matched.CStock) {
             playBeepSound('error');
@@ -2151,20 +2167,32 @@ export default function PharmacyPOS({
         }
       } else {
         // Search & select mode
-        playBeepSound('success');
         if (activeSubTab === 'store_sales') {
+          const isDead = Boolean(matched.IsDead || matched.Status === 'Dead' || matched.Status === 'DEAD');
+          if (isDead) {
+            playBeepSound('error');
+            setScanToastMsg({
+              text: `Dead/obsolete stock cannot be selected for store sale: "${matched.ItemName}"`,
+              type: 'error'
+            });
+            return;
+          }
+          playBeepSound('success');
           setStoreRowItemId(matched.ItemID);
           setStoreSearchQuery(matched.ItemName);
-        } else if (activeSubTab === 'checkout') {
-          setRowItemId(matched.ItemID);
-          setPosSearchQuery(matched.ItemName);
-        } else if (activeSubTab === 'inventory_manager') {
-          setInvSearchQuery(matched.ItemID);
+        } else {
+          playBeepSound('success');
+          if (activeSubTab === 'checkout') {
+            setRowItemId(matched.ItemID);
+            setPosSearchQuery(matched.ItemName);
+          } else if (activeSubTab === 'inventory_manager') {
+            setInvSearchQuery(matched.ItemID);
+          }
+          setScanToastMsg({
+            text: `🎯 Selected Item: ${matched.ItemName} (ID: ${matched.ItemID})`,
+            type: 'info'
+          });
         }
-        setScanToastMsg({
-          text: `🎯 Selected Item: ${matched.ItemName} (ID: ${matched.ItemID})`,
-          type: 'info'
-        });
       }
     },
     [items, activeSubTab, autoAddOnScan, storeBasket, checkoutBasket]
@@ -2806,6 +2834,13 @@ export default function PharmacyPOS({
     const selectedItem = items.find((i) => i.ItemID === storeRowItemId);
     if (!selectedItem) return;
 
+    // Check if dead stock
+    const isDead = Boolean(selectedItem.IsDead || selectedItem.Status === 'Dead' || selectedItem.Status === 'DEAD');
+    if (isDead) {
+      setStoreValidationError(`Cannot sell "${selectedItem.ItemName}": Item is classified as Dead / Obsolete stock.`);
+      return;
+    }
+
     // Verify Stock
     const existingBasketQty = storeBasket.find((b) => b.ItemID === storeRowItemId)?.Qty || 0;
     const totalRequired = existingBasketQty + storeRowQty;
@@ -2863,6 +2898,11 @@ export default function PharmacyPOS({
       const dbItem = items.find((itm) => itm.ItemID === basketItem.ItemID);
       if (!dbItem) {
         alert(`Product ID ${basketItem.ItemID} not found in the inventory system.`);
+        return;
+      }
+      const isDead = Boolean(dbItem.IsDead || dbItem.Status === 'Dead' || dbItem.Status === 'DEAD');
+      if (isDead) {
+        alert(`Checkout aborted: Medicine "${dbItem.ItemName}" is classified as Dead/Obsolete stock.`);
         return;
       }
       if (dbItem.CStock < basketItem.Qty) {
@@ -3520,7 +3560,11 @@ export default function PharmacyPOS({
                         const val = e.target.value;
                         setStoreSearchQuery(val);
                         setStoreSearchDropdownOpen(true);
-                        const exact = items.find(i => (i.ItemName || '').toLowerCase() === val.toLowerCase() || (i.ItemID || '').toLowerCase() === val.toLowerCase());
+                        const exact = items.find(i => {
+                          const isDead = Boolean(i.IsDead || i.Status === 'Dead' || i.Status === 'DEAD');
+                          if (isDead) return false;
+                          return (i.ItemName || '').toLowerCase() === val.toLowerCase() || (i.ItemID || '').toLowerCase() === val.toLowerCase();
+                        });
                         if (exact) {
                           setStoreRowItemId(exact.ItemID);
                           setStoreRowPrice(exact.Price);
@@ -3556,6 +3600,8 @@ export default function PharmacyPOS({
                         {(() => {
                           const query = storeSearchQuery.toLowerCase().trim();
                           const list = items.filter(itm => {
+                            const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+                            if (isDead) return false;
                             if (!query) return true;
                             const nameMatch = (itm.ItemName || '').toLowerCase().includes(query);
                             const idMatch = (itm.ItemID || '').toLowerCase().includes(query);
@@ -4118,7 +4164,20 @@ export default function PharmacyPOS({
                 </button>
               </div>
 
-              <div className="flex items-center space-x-2 shrink-0 self-end md:self-auto">
+              <div className="flex flex-wrap items-center gap-2 shrink-0 self-end md:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setIsCustomReportsModalOpen(true)}
+                  className="px-3.5 py-2 bg-gradient-to-r from-purple-700 via-indigo-600 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white rounded-xl flex items-center transition cursor-pointer font-bold text-xs shadow-sm border border-purple-400/40"
+                  title="Generate Custom Parameter-based Reports (Max Sale Medicine, Dead Stock, Current Stock, Reorder Qty, Minimum Threshold)"
+                >
+                  <BarChart3 className="w-4 h-4 mr-1.5 text-purple-200" />
+                  <span>Custom Reports</span>
+                  <span className="ml-1.5 px-1.5 py-0.2 bg-purple-900/80 text-purple-100 text-[9px] font-black rounded-full border border-purple-400/30">
+                    HUB
+                  </span>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => setIsDeadItemsModalOpen(true)}
@@ -4372,23 +4431,63 @@ export default function PharmacyPOS({
 
                   <button
                     type="button"
-                    onClick={() => setIsDeadItemsModalOpen(true)}
-                    className="px-3 py-1.5 bg-rose-700 hover:bg-rose-600 text-white border border-rose-600 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
-                    title="Open Dead Items Grid-view Popup & Manager"
+                    onClick={() => setIsCustomReportsModalOpen(true)}
+                    className="px-3 py-1.5 bg-gradient-to-r from-purple-700 via-indigo-600 to-purple-800 hover:from-purple-600 hover:to-indigo-500 text-white border border-purple-400/40 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
+                    title="Open Custom Report Generator with Parameters (Max Sale Medicine, Dead Stock, Current Stock, Reorder Qty, Minimum Threshold)"
                   >
-                    <AlertOctagon className="w-3.5 h-3.5 mr-1.5 text-rose-300" />
-                    <span>Dead Items</span>
+                    <BarChart3 className="w-3.5 h-3.5 mr-1.5 text-purple-200" />
+                    <span>Generate Custom Report</span>
+                    <Sparkles className="w-3 h-3 ml-1.5 text-amber-300" />
                   </button>
 
-                  <button
-                    type="button"
-                    onClick={() => setIsBulkExpiryModalOpen(true)}
-                    className="px-3 py-1.5 bg-amber-600 hover:bg-amber-500 text-white border border-amber-500 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
-                    title="Open Bulk Expiry Date Updater for medicines"
-                  >
-                    <Calendar className="w-3.5 h-3.5 mr-1.5" />
-                    <span>Change Expire Date</span>
-                  </button>
+                  <div className="relative group">
+                    <button
+                      type="button"
+                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
+                      title="Quick Direct Print for Separate Reports"
+                    >
+                      <FileText className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
+                      <span>Dedicated Reports ▾</span>
+                    </button>
+                    <div className="absolute right-0 top-full mt-1 w-60 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 hidden group-hover:block z-50 divide-y divide-slate-800">
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => handlePrintCurrentStockReport()}
+                          className="w-full text-left px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-slate-800 hover:text-white rounded-lg flex items-center space-x-2 transition"
+                        >
+                          <Boxes className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <span>Current Active Stock</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePrintDeadStockReport()}
+                          className="w-full text-left px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-950/40 hover:text-white rounded-lg flex items-center space-x-2 transition"
+                        >
+                          <AlertOctagon className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                          <span>Dead Stock Report</span>
+                        </button>
+                      </div>
+                      <div className="py-1">
+                        <button
+                          type="button"
+                          onClick={() => handlePrintReorderQtyReport()}
+                          className="w-full text-left px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-slate-800 hover:text-white rounded-lg flex items-center space-x-2 transition"
+                        >
+                          <Truck className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <span>Reorder Qty Report</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePrintMinThresholdReport()}
+                          className="w-full text-left px-3 py-2 text-xs font-semibold text-amber-300 hover:bg-slate-800 hover:text-white rounded-lg flex items-center space-x-2 transition"
+                        >
+                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <span>Min Threshold Shortage</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
 
                   <button
                     type="button"
@@ -5722,6 +5821,18 @@ export default function PharmacyPOS({
         categories={categories}
         onUpdateItemDeadStatus={handleUpdateItemDeadStatus}
         onBulkUpdateDeadStatus={handleBulkUpdateDeadStatus}
+      />
+
+      {/* Parameter-Based Custom Reports Generator Modal */}
+      <PharmacyCustomReportsModal
+        isOpen={isCustomReportsModalOpen}
+        onClose={() => setIsCustomReportsModalOpen(false)}
+        items={items}
+        categories={categories}
+        invoices={invoices}
+        invoiceDetails={invoiceDetails}
+        clinicSettings={clinicSettings}
+        currentUser={currentUser}
       />
     </div>
   );

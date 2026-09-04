@@ -1200,6 +1200,10 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
     const isLowStock = forceLowStockOnly || invLowStockFilter;
 
     const processedForPrint = items.filter((itm) => {
+      // User requirement: dead stock must NOT appear in standard INVENTORY & STOCK VALUATION REPORT
+      const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+      if (isDead) return false;
+
       if (isLowStock && itm.CStock > ((itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1)) return false;
       if (invCategoryFilter !== 'ALL') {
         if (invCategoryFilter === 'C') {
@@ -1904,12 +1908,292 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
     win.document.close();
   };
 
+  // Dedicated Report 1: Dead Stock & Obsolete Inventory Report
+  const handlePrintDeadStockReport = () => {
+    const deadItems = items.filter((itm) => Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD'));
+    if (deadItems.length === 0) {
+      alert("No dead or obsolete stock items found in the system.");
+      return;
+    }
+
+    const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic";
+    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "042-3111222";
+    const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
+    const printDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const totalDeadUnits = deadItems.reduce((acc, itm) => acc + (itm.CStock || 0), 0);
+    const totalCostLoss = deadItems.reduce((acc, itm) => acc + ((itm.PurchasePrice || 0) * (itm.CStock || 0)), 0);
+    const totalRetailLoss = deadItems.reduce((acc, itm) => acc + ((itm.Price || 0) * (itm.CStock || 0)), 0);
+
+    const win = window.open('', '_blank', 'width=1100,height=900');
+    if (!win) {
+      alert("Pop-up blocker prevented opening print window.");
+      return;
+    }
+
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Dead Stock & Obsolete Inventory Write-Off Report - ${clinicName}</title>
+          <style>
+            @page { size: A4 portrait; margin: 10mm; }
+            body { font-family: Arial, sans-serif; margin: 0; padding: 12px; color: #0f172a; font-size: 10px; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #991b1b; padding-bottom: 8px; margin-bottom: 10px; }
+            .title-badge { background: #991b1b; color: #fff; padding: 4px 10px; border-radius: 4px; font-weight: 900; font-size: 11px; text-transform: uppercase; }
+            .kpis { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px; }
+            .kpi { border: 1px solid #fecdd3; background: #fff1f2; padding: 6px 10px; border-radius: 4px; text-align: center; }
+            .kpi-lbl { font-size: 8px; font-weight: 800; color: #9f1239; text-transform: uppercase; }
+            .kpi-val { font-size: 13px; font-weight: 900; color: #881337; margin-top: 2px; font-family: monospace; }
+            table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 9.5px; }
+            th, td { border: 1px solid #e2e8f0; padding: 5px 6px; }
+            th { background: #881337; color: #fff; font-weight: 900; text-transform: uppercase; font-size: 8.5px; }
+            tr:nth-child(even) { background: #fff1f2; }
+            .sig { margin-top: 30px; display: flex; justify-content: space-between; page-break-inside: avoid; }
+            .sig-line { border-top: 1px solid #94a3b8; width: 180px; text-align: center; font-size: 9px; padding-top: 4px; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1 style="margin: 0; font-size: 16px; font-weight: 900; text-transform: uppercase;">${clinicName}</h1>
+              <div style="font-size: 9px; color: #64748b; margin-top: 2px;">📍 ${clinicAddress} | 📞 ${clinicPhone}</div>
+            </div>
+            <div style="text-align: right;">
+              <div class="title-badge">DEAD & OBSOLETE STOCK AUDIT REPORT</div>
+              <div style="font-size: 8.5px; color: #64748b; margin-top: 3px;">Date: ${printDate}</div>
+            </div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi">
+              <div class="kpi-lbl">Dead Medicine Count</div>
+              <div class="kpi-val">${deadItems.length} Items</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-lbl">Total Scrapped Units</div>
+              <div class="kpi-val">${totalDeadUnits.toLocaleString()} Units</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-lbl">Capital Loss (Cost Value)</div>
+              <div class="kpi-val">Rs. ${totalCostLoss.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-lbl">Retail Value Written Off</div>
+              <div class="kpi-val">Rs. ${totalRetailLoss.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 5%;">S#</th>
+                <th style="width: 12%;">Item ID</th>
+                <th style="width: 28%; text-align: left;">Medicine Name</th>
+                <th style="width: 10%;">Category</th>
+                <th style="width: 10%; text-align: right;">Dead Units</th>
+                <th style="width: 10%; text-align: right;">Unit Cost</th>
+                <th style="width: 12%; text-align: right;">Total Loss (Rs)</th>
+                <th style="width: 13%; text-align: left;">Reason / Remarks</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${deadItems.map((itm, idx) => {
+                const loss = (itm.PurchasePrice || 0) * (itm.CStock || 0);
+                return `
+                  <tr>
+                    <td style="text-align: center;">${idx + 1}</td>
+                    <td style="text-align: center; font-family: monospace; font-weight: bold; color: #991b1b;">${itm.ItemID}</td>
+                    <td style="text-align: left; font-weight: bold;">${itm.ItemName}</td>
+                    <td style="text-align: center;">${itm.Unit || 'Tab'}</td>
+                    <td style="text-align: right; font-weight: 900; color: #991b1b;">${itm.CStock}</td>
+                    <td style="text-align: right; font-family: monospace;">Rs. ${itm.PurchasePrice || 0}</td>
+                    <td style="text-align: right; font-weight: 900; font-family: monospace; color: #991b1b;">Rs. ${loss.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</td>
+                    <td style="text-align: left; font-size: 8.5px; color: #64748b;">${itm.DeadReason || 'Obsolete / Dead Stock'}</td>
+                  </tr>
+                `;
+              }).join('')}
+              <tr style="background: #fee2e2; font-weight: 900; border-top: 2px solid #881337;">
+                <td colspan="4" style="text-align: right;">TOTAL CAPITAL LOSS:</td>
+                <td style="text-align: right; font-family: monospace; color: #991b1b;">${totalDeadUnits.toLocaleString()}</td>
+                <td></td>
+                <td style="text-align: right; font-family: monospace; color: #991b1b;">Rs. ${totalCostLoss.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="sig">
+            <div class="sig-line">Prepared By (Pharmacist)</div>
+            <div class="sig-line">Verified By (Auditor)</div>
+            <div class="sig-line">Approved By (Administrator)</div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              setTimeout(function() { window.print(); }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
+  // Dedicated Report 2: Current Active Stock Report
+  const handlePrintCurrentStockReport = () => {
+    handlePrintStockGrid(false);
+  };
+
+  // Dedicated Report 3: Reorder Quantity (PO) Report
+  const handlePrintReorderQtyReport = () => {
+    const reorderItems = items.filter((itm) => {
+      const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+      if (isDead) return false;
+      const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? Number(itm.MinStock) : 1;
+      return Number(itm.ReorderQty || 0) > 0 || Number(itm.CStock || 0) <= minStock;
+    });
+
+    if (reorderItems.length === 0) {
+      alert("All active medicines have sufficient stock! No replenishment reorders required.");
+      return;
+    }
+
+    const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic";
+    const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "042-3111222";
+    const printDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+    const totalReorderUnits = reorderItems.reduce((acc, itm) => acc + (itm.ReorderQty || Math.max(1, (itm.MinStock || 1) * 2)), 0);
+    const totalEstCost = reorderItems.reduce((acc, itm) => acc + ((itm.PurchasePrice || 0) * (itm.ReorderQty || Math.max(1, (itm.MinStock || 1) * 2))), 0);
+
+    const win = window.open('', '_blank', 'width=1100,height=900');
+    if (!win) {
+      alert("Pop-up blocker prevented opening print window.");
+      return;
+    }
+
+    win.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Purchase Reorder (PO) Quantity Requisition Report - ${clinicName}</title>
+          <style>
+            @page { size: A4 portrait; margin: 10mm; }
+            body { font-family: Arial, sans-serif; margin: 0; padding: 12px; color: #0f172a; font-size: 10px; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #4338ca; padding-bottom: 8px; margin-bottom: 10px; }
+            .title-badge { background: #4338ca; color: #fff; padding: 4px 10px; border-radius: 4px; font-weight: 900; font-size: 11px; text-transform: uppercase; }
+            .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
+            .kpi { border: 1px solid #c7d2fe; background: #eef2ff; padding: 6px 10px; border-radius: 4px; text-align: center; }
+            .kpi-lbl { font-size: 8px; font-weight: 800; color: #3730a3; text-transform: uppercase; }
+            .kpi-val { font-size: 13px; font-weight: 900; color: #312e81; margin-top: 2px; font-family: monospace; }
+            table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 9.5px; }
+            th, td { border: 1px solid #cbd5e1; padding: 5px 6px; }
+            th { background: #312e81; color: #fff; font-weight: 900; text-transform: uppercase; font-size: 8.5px; }
+            tr:nth-child(even) { background: #f8fafc; }
+            .sig { margin-top: 30px; display: flex; justify-content: space-between; page-break-inside: avoid; }
+            .sig-line { border-top: 1px solid #94a3b8; width: 180px; text-align: center; font-size: 9px; padding-top: 4px; font-weight: bold; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <h1 style="margin: 0; font-size: 16px; font-weight: 900; text-transform: uppercase;">${clinicName}</h1>
+              <div style="font-size: 9px; color: #64748b; margin-top: 2px;">📍 ${clinicAddress} | 📞 ${clinicPhone}</div>
+            </div>
+            <div style="text-align: right;">
+              <div class="title-badge">PURCHASE REORDER (PO) REQUISITION REPORT</div>
+              <div style="font-size: 8.5px; color: #64748b; margin-top: 3px;">Date: ${printDate}</div>
+            </div>
+          </div>
+
+          <div class="kpis">
+            <div class="kpi">
+              <div class="kpi-lbl">Items Needing Order</div>
+              <div class="kpi-val">${reorderItems.length} Medicines</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-lbl">Total Suggested Reorder Units</div>
+              <div class="kpi-val">${totalReorderUnits.toLocaleString()} Units</div>
+            </div>
+            <div class="kpi">
+              <div class="kpi-lbl">Estimated Procurement Cost</div>
+              <div class="kpi-val">Rs. ${totalEstCost.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 5%;">S#</th>
+                <th style="width: 12%;">Item ID</th>
+                <th style="width: 28%; text-align: left;">Medicine Name</th>
+                <th style="width: 10%;">Category</th>
+                <th style="width: 10%; text-align: right;">Current Stock</th>
+                <th style="width: 10%; text-align: right;">Min Thresh</th>
+                <th style="width: 12%; text-align: right;">PO Reorder Qty</th>
+                <th style="width: 13%; text-align: right;">Est. Cost (Rs)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${reorderItems.map((itm, idx) => {
+                const orderQty = itm.ReorderQty || Math.max(1, (itm.MinStock || 1) * 2);
+                const estCost = orderQty * (itm.PurchasePrice || 0);
+                const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1;
+                return `
+                  <tr>
+                    <td style="text-align: center;">${idx + 1}</td>
+                    <td style="text-align: center; font-family: monospace; font-weight: bold;">${itm.ItemID}</td>
+                    <td style="text-align: left; font-weight: bold;">${itm.ItemName}</td>
+                    <td style="text-align: center;">${itm.Unit || 'Tab'}</td>
+                    <td style="text-align: right; font-weight: 900; color: ${itm.CStock <= minStock ? '#dc2626' : '#334155'};">${itm.CStock}</td>
+                    <td style="text-align: right; font-weight: bold;">${minStock}</td>
+                    <td style="text-align: right; font-weight: 900; color: #4338ca; font-size: 11px;">${orderQty}</td>
+                    <td style="text-align: right; font-weight: bold; color: #047857; font-family: monospace;">Rs. ${estCost.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</td>
+                  </tr>
+                `;
+              }).join('')}
+              <tr style="background: #eef2ff; font-weight: 900; border-top: 2px solid #4338ca;">
+                <td colspan="6" style="text-align: right;">TOTAL ESTIMATED PROCUREMENT:</td>
+                <td style="text-align: right; font-family: monospace; color: #4338ca;">${totalReorderUnits.toLocaleString()}</td>
+                <td style="text-align: right; font-family: monospace; color: #047857;">Rs. ${totalEstCost.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="sig">
+            <div class="sig-line">Prepared By (Pharmacist)</div>
+            <div class="sig-line">Store Incharge</div>
+            <div class="sig-line">Approved By (Purchase Committee)</div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              setTimeout(function() { window.print(); }, 300);
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    win.document.close();
+  };
+
+  // Dedicated Report 4: Minimum Threshold & Critical Shortage Report
+  const handlePrintMinThresholdReport = () => {
+    handlePrintStockGrid(true);
+  };
+
   return {
     handlePrintA4Invoice,
     handlePrintThermalReceipt,
     handlePrintDailySalesReport,
     handlePrintStockGrid,
-    handleOpenPoPrintWindow
+    handleOpenPoPrintWindow,
+    handlePrintDeadStockReport,
+    handlePrintCurrentStockReport,
+    handlePrintReorderQtyReport,
+    handlePrintMinThresholdReport
   };
 }
 
