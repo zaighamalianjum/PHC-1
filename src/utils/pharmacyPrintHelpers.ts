@@ -684,7 +684,12 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
     let reportBadgeText = "DAILY SALES SUMMARY";
     let reportInvoices: InvoiceHeader[] = [];
 
-    if (customEnd || salesReportPeriodMode === 'range') {
+    const isAdmin = currentUser?.Role === 'Administrator' ||
+      currentUser?.Role?.toLowerCase() === 'admin' ||
+      currentUser?.Role?.toLowerCase() === 'administrator' ||
+      currentUser?.LoginName?.toLowerCase() === 'admin';
+
+    if (isAdmin && (customEnd || salesReportPeriodMode === 'range')) {
       const start = targetDateOrStart || salesReportStartDate || todayStr;
       const end = customEnd || salesReportEndDate || todayStr;
       const isSingleDay = start === end;
@@ -700,7 +705,7 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
         const inShift = selectedShiftFilter === 'all' ? true : String(inv.shift) === selectedShiftFilter;
         return inDate && inShift;
       });
-    } else if (salesReportPeriodMode === 'all') {
+    } else if (isAdmin && salesReportPeriodMode === 'all') {
       reportTitle = "ALL-TIME MEDICINE STORE SALES & REVENUE AUDIT REPORT";
       reportBadgeText = "ALL-TIME AUDIT";
       periodSubtitle = "📅 Scope: Complete History (All Recorded Dates)";

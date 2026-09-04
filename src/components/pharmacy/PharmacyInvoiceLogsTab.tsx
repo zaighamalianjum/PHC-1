@@ -74,6 +74,22 @@ export const PharmacyInvoiceLogsTab: React.FC<PharmacyInvoiceLogsTabProps> = ({
   const [searchHistoryQuery, setSearchHistoryQuery] = React.useState('');
   const [showAllInvoicesInHistory, setShowAllInvoicesInHistory] = React.useState(false);
 
+  const isAdmin = currentUser?.Role === 'Administrator' ||
+    currentUser?.Role?.toLowerCase() === 'admin' ||
+    currentUser?.Role?.toLowerCase() === 'administrator' ||
+    currentUser?.LoginName?.toLowerCase() === 'admin';
+
+  // Security guard: If non-admin, automatically reset to daily mode
+  React.useEffect(() => {
+    if (!isAdmin) {
+      if (salesReportPeriodMode === 'range' || salesReportPeriodMode === 'all' || showAllInvoicesInHistory) {
+        setSalesReportPeriodMode('daily');
+        setSelectedDailyReportDate(todayStr);
+        setShowAllInvoicesInHistory(false);
+      }
+    }
+  }, [isAdmin, salesReportPeriodMode, showAllInvoicesInHistory, setSalesReportPeriodMode, setSelectedDailyReportDate, todayStr]);
+
   const getPatientName = (id: string) => {
     const p = patients.find((pat) => pat.PatientID === id);
     return p ? p.PatientName : 'Walk-in Customer';
@@ -83,7 +99,9 @@ export const PharmacyInvoiceLogsTab: React.FC<PharmacyInvoiceLogsTabProps> = ({
     return invoices.filter((inv) => {
       const invDate = String(inv.InvoiceDate || '').trim().slice(0, 10);
       let matchesPeriod = true;
-      if (!showAllInvoicesInHistory) {
+      if (!isAdmin) {
+        matchesPeriod = invDate === (selectedDailyReportDate || todayStr);
+      } else if (!showAllInvoicesInHistory) {
         if (salesReportPeriodMode === 'range') {
           matchesPeriod = invDate >= salesReportStartDate && invDate <= salesReportEndDate;
         } else if (salesReportPeriodMode === 'all') {
@@ -168,12 +186,12 @@ export const PharmacyInvoiceLogsTab: React.FC<PharmacyInvoiceLogsTabProps> = ({
               <button
                 type="button"
                 onClick={() => {
-                  if (salesReportPeriodMode === 'range') {
+                  if (isAdmin && salesReportPeriodMode === 'range') {
                     handlePrintDailySalesReport(salesReportStartDate, salesReportEndDate);
-                  } else if (salesReportPeriodMode === 'all') {
+                  } else if (isAdmin && salesReportPeriodMode === 'all') {
                     handlePrintDailySalesReport();
                   } else {
-                    handlePrintDailySalesReport(selectedDailyReportDate);
+                    handlePrintDailySalesReport(selectedDailyReportDate || todayStr);
                   }
                 }}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center space-x-1.5 transition cursor-pointer whitespace-nowrap"
@@ -222,38 +240,42 @@ export const PharmacyInvoiceLogsTab: React.FC<PharmacyInvoiceLogsTabProps> = ({
                 >
                   Specific Date
                 </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSalesReportPeriodMode('range');
-                    const d = new Date();
-                    d.setDate(1);
-                    setSalesReportStartDate(d.toISOString().split('T')[0]);
-                    setSalesReportEndDate(todayStr);
-                    setShowAllInvoicesInHistory(false);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                    salesReportPeriodMode === 'range'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  📅 Custom Period
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setSalesReportPeriodMode('all');
-                    setShowAllInvoicesInHistory(true);
-                  }}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                    salesReportPeriodMode === 'all'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
-                  }`}
-                >
-                  All History ({invoices.length})
-                </button>
+                {isAdmin && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSalesReportPeriodMode('range');
+                        const d = new Date();
+                        d.setDate(1);
+                        setSalesReportStartDate(d.toISOString().split('T')[0]);
+                        setSalesReportEndDate(todayStr);
+                        setShowAllInvoicesInHistory(false);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                        salesReportPeriodMode === 'range'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                      }`}
+                    >
+                      📅 Custom Period
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSalesReportPeriodMode('all');
+                        setShowAllInvoicesInHistory(true);
+                      }}
+                      className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                        salesReportPeriodMode === 'all'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 hover:bg-slate-50'
+                      }`}
+                    >
+                      All History ({invoices.length})
+                    </button>
+                  </>
+                )}
               </div>
 
               {/* Shift & Search Filters */}
@@ -305,7 +327,7 @@ export const PharmacyInvoiceLogsTab: React.FC<PharmacyInvoiceLogsTabProps> = ({
               </div>
             )}
 
-            {salesReportPeriodMode === 'range' && (
+            {isAdmin && salesReportPeriodMode === 'range' && (
               <div className="flex flex-wrap items-center gap-3 pt-1 border-t border-slate-200/60">
                 <span className="text-xs font-black text-indigo-900 flex items-center space-x-1">
                   <Calendar className="w-3.5 h-3.5 text-indigo-600" />

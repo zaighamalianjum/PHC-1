@@ -24,7 +24,8 @@ import {
   SlidersHorizontal,
   ChevronDown,
   Layers,
-  ArrowUpDown
+  ArrowUpDown,
+  ArrowLeft
 } from 'lucide-react';
 import { Item, InvoiceHeader, InvoiceDetail } from '../../types';
 
@@ -47,6 +48,7 @@ interface PharmacyCustomReportsModalProps {
   invoiceDetails?: InvoiceDetail[];
   clinicSettings?: any;
   currentUser?: any;
+  mode?: 'modal' | 'page';
 }
 
 export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProps> = ({
@@ -57,7 +59,8 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
   invoices = [],
   invoiceDetails = [],
   clinicSettings,
-  currentUser
+  currentUser,
+  mode = 'modal'
 }) => {
   // Report Type Selection
   const [reportType, setReportType] = useState<CustomReportType>('MAX_SALE');
@@ -1082,12 +1085,15 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
     printWin.document.close();
   };
 
-  if (!isOpen) return null;
+  const isPageMode = mode === 'page';
+  if (!isOpen && !isPageMode) return null;
 
-  return (
-    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center p-2 sm:p-4 overflow-y-auto font-sans">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-6xl max-h-[92vh] flex flex-col overflow-hidden animate-fadeIn">
-        {/* Modal Header */}
+  const contentJsx = (
+    <div className={`bg-white rounded-2xl border border-slate-200 w-full flex flex-col overflow-hidden animate-fadeIn ${
+      isPageMode ? 'shadow-sm min-h-[85vh]' : 'shadow-2xl max-w-6xl max-h-[92vh]'
+    }`}>
+      {/* Modal Header (Only shown in modal popup mode, hidden in page mode) */}
+      {!isPageMode && (
         <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 sm:p-5 flex items-center justify-between shrink-0">
           <div className="flex items-center space-x-3">
             <div className="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-400/30">
@@ -1107,65 +1113,69 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
               </p>
             </div>
           </div>
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 transition cursor-pointer"
+              title="Close"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
+      )}
 
-        {/* Report Types Tabs / Selector */}
-        <div className="bg-slate-100 p-2 sm:p-3 border-b border-slate-200 overflow-x-auto shrink-0 flex items-center gap-1.5 scrollbar-thin">
+        {/* Report Types Tabs / Selector - Ultra-Compact */}
+        <div className="bg-slate-100 px-2 py-1 border-b border-slate-200 overflow-x-auto shrink-0 flex items-center gap-1 scrollbar-thin">
           {[
             {
               id: 'MAX_SALE',
               label: 'Maximum Sales',
               badge: 'Top Selling',
-              icon: <TrendingUp className="w-3.5 h-3.5 mr-1 text-purple-600" />
+              icon: <TrendingUp className="w-3 h-3 mr-1 text-purple-600" />
             },
             {
               id: 'CURRENT_STOCK',
               label: 'Current Stock',
               badge: 'Active Only',
-              icon: <Package className="w-3.5 h-3.5 mr-1 text-emerald-600" />
+              icon: <Package className="w-3 h-3 mr-1 text-emerald-600" />
             },
             {
               id: 'DEAD_STOCK',
               label: 'Dead Stock',
               badge: 'Obsolete',
-              icon: <AlertOctagon className="w-3.5 h-3.5 mr-1 text-rose-600" />
+              icon: <AlertOctagon className="w-3 h-3 mr-1 text-rose-600" />
             },
             {
               id: 'MIN_THRESHOLD',
               label: 'Min Threshold',
               badge: 'Alerts',
-              icon: <AlertTriangle className="w-3.5 h-3.5 mr-1 text-amber-600" />
+              icon: <AlertTriangle className="w-3 h-3 mr-1 text-amber-600" />
             },
             {
               id: 'REORDER_QTY',
               label: 'PO Reorder Qty',
               badge: 'Procurement',
-              icon: <ShoppingCart className="w-3.5 h-3.5 mr-1 text-indigo-600" />
+              icon: <ShoppingCart className="w-3 h-3 mr-1 text-indigo-600" />
             },
             {
               id: 'SLOW_MOVING',
               label: 'Slow Moving',
               badge: 'Zero Sales',
-              icon: <Clock className="w-3.5 h-3.5 mr-1 text-slate-600" />
+              icon: <Clock className="w-3 h-3 mr-1 text-slate-600" />
             },
             {
               id: 'HIGH_VALUATION',
               label: 'High Valuation',
               badge: 'Capital Assets',
-              icon: <DollarSign className="w-3.5 h-3.5 mr-1 text-cyan-600" />
+              icon: <DollarSign className="w-3 h-3 mr-1 text-cyan-600" />
             },
             {
               id: 'EXPIRY_ALERT',
               label: 'Expiry Alerts',
               badge: '<90 Days',
-              icon: <Calendar className="w-3.5 h-3.5 mr-1 text-rose-600" />
+              icon: <Calendar className="w-3 h-3 mr-1 text-rose-600" />
             }
           ].map((tab) => {
             const isSelected = reportType === tab.id;
@@ -1177,16 +1187,16 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
                   setReportType(tab.id as CustomReportType);
                   setSortBy('DEFAULT');
                 }}
-                className={`px-3 py-1.5 rounded-xl font-bold text-xs flex items-center transition shrink-0 cursor-pointer shadow-2xs border ${
+                className={`px-2 py-1 rounded-lg font-bold text-[11px] flex items-center transition shrink-0 cursor-pointer shadow-2xs border ${
                   isSelected
-                    ? 'bg-white text-slate-900 border-indigo-400 ring-2 ring-indigo-400/20 shadow-xs'
+                    ? 'bg-white text-slate-900 border-indigo-400 ring-1 ring-indigo-400/30 shadow-xs'
                     : 'bg-slate-200/70 hover:bg-white text-slate-700 border-slate-300/80'
                 }`}
               >
                 {tab.icon}
                 <span>{tab.label}</span>
                 <span
-                  className={`ml-1.5 px-1.5 py-0.2 rounded text-[9px] font-mono ${
+                  className={`ml-1 px-1 py-0 rounded text-[8.5px] font-mono ${
                     isSelected ? 'bg-indigo-100 text-indigo-800' : 'bg-slate-300 text-slate-700'
                   }`}
                 >
@@ -1197,32 +1207,32 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
           })}
         </div>
 
-        {/* Parameters & Filters Bar */}
-        <div className="p-3 sm:p-4 bg-slate-50 border-b border-slate-200 shrink-0 space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="flex items-center space-x-2">
-              <span className="p-1 rounded bg-indigo-100 text-indigo-700">
-                <SlidersHorizontal className="w-3.5 h-3.5" />
+        {/* Parameters & Filters Bar - Compact */}
+        <div className="p-2 sm:p-2.5 bg-slate-50 border-b border-slate-200 shrink-0 space-y-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-1.5">
+            <div className="flex items-center space-x-1.5">
+              <span className="p-0.5 rounded bg-indigo-100 text-indigo-700">
+                <SlidersHorizontal className="w-3 h-3" />
               </span>
-              <span className="text-xs font-black text-slate-800 uppercase tracking-wider">
+              <span className="text-[11px] font-black text-slate-800 uppercase tracking-wider">
                 Report Parameters & Criteria
               </span>
             </div>
-            <span className="text-[11px] text-slate-500 font-medium">
+            <span className="text-[10px] text-slate-500 font-medium">
               {reportMeta.description}
             </span>
           </div>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2.5">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-1.5">
             {/* Category Filter */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+              <label className="block text-[9.5px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
                 Category / Unit
               </label>
               <select
                 value={categoryFilter}
                 onChange={(e) => setCategoryFilter(e.target.value)}
-                className="w-full bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                className="w-full bg-white border border-slate-300 rounded py-1 px-1.5 text-[11px] font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
               >
                 {categoryOptions.map((c) => (
                   <option key={c.id} value={c.id}>
@@ -1234,13 +1244,13 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
 
             {/* Stock Level Scope */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+              <label className="block text-[9.5px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
                 Stock Scope
               </label>
               <select
                 value={stockScopeFilter}
                 onChange={(e) => setStockScopeFilter(e.target.value as any)}
-                className="w-full bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                className="w-full bg-white border border-slate-300 rounded py-1 px-1.5 text-[11px] font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
               >
                 <option value="ALL">All Stock Levels</option>
                 <option value="IN_STOCK">In Stock (&gt; 0 Qty)</option>
@@ -1251,13 +1261,13 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
 
             {/* Sales Date Range (Enabled for Sales reports) */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+              <label className="block text-[9.5px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
                 Sales Period
               </label>
               <select
                 value={salesPeriod}
                 onChange={(e) => setSalesPeriod(e.target.value as any)}
-                className="w-full bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                className="w-full bg-white border border-slate-300 rounded py-1 px-1.5 text-[11px] font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
               >
                 <option value="ALL_TIME">All Time Sales</option>
                 <option value="TODAY">Today Only</option>
@@ -1269,13 +1279,13 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
 
             {/* Limit Rows */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+              <label className="block text-[9.5px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
                 Show Limit
               </label>
               <select
                 value={recordLimit}
                 onChange={(e) => setRecordLimit(Number(e.target.value))}
-                className="w-full bg-white border border-slate-300 rounded-lg py-1.5 px-2 text-xs font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                className="w-full bg-white border border-slate-300 rounded py-1 px-1.5 text-[11px] font-bold text-slate-800 focus:ring-1 focus:ring-indigo-500"
               >
                 <option value={10}>Top 10 items</option>
                 <option value={25}>Top 25 items</option>
@@ -1287,165 +1297,165 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
 
             {/* Quick Search */}
             <div>
-              <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+              <label className="block text-[9.5px] font-bold text-slate-500 uppercase tracking-wider mb-0.5">
                 Quick Filter Search
               </label>
               <div className="relative">
-                <Search className="w-3.5 h-3.5 absolute left-2.5 top-2 text-slate-400" />
+                <Search className="w-3 h-3 absolute left-2 top-1.5 text-slate-400" />
                 <input
                   type="text"
                   placeholder="Medicine name, ID..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-white border border-slate-300 rounded-lg py-1.5 pl-8 pr-2 text-xs text-slate-800 focus:ring-1 focus:ring-indigo-500 font-medium"
+                  className="w-full bg-white border border-slate-300 rounded py-1 pl-7 pr-2 text-[11px] text-slate-800 focus:ring-1 focus:ring-indigo-500 font-medium"
                 />
               </div>
             </div>
           </div>
         </div>
 
-        {/* Live KPI Summary Cards */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 p-3 sm:p-4 bg-white border-b border-slate-200 shrink-0">
-          <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
-            <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">
+        {/* Live KPI Summary Cards - Compact */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 p-1.5 sm:p-2 bg-white border-b border-slate-200 shrink-0">
+          <div className="bg-slate-50 border border-slate-200 p-1.5 rounded-lg">
+            <span className="text-[9px] font-extrabold uppercase text-slate-400 tracking-wider block">
               Matching Medicines
             </span>
-            <div className="text-base sm:text-lg font-black text-slate-900 mt-0.5">
+            <div className="text-xs sm:text-sm font-black text-slate-900 mt-0.5">
               {kpiSummary.totalCount} Medicines
             </div>
           </div>
 
           {reportType === 'MAX_SALE' ? (
             <>
-              <div className="bg-purple-50 border border-purple-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-purple-700 tracking-wider block">
+              <div className="bg-purple-50 border border-purple-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-purple-700 tracking-wider block">
                   Total Units Sold
                 </span>
-                <div className="text-base sm:text-lg font-black text-purple-900 mt-0.5">
+                <div className="text-xs sm:text-sm font-black text-purple-900 mt-0.5">
                   {kpiSummary.totalUnitsSold.toLocaleString()} Units
                 </div>
               </div>
-              <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider block">
+              <div className="bg-emerald-50 border border-emerald-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-emerald-700 tracking-wider block">
                   Total Sales Revenue
                 </span>
-                <div className="text-base sm:text-lg font-black text-emerald-900 mt-0.5 font-mono">
+                <div className="text-xs sm:text-sm font-black text-emerald-900 mt-0.5 font-mono">
                   Rs. {kpiSummary.totalSalesRevenue.toLocaleString()}
                 </div>
               </div>
-              <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider block">
+              <div className="bg-slate-50 border border-slate-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">
                   Current Stock in Hand
                 </span>
-                <div className="text-base sm:text-lg font-black text-slate-800 mt-0.5">
+                <div className="text-xs sm:text-sm font-black text-slate-800 mt-0.5">
                   {kpiSummary.totalUnits.toLocaleString()} Units
                 </div>
               </div>
             </>
           ) : reportType === 'DEAD_STOCK' ? (
             <>
-              <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-rose-700 tracking-wider block">
+              <div className="bg-rose-50 border border-rose-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-rose-700 tracking-wider block">
                   Scrapped Units
                 </span>
-                <div className="text-base sm:text-lg font-black text-rose-900 mt-0.5">
+                <div className="text-xs sm:text-sm font-black text-rose-900 mt-0.5">
                   {kpiSummary.totalUnits.toLocaleString()} Units
                 </div>
               </div>
-              <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-rose-700 tracking-wider block">
+              <div className="bg-rose-50 border border-rose-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-rose-700 tracking-wider block">
                   Capital Write-Off Loss
                 </span>
-                <div className="text-base sm:text-lg font-black text-rose-900 mt-0.5 font-mono">
+                <div className="text-xs sm:text-sm font-black text-rose-900 mt-0.5 font-mono">
                   Rs. {kpiSummary.totalCostValuation.toLocaleString()}
                 </div>
               </div>
-              <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider block">
+              <div className="bg-slate-50 border border-slate-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">
                   Retail Value Written Off
                 </span>
-                <div className="text-base sm:text-lg font-black text-slate-800 mt-0.5 font-mono">
+                <div className="text-xs sm:text-sm font-black text-slate-800 mt-0.5 font-mono">
                   Rs. {kpiSummary.totalRetailValuation.toLocaleString()}
                 </div>
               </div>
             </>
           ) : reportType === 'MIN_THRESHOLD' ? (
             <>
-              <div className="bg-rose-50 border border-rose-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-rose-700 tracking-wider block">
+              <div className="bg-rose-50 border border-rose-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-rose-700 tracking-wider block">
                   Shortage Deficit Units
                 </span>
-                <div className="text-base sm:text-lg font-black text-rose-900 mt-0.5">
+                <div className="text-xs sm:text-sm font-black text-rose-900 mt-0.5">
                   {kpiSummary.totalDeficitUnits.toLocaleString()} Units
                 </div>
               </div>
-              <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider block">
+              <div className="bg-amber-50 border border-amber-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-amber-700 tracking-wider block">
                   Stock Left in Hand
                 </span>
-                <div className="text-base sm:text-lg font-black text-amber-900 mt-0.5">
+                <div className="text-xs sm:text-sm font-black text-amber-900 mt-0.5">
                   {kpiSummary.totalUnits.toLocaleString()} Units
                 </div>
               </div>
-              <div className="bg-indigo-50 border border-indigo-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-indigo-700 tracking-wider block">
+              <div className="bg-indigo-50 border border-indigo-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-indigo-700 tracking-wider block">
                   Suggested Reorders
                 </span>
-                <div className="text-base sm:text-lg font-black text-indigo-900 mt-0.5 font-mono">
+                <div className="text-xs sm:text-sm font-black text-indigo-900 mt-0.5 font-mono">
                   {kpiSummary.totalReorderUnits.toLocaleString()} Units
                 </div>
               </div>
             </>
           ) : reportType === 'REORDER_QTY' ? (
             <>
-              <div className="bg-indigo-50 border border-indigo-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-indigo-700 tracking-wider block">
+              <div className="bg-indigo-50 border border-indigo-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-indigo-700 tracking-wider block">
                   Total Reorder Units
                 </span>
-                <div className="text-base sm:text-lg font-black text-indigo-900 mt-0.5">
+                <div className="text-xs sm:text-sm font-black text-indigo-900 mt-0.5">
                   {kpiSummary.totalReorderUnits.toLocaleString()} Units
                 </div>
               </div>
-              <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider block">
+              <div className="bg-slate-50 border border-slate-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">
                   Current Stock in Hand
                 </span>
-                <div className="text-base sm:text-lg font-black text-slate-800 mt-0.5">
+                <div className="text-xs sm:text-sm font-black text-slate-800 mt-0.5">
                   {kpiSummary.totalUnits.toLocaleString()} Units
                 </div>
               </div>
-              <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider block">
+              <div className="bg-emerald-50 border border-emerald-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-emerald-700 tracking-wider block">
                   Est. Inventory Cost
                 </span>
-                <div className="text-base sm:text-lg font-black text-emerald-900 mt-0.5 font-mono">
+                <div className="text-xs sm:text-sm font-black text-emerald-900 mt-0.5 font-mono">
                   Rs. {kpiSummary.totalCostValuation.toLocaleString()}
                 </div>
               </div>
             </>
           ) : (
             <>
-              <div className="bg-slate-50 border border-slate-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-slate-500 tracking-wider block">
+              <div className="bg-slate-50 border border-slate-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-slate-500 tracking-wider block">
                   Total Stock Units
                 </span>
-                <div className="text-base sm:text-lg font-black text-slate-800 mt-0.5">
+                <div className="text-xs sm:text-sm font-black text-slate-800 mt-0.5">
                   {kpiSummary.totalUnits.toLocaleString()} Units
                 </div>
               </div>
-              <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider block">
+              <div className="bg-amber-50 border border-amber-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-amber-700 tracking-wider block">
                   Cost Valuation
                 </span>
-                <div className="text-base sm:text-lg font-black text-amber-900 mt-0.5 font-mono">
+                <div className="text-xs sm:text-sm font-black text-amber-900 mt-0.5 font-mono">
                   Rs. {kpiSummary.totalCostValuation.toLocaleString()}
                 </div>
               </div>
-              <div className="bg-emerald-50 border border-emerald-200 p-2.5 rounded-xl">
-                <span className="text-[10px] font-extrabold uppercase text-emerald-700 tracking-wider block">
+              <div className="bg-emerald-50 border border-emerald-200 p-1.5 rounded-lg">
+                <span className="text-[9px] font-extrabold uppercase text-emerald-700 tracking-wider block">
                   Retail Valuation
                 </span>
-                <div className="text-base sm:text-lg font-black text-emerald-900 mt-0.5 font-mono">
+                <div className="text-xs sm:text-sm font-black text-emerald-900 mt-0.5 font-mono">
                   Rs. {kpiSummary.totalRetailValuation.toLocaleString()}
                 </div>
               </div>
@@ -1454,50 +1464,50 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
         </div>
 
         {/* Live Preview Table */}
-        <div className="flex-1 overflow-y-auto p-3 sm:p-4 bg-slate-50/50">
-          <div className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-2xs">
-            <div className="p-3 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
-              <span className="text-xs font-black text-slate-800">
+        <div className="flex-1 overflow-y-auto p-2 sm:p-2.5 bg-slate-50/50">
+          <div className="bg-white rounded-lg border border-slate-200 overflow-hidden shadow-2xs">
+            <div className="p-2 bg-slate-100 border-b border-slate-200 flex items-center justify-between">
+              <span className="text-[11px] font-black text-slate-800">
                 Live Data Preview ({previewList.length} of {reportData.length} records shown)
               </span>
-              <div className="flex items-center space-x-2 text-[11px] text-slate-500">
+              <div className="flex items-center space-x-2 text-[10px] text-slate-500">
                 <span>Click column to sort</span>
               </div>
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-[11px] border-collapse">
                 <thead>
-                  <tr className="bg-slate-900 text-white text-[10px] uppercase font-black tracking-wider">
-                    <th className="p-2.5 text-center w-12">#</th>
-                    <th className="p-2.5 w-24">Item ID</th>
-                    <th className="p-2.5">Medicine Name</th>
-                    <th className="p-2.5 text-center">Category</th>
+                  <tr className="bg-slate-900 text-white text-[9px] uppercase font-black tracking-wider">
+                    <th className="p-1.5 text-center w-10">#</th>
+                    <th className="p-1.5 w-20">Item ID</th>
+                    <th className="p-1.5">Medicine Name</th>
+                    <th className="p-1.5 text-center">Category</th>
                     {reportType === 'MAX_SALE' ? (
                       <>
-                        <th className="p-2.5 text-right text-purple-300">Units Sold</th>
-                        <th className="p-2.5 text-right text-emerald-300">Revenue (Rs)</th>
-                        <th className="p-2.5 text-right">In Stock</th>
-                        <th className="p-2.5 text-right">Retail (Rs)</th>
+                        <th className="p-1.5 text-right text-purple-300">Units Sold</th>
+                        <th className="p-1.5 text-right text-emerald-300">Revenue (Rs)</th>
+                        <th className="p-1.5 text-right">In Stock</th>
+                        <th className="p-1.5 text-right">Retail (Rs)</th>
                       </>
                     ) : reportType === 'DEAD_STOCK' ? (
                       <>
-                        <th className="p-2.5 text-rose-300">Dead Reason</th>
-                        <th className="p-2.5 text-right text-rose-300">Scrapped Units</th>
-                        <th className="p-2.5 text-right">Unit Cost</th>
-                        <th className="p-2.5 text-right text-rose-300">Loss (Rs)</th>
+                        <th className="p-1.5 text-rose-300">Dead Reason</th>
+                        <th className="p-1.5 text-right text-rose-300">Scrapped Units</th>
+                        <th className="p-1.5 text-right">Unit Cost</th>
+                        <th className="p-1.5 text-right text-rose-300">Loss (Rs)</th>
                       </>
                     ) : reportType === 'MIN_THRESHOLD' ? (
                       <>
-                        <th className="p-2.5 text-right text-amber-300">In Stock</th>
-                        <th className="p-2.5 text-right">Min Thresh</th>
-                        <th className="p-2.5 text-right text-rose-300">Deficit</th>
-                        <th className="p-2.5 text-center">Alert Status</th>
+                        <th className="p-1.5 text-right text-amber-300">In Stock</th>
+                        <th className="p-1.5 text-right">Min Thresh</th>
+                        <th className="p-1.5 text-right text-rose-300">Deficit</th>
+                        <th className="p-1.5 text-center">Alert Status</th>
                       </>
                     ) : reportType === 'REORDER_QTY' ? (
                       <>
-                        <th className="p-2.5 text-right">In Stock</th>
-                        <th className="p-2.5 text-right">Min Thresh</th>
+                        <th className="p-1.5 text-right">In Stock</th>
+                        <th className="p-1.5 text-right">Min Thresh</th>
                         <th className="p-2.5 text-right text-indigo-300">PO Reorder Qty</th>
                         <th className="p-2.5 text-right text-emerald-300">Est. Order Cost</th>
                       </>
@@ -1625,44 +1635,57 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
           </div>
         </div>
 
-        {/* Modal Bottom Actions */}
-        <div className="bg-white p-3 sm:p-4 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shrink-0">
-          <div className="flex items-center space-x-2 text-xs text-slate-600">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+        {/* Modal Bottom Actions - Compact */}
+        <div className="bg-white p-2 sm:p-2.5 border-t border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 shrink-0">
+          <div className="flex items-center space-x-1.5 text-[11px] text-slate-600">
+            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
             <span>
               Active Report: <strong className="text-slate-900">{reportMeta.title}</strong>
             </span>
           </div>
 
-          <div className="flex items-center space-x-2 self-end sm:self-auto">
+          <div className="flex items-center space-x-1.5 self-end sm:self-auto">
             <button
               type="button"
               onClick={handleExportCsv}
-              className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-xl font-bold text-xs flex items-center transition cursor-pointer shadow-2xs"
+              className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 rounded-lg font-bold text-[11px] flex items-center transition cursor-pointer shadow-2xs"
             >
-              <Download className="w-3.5 h-3.5 mr-1.5 text-slate-600" />
+              <Download className="w-3 h-3 mr-1 text-slate-600" />
               <span>Export CSV</span>
             </button>
 
             <button
               type="button"
               onClick={handlePrintA4Report}
-              className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-xs flex items-center transition cursor-pointer shadow-sm ring-2 ring-indigo-500/20"
+              className="px-3 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg font-bold text-[11px] flex items-center transition cursor-pointer shadow-2xs ring-1 ring-indigo-500/30"
             >
-              <Printer className="w-4 h-4 mr-1.5" />
-              <span>Print Report (A4 / PDF)</span>
+              <Printer className="w-3 h-3 mr-1" />
+              <span>Print Report (A4)</span>
             </button>
 
             <button
               type="button"
               onClick={onClose}
-              className="px-3.5 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl font-bold text-xs transition cursor-pointer"
+              className="px-2.5 py-1 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg font-bold text-[11px] transition cursor-pointer"
             >
-              Close
+              {isPageMode ? '← Back to Stock Grid' : 'Close'}
             </button>
           </div>
         </div>
       </div>
+  );
+
+  if (isPageMode) {
+    return (
+      <div className="w-full font-sans pb-6">
+        {contentJsx}
+      </div>
+    );
+  }
+
+  return (
+    <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-sm z-[9999] flex flex-col items-center justify-center p-2 sm:p-4 overflow-y-auto font-sans">
+      {contentJsx}
     </div>
   );
 };

@@ -46,6 +46,7 @@ import {
   Download,
   ChevronLeft,
   ChevronRight,
+  ChevronDown,
   ChevronsLeft,
   ChevronsRight,
   Receipt,
@@ -58,7 +59,10 @@ import {
   AlertOctagon,
   Ban,
   Archive,
-  Package
+  Package,
+  SlidersHorizontal,
+  Maximize2,
+  Minimize2
 } from 'lucide-react';
 import ItemQRScannerModal from './ItemQRScannerModal';
 import ItemQRGeneratorModal from './ItemQRGeneratorModal';
@@ -224,12 +228,12 @@ export default function PharmacyPOS({
   const [isPwaModalOpen, setIsPwaModalOpen] = useState(false);
 
   // Navigation tabs
-  const [activeSubTab, setActiveSubTab] = useState<'checkout' | 'store_sales' | 'return' | 'grn' | 'inventory_manager' | 'invoice_logs' | 'clinical_labels' | 'barcode_mapper'>(() => {
+  const [activeSubTab, setActiveSubTab] = useState<'checkout' | 'store_sales' | 'return' | 'grn' | 'inventory_manager' | 'custom_reports' | 'invoice_logs' | 'clinical_labels' | 'barcode_mapper'>(() => {
     try {
       if (typeof window !== 'undefined') {
         const params = new URLSearchParams(window.location.search);
         const sub = params.get('sub');
-        if (sub && ['checkout', 'store_sales', 'return', 'grn', 'inventory_manager', 'invoice_logs', 'clinical_labels', 'barcode_mapper'].includes(sub)) {
+        if (sub && ['checkout', 'store_sales', 'return', 'grn', 'inventory_manager', 'custom_reports', 'invoice_logs', 'clinical_labels', 'barcode_mapper'].includes(sub)) {
           return sub as any;
         }
         if (params.get('app') === 'store_medicine') {
@@ -241,6 +245,10 @@ export default function PharmacyPOS({
   });
   const [isSubTabLoading, setIsSubTabLoading] = useState(false);
   const [subTabLoadingMsg, setSubTabLoadingMsg] = useState('Loading Sub-module...');
+
+  // Compact / Collapsed Toolbars state to give maximum space to Stock Grid
+  const [isGridToolbarCollapsed, setIsGridToolbarCollapsed] = useState(false);
+  const [showSpreadsheetFilters, setShowSpreadsheetFilters] = useState(true);
 
   const handleSubTabSwitch = (newSubTab: typeof activeSubTab, label: string) => {
     if (newSubTab === activeSubTab) return;
@@ -1937,6 +1945,19 @@ export default function PharmacyPOS({
   const [showAllInvoicesInHistory, setShowAllInvoicesInHistory] = useState(false);
   const [searchHistoryQuery, setSearchHistoryQuery] = useState('');
 
+  const isAdministrator = currentUser?.Role === 'Administrator' ||
+    currentUser?.Role?.toLowerCase() === 'admin' ||
+    currentUser?.Role?.toLowerCase() === 'administrator' ||
+    currentUser?.LoginName?.toLowerCase() === 'admin';
+
+  useEffect(() => {
+    if (!isAdministrator && (salesReportPeriodMode === 'range' || salesReportPeriodMode === 'all' || showAllInvoicesInHistory)) {
+      setSalesReportPeriodMode('daily');
+      setShowAllInvoicesInHistory(false);
+      setSelectedDailyReportDate(todayStr);
+    }
+  }, [isAdministrator, salesReportPeriodMode, showAllInvoicesInHistory, todayStr]);
+
   // Checkout billing & discount state
   const [discountInput, setDiscountInput] = useState<number>(0);
   const [billingShift, setBillingShift] = useState<'1' | '2'>('1');
@@ -3131,7 +3152,10 @@ export default function PharmacyPOS({
       const invDate = String(inv.InvoiceDate || '').trim().slice(0, 10);
 
       // Period Mode Filter
-      if (salesReportPeriodMode === 'daily') {
+      if (!isAdministrator) {
+        const targetDate = selectedDailyReportDate || todayStr;
+        if (invDate !== targetDate) return false;
+      } else if (salesReportPeriodMode === 'daily') {
         const targetDate = selectedDailyReportDate || todayStr;
         if (invDate !== targetDate) return false;
       } else if (salesReportPeriodMode === 'range') {
@@ -3282,6 +3306,23 @@ export default function PharmacyPOS({
               {!canViewStock && <Lock className="w-2.5 h-2.5 text-amber-500 ml-0.5" />}
             </button>
           )}
+
+          <button
+            type="button"
+            onClick={() => handleSubTabSwitch('custom_reports', 'Custom Reports')}
+            className={`flex items-center space-x-1 px-2 py-1 rounded-md text-[11px] font-bold transition cursor-pointer ${
+              activeSubTab === 'custom_reports'
+                ? 'bg-purple-700 text-white shadow-2xs'
+                : 'text-purple-700 hover:text-purple-900 hover:bg-purple-50'
+            }`}
+            title="Inventory & Sales Custom Reports Hub (Full Page View)"
+          >
+            <BarChart3 className="w-3 h-3 text-purple-400" />
+            <span>Custom Reports</span>
+            <span className="ml-1 px-1 py-0.2 bg-purple-200 text-purple-900 text-[9px] font-black rounded-full">
+              Page
+            </span>
+          </button>
 
           {(currentUser.Permissions?.canAccessInvoiceLogs !== false) && (
             <button
@@ -4123,457 +4164,499 @@ export default function PharmacyPOS({
             </div>
           </div>
         ) : (
-        <div className="space-y-6 animate-fadeIn" id="pos-inventory-manager-tab">
+        <div className="space-y-2 animate-fadeIn" id="pos-inventory-manager-tab">
           
-          <div className="flex flex-col space-y-4">
+          <div className="flex flex-col space-y-1.5">
             
-            {/* Category Dropdown Top Toolbar Bar */}
-            <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 rounded-2xl shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-3 flex-1 min-w-0">
-                <div className="p-2.5 bg-indigo-500/20 text-indigo-300 rounded-xl border border-indigo-400/30 shrink-0">
-                  <Tag className="w-5 h-5" />
-                </div>
-                <div className="flex-1 min-w-[220px] max-w-lg">
-                  <label className="block text-[10px] font-black uppercase tracking-wider text-indigo-300 mb-1">
-                    Select Medicine Category
-                  </label>
+            {/* Category Dropdown Top Toolbar Bar (Box 1) - Sleek, Ultra-Compact & Collapsible */}
+            {isGridToolbarCollapsed ? (
+              /* Collapsed Ultra-Slim Toolbar (Maximum Grid View Mode) */
+              <div className="bg-slate-900 text-white px-2.5 py-1 rounded-lg border border-slate-800 flex items-center justify-between gap-2 shadow-xs animate-fadeIn">
+                <div className="flex items-center space-x-1.5 min-w-0">
+                  <Tag className="w-3 h-3 text-indigo-400 shrink-0" />
+                  <span className="text-[10px] font-bold text-slate-300 hidden sm:inline">Category:</span>
                   <select
                     value={invCategoryFilter}
                     onChange={(e) => {
                       setInvCategoryFilter(e.target.value);
                       setInvCurrentPage(1);
                     }}
-                    className="w-full py-2 px-3 bg-slate-800 text-white border border-slate-700 rounded-xl text-xs font-bold shadow-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
+                    className="py-0.5 px-2 bg-slate-800 text-white border border-slate-700 rounded text-[11px] font-bold focus:outline-none cursor-pointer"
                   >
                     {navCategories.map((cat) => (
-                      <option key={cat.id} value={cat.id} className="bg-slate-900 text-white py-1">
+                      <option key={cat.id} value={cat.id} className="bg-slate-900 text-white">
                         {cat.label} {cat.isFeatured ? ' (Default)' : ''}
                       </option>
                     ))}
                   </select>
+                  <span className="text-[10px] text-slate-400 font-mono hidden md:inline">
+                    ({currentScopeCounts.total} items)
+                  </span>
                 </div>
 
-                <button
-                  type="button"
-                  onClick={() => setIsCategoryModalOpen(true)}
-                  className="px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl flex items-center space-x-1.5 font-bold text-xs transition cursor-pointer shrink-0 self-end md:self-auto"
-                  title="Category Add & Edit Manager"
-                >
-                  <Tag className="w-3.5 h-3.5" />
-                  <span>Category Manager</span>
-                </button>
-              </div>
+                <div className="flex items-center space-x-1.5 shrink-0">
+                  <button
+                    type="button"
+                    onClick={handleOpenAddMedicineModal}
+                    className="h-6 px-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold flex items-center transition cursor-pointer"
+                  >
+                    <PlusCircle className="w-3 h-3 mr-1" />
+                    <span>Add Med</span>
+                  </button>
 
-              <div className="flex flex-wrap items-center gap-2 shrink-0 self-end md:self-auto">
-                <button
-                  type="button"
-                  onClick={() => setIsCustomReportsModalOpen(true)}
-                  className="px-3.5 py-2 bg-gradient-to-r from-purple-700 via-indigo-600 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white rounded-xl flex items-center transition cursor-pointer font-bold text-xs shadow-sm border border-purple-400/40"
-                  title="Generate Custom Parameter-based Reports (Max Sale Medicine, Dead Stock, Current Stock, Reorder Qty, Minimum Threshold)"
-                >
-                  <BarChart3 className="w-4 h-4 mr-1.5 text-purple-200" />
-                  <span>Custom Reports</span>
-                  <span className="ml-1.5 px-1.5 py-0.2 bg-purple-900/80 text-purple-100 text-[9px] font-black rounded-full border border-purple-400/30">
-                    HUB
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsDeadItemsModalOpen(true)}
-                  className="px-4 py-2 bg-rose-700 hover:bg-rose-600 text-white rounded-xl flex items-center transition cursor-pointer font-bold text-xs shadow-sm"
-                  title="Open Dead Items & Obsolete Inventory Grid-view Popup"
-                >
-                  <AlertOctagon className="w-4 h-4 mr-1.5 text-rose-300" />
-                  <span>Dead Items</span>
-                  <span className="ml-1.5 px-1.5 py-0.2 bg-rose-900 text-rose-100 text-[10px] font-mono font-black rounded-full border border-rose-600">
-                    {items.filter(i => Boolean(i.IsDead || i.Status === 'Dead' || i.Status === 'DEAD')).length}
-                  </span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => setIsBulkExpiryModalOpen(true)}
-                  className="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl flex items-center transition cursor-pointer font-bold text-xs shadow-sm"
-                  title="Bulk Update Medicine Expiry Dates (Month-Year)"
-                >
-                  <Calendar className="w-4 h-4 mr-1.5" />
-                  <span>Change Expire Date</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleOpenAddMedicineModal}
-                  className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl flex items-center transition cursor-pointer font-bold text-xs shadow-sm"
-                >
-                  <PlusCircle className="w-4 h-4 mr-1.5" />
-                  <span>Add New Medicine</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Main Area: Excel Sheet Style Inventory Grid View */}
-            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-col space-y-4">
-              
-              {/* Spreadsheet Header Toolbar & Quick Search */}
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-slate-900 text-white p-3.5 rounded-xl border border-slate-800">
-                <div className="flex items-center space-x-2 flex-1 min-w-0">
-                  <div className="relative flex-1">
-                    <Search className="absolute left-3 top-2.5 h-4 w-4 text-emerald-400" />
-                    <input
-                      type="text"
-                      placeholder="Quick Search: Type Medicine Name, ID, Category, Batch #, or Barcode..."
-                      value={invSearchQuery}
-                      onChange={(e) => {
-                        setInvSearchQuery(e.target.value);
-                        setInvCurrentPage(1);
-                      }}
-                      className="w-full text-xs border border-slate-700 bg-slate-950 text-white placeholder-slate-400 rounded-lg pl-9 pr-8 py-2 focus:outline-none focus:ring-2 focus:ring-emerald-400 font-mono font-medium shadow-inner"
-                    />
-                    {invSearchQuery && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setInvSearchQuery('');
-                          setInvCurrentPage(1);
-                        }}
-                        className="absolute right-2.5 top-2.5 text-slate-400 hover:text-white"
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setIsGridToolbarCollapsed(false)}
+                    className="h-6 px-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10px] font-bold flex items-center space-x-1 transition cursor-pointer shadow-xs"
+                    title="Show Full Category & Action Toolbar"
+                  >
+                    <Minimize2 className="w-3 h-3" />
+                    <span>Show Toolbar</span>
+                  </button>
                 </div>
-
-                <div className="flex flex-wrap items-center gap-2 shrink-0">
-                  {/* Expiry Status Filter Selector */}
-                  <div className="flex items-center space-x-1 bg-slate-800 p-0.5 rounded-lg border border-slate-700">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInvExpiryFilterScope('ALL');
-                        setInvCurrentPage(1);
-                      }}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer ${
-                        invExpiryFilterScope === 'ALL'
-                          ? 'bg-indigo-600 text-white'
-                          : 'text-slate-300 hover:text-white'
-                      }`}
-                    >
-                      All Expiry
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInvExpiryFilterScope('EXPIRED');
-                        setInvCurrentPage(1);
-                      }}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
-                        invExpiryFilterScope === 'EXPIRED'
-                          ? 'bg-rose-600 text-white'
-                          : 'text-rose-300 hover:text-white hover:bg-rose-950/40'
-                      }`}
-                    >
-                      <span>🔴 Expired</span>
-                      <span className="px-1 py-0.2 bg-rose-800 text-white rounded text-[9px] font-mono">
-                        {items.filter(i => getItemExpirySummary(i).status === 'EXPIRED' || getItemExpirySummary(i).status === 'PARTIAL_EXPIRED').length}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInvExpiryFilterScope('NEAR_EXPIRY');
-                        setInvCurrentPage(1);
-                      }}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
-                        invExpiryFilterScope === 'NEAR_EXPIRY'
-                          ? 'bg-amber-600 text-white'
-                          : 'text-amber-300 hover:text-white hover:bg-amber-950/40'
-                      }`}
-                    >
-                      <span>🟡 &lt;90 Days</span>
-                      <span className="px-1 py-0.2 bg-amber-800 text-white rounded text-[9px] font-mono">
-                        {items.filter(i => getItemExpirySummary(i).status === 'NEAR_EXPIRY').length}
-                      </span>
-                    </button>
+              </div>
+            ) : (
+              /* Normal Ultra-Compact Category & Action Bar */
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white px-2.5 py-1.5 rounded-lg shadow-xs flex flex-wrap items-center justify-between gap-1.5 border border-slate-800 animate-fadeIn">
+                <div className="flex items-center space-x-1.5 flex-1 min-w-[180px] max-w-sm">
+                  <div className="p-1 bg-indigo-500/20 text-indigo-300 rounded border border-indigo-400/30 shrink-0">
+                    <Tag className="w-3.5 h-3.5" />
                   </div>
-
-                  {/* Dead Status Filter Scope */}
-                  <div className="flex items-center space-x-1 bg-slate-800 p-0.5 rounded-lg border border-slate-700">
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInvDeadFilterScope('ALL');
-                        setInvCurrentPage(1);
-                      }}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
-                        invDeadFilterScope === 'ALL'
-                          ? 'bg-indigo-600 text-white'
-                          : 'text-slate-300 hover:text-white'
-                      }`}
-                      title="Show entire catalog (Active and Dead items)"
-                    >
-                      <span>All</span>
-                      <span className="px-1 py-0.2 bg-slate-900/60 text-slate-300 rounded text-[9px] font-mono">
-                        {inventoryStats.totalCatalog}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInvDeadFilterScope('ACTIVE_ONLY');
-                        setInvCurrentPage(1);
-                      }}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
-                        invDeadFilterScope === 'ACTIVE_ONLY'
-                          ? 'bg-emerald-600 text-white shadow-xs'
-                          : 'text-emerald-300 hover:text-white hover:bg-emerald-950/40'
-                      }`}
-                      title="Show only Active running medicines (Recommended)"
-                    >
-                      <span>Active</span>
-                      <span className={`px-1 py-0.2 rounded text-[9px] font-mono ${
-                        invDeadFilterScope === 'ACTIVE_ONLY' ? 'bg-emerald-800 text-white' : 'bg-emerald-950 text-emerald-300'
-                      }`}>
-                        {inventoryStats.activeCount}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setInvDeadFilterScope('DEAD_ONLY');
-                        setInvCurrentPage(1);
-                      }}
-                      className={`px-2 py-1 rounded text-[10px] font-bold transition cursor-pointer flex items-center space-x-1 ${
-                        invDeadFilterScope === 'DEAD_ONLY'
-                          ? 'bg-rose-600 text-white shadow-xs'
-                          : 'text-rose-300 hover:text-white hover:bg-rose-950/40'
-                      }`}
-                      title="Show only Dead/Obsolete medicines"
-                    >
-                      <span>💀 Dead</span>
-                      <span className={`px-1 py-0.2 rounded text-[9px] font-mono ${
-                        invDeadFilterScope === 'DEAD_ONLY' ? 'bg-rose-800 text-white' : 'bg-rose-950 text-rose-300'
-                      }`}>
-                        {inventoryStats.deadCount}
-                      </span>
-                    </button>
-                  </div>
-
-                  {/* Stock Level Selector matching Dead Items Manager */}
-                  <div className="flex items-center space-x-1 bg-slate-800 px-2 py-1 rounded-lg border border-slate-700">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Stock:</span>
+                  <div className="flex-1 min-w-0">
                     <select
-                      value={invStockFilter}
+                      value={invCategoryFilter}
                       onChange={(e) => {
-                        const val = e.target.value as 'ALL' | 'IN_STOCK' | 'LOW_STOCK' | 'ZERO_STOCK';
-                        setInvStockFilter(val);
-                        setInvLowStockFilter(val === 'LOW_STOCK');
+                        setInvCategoryFilter(e.target.value);
                         setInvCurrentPage(1);
                       }}
-                      className="bg-slate-900 text-white text-xs font-bold rounded px-2 py-0.5 border border-slate-600 focus:outline-none focus:ring-1 focus:ring-indigo-400 cursor-pointer"
-                      title="Filter medicines by current stock status"
+                      className="w-full py-1 px-2 bg-slate-800 text-white border border-slate-700 rounded text-[11px] font-bold shadow-xs focus:outline-none focus:ring-1 focus:ring-indigo-400 cursor-pointer"
+                      title="Filter Stock by Medicine Category"
                     >
-                      <option value="ALL">All Stock Levels ({currentScopeCounts.total})</option>
-                      <option value="IN_STOCK">In Stock (&gt; 0 Qty) ({currentScopeCounts.inStock})</option>
-                      <option value="LOW_STOCK">Low Stock (&le; Min) ({currentScopeCounts.lowStock})</option>
-                      <option value="ZERO_STOCK">Out of Stock (0 Qty) ({currentScopeCounts.zeroStock})</option>
+                      {navCategories.map((cat) => (
+                        <option key={cat.id} value={cat.id} className="bg-slate-900 text-white py-0.5">
+                          {cat.label} {cat.isFeatured ? ' (Default)' : ''}
+                        </option>
+                      ))}
                     </select>
                   </div>
-
                   <button
                     type="button"
-                    onClick={() => {
-                      const next = !(invLowStockFilter || invStockFilter === 'LOW_STOCK');
-                      setInvLowStockFilter(next);
-                      setInvStockFilter(next ? 'LOW_STOCK' : 'ALL');
-                      setInvCurrentPage(1);
-                    }}
-                    className={`px-3 py-1.5 rounded-lg flex items-center transition cursor-pointer font-bold text-xs border ${
-                      (invLowStockFilter || invStockFilter === 'LOW_STOCK')
-                        ? 'bg-rose-600 text-white border-rose-500 shadow-xs ring-2 ring-rose-400'
-                        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
-                    }`}
-                    title="Toggle filter to display only low stock items"
+                    onClick={() => setIsCategoryModalOpen(true)}
+                    className="h-6 px-2 bg-slate-800 hover:bg-slate-700 text-white rounded text-[10px] font-bold flex items-center space-x-1 transition cursor-pointer shrink-0 border border-slate-700 shadow-xs"
+                    title="Manage Categories"
                   >
-                    <AlertTriangle className="w-3.5 h-3.5 mr-1.5 text-rose-400 shrink-0" />
-                    <span>{(invLowStockFilter || invStockFilter === 'LOW_STOCK') ? 'Low Stock Active' : 'Low Stock Only'}</span>
-                    <span className="ml-1.5 px-1.5 py-0.2 bg-rose-500 text-white text-[10px] font-black rounded-full font-mono">
-                      {currentScopeCounts.lowStock}
-                    </span>
+                    <Tag className="w-2.5 h-2.5 text-indigo-400" />
+                    <span className="hidden sm:inline">Categories</span>
                   </button>
+                </div>
 
+                {/* Action Buttons Group - Ultra-Compact & Perfectly Aligned */}
+                <div className="flex flex-wrap items-center gap-1 shrink-0">
+                  {/* 1. Custom Reports */}
                   <button
                     type="button"
-                    onClick={() => handlePrintStockGrid()}
-                    className={`px-3 py-1.5 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs border ${
-                      (invLowStockFilter || invStockFilter === 'LOW_STOCK')
-                        ? 'bg-rose-700 hover:bg-rose-600 text-white border-rose-600 ring-2 ring-rose-400/50'
-                        : 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500'
-                    }`}
-                    title={(invLowStockFilter || invStockFilter === 'LOW_STOCK') ? "Print Low Stock Items List on A4 Paper" : "Print Filtered Stock Grid on A4 Paper"}
+                    onClick={() => handleSubTabSwitch('custom_reports', 'Custom Reports')}
+                    className="h-6 px-2 bg-gradient-to-r from-purple-700 via-indigo-600 to-indigo-700 hover:from-purple-600 hover:to-indigo-600 text-white rounded text-[10px] font-bold flex items-center transition cursor-pointer shadow-xs border border-purple-400/40"
+                    title="Open Dedicated Custom Reports Hub (Full Page View)"
                   >
-                    <Printer className="w-3.5 h-3.5 mr-1.5" />
-                    <span>{(invLowStockFilter || invStockFilter === 'LOW_STOCK') ? 'Print Low Stock (A4)' : 'Print Stock Report (A4)'}</span>
+                    <BarChart3 className="w-3 h-3 mr-1 text-purple-200" />
+                    <span>Custom Reports</span>
                   </button>
 
-                  {!(invLowStockFilter || invStockFilter === 'LOW_STOCK') && (
-                    <button
-                      type="button"
-                      onClick={() => handlePrintStockGrid(true)}
-                      className="px-2.5 py-1.5 bg-rose-900/80 hover:bg-rose-800 text-rose-200 hover:text-white border border-rose-700/80 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
-                      title="Directly print all low stock items without changing current filter"
-                    >
-                      <AlertTriangle className="w-3.5 h-3.5 mr-1 text-rose-400" />
-                      <span>Print Low Stock</span>
-                    </button>
-                  )}
-
-                  <button
-                    type="button"
-                    onClick={() => setIsCustomReportsModalOpen(true)}
-                    className="px-3 py-1.5 bg-gradient-to-r from-purple-700 via-indigo-600 to-purple-800 hover:from-purple-600 hover:to-indigo-500 text-white border border-purple-400/40 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
-                    title="Open Custom Report Generator with Parameters (Max Sale Medicine, Dead Stock, Current Stock, Reorder Qty, Minimum Threshold)"
-                  >
-                    <BarChart3 className="w-3.5 h-3.5 mr-1.5 text-purple-200" />
-                    <span>Generate Custom Report</span>
-                    <Sparkles className="w-3 h-3 ml-1.5 text-amber-300" />
-                  </button>
-
+                  {/* 2. Dedicated Separate Reports Dropdown */}
                   <div className="relative group">
                     <button
                       type="button"
-                      className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
+                      className="h-6 px-2 bg-slate-800 hover:bg-slate-700 text-slate-100 border border-slate-700 rounded text-[10px] font-bold flex items-center transition cursor-pointer shadow-xs"
                       title="Quick Direct Print for Separate Reports"
                     >
-                      <FileText className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
-                      <span>Dedicated Reports ▾</span>
+                      <FileText className="w-3 h-3 mr-1 text-emerald-400" />
+                      <span>Dedicated Reports</span>
+                      <ChevronDown className="w-2.5 h-2.5 ml-0.5 text-slate-400" />
                     </button>
-                    <div className="absolute right-0 top-full mt-1 w-60 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl p-1.5 hidden group-hover:block z-50 divide-y divide-slate-800">
-                      <div className="py-1">
+                    <div className="absolute right-0 top-full mt-1 w-56 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl p-1 hidden group-hover:block z-50 divide-y divide-slate-800 animate-fadeIn">
+                      <div className="py-0.5">
                         <button
                           type="button"
                           onClick={() => handlePrintCurrentStockReport()}
-                          className="w-full text-left px-3 py-2 text-xs font-semibold text-emerald-300 hover:bg-slate-800 hover:text-white rounded-lg flex items-center space-x-2 transition"
+                          className="w-full text-left px-2.5 py-1.5 text-[11px] font-semibold text-emerald-300 hover:bg-slate-800 hover:text-white rounded flex items-center space-x-1.5 transition cursor-pointer"
                         >
-                          <Boxes className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                          <Boxes className="w-3 h-3 text-emerald-400 shrink-0" />
                           <span>Current Active Stock</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => handlePrintDeadStockReport()}
-                          className="w-full text-left px-3 py-2 text-xs font-semibold text-rose-300 hover:bg-rose-950/40 hover:text-white rounded-lg flex items-center space-x-2 transition"
+                          className="w-full text-left px-2.5 py-1.5 text-[11px] font-semibold text-rose-300 hover:bg-rose-950/40 hover:text-white rounded flex items-center space-x-1.5 transition cursor-pointer"
                         >
-                          <AlertOctagon className="w-3.5 h-3.5 text-rose-400 shrink-0" />
+                          <AlertOctagon className="w-3 h-3 text-rose-400 shrink-0" />
                           <span>Dead Stock Report</span>
                         </button>
                       </div>
-                      <div className="py-1">
+                      <div className="py-0.5">
                         <button
                           type="button"
                           onClick={() => handlePrintReorderQtyReport()}
-                          className="w-full text-left px-3 py-2 text-xs font-semibold text-indigo-300 hover:bg-slate-800 hover:text-white rounded-lg flex items-center space-x-2 transition"
+                          className="w-full text-left px-2.5 py-1.5 text-[11px] font-semibold text-indigo-300 hover:bg-slate-800 hover:text-white rounded flex items-center space-x-1.5 transition cursor-pointer"
                         >
-                          <Truck className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                          <Truck className="w-3 h-3 text-indigo-400 shrink-0" />
                           <span>Reorder Qty Report</span>
                         </button>
                         <button
                           type="button"
                           onClick={() => handlePrintMinThresholdReport()}
-                          className="w-full text-left px-3 py-2 text-xs font-semibold text-amber-300 hover:bg-slate-800 hover:text-white rounded-lg flex items-center space-x-2 transition"
+                          className="w-full text-left px-2.5 py-1.5 text-[11px] font-semibold text-amber-300 hover:bg-slate-800 hover:text-white rounded flex items-center space-x-1.5 transition cursor-pointer"
                         >
-                          <AlertTriangle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                          <AlertTriangle className="w-3 h-3 text-amber-400 shrink-0" />
                           <span>Min Threshold Shortage</span>
                         </button>
                       </div>
                     </div>
                   </div>
 
+                  {/* 3. Dead Items Button */}
                   <button
                     type="button"
-                    onClick={() => {
-                      const processedForExport = items.filter((itm) => {
-                        const stock = Number(itm.CStock ?? (itm as any).Stock ?? 0);
-                        const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? Number(itm.MinStock) : 1;
-
-                        if (invStockFilter === 'IN_STOCK' && stock <= 0) return false;
-                        if (invStockFilter === 'ZERO_STOCK' && stock > 0) return false;
-                        if (invStockFilter === 'LOW_STOCK' && stock > minStock) return false;
-                        if (invLowStockFilter && stock > minStock) return false;
-
-                        if (invExpiryFilterScope !== 'ALL') {
-                          const expSum = getItemExpirySummary(itm);
-                          if (invExpiryFilterScope === 'EXPIRED' && expSum.status !== 'EXPIRED' && expSum.status !== 'PARTIAL_EXPIRED') return false;
-                          if (invExpiryFilterScope === 'NEAR_EXPIRY' && expSum.status !== 'NEAR_EXPIRY') return false;
-                          if (invExpiryFilterScope === 'ACTIVE' && expSum.status !== 'ACTIVE') return false;
-                        }
-                        if (invDeadFilterScope === 'ACTIVE_ONLY') {
-                          const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
-                          if (isDead) return false;
-                        }
-                        if (invDeadFilterScope === 'DEAD_ONLY') {
-                          const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
-                          if (!isDead) return false;
-                        }
-                        if (invCategoryFilter !== 'ALL') {
-                          if (invCategoryFilter === 'C') {
-                            if (itm.MedicineType !== 'C') return false;
-                          } else if (invCategoryFilter === 'P') {
-                            if (itm.MedicineType === 'C') return false;
-                          } else {
-                            const u = (itm.Unit || '').toLowerCase().trim();
-                            const c = invCategoryFilter.toLowerCase().trim();
-                            if (u !== c && !u.includes(c)) return false;
-                          }
-                        }
-                        if (invSearchQuery.trim()) {
-                          const q = invSearchQuery.toLowerCase().trim();
-                          return (
-                            itm.ItemID.toLowerCase().includes(q) ||
-                            itm.ItemName.toLowerCase().includes(q) ||
-                            (itm.Unit || '').toLowerCase().includes(q) ||
-                            (itm.BatchNo || '').toLowerCase().includes(q) ||
-                            (itm.VendorBarcode || '').toLowerCase().includes(q)
-                          );
-                        }
-                        return true;
-                      });
-
-                      const headers = ["S.No", "Item ID", "Medicine Name", "Category/Unit", "Type", "Status", "Current Stock", "Min Threshold", "Reorder Qty", "Unit Cost (Rs)", "Retail Price (Rs)", "Batch No", "Exp Date", "Batches Count", "Dead Reason"];
-                      const rows = processedForExport.map((itm, idx) => [
-                        idx + 1,
-                        `"${itm.ItemID.replace(/"/g, '""')}"`,
-                        `"${itm.ItemName.replace(/"/g, '""')}"`,
-                        `"${(itm.Unit || 'Tab').replace(/"/g, '""')}"`,
-                        itm.MedicineType === 'C' ? 'Clinical' : 'Patent',
-                        (itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD') ? 'Dead' : 'Active',
-                        Number(itm.CStock ?? (itm as any).Stock ?? 0),
-                        (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1,
-                        itm.ReorderQty || 0,
-                        itm.PurchasePrice,
-                        itm.Price,
-                        `"${(itm.BatchNo || '').replace(/"/g, '""')}"`,
-                        `"${(itm.ExpDate || '').replace(/"/g, '""')}"`,
-                        Array.isArray(itm.Batches) ? itm.Batches.length : (itm.ExpDate ? 1 : 0),
-                        `"${(itm.DeadReason || '').replace(/"/g, '""')}"`
-                      ]);
-                      const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
-                      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-                      const url = URL.createObjectURL(blob);
-                      const link = document.createElement('a');
-                      link.setAttribute('href', url);
-                      link.setAttribute('download', `Pharmacy_Stock_Grid_${new Date().toISOString().slice(0, 10)}.csv`);
-                      document.body.appendChild(link);
-                      link.click();
-                      document.body.removeChild(link);
-                    }}
-                    className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-600 rounded-lg flex items-center font-bold text-xs transition cursor-pointer shadow-xs"
-                    title="Export filtered inventory grid to CSV Excel Spreadsheet"
+                    onClick={() => setIsDeadItemsModalOpen(true)}
+                    className="h-6 px-2 bg-rose-700 hover:bg-rose-600 text-white rounded text-[10px] font-bold flex items-center transition cursor-pointer shadow-xs border border-rose-600/50"
+                    title="Open Dead Items & Obsolete Inventory Grid-view Popup"
                   >
-                    <Download className="w-3.5 h-3.5 mr-1.5" />
-                    <span>Export CSV</span>
+                    <AlertOctagon className="w-3 h-3 mr-1 text-rose-300" />
+                    <span>Dead Items</span>
+                    <span className="ml-1 px-1 py-0 bg-rose-900 text-rose-100 text-[9px] font-mono font-bold rounded">
+                      {items.filter(i => Boolean(i.IsDead || i.Status === 'Dead' || i.Status === 'DEAD')).length}
+                    </span>
+                  </button>
+
+                  {/* 4. Change Expire Date Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkExpiryModalOpen(true)}
+                    className="h-6 px-2 bg-amber-600 hover:bg-amber-500 text-white rounded text-[10px] font-bold flex items-center transition cursor-pointer shadow-xs border border-amber-500/50"
+                    title="Bulk Update Medicine Expiry Dates (Month-Year)"
+                  >
+                    <Calendar className="w-3 h-3 mr-1" />
+                    <span>Change Expire</span>
+                  </button>
+
+                  {/* 5. Add New Medicine Button */}
+                  <button
+                    type="button"
+                    onClick={handleOpenAddMedicineModal}
+                    className="h-6 px-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold flex items-center transition cursor-pointer shadow-xs border border-emerald-500/50"
+                  >
+                    <PlusCircle className="w-3 h-3 mr-1" />
+                    <span>Add Medicine</span>
+                  </button>
+
+                  {/* 6. Maximize Grid (Hide Controls) Button */}
+                  <button
+                    type="button"
+                    onClick={() => setIsGridToolbarCollapsed(true)}
+                    className="h-6 px-2 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-white border border-slate-700 rounded text-[10px] font-bold flex items-center transition cursor-pointer shadow-xs"
+                    title="Hide this toolbar to maximize vertical space for Stock Grid"
+                  >
+                    <Maximize2 className="w-3 h-3 mr-1 text-amber-400" />
+                    <span className="hidden sm:inline">Maximize</span>
                   </button>
                 </div>
+              </div>
+            )}
+
+            {/* Main Area: Excel Sheet Style Inventory Grid View (Ultra-Compact Card) */}
+            <div className="bg-white p-2 rounded-lg border border-slate-200 shadow-2xs flex flex-col space-y-1.5">
+              
+              {/* Spreadsheet Header Toolbar & Quick Search (Box 2) */}
+              <div className="bg-slate-900 text-white p-1.5 rounded-lg border border-slate-800 w-full min-w-0 flex flex-col gap-1.5">
+                
+                {/* Primary Row: Quick Search, Filter Toggle, Print & Export */}
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-1.5">
+                  <div className="flex items-center space-x-1.5 flex-1 min-w-[180px] max-w-xl">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2 top-1.5 h-3 w-3 text-emerald-400" />
+                      <input
+                        type="text"
+                        placeholder="Quick Search: Medicine Name, ID, Category, Batch #, Barcode..."
+                        value={invSearchQuery}
+                        onChange={(e) => {
+                          setInvSearchQuery(e.target.value);
+                          setInvCurrentPage(1);
+                        }}
+                        className="w-full text-[11px] border border-slate-700 bg-slate-950 text-white placeholder-slate-400 rounded pl-7 pr-6 py-1 focus:outline-none focus:ring-1 focus:ring-emerald-400 font-mono shadow-inner"
+                      />
+                      {invSearchQuery && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setInvSearchQuery('');
+                            setInvCurrentPage(1);
+                          }}
+                          className="absolute right-1.5 top-1.5 text-slate-400 hover:text-white"
+                        >
+                          <X className="w-3 h-3" />
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Filter Toggle Button */}
+                    <button
+                      type="button"
+                      onClick={() => setShowSpreadsheetFilters(!showSpreadsheetFilters)}
+                      className={`h-6 px-2 rounded text-[10px] font-bold border transition cursor-pointer flex items-center space-x-1 shrink-0 ${
+                        showSpreadsheetFilters
+                          ? 'bg-slate-800 text-indigo-300 border-slate-700 hover:bg-slate-700'
+                          : 'bg-indigo-600 text-white border-indigo-500 hover:bg-indigo-500'
+                      }`}
+                      title={showSpreadsheetFilters ? "Hide Filters" : "Show Filters"}
+                    >
+                      <SlidersHorizontal className="w-2.5 h-2.5" />
+                      <span>{showSpreadsheetFilters ? 'Hide Filters' : 'Filters'}</span>
+                    </button>
+                  </div>
+
+                  <div className="flex items-center space-x-1 shrink-0 self-end md:self-auto">
+                    {/* Print Stock Grid (A4) */}
+                    <button
+                      type="button"
+                      onClick={() => handlePrintStockGrid()}
+                      className={`h-6 px-2 rounded text-[10px] font-bold flex items-center transition cursor-pointer shadow-xs border ${
+                        (invLowStockFilter || invStockFilter === 'LOW_STOCK')
+                          ? 'bg-rose-700 hover:bg-rose-600 text-white border-rose-600'
+                          : 'bg-indigo-600 hover:bg-indigo-500 text-white border-indigo-500'
+                      }`}
+                      title={(invLowStockFilter || invStockFilter === 'LOW_STOCK') ? "Print Low Stock Items List on A4 Paper" : "Print Filtered Stock Grid on A4 Paper"}
+                    >
+                      <Printer className="w-2.5 h-2.5 mr-1" />
+                      <span>{(invLowStockFilter || invStockFilter === 'LOW_STOCK') ? 'Print Low Stock' : 'Print Grid'}</span>
+                    </button>
+
+                    {/* Export CSV Excel */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const processedForExport = items.filter((itm) => {
+                          const stock = Number(itm.CStock ?? (itm as any).Stock ?? 0);
+                          const minStock = (itm.MinStock !== undefined && itm.MinStock !== null) ? Number(itm.MinStock) : 1;
+
+                          if (invStockFilter === 'IN_STOCK' && stock <= 0) return false;
+                          if (invStockFilter === 'ZERO_STOCK' && stock > 0) return false;
+                          if (invStockFilter === 'LOW_STOCK' && stock > minStock) return false;
+                          if (invLowStockFilter && stock > minStock) return false;
+
+                          if (invExpiryFilterScope !== 'ALL') {
+                            const expSum = getItemExpirySummary(itm);
+                            if (invExpiryFilterScope === 'EXPIRED' && expSum.status !== 'EXPIRED' && expSum.status !== 'PARTIAL_EXPIRED') return false;
+                            if (invExpiryFilterScope === 'NEAR_EXPIRY' && expSum.status !== 'NEAR_EXPIRY') return false;
+                            if (invExpiryFilterScope === 'ACTIVE' && expSum.status !== 'ACTIVE') return false;
+                          }
+                          if (invDeadFilterScope === 'ACTIVE_ONLY') {
+                            const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+                            if (isDead) return false;
+                          }
+                          if (invDeadFilterScope === 'DEAD_ONLY') {
+                            const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
+                            if (!isDead) return false;
+                          }
+                          if (invCategoryFilter !== 'ALL') {
+                            if (invCategoryFilter === 'C') {
+                              if (itm.MedicineType !== 'C') return false;
+                            } else if (invCategoryFilter === 'P') {
+                              if (itm.MedicineType === 'C') return false;
+                            } else {
+                              const u = (itm.Unit || '').toLowerCase().trim();
+                              const c = invCategoryFilter.toLowerCase().trim();
+                              if (u !== c && !u.includes(c)) return false;
+                            }
+                          }
+                          if (invSearchQuery.trim()) {
+                            const q = invSearchQuery.toLowerCase().trim();
+                            return (
+                              itm.ItemID.toLowerCase().includes(q) ||
+                              itm.ItemName.toLowerCase().includes(q) ||
+                              (itm.Unit || '').toLowerCase().includes(q) ||
+                              (itm.BatchNo || '').toLowerCase().includes(q) ||
+                              (itm.VendorBarcode || '').toLowerCase().includes(q)
+                            );
+                          }
+                          return true;
+                        });
+
+                        const headers = ["S.No", "Item ID", "Medicine Name", "Category/Unit", "Type", "Status", "Current Stock", "Min Threshold", "Reorder Qty", "Unit Cost (Rs)", "Retail Price (Rs)", "Batch No", "Exp Date", "Batches Count", "Dead Reason"];
+                        const rows = processedForExport.map((itm, idx) => [
+                          idx + 1,
+                          `"${itm.ItemID.replace(/"/g, '""')}"`,
+                          `"${itm.ItemName.replace(/"/g, '""')}"`,
+                          `"${(itm.Unit || 'Tab').replace(/"/g, '""')}"`,
+                          itm.MedicineType === 'C' ? 'Clinical' : 'Patent',
+                          (itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD') ? 'Dead' : 'Active',
+                          Number(itm.CStock ?? (itm as any).Stock ?? 0),
+                          (itm.MinStock !== undefined && itm.MinStock !== null) ? itm.MinStock : 1,
+                          itm.ReorderQty || 0,
+                          itm.PurchasePrice,
+                          itm.Price,
+                          `"${(itm.BatchNo || '').replace(/"/g, '""')}"`,
+                          `"${(itm.ExpDate || '').replace(/"/g, '""')}"`,
+                          Array.isArray(itm.Batches) ? itm.Batches.length : (itm.ExpDate ? 1 : 0),
+                          `"${(itm.DeadReason || '').replace(/"/g, '""')}"`
+                        ]);
+                        const csvContent = [headers.join(','), ...rows.map(e => e.join(','))].join('\n');
+                        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement('a');
+                        link.setAttribute('href', url);
+                        link.setAttribute('download', `Pharmacy_Stock_Grid_${new Date().toISOString().slice(0, 10)}.csv`);
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      }}
+                      className="h-6 px-2 bg-emerald-700 hover:bg-emerald-600 text-white border border-emerald-600 rounded text-[10px] font-bold flex items-center transition cursor-pointer shadow-xs"
+                      title="Export filtered inventory grid to CSV Excel Spreadsheet"
+                    >
+                      <Download className="w-2.5 h-2.5 mr-1" />
+                      <span>Export CSV</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Secondary Row: Expiry, Dead Status & Stock Filters (Collapsible to save height) */}
+                {showSpreadsheetFilters && (
+                  <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-800 animate-fadeIn">
+                    {/* Expiry Status Filter Selector */}
+                    <div className="flex items-center space-x-0.5 bg-slate-800 p-0.5 rounded border border-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInvExpiryFilterScope('ALL');
+                          setInvCurrentPage(1);
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold transition cursor-pointer ${
+                          invExpiryFilterScope === 'ALL'
+                            ? 'bg-indigo-600 text-white'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                      >
+                        All Expiry
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInvExpiryFilterScope('EXPIRED');
+                          setInvCurrentPage(1);
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold transition cursor-pointer flex items-center space-x-1 ${
+                          invExpiryFilterScope === 'EXPIRED'
+                            ? 'bg-rose-600 text-white'
+                            : 'text-rose-300 hover:text-white hover:bg-rose-950/40'
+                        }`}
+                      >
+                        <span>🔴 Expired</span>
+                        <span className="px-1 py-0 bg-rose-800 text-white rounded text-[8.5px] font-mono">
+                          {items.filter(i => getItemExpirySummary(i).status === 'EXPIRED' || getItemExpirySummary(i).status === 'PARTIAL_EXPIRED').length}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInvExpiryFilterScope('NEAR_EXPIRY');
+                          setInvCurrentPage(1);
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold transition cursor-pointer flex items-center space-x-1 ${
+                          invExpiryFilterScope === 'NEAR_EXPIRY'
+                            ? 'bg-amber-600 text-white'
+                            : 'text-amber-300 hover:text-white hover:bg-amber-950/40'
+                        }`}
+                      >
+                        <span>🟡 &lt;90 Days</span>
+                        <span className="px-1 py-0 bg-amber-800 text-white rounded text-[8.5px] font-mono">
+                          {items.filter(i => getItemExpirySummary(i).status === 'NEAR_EXPIRY').length}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Dead Status Filter Scope */}
+                    <div className="flex items-center space-x-0.5 bg-slate-800 p-0.5 rounded border border-slate-700">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInvDeadFilterScope('ALL');
+                          setInvCurrentPage(1);
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold transition cursor-pointer flex items-center space-x-1 ${
+                          invDeadFilterScope === 'ALL'
+                            ? 'bg-indigo-600 text-white'
+                            : 'text-slate-300 hover:text-white'
+                        }`}
+                        title="Show entire catalog (Active and Dead items)"
+                      >
+                        <span>All</span>
+                        <span className="px-1 py-0 bg-slate-900/60 text-slate-300 rounded text-[8.5px] font-mono">
+                          {inventoryStats.totalCatalog}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInvDeadFilterScope('ACTIVE_ONLY');
+                          setInvCurrentPage(1);
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold transition cursor-pointer flex items-center space-x-1 ${
+                          invDeadFilterScope === 'ACTIVE_ONLY'
+                            ? 'bg-emerald-600 text-white shadow-xs'
+                            : 'text-emerald-300 hover:text-white hover:bg-emerald-950/40'
+                        }`}
+                        title="Show only Active running medicines (Recommended)"
+                      >
+                        <span>Active</span>
+                        <span className={`px-1 py-0 rounded text-[8.5px] font-mono ${
+                          invDeadFilterScope === 'ACTIVE_ONLY' ? 'bg-emerald-800 text-white' : 'bg-emerald-950 text-emerald-300'
+                        }`}>
+                          {inventoryStats.activeCount}
+                        </span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setInvDeadFilterScope('DEAD_ONLY');
+                          setInvCurrentPage(1);
+                        }}
+                        className={`px-1.5 py-0.5 rounded text-[9.5px] font-bold transition cursor-pointer flex items-center space-x-1 ${
+                          invDeadFilterScope === 'DEAD_ONLY'
+                            ? 'bg-rose-600 text-white shadow-xs'
+                            : 'text-rose-300 hover:text-white hover:bg-rose-950/40'
+                        }`}
+                        title="Show only Dead/Obsolete medicines"
+                      >
+                        <span>💀 Dead</span>
+                        <span className={`px-1 py-0 rounded text-[8.5px] font-mono ${
+                          invDeadFilterScope === 'DEAD_ONLY' ? 'bg-rose-800 text-white' : 'bg-rose-950 text-rose-300'
+                        }`}>
+                          {inventoryStats.deadCount}
+                        </span>
+                      </button>
+                    </div>
+
+                    {/* Stock Level Selector matching Dead Items Manager */}
+                    <div className="flex items-center space-x-1 bg-slate-800 px-1.5 py-0.5 rounded border border-slate-700">
+                      <span className="text-[9.5px] font-bold text-slate-400 uppercase tracking-wider hidden sm:inline">Stock:</span>
+                      <select
+                        value={invStockFilter}
+                        onChange={(e) => {
+                          const val = e.target.value as 'ALL' | 'IN_STOCK' | 'LOW_STOCK' | 'ZERO_STOCK';
+                          setInvStockFilter(val);
+                          setInvLowStockFilter(val === 'LOW_STOCK');
+                          setInvCurrentPage(1);
+                        }}
+                        className="bg-slate-900 text-white text-[10px] font-bold rounded px-1 py-0.5 border border-slate-600 focus:outline-none cursor-pointer"
+                        title="Filter medicines by current stock status"
+                      >
+                        <option value="ALL">All Stock ({currentScopeCounts.total})</option>
+                        <option value="IN_STOCK">In Stock ({currentScopeCounts.inStock})</option>
+                        <option value="LOW_STOCK">Low Stock ({currentScopeCounts.lowStock})</option>
+                        <option value="ZERO_STOCK">Out of Stock ({currentScopeCounts.zeroStock})</option>
+                      </select>
+                    </div>
+                  </div>
+                )}
               </div>
 
               {/* Messages */}
@@ -4691,23 +4774,23 @@ export default function PharmacyPOS({
                 };
 
                 return (
-                  <div className="flex flex-col space-y-3">
+                  <div className="flex flex-col space-y-1.5">
                     
                     {/* Active Filter Notification Alert Banner */}
                     {(invLowStockFilter || invStockFilter === 'LOW_STOCK') && (
-                      <div className="flex flex-wrap items-center justify-between p-3 px-4 bg-rose-50 border border-rose-300 rounded-xl text-rose-900 text-xs shadow-xs">
-                        <div className="flex items-center space-x-2">
-                          <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                      <div className="flex flex-wrap items-center justify-between p-2 px-3 bg-rose-50 border border-rose-300 rounded-lg text-rose-900 text-[11px] shadow-2xs">
+                        <div className="flex items-center space-x-1.5">
+                          <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
                           <span>
-                            <strong>Low Stock Filter Active:</strong> Displaying only <strong>{processedItems.length}</strong> low stock medicine{processedItems.length === 1 ? '' : 's'} (Current Stock &le; Min Threshold).
+                            <strong>Low Stock Active:</strong> <strong>{processedItems.length}</strong> low stock medicine{processedItems.length === 1 ? '' : 's'} (Stock &le; Min Threshold).
                             {currentScopeCounts.inStock > processedItems.length && (
-                              <span className="ml-1 text-rose-700">
-                                ({currentScopeCounts.inStock - processedItems.length} active in-stock medicines are currently hidden by this filter).
+                              <span className="ml-1 text-rose-700 hidden sm:inline">
+                                ({currentScopeCounts.inStock - processedItems.length} active items hidden).
                               </span>
                             )}
                           </span>
                         </div>
-                        <div className="flex items-center space-x-2 mt-2 sm:mt-0">
+                        <div className="flex items-center space-x-1.5 mt-1 sm:mt-0">
                           <button
                             type="button"
                             onClick={() => {
@@ -4715,9 +4798,9 @@ export default function PharmacyPOS({
                               setInvStockFilter('ALL');
                               setInvCurrentPage(1);
                             }}
-                            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition shadow-xs cursor-pointer flex items-center space-x-1"
+                            className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-[10px] font-bold transition shadow-2xs cursor-pointer flex items-center space-x-1"
                           >
-                            <span>Show All Active In-Stock ({currentScopeCounts.inStock} Items)</span>
+                            <span>Show In-Stock ({currentScopeCounts.inStock})</span>
                           </button>
                           <button
                             type="button"
@@ -4730,45 +4813,45 @@ export default function PharmacyPOS({
                               setInvDeadFilterScope('ACTIVE_ONLY');
                               setInvCurrentPage(1);
                             }}
-                            className="px-2.5 py-1.5 bg-slate-700 hover:bg-slate-600 text-white rounded-lg text-xs font-bold transition cursor-pointer"
+                            className="px-1.5 py-0.5 bg-slate-700 hover:bg-slate-600 text-white rounded text-[10px] font-bold transition cursor-pointer"
                           >
-                            Clear All Filters
+                            Clear Filters
                           </button>
                         </div>
                       </div>
                     )}
 
                     {/* Top Quick Pagination & Stats Bar */}
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 px-1 py-0.5 text-xs text-slate-700">
-                      <div className="flex items-center space-x-2 flex-wrap">
+                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 px-1 py-0 text-[11px] text-slate-700">
+                      <div className="flex items-center space-x-1.5 flex-wrap">
                         <span className="font-bold text-slate-800">
                           {totalItemsCount === 0 ? (
                             '0 medicines'
                           ) : (
                             <>
-                              Showing <strong className="text-indigo-700 font-mono">{startIndex + 1}</strong> to{' '}
+                              Showing <strong className="text-indigo-700 font-mono">{startIndex + 1}</strong>-{' '}
                               <strong className="text-indigo-700 font-mono">{endIndex}</strong> of{' '}
                               <strong className="text-slate-900 font-mono">{totalItemsCount}</strong> medicines
                             </>
                           )}
                         </span>
                         {invCategoryFilter === 'ALL' && (
-                          <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-full font-bold text-[10px]">
-                            ⚡ High-Speed Virtual Mode (All Categories)
+                          <span className="px-1.5 py-0.2 bg-indigo-100 text-indigo-800 rounded font-bold text-[9px]">
+                            ⚡ Virtual Mode (All Categories)
                           </span>
                         )}
                       </div>
 
                       {/* Top Page Size Selector */}
-                      <div className="flex items-center space-x-2 self-end sm:self-auto">
-                        <label className="text-[11px] font-bold text-slate-500">Rows per page:</label>
+                      <div className="flex items-center space-x-1.5 self-end sm:self-auto">
+                        <label className="text-[10px] font-bold text-slate-500">Rows:</label>
                         <select
                           value={invPageSize}
                           onChange={(e) => {
                             setInvPageSize(Number(e.target.value));
                             setInvCurrentPage(1);
                           }}
-                          className="py-1 px-2.5 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 shadow-2xs focus:ring-1 focus:ring-indigo-500 cursor-pointer"
+                          className="py-0.5 px-1.5 bg-white border border-slate-300 rounded text-[10.5px] font-bold text-slate-800 shadow-2xs focus:ring-1 focus:ring-indigo-500 cursor-pointer"
                         >
                           <option value={25}>25 rows</option>
                           <option value={50}>50 rows (Recommended)</option>
@@ -5002,14 +5085,14 @@ export default function PharmacyPOS({
                     </div>
 
                     {/* Desktop & Tablet Excel Table Grid (Shown on md+ screens) */}
-                    <div className="hidden md:block overflow-x-auto border-2 border-slate-300 rounded-lg max-h-[560px] overflow-y-auto shadow-inner bg-slate-50">
-                      <table className="w-full text-left border-collapse text-xs font-sans select-none">
-                        <thead className="sticky top-0 bg-slate-200 text-slate-800 border-b-2 border-slate-300 font-extrabold uppercase tracking-wider text-[10px] z-10 shadow-xs">
+                    <div className="hidden md:block overflow-x-auto border border-slate-300 rounded-lg max-h-[660px] overflow-y-auto shadow-2xs bg-slate-50">
+                      <table className="w-full text-left border-collapse text-[11px] font-sans select-none">
+                        <thead className="sticky top-0 bg-slate-200 text-slate-800 border-b border-slate-300 font-extrabold uppercase tracking-wider text-[9.5px] z-10 shadow-2xs">
                           <tr className="divide-x divide-slate-300">
-                            <th className="px-2 py-2 text-center w-12 bg-slate-300/80 text-slate-700">#</th>
+                            <th className="px-1.5 py-1 text-center w-10 bg-slate-300/80 text-slate-700">#</th>
                             <th 
                               onClick={() => toggleSort('ItemID')}
-                              className="px-3 py-2 cursor-pointer hover:bg-slate-300 transition"
+                              className="px-2 py-1 cursor-pointer hover:bg-slate-300 transition"
                             >
                               <div className="flex items-center space-x-1">
                                 <span>Item ID</span>
@@ -5018,51 +5101,51 @@ export default function PharmacyPOS({
                             </th>
                             <th 
                               onClick={() => toggleSort('ItemName')}
-                              className="px-3 py-2 cursor-pointer hover:bg-slate-300 transition"
+                              className="px-2.5 py-1 cursor-pointer hover:bg-slate-300 transition"
                             >
                               <div className="flex items-center space-x-1">
                                 <span>Medicine Name</span>
                                 {invSortField === 'ItemName' && (<span>{invSortOrder === 'asc' ? '▲' : '▼'}</span>)}
                               </div>
                             </th>
-                            <th className="px-2.5 py-2">Category</th>
-                            <th className="px-2 py-2 text-center">Type</th>
+                            <th className="px-2 py-1">Category</th>
+                            <th className="px-1.5 py-1 text-center">Type</th>
                             <th 
                               onClick={() => toggleSort('CStock')}
-                              className="px-3 py-2 text-right cursor-pointer hover:bg-slate-300 transition bg-emerald-100/60 text-emerald-950 font-black"
+                              className="px-2 py-1 text-right cursor-pointer hover:bg-slate-300 transition bg-emerald-100/60 text-emerald-950 font-black"
                             >
                               <div className="flex items-center justify-end space-x-1">
                                 <span>Current Stock</span>
                                 {invSortField === 'CStock' && (<span>{invSortOrder === 'asc' ? '▲' : '▼'}</span>)}
                               </div>
                             </th>
-                            <th className="px-2.5 py-2 text-right">Min Threshold</th>
+                            <th className="px-2 py-1 text-right">Min Thresh</th>
                             <th 
                               onClick={() => toggleSort('ReorderQty')}
-                              className="px-3 py-2 text-right cursor-pointer hover:bg-slate-300 transition bg-indigo-100/60 text-indigo-950 font-black"
+                              className="px-2 py-1 text-right cursor-pointer hover:bg-slate-300 transition bg-indigo-100/60 text-indigo-950 font-black"
                             >
                               <div className="flex items-center justify-end space-x-1">
-                                <span>PO Reorder Qty</span>
+                                <span>PO Reorder</span>
                                 {invSortField === 'ReorderQty' && (<span>{invSortOrder === 'asc' ? '▲' : '▼'}</span>)}
                               </div>
                             </th>
-                            <th className="px-3 py-2 text-right">Unit Cost (Rs)</th>
-                            <th className="px-3 py-2 text-right">Retail Price (Rs)</th>
-                            <th className="px-3 py-2 text-center">Actions</th>
+                            <th className="px-2 py-1 text-right">Cost (Rs)</th>
+                            <th className="px-2 py-1 text-right">Retail (Rs)</th>
+                            <th className="px-2 py-1 text-center">Actions</th>
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-200 bg-white text-slate-800">
                           {paginatedItems.length === 0 ? (
                             <tr>
-                              <td colSpan={11} className="px-6 py-12 text-center text-slate-400 font-bold bg-white">
-                                <div className="flex flex-col items-center justify-center space-y-2">
-                                  <Package className="w-8 h-8 text-slate-300 mb-1" />
-                                  <p className="text-sm font-bold text-slate-700">
+                              <td colSpan={11} className="px-4 py-8 text-center text-slate-400 font-bold bg-white">
+                                <div className="flex flex-col items-center justify-center space-y-1.5">
+                                  <Package className="w-6 h-6 text-slate-300 mb-0.5" />
+                                  <p className="text-xs font-bold text-slate-700">
                                     {(invLowStockFilter || invStockFilter === 'LOW_STOCK')
                                       ? 'All inventory medicines are currently above reorder levels! No low stock items found.'
                                       : 'No medicines match the search or category filter.'}
                                   </p>
-                                  <div className="flex items-center space-x-2 pt-2">
+                                  <div className="flex items-center space-x-2 pt-1">
                                     <button
                                       type="button"
                                       onClick={() => {
@@ -5073,7 +5156,7 @@ export default function PharmacyPOS({
                                         setInvExpiryFilterScope('ALL');
                                         setInvCurrentPage(1);
                                       }}
-                                      className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-lg text-xs font-bold transition cursor-pointer shadow-xs"
+                                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-500 text-white rounded text-[10.5px] font-bold transition cursor-pointer shadow-2xs"
                                     >
                                       Show All Active Stock ({inventoryStats.activeInStockCount} Medicines)
                                     </button>
@@ -5097,27 +5180,27 @@ export default function PharmacyPOS({
                                   }`}
                                 >
                                   {/* Row Header Number */}
-                                  <td className="px-2 py-1.5 text-center font-mono text-[11px] font-bold text-slate-500 bg-slate-100/80">
+                                  <td className="px-1.5 py-0.5 text-center font-mono text-[10px] font-bold text-slate-500 bg-slate-100/80">
                                     {absoluteRowNumber}
                                   </td>
 
                                   {/* Item ID */}
-                                  <td className="px-2.5 py-1.5 font-mono text-xs font-bold text-slate-800">
+                                  <td className="px-1.5 py-0.5 font-mono text-[10.5px] font-bold text-slate-800">
                                     {itm.ItemID}
                                   </td>
 
                                   {/* Medicine Name & Badges */}
-                                  <td className="px-3 py-1.5 font-bold text-slate-900">
-                                    <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
-                                      <span className="text-xs">{itm.ItemName}</span>
+                                  <td className="px-2 py-0.5 font-bold text-slate-900">
+                                    <div className="flex items-center space-x-1 flex-wrap gap-y-0.5">
+                                      <span className="text-[11px]">{itm.ItemName}</span>
                                       
                                       {/* Dead Item Badge */}
                                       {(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD') && (
                                         <span
-                                          className="px-1.5 py-0.2 bg-rose-100 text-rose-900 rounded text-[9px] font-black border border-rose-300 flex items-center space-x-0.5"
+                                          className="px-1 py-0 bg-rose-100 text-rose-900 rounded text-[8px] font-black border border-rose-300 flex items-center space-x-0.5"
                                           title={itm.DeadReason ? `Dead Item: ${itm.DeadReason}` : 'Marked as Dead Item'}
                                         >
-                                          <span>💀 DEAD ITEM</span>
+                                          <span>💀 DEAD</span>
                                         </span>
                                       )}
 
@@ -5126,18 +5209,18 @@ export default function PharmacyPOS({
                                         <button
                                           type="button"
                                           onClick={() => handleOpenBatchManager(itm)}
-                                          className="px-1.5 py-0.2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-900 rounded text-[9px] font-mono border border-indigo-200 transition cursor-pointer flex items-center space-x-0.5"
-                                          title={`Click to view and manage ${itm.Batches.length} batches for this medicine`}
+                                          className="px-1 py-0 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 hover:text-indigo-900 rounded text-[8.5px] font-mono border border-indigo-200 transition cursor-pointer flex items-center space-x-0.5"
+                                          title={`Click to view and manage ${itm.Batches.length} batches`}
                                         >
                                           <Boxes className="w-2.5 h-2.5 mr-0.5" />
-                                          <span>{itm.Batches.length} {itm.Batches.length === 1 ? 'Batch' : 'Batches'}</span>
+                                          <span>{itm.Batches.length} B</span>
                                         </button>
                                       ) : itm.BatchNo ? (
                                         <button
                                           type="button"
                                           onClick={() => handleOpenBatchManager(itm)}
-                                          className="px-1.5 py-0.2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[9px] font-mono border border-slate-300 transition cursor-pointer"
-                                          title={`Batch #: ${itm.BatchNo} (Click to manage batches)`}
+                                          className="px-1 py-0 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded text-[8.5px] font-mono border border-slate-300 transition cursor-pointer"
+                                          title={`Batch #: ${itm.BatchNo}`}
                                         >
                                           B#: {itm.BatchNo}
                                         </button>
@@ -5155,11 +5238,11 @@ export default function PharmacyPOS({
                                             <button
                                               type="button"
                                               onClick={() => handleOpenBatchManager(itm)}
-                                              className="px-1.5 py-0.2 bg-rose-100 hover:bg-rose-200 text-rose-900 rounded text-[9px] font-mono font-bold border border-rose-300 transition cursor-pointer flex items-center space-x-0.5"
-                                              title={`EXPIRED on ${displayExp}! Click to manage or write-off expired stock.`}
+                                              className="px-1 py-0 bg-rose-100 hover:bg-rose-200 text-rose-900 rounded text-[8.5px] font-mono font-bold border border-rose-300 transition cursor-pointer flex items-center space-x-0.5"
+                                              title={`EXPIRED on ${displayExp}!`}
                                             >
-                                              <span className="w-1.5 h-1.5 rounded-full bg-rose-600 animate-ping mr-0.5"></span>
-                                              <span>Exp: {displayExp} (Expired)</span>
+                                              <span className="w-1 h-1 rounded-full bg-rose-600 animate-ping mr-0.5"></span>
+                                              <span>Exp: {displayExp}</span>
                                             </button>
                                           );
                                         }
@@ -5168,10 +5251,10 @@ export default function PharmacyPOS({
                                             <button
                                               type="button"
                                               onClick={() => handleOpenBatchManager(itm)}
-                                              className="px-1.5 py-0.2 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded text-[9px] font-mono font-bold border border-rose-300 transition cursor-pointer"
-                                              title={`Has expired lots (${(expSummary as any).expiredBatchesCount || 1} batch expired). Click to inspect.`}
+                                              className="px-1 py-0 bg-rose-50 hover:bg-rose-100 text-rose-800 rounded text-[8.5px] font-mono font-bold border border-rose-300 transition cursor-pointer"
+                                              title={`Has expired lots`}
                                             >
-                                              <span>Exp: {displayExp} (Part Expired)</span>
+                                              <span>Exp: {displayExp} (Part Exp)</span>
                                             </button>
                                           );
                                         }
@@ -5180,10 +5263,10 @@ export default function PharmacyPOS({
                                             <button
                                               type="button"
                                               onClick={() => handleOpenBatchManager(itm)}
-                                              className="px-1.5 py-0.2 bg-amber-100 hover:bg-amber-200 text-amber-950 rounded text-[9px] font-mono font-bold border border-amber-300 transition cursor-pointer flex items-center space-x-0.5"
-                                              title={`Near Expiry: ${(expSummary as any).daysUntilExpiry || 0} days left (${displayExp}). Click to inspect.`}
+                                              className="px-1 py-0 bg-amber-100 hover:bg-amber-200 text-amber-950 rounded text-[8.5px] font-mono font-bold border border-amber-300 transition cursor-pointer flex items-center space-x-0.5"
+                                              title={`Near Expiry: ${(expSummary as any).daysUntilExpiry || 0} days left`}
                                             >
-                                              <span>Exp: {displayExp} ({(expSummary as any).daysUntilExpiry || 0}d left)</span>
+                                              <span>Exp: {displayExp} ({(expSummary as any).daysUntilExpiry || 0}d)</span>
                                             </button>
                                           );
                                         }
@@ -5191,8 +5274,8 @@ export default function PharmacyPOS({
                                           <button
                                             type="button"
                                             onClick={() => handleOpenBatchManager(itm)}
-                                            className="px-1.5 py-0.2 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 rounded text-[9px] font-mono border border-emerald-300 transition cursor-pointer"
-                                            title={`Valid Expiry: ${displayExp}. Click to manage batches.`}
+                                            className="px-1 py-0 bg-emerald-50 hover:bg-emerald-100 text-emerald-900 rounded text-[8.5px] font-mono border border-emerald-300 transition cursor-pointer"
+                                            title={`Valid Expiry: ${displayExp}`}
                                           >
                                             Exp: {displayExp}
                                           </button>
@@ -5200,7 +5283,7 @@ export default function PharmacyPOS({
                                       })()}
 
                                       {isLowStock && (
-                                        <span className="px-1.5 py-0.2 bg-rose-600 text-white rounded text-[8px] font-black uppercase tracking-wider animate-pulse">
+                                        <span className="px-1 py-0 bg-rose-600 text-white rounded text-[7.5px] font-black uppercase tracking-wider animate-pulse">
                                           Low Stock
                                         </span>
                                       )}
@@ -5208,13 +5291,13 @@ export default function PharmacyPOS({
                                   </td>
 
                                   {/* Category / Unit */}
-                                  <td className="px-2.5 py-1.5 font-mono text-xs font-semibold text-slate-700">
+                                  <td className="px-1.5 py-0.5 font-mono text-[10.5px] font-semibold text-slate-700">
                                     {itm.Unit || 'Tab'}
                                   </td>
 
                                   {/* Type */}
-                                  <td className="px-2 py-1.5 text-center">
-                                    <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase ${
+                                  <td className="px-1.5 py-0.5 text-center">
+                                    <span className={`px-1 py-0.2 rounded text-[8px] font-black uppercase ${
                                       isClinical ? 'bg-indigo-100 text-indigo-800' : 'bg-emerald-100 text-emerald-800'
                                     }`}>
                                       {isClinical ? 'Clinical' : 'Patent'}
@@ -5222,8 +5305,8 @@ export default function PharmacyPOS({
                                   </td>
 
                                   {/* Current Stock (Direct Excel Cell Editing & Quick +/- Buttons) */}
-                                  <td className="px-2 py-1 bg-emerald-50/30">
-                                    <div className="flex items-center justify-end space-x-1">
+                                  <td className="px-1.5 py-0.5 bg-emerald-50/30">
+                                    <div className="flex items-center justify-end space-x-0.5">
                                       <button
                                         type="button"
                                         onClick={() => {
@@ -5234,7 +5317,7 @@ export default function PharmacyPOS({
                                             syncItemToBackend('UPDATE', updated);
                                           }
                                         }}
-                                        className="w-5 h-5 bg-slate-200 hover:bg-rose-200 text-slate-700 hover:text-rose-900 rounded font-bold text-xs flex items-center justify-center transition cursor-pointer"
+                                        className="w-4 h-4 bg-slate-200 hover:bg-rose-200 text-slate-700 hover:text-rose-900 rounded font-bold text-[10px] flex items-center justify-center transition cursor-pointer"
                                         title="Decrease Current Stock by 1"
                                       >
                                         -
@@ -5251,7 +5334,7 @@ export default function PharmacyPOS({
                                             syncItemToBackend('UPDATE', updated);
                                           }
                                         }}
-                                        className={`w-16 py-0.5 px-1 text-right text-xs font-mono font-black rounded border ${
+                                        className={`w-12 py-0 px-1 text-right text-[10.5px] font-mono font-black rounded border ${
                                           isLowStock
                                             ? 'bg-rose-100 border-rose-400 text-rose-950 focus:ring-1 focus:ring-rose-500'
                                             : 'bg-white border-slate-300 text-slate-900 focus:ring-1 focus:ring-emerald-500'
@@ -5268,7 +5351,7 @@ export default function PharmacyPOS({
                                             syncItemToBackend('UPDATE', updated);
                                           }
                                         }}
-                                        className="w-5 h-5 bg-slate-200 hover:bg-emerald-200 text-slate-700 hover:text-emerald-900 rounded font-bold text-xs flex items-center justify-center transition cursor-pointer"
+                                        className="w-4 h-4 bg-slate-200 hover:bg-emerald-200 text-slate-700 hover:text-emerald-900 rounded font-bold text-[10px] flex items-center justify-center transition cursor-pointer"
                                         title="Increase Current Stock by 1"
                                       >
                                         +
@@ -5277,7 +5360,7 @@ export default function PharmacyPOS({
                                   </td>
 
                                   {/* Min Threshold Direct Cell Edit */}
-                                  <td className="px-2 py-1 text-right bg-slate-50/50">
+                                  <td className="px-1.5 py-0.5 text-right bg-slate-50/50">
                                     <input
                                       type="number"
                                       min="0"
@@ -5290,13 +5373,13 @@ export default function PharmacyPOS({
                                           syncItemToBackend('UPDATE', updated);
                                         }
                                       }}
-                                      className="w-14 py-0.5 px-1 text-right text-xs font-mono font-bold bg-white border border-slate-300 rounded text-slate-700 focus:ring-1 focus:ring-indigo-500"
+                                      className="w-10 py-0 px-1 text-right text-[10.5px] font-mono font-bold bg-white border border-slate-300 rounded text-slate-700 focus:ring-1 focus:ring-indigo-500"
                                       title="Direct Excel Cell Edit: Min Threshold"
                                     />
                                   </td>
 
                                   {/* PO Reorder Qty Direct Cell Edit */}
-                                  <td className="px-2 py-1 text-right bg-indigo-50/30">
+                                  <td className="px-1.5 py-0.5 text-right bg-indigo-50/30">
                                     <input
                                       type="number"
                                       min="0"
@@ -5309,13 +5392,13 @@ export default function PharmacyPOS({
                                           syncItemToBackend('UPDATE', updated);
                                         }
                                       }}
-                                      className="w-16 py-0.5 px-1 text-right text-xs font-mono font-black bg-white border border-indigo-300 rounded text-indigo-950 focus:ring-1 focus:ring-indigo-500"
+                                      className="w-12 py-0 px-1 text-right text-[10.5px] font-mono font-black bg-white border border-indigo-300 rounded text-indigo-950 focus:ring-1 focus:ring-indigo-500"
                                       title="Direct Excel Cell Edit: Purchase Order Reorder Qty"
                                     />
                                   </td>
 
                                   {/* Unit Cost (Rs) Direct Cell Edit */}
-                                  <td className="px-2 py-1 text-right font-mono">
+                                  <td className="px-1.5 py-0.5 text-right font-mono">
                                     <input
                                       type="number"
                                       step="0.01"
@@ -5329,13 +5412,13 @@ export default function PharmacyPOS({
                                           syncItemToBackend('UPDATE', updated);
                                         }
                                       }}
-                                      className="w-18 py-0.5 px-1 text-right text-xs font-mono font-medium bg-white border border-slate-300 rounded text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                      className="w-14 py-0 px-1 text-right text-[10.5px] font-mono font-medium bg-white border border-slate-300 rounded text-slate-800 focus:ring-1 focus:ring-blue-500"
                                       title="Direct Excel Cell Edit: Unit Purchase Price"
                                     />
                                   </td>
 
                                   {/* Retail Price (Rs) Direct Cell Edit */}
-                                  <td className="px-2 py-1 text-right font-mono">
+                                  <td className="px-1.5 py-0.5 text-right font-mono">
                                     <input
                                       type="number"
                                       step="0.01"
@@ -5349,55 +5432,55 @@ export default function PharmacyPOS({
                                           syncItemToBackend('UPDATE', updated);
                                         }
                                       }}
-                                      className="w-20 py-0.5 px-1 text-right text-xs font-mono font-extrabold bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-emerald-500"
+                                      className="w-15 py-0 px-1 text-right text-[10.5px] font-mono font-extrabold bg-white border border-slate-300 rounded text-slate-900 focus:ring-1 focus:ring-emerald-500"
                                       title="Direct Excel Cell Edit: Retail Selling Price"
                                     />
                                   </td>
 
                                   {/* Actions */}
-                                  <td className="px-2 py-1 text-center">
-                                    <div className="flex justify-center items-center space-x-1">
+                                  <td className="px-1.5 py-0.5 text-center">
+                                    <div className="flex justify-center items-center space-x-0.5">
                                       <button
                                         type="button"
                                         onClick={() => {
                                           const isDead = Boolean(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD');
                                           handleUpdateItemDeadStatus(itm.ItemID, !isDead);
                                         }}
-                                        className={`p-1 rounded transition cursor-pointer ${
+                                        className={`p-0.5 rounded transition cursor-pointer ${
                                           (itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD')
                                             ? 'text-rose-600 bg-rose-100 hover:bg-rose-200'
                                             : 'text-slate-400 hover:text-rose-600 hover:bg-rose-50'
                                         }`}
                                         title={(itm.IsDead || itm.Status === 'Dead' || itm.Status === 'DEAD') ? "Marked as Dead Item (Click to mark Active)" : "Click to mark as Dead Item"}
                                       >
-                                        <AlertOctagon className="w-3.5 h-3.5" />
+                                        <AlertOctagon className="w-3 h-3" />
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => handleOpenBatchManager(itm)}
-                                        className="p-1 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100 rounded transition cursor-pointer"
+                                        className="p-0.5 text-indigo-600 hover:text-indigo-800 hover:bg-indigo-100 rounded transition cursor-pointer"
                                         title="Manage Batches, Lots & Expiry Dates"
                                       >
-                                        <Boxes className="w-3.5 h-3.5" />
+                                        <Boxes className="w-3 h-3" />
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => handleSelectEditItem(itm)}
-                                        className="p-1 text-slate-500 hover:text-indigo-600 hover:bg-indigo-100 rounded transition cursor-pointer"
+                                        className="p-0.5 text-slate-500 hover:text-indigo-600 hover:bg-indigo-100 rounded transition cursor-pointer"
                                         title="Full Parameter Edit Dialog"
                                       >
-                                        <Edit className="w-3.5 h-3.5" />
+                                        <Edit className="w-3 h-3" />
                                       </button>
                                       <button
                                         type="button"
                                         onClick={() => handleRemoveItem(itm.ItemID, itm.ItemName)}
                                         disabled={!canAdd}
-                                        className={`p-1 rounded transition cursor-pointer ${
+                                        className={`p-0.5 rounded transition cursor-pointer ${
                                           canAdd ? 'text-slate-500 hover:text-rose-600 hover:bg-rose-100' : 'text-slate-300 cursor-not-allowed'
                                         }`}
                                         title="Delete Medicine Row"
                                       >
-                                        <Trash2 className="w-3.5 h-3.5" />
+                                        <Trash2 className="w-3 h-3" />
                                       </button>
                                     </div>
                                   </td>
@@ -5411,10 +5494,10 @@ export default function PharmacyPOS({
 
                     {/* Bottom Pagination Controls Toolbar */}
                     {!isAllPage && totalPages > 1 && (
-                      <div className="flex flex-col sm:flex-row items-center justify-between gap-3 bg-slate-100 p-2.5 rounded-xl border border-slate-200 text-xs">
+                      <div className="flex flex-col sm:flex-row items-center justify-between gap-1.5 bg-slate-100 p-1.5 rounded-lg border border-slate-200 text-[11px]">
                         <div className="flex items-center space-x-1 text-slate-600 font-medium">
                           <span>Page <strong className="text-slate-900">{currentPageSafe}</strong> of <strong className="text-slate-900">{totalPages}</strong></span>
-                          <span className="text-slate-400">({totalItemsCount} total medicines)</span>
+                          <span className="text-slate-400">({totalItemsCount} items)</span>
                         </div>
 
                         {/* Page Navigation Buttons */}
@@ -5423,28 +5506,28 @@ export default function PharmacyPOS({
                             type="button"
                             onClick={() => setInvCurrentPage(1)}
                             disabled={currentPageSafe <= 1}
-                            className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 transition cursor-pointer"
+                            className="p-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 transition cursor-pointer"
                             title="First Page"
                           >
-                            <ChevronsLeft className="w-4 h-4" />
+                            <ChevronsLeft className="w-3.5 h-3.5" />
                           </button>
 
                           <button
                             type="button"
                             onClick={() => setInvCurrentPage(prev => Math.max(1, prev - 1))}
                             disabled={currentPageSafe <= 1}
-                            className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-bold flex items-center space-x-1 transition cursor-pointer"
+                            className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-bold flex items-center space-x-0.5 transition cursor-pointer text-[10px]"
                           >
-                            <ChevronLeft className="w-3.5 h-3.5" />
+                            <ChevronLeft className="w-3 h-3" />
                             <span>Prev</span>
                           </button>
 
                           {/* Dynamic Page Pills */}
-                          <div className="flex items-center space-x-1">
+                          <div className="flex items-center space-x-0.5">
                             {getVisiblePages().map((p, pIdx) => {
                               if (p === '...') {
                                 return (
-                                  <span key={`dots-${pIdx}`} className="px-2 py-1 text-slate-400 font-bold">
+                                  <span key={`dots-${pIdx}`} className="px-1 py-0.5 text-slate-400 font-bold text-[10px]">
                                     ...
                                   </span>
                                 );
@@ -5456,9 +5539,9 @@ export default function PharmacyPOS({
                                   key={`page-${pageNum}`}
                                   type="button"
                                   onClick={() => setInvCurrentPage(pageNum)}
-                                  className={`w-8 h-8 rounded-lg font-bold text-xs transition cursor-pointer font-mono ${
+                                  className={`w-6 h-6 rounded font-bold text-[10.5px] transition cursor-pointer font-mono ${
                                     isActive
-                                      ? 'bg-indigo-600 text-white shadow-xs'
+                                      ? 'bg-indigo-600 text-white shadow-2xs'
                                       : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-50'
                                   }`}
                                 >
@@ -5472,26 +5555,26 @@ export default function PharmacyPOS({
                             type="button"
                             onClick={() => setInvCurrentPage(prev => Math.min(totalPages, prev + 1))}
                             disabled={currentPageSafe >= totalPages}
-                            className="px-2.5 py-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-bold flex items-center space-x-1 transition cursor-pointer"
+                            className="px-2 py-0.5 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 font-bold flex items-center space-x-0.5 transition cursor-pointer text-[10px]"
                           >
                             <span>Next</span>
-                            <ChevronRight className="w-3.5 h-3.5" />
+                            <ChevronRight className="w-3 h-3" />
                           </button>
 
                           <button
                             type="button"
                             onClick={() => setInvCurrentPage(totalPages)}
                             disabled={currentPageSafe >= totalPages}
-                            className="p-1.5 rounded-lg border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 transition cursor-pointer"
+                            className="p-1 rounded border border-slate-300 bg-white hover:bg-slate-50 disabled:opacity-40 disabled:cursor-not-allowed text-slate-700 transition cursor-pointer"
                             title="Last Page"
                           >
-                            <ChevronsRight className="w-4 h-4" />
+                            <ChevronsRight className="w-3.5 h-3.5" />
                           </button>
                         </div>
 
                         {/* Direct Jump to Page */}
-                        <div className="flex items-center space-x-1.5">
-                          <label className="text-[11px] font-bold text-slate-500">Go to:</label>
+                        <div className="flex items-center space-x-1">
+                          <label className="text-[10px] font-bold text-slate-500">Go:</label>
                           <input
                             type="number"
                             min={1}
@@ -5503,41 +5586,41 @@ export default function PharmacyPOS({
                                 setInvCurrentPage(v);
                               }
                             }}
-                            className="w-14 py-1 px-1.5 text-center text-xs font-mono font-bold bg-white border border-slate-300 rounded-lg text-slate-800 focus:ring-1 focus:ring-indigo-500"
+                            className="w-10 py-0.5 px-1 text-center text-[10.5px] font-mono font-bold bg-white border border-slate-300 rounded text-slate-800 focus:ring-1 focus:ring-indigo-500"
                           />
                         </div>
                       </div>
                     )}
 
                     {/* Excel Sheet Status Bar */}
-                    <div className="bg-slate-800 text-slate-200 px-4 py-2 rounded-xl text-xs font-mono flex flex-wrap items-center justify-between gap-3 border border-slate-700 shadow-inner">
-                      <div className="flex items-center space-x-4">
+                    <div className="bg-slate-800 text-slate-200 px-3 py-1.5 rounded-lg text-[10.5px] font-mono flex flex-wrap items-center justify-between gap-2 border border-slate-700 shadow-inner">
+                      <div className="flex items-center space-x-3">
                         <span>
-                          Total Filtered Rows: <strong className="text-white">{processedItems.length}</strong> / {items.length}
+                          Rows: <strong className="text-white">{processedItems.length}</strong> / {items.length}
                         </span>
                         <span className="text-slate-500">|</span>
                         <span>
-                          Low Stock: <strong className="text-rose-400">{processedItems.filter(i => i.CStock <= ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1)).length}</strong>
+                          Low: <strong className="text-rose-400">{processedItems.filter(i => i.CStock <= ((i.MinStock !== undefined && i.MinStock !== null) ? i.MinStock : 1)).length}</strong>
                         </span>
                       </div>
 
-                      <div className="flex items-center space-x-4">
+                      <div className="flex items-center space-x-3">
                         <span>
-                          Cost Value: <strong className="text-amber-300">Rs. {totalValuationCost.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</strong>
+                          Cost: <strong className="text-amber-300">Rs. {totalValuationCost.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</strong>
                         </span>
                         <span className="text-slate-500">|</span>
                         <span>
-                          Retail Value: <strong className="text-emerald-300">Rs. {totalValuationRetail.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</strong>
+                          Retail: <strong className="text-emerald-300">Rs. {totalValuationRetail.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</strong>
                         </span>
                         <span className="text-slate-500">|</span>
                         <button
                           type="button"
                           onClick={() => handlePrintStockGrid()}
-                          className="px-2.5 py-1 bg-slate-700 hover:bg-slate-600 text-indigo-300 hover:text-white rounded-lg border border-slate-600 font-sans font-bold text-xs flex items-center space-x-1.5 transition cursor-pointer shadow-2xs"
+                          className="px-2 py-0.5 bg-slate-700 hover:bg-slate-600 text-indigo-300 hover:text-white rounded border border-slate-600 font-sans font-bold text-[10px] flex items-center space-x-1 transition cursor-pointer shadow-2xs"
                           title="Print this sheet on A4 paper"
                         >
-                          <Printer className="w-3.5 h-3.5" />
-                          <span>Print Sheet</span>
+                          <Printer className="w-3 h-3" />
+                          <span>Print</span>
                         </button>
                       </div>
                     </div>
@@ -5550,6 +5633,23 @@ export default function PharmacyPOS({
         </div>
       </div>
         )
+      )}
+
+      {/* Dedicated Custom Reports Full Page View */}
+      {activeSubTab === 'custom_reports' && (
+        <div className="space-y-4 animate-fadeIn" id="pos-custom-reports-tab">
+          <PharmacyCustomReportsModal
+            isOpen={true}
+            mode="page"
+            onClose={() => handleSubTabSwitch('inventory_manager', 'Stock & Manager')}
+            items={items}
+            categories={categories}
+            invoices={invoices}
+            invoiceDetails={invoiceDetails}
+            clinicSettings={clinicSettings}
+            currentUser={currentUser}
+          />
+        </div>
       )}
 
       {/* Clinic Medicine Label Printer Tab */}
