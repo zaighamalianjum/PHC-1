@@ -229,10 +229,6 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                   <span class="label-key">Patient:</span>
                   <strong class="label-val">${labelPrintData.patientName || 'Walk-in Patient'}</strong>
                 </div>
-                <div class="label-row label-med">
-                  <span class="label-key">Med:</span>
-                  <strong class="label-val">${med.name || 'Clinical Remedy'}</strong>
-                </div>
                 <div class="label-row label-usage">
                   <span class="label-key">Usage:</span>
                   <span class="label-val">${med.instructions || 'As directed by Doctor'}</span>
@@ -484,7 +480,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
               }`}
             >
               <Sliders className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Settings (سیٹنگز)</span>
+              <span>Settings</span>
               {showSettingsPanel ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
             </button>
 
@@ -575,7 +571,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                         : 'text-slate-700 hover:text-slate-950'
                     }`}
                   >
-                    <span>Landscape (افقی)</span>
+                    <span>Landscape</span>
                   </button>
                   <button
                     type="button"
@@ -586,7 +582,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                         : 'text-slate-700 hover:text-slate-950'
                     }`}
                   >
-                    <span>Portrait (عمودی)</span>
+                    <span>Portrait</span>
                   </button>
                 </div>
               </div>
@@ -645,20 +641,20 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
               <div className="flex items-center justify-between">
                 <div className="flex items-center space-x-2">
                   <span className="text-xs font-black text-slate-900 tracking-wide">
-                    📐 Page Margins (حاشیے)
+                    📐 Page Margins
                   </span>
                   <span className="text-xxs text-slate-500 font-medium">
-                    (Default empty — aap apni marzi se type karein, e.g. 6mm ya 10mm ya sirf number 8)
+                    (Empty by default — enter custom margins e.g. 6mm, 10mm, or just numbers)
                   </span>
                 </div>
                 <button
                   type="button"
                   onClick={handleClearAllInputs}
                   className="text-xxs font-bold text-rose-600 hover:text-rose-700 flex items-center space-x-1 cursor-pointer"
-                  title="Tamam textboxes ko khali karein"
+                  title="Clear all textboxes"
                 >
                   <RotateCcw className="w-3 h-3" />
-                  <span>Clear Textboxes (خالی کریں)</span>
+                  <span>Clear All Textboxes</span>
                 </button>
               </div>
 
@@ -720,13 +716,13 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
             {/* Row 3: Label Dimensions & Spacing Gaps - All textboxes EMPTY by default as requested! */}
             <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs space-y-2">
               <span className="text-xs font-black text-slate-900 tracking-wide block">
-                🏷️ Label Dimensions & Grid Gaps (لیبل کا سائز اور درمیانی فاصلہ)
+                🏷️ Label Dimensions & Grid Spacing
               </span>
 
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
                 <div>
                   <label className="block text-xxs font-black text-slate-700 mb-1">
-                    Column Gap (درمیان فاصلہ) <span className="text-slate-400 font-normal">({suggested.colGap})</span>
+                    Column Gap <span className="text-slate-400 font-normal">({suggested.colGap})</span>
                   </label>
                   <input
                     type="text"
@@ -739,7 +735,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
 
                 <div>
                   <label className="block text-xxs font-black text-slate-700 mb-1">
-                    Row Gap (قطار فاصلہ) <span className="text-slate-400 font-normal">({suggested.rowGap})</span>
+                    Row Gap <span className="text-slate-400 font-normal">({suggested.rowGap})</span>
                   </label>
                   <input
                     type="text"
@@ -752,7 +748,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
 
                 <div>
                   <label className="block text-xxs font-black text-slate-700 mb-1">
-                    Label Width (چوڑائی) <span className="text-slate-400 font-normal">({suggested.labelWidth})</span>
+                    Label Width <span className="text-slate-400 font-normal">({suggested.labelWidth})</span>
                   </label>
                   <input
                     type="text"
@@ -765,7 +761,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
 
                 <div>
                   <label className="block text-xxs font-black text-slate-700 mb-1">
-                    Label Height (لمبائی) <span className="text-slate-400 font-normal">({suggested.labelHeight})</span>
+                    Label Height <span className="text-slate-400 font-normal">({suggested.labelHeight})</span>
                   </label>
                   <input
                     type="text"
@@ -784,7 +780,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                 <div className="flex items-center space-x-2">
                   <Lightbulb className="w-4 h-4 text-amber-600 shrink-0" />
                   <span className="font-extrabold text-xs text-amber-900">
-                    💡 Suggested Values Guide / ہمارے تجویز کردہ پیرامیٹرز برائے {pageSize} {orientation === 'landscape' ? 'Landscape' : 'Portrait'}
+                    💡 Recommended Dimensions for {pageSize} {orientation === 'landscape' ? 'Landscape' : 'Portrait'}
                   </span>
                 </div>
                 <div className="flex items-center space-x-2">
@@ -795,7 +791,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                     title="Fill all empty boxes with these suggested values"
                   >
                     <Check className="w-3 h-3" />
-                    <span>Apply Suggested Values (تجویز لگائیں)</span>
+                    <span>Apply Recommended Values</span>
                   </button>
                   <button
                     type="button"
@@ -822,7 +818,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                     <p>• Label Size: Width: <code>60mm</code> (2.3"), Height: <code>24mm</code> (0.9")</p>
                   </div>
                   <div className="sm:col-span-2 text-amber-800 italic bg-amber-100/50 p-1.5 rounded">
-                    📌 <strong>Note:</strong> Box me sirf number likhein (maslan <strong>6</strong> ya <strong>10</strong>), system automatically millimeters (mm) consider karega. Agar aap inches me dena chahein to <strong>0.5in</strong> ya <strong>2in</strong> bhi likh sakte hain. Agar box khali ho to system fallback use karega taake page kharab na ho.
+                    📌 <strong>Note:</strong> Enter numbers (e.g. <strong>6</strong> or <strong>10</strong>) and the system automatically treats them as millimeters (mm). You can also specify inches such as <strong>0.5in</strong> or <strong>2in</strong>. When empty, optimal defaults are applied automatically.
                   </div>
                 </div>
               )}
@@ -889,10 +885,6 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                           <span className="text-slate-500 font-normal">Patient: </span>
                           <strong className="text-slate-900 font-black">{labelPrintData.patientName}</strong>
                         </div>
-                        <div className="font-bold text-[9px] m-0 p-0 truncate">
-                          <span className="text-slate-500 font-normal">Med: </span>
-                          <strong className="text-slate-900 font-black">{med.name || "Clinical Remedy"}</strong>
-                        </div>
                         <div className="text-[8.5px] m-0 p-0 truncate text-slate-700">
                           <span className="text-slate-500 font-normal">Usage: </span>
                           <span className="font-bold text-slate-900">{med.instructions || "As directed by Doctor"}</span>
@@ -914,7 +906,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
         {/* Modal Footer Controls */}
         <div className="p-3 bg-slate-50 border-t border-slate-200 rounded-b-2xl flex flex-wrap items-center justify-between gap-2 print:hidden shrink-0 text-xs">
           <div className="text-slate-500 text-xxs font-medium">
-            💡 Tip: Browser print window me <strong>Paper Size: {pageSize}</strong> aur <strong>Layout: {orientation === 'landscape' ? 'Landscape' : 'Portrait'}</strong> select karein.
+            💡 Tip: In the browser print window, select <strong>Paper Size: {pageSize}</strong> and <strong>Layout: {orientation === 'landscape' ? 'Landscape' : 'Portrait'}</strong>.
           </div>
           <div className="flex items-center space-x-2">
             <button
@@ -925,7 +917,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
               }}
               className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
             >
-              Close (بند کریں)
+              Close
             </button>
             <button
               type="button"
