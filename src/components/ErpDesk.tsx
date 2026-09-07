@@ -128,7 +128,23 @@ interface ErpDeskProps {
 }
 
 export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDeskProps) {
-  const [activeTab, setActiveTab] = useState<'overview' | 'fiscal_calendar' | 'cash_book_pnl' | 'vendors' | 'vendor_statement' | 'po' | 'ledger' | 'hr' | 'expenses_assets' | 'reporting'>('overview');
+  const isAdmin = currentUser?.Role === 'Administrator' ||
+    currentUser?.Role?.toLowerCase() === 'admin' ||
+    currentUser?.Role?.toLowerCase() === 'administrator' ||
+    currentUser?.LoginName?.toLowerCase() === 'admin';
+
+  const [activeTab, setActiveTab] = useState<'overview' | 'fiscal_calendar' | 'cash_book_pnl' | 'vendors' | 'vendor_statement' | 'po' | 'ledger' | 'hr' | 'expenses_assets' | 'reporting'>(() => {
+    return isAdmin ? 'overview' : 'vendors';
+  });
+
+  // Security guard: Restrict ERP Dashboard, Fiscal Year, Clinic Cash, and Financial Ledger to Administrator only
+  useEffect(() => {
+    const adminOnlyTabs = ['overview', 'fiscal_calendar', 'cash_book_pnl', 'ledger'];
+    if (!isAdmin && adminOnlyTabs.includes(activeTab)) {
+      setActiveTab('vendors');
+    }
+  }, [isAdmin, activeTab]);
+
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -6494,6 +6510,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const totalMonthlyPayroll = payrolls.reduce((sum, p) => sum + p.NetSalary, 0);
 
   const erpNavTabs = useMemo(() => {
+    const adminOnlyTabs = ['overview', 'fiscal_calendar', 'cash_book_pnl', 'ledger'];
     const list = [
       { id: 'overview', label: 'ERP Dashboard', shortLabel: 'ED', icon: PieChart, perm: 'canAccessErpOverview', desc: 'KPIs, revenue overview & cash position' },
       { id: 'fiscal_calendar', label: 'Fiscal Year', shortLabel: 'FY', icon: Calendar, perm: 'canAccessErpFiscalCalendar', desc: 'Fiscal periods & financial calendar' },
@@ -6507,10 +6524,13 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       { id: 'reporting', label: 'Reporting & Analytics', shortLabel: 'Rep', icon: BarChart3, perm: 'canAccessErpReporting', desc: 'Financial audit reports & analytics' }
     ];
     return list.filter((tab) => {
+      if (!isAdmin && adminOnlyTabs.includes(tab.id)) {
+        return false;
+      }
       if (!currentUser?.Permissions) return true;
       return (currentUser.Permissions as any)[tab.perm] !== false;
     });
-  }, [currentUser]);
+  }, [currentUser, isAdmin]);
 
   return (
     <div className="min-h-full bg-slate-50 text-slate-800 p-4 md:p-6 space-y-4 pb-24 relative">
@@ -6775,8 +6795,28 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
       {/* TAB 1: OVERVIEW DASHBOARD */}
 
+        {/* RESTRICTED MODULE ALERT FOR NON-ADMIN */}
+        {!isAdmin && ['overview', 'fiscal_calendar', 'cash_book_pnl', 'ledger'].includes(activeTab) && (
+          <div className="bg-white rounded-2xl border border-rose-200 p-8 text-center max-w-lg mx-auto shadow-sm my-12">
+            <div className="w-12 h-12 bg-rose-100 text-rose-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
+              <Lock className="w-6 h-6" />
+            </div>
+            <h3 className="text-base font-black text-slate-900 mb-1">Restricted Administrator Module</h3>
+            <p className="text-xs text-slate-600 mb-4">
+              ERP Dashboard, Fiscal Year, Clinic Cash, and Financial Ledger are restricted to Administrator access only.
+            </p>
+            <button
+              type="button"
+              onClick={() => setActiveTab('vendors')}
+              className="px-4 py-2 bg-slate-900 text-white font-bold text-xs rounded-xl hover:bg-slate-800 transition cursor-pointer"
+            >
+              Go to Vendors Directory
+            </button>
+          </div>
+        )}
+
         {/* TAB 1: OVERVIEW DASHBOARD */}
-        {activeTab === 'overview' && (
+        {activeTab === 'overview' && isAdmin && (
           <OverviewTab
             vendors={vendors}
             purchaseOrders={purchaseOrders}
@@ -6802,12 +6842,12 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         )}
 
         {/* TAB 2: FISCAL CALENDAR DESK */}
-        {activeTab === 'fiscal_calendar' && (
+        {activeTab === 'fiscal_calendar' && isAdmin && (
           <FiscalCalendarTab clinicSettings={clinicSettings} />
         )}
 
         {/* TAB 2: CASH BOOK & PNL REPORT */}
-        {activeTab === 'cash_book_pnl' && (
+        {activeTab === 'cash_book_pnl' && isAdmin && (
           <CashBookPnlTab
             cashBookDateFilter={cashBookDateFilter}
             setCashBookDateFilter={setCashBookDateFilter}
@@ -6949,7 +6989,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         )}
 
         {/* TAB 4: FINANCIAL LEDGER & VOUCHERS */}
-        {activeTab === 'ledger' && (
+        {activeTab === 'ledger' && isAdmin && (
           <LedgerTab
             transactions={transactions}
             filteredTransactions={filteredTransactions}
