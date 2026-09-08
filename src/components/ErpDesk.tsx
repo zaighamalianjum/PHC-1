@@ -3787,11 +3787,50 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             (gi.ItemID && inv.ItemID && String(inv.ItemID).toLowerCase() === String(gi.ItemID).toLowerCase()) ||
             (gi.ItemName && inv.ItemName && String(inv.ItemName).trim().toLowerCase() === String(gi.ItemName).trim().toLowerCase())
           );
-          if (matchedItemInGrn) {
-            const qtyRec = Number(matchedItemInGrn.ReceivedQty) || Number(matchedItemInGrn.Qty) || 0;
+          const hasGrnBatch = Array.isArray(inv.Batches) && inv.Batches.some((b: any) =>
+            (b.GRNID && String(b.GRNID).trim().toLowerCase() === String(g.GRNID).trim().toLowerCase()) ||
+            (b.BatchID && String(b.BatchID).toLowerCase().includes(String(g.GRNID).toLowerCase()))
+          );
+
+          if (matchedItemInGrn || hasGrnBatch) {
+            const qtyRec = Number(matchedItemInGrn?.ReceivedQty) || Number(matchedItemInGrn?.Qty) || 0;
             const currentStock = Number(inv.CStock) || Number(inv.Stock) || 0;
-            const newStock = Math.max(0, currentStock - qtyRec);
-            return { ...inv, CStock: newStock, Stock: newStock };
+            const existingBatches = Array.isArray(inv.Batches) ? inv.Batches : [];
+
+            const batchesToDelete = existingBatches.filter((b: any) =>
+              (b.GRNID && String(b.GRNID).trim().toLowerCase() === String(g.GRNID).trim().toLowerCase()) ||
+              (b.BatchID && String(b.BatchID).toLowerCase().includes(String(g.GRNID).toLowerCase())) ||
+              (g.POID && b.POID && String(b.POID).trim().toLowerCase() === String(g.POID).trim().toLowerCase() && matchedItemInGrn?.BatchNo && b.BatchNo && String(b.BatchNo).trim().toLowerCase() === String(matchedItemInGrn.BatchNo).trim().toLowerCase()) ||
+              (!b.GRNID && matchedItemInGrn?.BatchNo && b.BatchNo && String(b.BatchNo).trim().toLowerCase() === String(matchedItemInGrn.BatchNo).trim().toLowerCase())
+            );
+
+            const remainingBatches = existingBatches.filter((b: any) => !batchesToDelete.includes(b));
+            const qtyFromBatches = batchesToDelete.reduce((s: number, b: any) => s + (Number(b.Qty) || 0), 0);
+            const deductQty = Math.max(qtyRec, qtyFromBatches);
+
+            let newStock = Math.max(0, currentStock - deductQty);
+            if (remainingBatches.length > 0) {
+              const batchSum = remainingBatches.reduce((s: number, b: any) => s + (Number(b.Qty) || 0), 0);
+              if (batchSum < newStock) newStock = batchSum;
+            } else if (batchesToDelete.length > 0 && batchesToDelete.length === existingBatches.length) {
+              newStock = 0;
+            }
+
+            const activeBatches = remainingBatches.filter((b: any) => (Number(b.Qty) || 0) > 0);
+            const earliest = activeBatches.length > 0
+              ? [...activeBatches].sort((a: any, b: any) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+              : remainingBatches[0];
+
+            return {
+              ...inv,
+              CStock: newStock,
+              Stock: newStock,
+              Batches: remainingBatches,
+              BatchNo: earliest ? (earliest.BatchNo || '') : '',
+              MfgDate: earliest ? (earliest.MfgDate || '') : '',
+              ExpDate: earliest ? (earliest.ExpDate || '') : '',
+              ExpiryDate: earliest ? (earliest.ExpDate || '') : ''
+            };
           }
           return inv;
         }));
@@ -3799,10 +3838,76 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     }
     setGrns(prev => prev.filter(g => g.POID !== po.POID));
 
+    // Also sync to local storage cms_items
+    try {
+      const localItemsRaw = localStorage.getItem('cms_items');
+      if (localItemsRaw) {
+        const localItems = JSON.parse(localItemsRaw);
+        if (Array.isArray(localItems)) {
+          const updatedLocal = localItems.map((itm: any) => {
+            let itemUpdated = false;
+            let modified = { ...itm };
+            for (const g of matchGrns) {
+              const matchedGrnItem = (g.Items || []).find((gi: any) =>
+                (gi.ItemID && itm.ItemID && String(itm.ItemID).toLowerCase() === String(gi.ItemID).toLowerCase()) ||
+                (gi.ItemName && itm.ItemName && String(itm.ItemName).trim().toLowerCase() === String(gi.ItemName).trim().toLowerCase())
+              );
+              const hasGrnBatch = Array.isArray(modified.Batches) && modified.Batches.some((b: any) =>
+                (b.GRNID && String(b.GRNID).trim().toLowerCase() === String(g.GRNID).trim().toLowerCase()) ||
+                (b.BatchID && String(b.BatchID).toLowerCase().includes(String(g.GRNID).toLowerCase()))
+              );
+              if (matchedGrnItem || hasGrnBatch) {
+                itemUpdated = true;
+                const qtyRec = Number(matchedGrnItem?.ReceivedQty) || Number(matchedGrnItem?.Qty) || 0;
+                const currentStock = Number(modified.CStock) || Number(modified.Stock) || 0;
+                const existingBatches = Array.isArray(modified.Batches) ? modified.Batches : [];
+                const remainingBatches = existingBatches.filter((b: any) =>
+                  b.GRNID !== g.GRNID && !b.BatchID?.includes(g.GRNID)
+                );
+                const deductQty = Math.max(qtyRec, existingBatches.length - remainingBatches.length > 0 ? qtyRec : 0);
+                let newStock = Math.max(0, currentStock - deductQty);
+                if (remainingBatches.length > 0) {
+                  const bSum = remainingBatches.reduce((s: number, b: any) => s + (Number(b.Qty) || 0), 0);
+                  if (bSum < newStock) newStock = bSum;
+                } else if (existingBatches.length > 0) {
+                  newStock = 0;
+                }
+                const activeBatches = remainingBatches.filter((b: any) => (Number(b.Qty) || 0) > 0);
+                const earliest = activeBatches.length > 0
+                  ? [...activeBatches].sort((a: any, b: any) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+                  : remainingBatches[0];
+                modified = {
+                  ...modified,
+                  CStock: newStock,
+                  Stock: newStock,
+                  Batches: remainingBatches,
+                  BatchNo: earliest ? (earliest.BatchNo || '') : '',
+                  MfgDate: earliest ? (earliest.MfgDate || '') : '',
+                  ExpDate: earliest ? (earliest.ExpDate || '') : '',
+                  ExpiryDate: earliest ? (earliest.ExpDate || '') : ''
+                };
+              }
+            }
+            return itemUpdated ? modified : itm;
+          });
+          localStorage.setItem('cms_items', JSON.stringify(updatedLocal));
+        }
+      }
+    } catch (e) {
+      console.warn('Error updating cms_items on PO delete:', e);
+    }
+
     await deleteFromDatabase('erp_purchase_orders', targetId);
     setPurchaseOrders(prev => prev.filter(p => (p._id ? p._id !== po._id : p.POID !== po.POID)));
 
-    setSyncMessage('Purchase Order and linked GRNs deleted successfully!');
+    // Re-fetch fresh items from backend
+    safeFetchJson('/api/items').then(itemsRes => {
+      if (Array.isArray(itemsRes) && itemsRes.length > 0) {
+        setInventoryItems(itemsRes);
+      }
+    }).catch(() => {});
+
+    setSyncMessage('Purchase Order and linked GRNs deleted successfully! Stock and batches removed.');
     setTimeout(() => setSyncMessage(null), 3000);
     dispatchSafeCustomEvent('phc_db_updated');
   };
@@ -4461,22 +4566,94 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         body: JSON.stringify({ id: grn._id, grnId: grn.GRNID })
       });
 
-      // 2. Revert Inventory Stock (CStock) locally for instant UI update
-      if (Array.isArray(grn.Items) && grn.Items.length > 0) {
-        setInventoryItems(prev => prev.map((inv: any) => {
-          const matchedGrnItem = grn.Items.find(gi =>
+      // 2. Revert Inventory Stock (CStock) & remove batches locally for instant UI update
+      let updatedInventoryList: any[] = [];
+      setInventoryItems(prev => {
+        const updated = prev.map((inv: any) => {
+          const matchedGrnItem = (grn.Items || []).find(gi =>
             (gi.ItemID && inv.ItemID && String(inv.ItemID).toLowerCase() === String(gi.ItemID).toLowerCase()) ||
             (gi.ItemName && inv.ItemName && String(inv.ItemName).trim().toLowerCase() === String(gi.ItemName).trim().toLowerCase())
           );
+          const hasGrnBatch = Array.isArray(inv.Batches) && inv.Batches.some((b: any) =>
+            (b.GRNID && String(b.GRNID).trim().toLowerCase() === String(grn.GRNID).trim().toLowerCase()) ||
+            (b.BatchID && String(b.BatchID).toLowerCase().includes(String(grn.GRNID).toLowerCase()))
+          );
 
-          if (matchedGrnItem) {
-            const qtyRec = Number(matchedGrnItem.ReceivedQty) || Number((matchedGrnItem as any).Qty) || 0;
+          if (matchedGrnItem || hasGrnBatch) {
+            const qtyRec = Number(matchedGrnItem?.ReceivedQty) || Number((matchedGrnItem as any)?.Qty) || 0;
             const currentStock = Number(inv.CStock) || Number(inv.Stock) || 0;
-            const newStock = Math.max(0, currentStock - qtyRec);
-            return { ...inv, CStock: newStock, Stock: newStock };
+            const existingBatches = Array.isArray(inv.Batches) ? inv.Batches : [];
+
+            const batchesToDelete = existingBatches.filter((b: any) =>
+              (b.GRNID && String(b.GRNID).trim().toLowerCase() === String(grn.GRNID).trim().toLowerCase()) ||
+              (b.BatchID && String(b.BatchID).toLowerCase().includes(String(grn.GRNID).toLowerCase())) ||
+              (grn.POID && b.POID && String(b.POID).trim().toLowerCase() === String(grn.POID).trim().toLowerCase() && matchedGrnItem?.BatchNo && b.BatchNo && String(b.BatchNo).trim().toLowerCase() === String(matchedGrnItem.BatchNo).trim().toLowerCase()) ||
+              (!b.GRNID && matchedGrnItem?.BatchNo && b.BatchNo && String(b.BatchNo).trim().toLowerCase() === String(matchedGrnItem.BatchNo).trim().toLowerCase())
+            );
+
+            const remainingBatches = existingBatches.filter((b: any) => !batchesToDelete.includes(b));
+            const qtyFromBatches = batchesToDelete.reduce((s: number, b: any) => s + (Number(b.Qty) || 0), 0);
+            const deductQty = Math.max(qtyRec, qtyFromBatches);
+
+            let newStock = Math.max(0, currentStock - deductQty);
+            if (remainingBatches.length > 0) {
+              const batchSum = remainingBatches.reduce((s: number, b: any) => s + (Number(b.Qty) || 0), 0);
+              if (batchSum < newStock) newStock = batchSum;
+            } else if (batchesToDelete.length > 0 && batchesToDelete.length === existingBatches.length) {
+              newStock = 0;
+            }
+
+            const activeBatches = remainingBatches.filter((b: any) => (Number(b.Qty) || 0) > 0);
+            const earliest = activeBatches.length > 0
+              ? [...activeBatches].sort((a: any, b: any) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+              : remainingBatches[0];
+
+            return {
+              ...inv,
+              CStock: newStock,
+              Stock: newStock,
+              Batches: remainingBatches,
+              BatchNo: earliest ? (earliest.BatchNo || '') : '',
+              MfgDate: earliest ? (earliest.MfgDate || '') : '',
+              ExpDate: earliest ? (earliest.ExpDate || '') : '',
+              ExpiryDate: earliest ? (earliest.ExpDate || '') : ''
+            };
           }
           return inv;
-        }));
+        });
+        updatedInventoryList = updated;
+        return updated;
+      });
+
+      // Synchronize immediately to cms_items localStorage
+      try {
+        const localItemsRaw = localStorage.getItem('cms_items');
+        if (localItemsRaw) {
+          const localItems = JSON.parse(localItemsRaw);
+          if (Array.isArray(localItems)) {
+            const syncedLocal = localItems.map((itm: any) => {
+              const matchedFromUpdated = updatedInventoryList.find((u: any) =>
+                (u.ItemID && itm.ItemID && String(u.ItemID).toLowerCase() === String(itm.ItemID).toLowerCase())
+              );
+              if (matchedFromUpdated) {
+                return {
+                  ...itm,
+                  CStock: matchedFromUpdated.CStock,
+                  Stock: matchedFromUpdated.Stock,
+                  Batches: matchedFromUpdated.Batches,
+                  BatchNo: matchedFromUpdated.BatchNo,
+                  MfgDate: matchedFromUpdated.MfgDate,
+                  ExpDate: matchedFromUpdated.ExpDate,
+                  ExpiryDate: matchedFromUpdated.ExpiryDate
+                };
+              }
+              return itm;
+            });
+            localStorage.setItem('cms_items', JSON.stringify(syncedLocal));
+          }
+        }
+      } catch (e) {
+        console.warn('Error syncing cms_items on GRN delete:', e);
       }
 
       // 3. Deduct Vendor Outstanding Balance locally
@@ -4512,9 +4689,16 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       // 6. Remove from GRNs state & notify
       setGrns(prev => prev.filter(g => (g._id ? g._id !== grn._id : g.GRNID !== grn.GRNID)));
 
-      setSyncMessage(`GRN ${grn.GRNID} deleted! Inventory stock level reverted and vendor balance updated.`);
+      // Re-fetch fresh items from backend
+      safeFetchJson('/api/items').then(itemsRes => {
+        if (Array.isArray(itemsRes) && itemsRes.length > 0) {
+          setInventoryItems(itemsRes);
+        }
+      }).catch(() => {});
+
+      setSyncMessage(`GRN ${grn.GRNID} deleted! Inventory stock level reverted and batches removed.`);
       setTimeout(() => setSyncMessage(null), 3000);
-      dispatchSafeCustomEvent('phc_db_updated');
+      dispatchSafeCustomEvent('phc_db_updated', { items: updatedInventoryList });
     } catch (err: any) {
       console.error('Error deleting GRN:', err);
       alert(`Error deleting GRN: ${err.message || 'Unknown error'}`);

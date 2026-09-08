@@ -640,7 +640,10 @@ export default function App() {
 
   // Global listener for DB mutations/deletions across components
   useEffect(() => {
-    const handleDbUpdate = () => {
+    const handleDbUpdate = (e: any) => {
+      if (e?.detail?.items && Array.isArray(e.detail.items)) {
+        setItems(e.detail.items);
+      }
       refreshAllData();
     };
     window.addEventListener('phc_db_updated', handleDbUpdate);
@@ -2201,12 +2204,43 @@ export default function App() {
     // Step A: Reverse/void the old GRN's stock levels and accounting balances
     const oldDetails = grnDetails.filter(d => d.VchNo === vchHeader.VchNo);
     
-    // Reverse stocks for old items
+    // Reverse stocks and old batches for old items
     setItems((prevItems) => {
       return prevItems.map((itm) => {
         const matched = oldDetails.find(d => d.ItemID === itm.ItemID);
-        if (matched) {
-          return { ...itm, CStock: Math.max(0, itm.CStock - matched.QtyIn) };
+        const hasGrnBatch = Array.isArray(itm.Batches) && itm.Batches.some(b => b.GRNID === vchHeader.VchNo || b.BatchID?.includes(vchHeader.VchNo));
+        if (matched || hasGrnBatch) {
+          const qtyIn = matched ? (parseInt(String(matched.QtyIn)) || 0) : 0;
+          const currentStock = parseInt(String(itm.CStock)) || 0;
+          const existingBatches = Array.isArray(itm.Batches) ? itm.Batches : [];
+          const remainingBatches = existingBatches.filter(b => b.GRNID !== vchHeader.VchNo && !b.BatchID?.includes(vchHeader.VchNo));
+          const removedBatches = existingBatches.filter(b => !remainingBatches.includes(b));
+          const removedQty = removedBatches.reduce((sum, b) => sum + (parseInt(String(b.Qty)) || 0), 0);
+          const deductQty = Math.max(qtyIn, removedQty);
+
+          let newStock = Math.max(0, currentStock - deductQty);
+          if (remainingBatches.length > 0) {
+            const bSum = remainingBatches.reduce((sum, b) => sum + (parseInt(String(b.Qty)) || 0), 0);
+            if (bSum < newStock) newStock = bSum;
+          } else if (removedBatches.length > 0 && removedBatches.length === existingBatches.length) {
+            newStock = 0;
+          }
+
+          const activeBatches = remainingBatches.filter(b => (parseInt(String(b.Qty)) || 0) > 0);
+          const earliest = activeBatches.length > 0
+            ? [...activeBatches].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+            : remainingBatches[0];
+
+          return {
+            ...itm,
+            CStock: newStock,
+            Stock: newStock,
+            Batches: remainingBatches,
+            BatchNo: earliest ? earliest.BatchNo : '',
+            MfgDate: earliest ? (earliest.MfgDate || '') : '',
+            ExpDate: earliest ? earliest.ExpDate : '',
+            ExpiryDate: earliest ? earliest.ExpDate : ''
+          };
         }
         return itm;
       });
@@ -2358,12 +2392,43 @@ export default function App() {
   const handleVoidGRN = (vchNo: string) => {
     const oldDetails = grnDetails.filter(d => d.VchNo === vchNo);
 
-    // Subtract quantities from item stock
+    // Subtract quantities from item stock and remove batches for this GRN
     setItems((prevItems) => {
       return prevItems.map((itm) => {
         const matched = oldDetails.find(d => d.ItemID === itm.ItemID);
-        if (matched) {
-          return { ...itm, CStock: Math.max(0, itm.CStock - matched.QtyIn) };
+        const hasGrnBatch = Array.isArray(itm.Batches) && itm.Batches.some(b => b.GRNID === vchNo || b.BatchID?.includes(vchNo));
+        if (matched || hasGrnBatch) {
+          const qtyIn = matched ? (parseInt(String(matched.QtyIn)) || 0) : 0;
+          const currentStock = parseInt(String(itm.CStock)) || 0;
+          const existingBatches = Array.isArray(itm.Batches) ? itm.Batches : [];
+          const remainingBatches = existingBatches.filter(b => b.GRNID !== vchNo && !b.BatchID?.includes(vchNo));
+          const removedBatches = existingBatches.filter(b => !remainingBatches.includes(b));
+          const removedQty = removedBatches.reduce((sum, b) => sum + (parseInt(String(b.Qty)) || 0), 0);
+          const deductQty = Math.max(qtyIn, removedQty);
+
+          let newStock = Math.max(0, currentStock - deductQty);
+          if (remainingBatches.length > 0) {
+            const bSum = remainingBatches.reduce((sum, b) => sum + (parseInt(String(b.Qty)) || 0), 0);
+            if (bSum < newStock) newStock = bSum;
+          } else if (removedBatches.length > 0 && removedBatches.length === existingBatches.length) {
+            newStock = 0;
+          }
+
+          const activeBatches = remainingBatches.filter(b => (parseInt(String(b.Qty)) || 0) > 0);
+          const earliest = activeBatches.length > 0
+            ? [...activeBatches].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+            : remainingBatches[0];
+
+          return {
+            ...itm,
+            CStock: newStock,
+            Stock: newStock,
+            Batches: remainingBatches,
+            BatchNo: earliest ? earliest.BatchNo : '',
+            MfgDate: earliest ? (earliest.MfgDate || '') : '',
+            ExpDate: earliest ? earliest.ExpDate : '',
+            ExpiryDate: earliest ? earliest.ExpDate : ''
+          };
         }
         return itm;
       });

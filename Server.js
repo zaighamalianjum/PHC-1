@@ -2190,23 +2190,61 @@ app.put('/api/grns/:vchNo', async (req, res) => {
   }
 });
 
-// Delete a GRN (And subtract stock!)
+// Delete a GRN (And subtract stock and delete batches!)
 app.delete('/api/grns/:vchNo', async (req, res) => {
   try {
     const { vchNo } = req.params;
 
     const details = await db.collection('grn_details').find({ VchNo: vchNo }).toArray();
     for (const item of details) {
-      await db.collection('items').updateOne(
-        { ItemID: item.ItemID },
-        { $inc: { CStock: -item.QtyIn } } // Subtract purchase intake back out of stock!
-      );
+      const itm = await db.collection('items').findOne({ ItemID: item.ItemID });
+      if (itm) {
+        const qtyIn = parseInt(item.QtyIn) || 0;
+        const currentStock = parseInt(itm.CStock) || parseInt(itm.Stock) || 0;
+        const existingBatches = Array.isArray(itm.Batches) ? itm.Batches : [];
+        const remainingBatches = existingBatches.filter(b =>
+          b.GRNID !== vchNo &&
+          !b.BatchID?.includes(vchNo) &&
+          !(b.BatchNo === item.BatchNo && (b.GRNID === vchNo || b.POID === vchNo))
+        );
+        const removedBatches = existingBatches.filter(b => !remainingBatches.includes(b));
+        const removedQty = removedBatches.reduce((sum, b) => sum + (parseInt(b.Qty) || 0), 0);
+        const deductQty = Math.max(qtyIn, removedQty);
+        let newStock = Math.max(0, currentStock - deductQty);
+
+        if (remainingBatches.length > 0) {
+          const remainingSum = remainingBatches.reduce((sum, b) => sum + (parseInt(b.Qty) || 0), 0);
+          if (remainingSum < newStock) newStock = remainingSum;
+        } else if (removedBatches.length > 0 && removedBatches.length === existingBatches.length) {
+          newStock = 0;
+        }
+
+        const activeBatches = remainingBatches.filter(b => (parseInt(b.Qty) || 0) > 0);
+        const earliest = activeBatches.length > 0
+          ? [...activeBatches].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+          : remainingBatches[0];
+
+        await db.collection('items').updateOne(
+          { _id: itm._id },
+          {
+            $set: {
+              CStock: newStock,
+              Stock: newStock,
+              Batches: remainingBatches,
+              BatchNo: earliest ? (earliest.BatchNo || '') : '',
+              MfgDate: earliest ? (earliest.MfgDate || '') : '',
+              ExpDate: earliest ? (earliest.ExpDate || '') : '',
+              ExpiryDate: earliest ? (earliest.ExpDate || '') : ''
+            }
+          }
+        );
+      }
     }
 
     await db.collection('grns').deleteOne({ VchNo: vchNo });
     await db.collection('grn_details').deleteMany({ VchNo: vchNo });
 
-    res.json({ success: true, message: 'Supplier GRN voided. Stocks updated.' });
+    res.json({ success: true, message: 'Supplier GRN voided. Stocks and batches updated.' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -3392,13 +3430,12 @@ app.post('/api/erp/grn/delete', async (req, res) => {
 
     if (grn) {
       const targetGrnId = grn.GRNID;
+      const processedItemIds = new Set();
 
-      // 1. Revert Inventory Stock (CStock) for each GRN Item
+      // 1. Revert Inventory Stock (CStock) & remove Batches for each GRN Item
       if (Array.isArray(grn.Items) && grn.Items.length > 0) {
         for (const item of grn.Items) {
           const qtyRec = parseInt(item.ReceivedQty) || parseInt(item.Qty) || 0;
-          if (qtyRec <= 0) continue;
-
           const rawItemName = (item.ItemName || '').trim();
 
           let matchedItem = null;
@@ -3418,14 +3455,113 @@ app.post('/api/erp/grn/delete', async (req, res) => {
           }
 
           if (matchedItem) {
+            processedItemIds.add(String(matchedItem.ItemID));
+            const existingBatches = Array.isArray(matchedItem.Batches) ? matchedItem.Batches : [];
+
+            // Identify all batches belonging to this deleted GRN
+            const batchesToDelete = existingBatches.filter(b => {
+              if (b.GRNID && String(b.GRNID).trim().toLowerCase() === String(targetGrnId).trim().toLowerCase()) return true;
+              if (b.BatchID && String(b.BatchID).toLowerCase().includes(String(targetGrnId).toLowerCase())) return true;
+              if (grn.POID && b.POID && String(b.POID).trim().toLowerCase() === String(grn.POID).trim().toLowerCase()) {
+                if (item.BatchNo && b.BatchNo && String(b.BatchNo).trim().toLowerCase() === String(item.BatchNo).trim().toLowerCase()) {
+                  return true;
+                }
+              }
+              if (!b.GRNID && item.BatchNo && b.BatchNo && String(b.BatchNo).trim().toLowerCase() === String(item.BatchNo).trim().toLowerCase()) {
+                return true;
+              }
+              return false;
+            });
+
+            const remainingBatches = existingBatches.filter(b => !batchesToDelete.includes(b));
+            const removedBatchQty = batchesToDelete.reduce((sum, b) => sum + (parseInt(b.Qty) || 0), 0);
+            const deductQty = Math.max(qtyRec, removedBatchQty);
+
             const currentStock = parseInt(matchedItem.CStock) || parseInt(matchedItem.Stock) || 0;
-            const newStock = Math.max(0, currentStock - qtyRec);
+            let newStock = Math.max(0, currentStock - deductQty);
+
+            if (remainingBatches.length > 0) {
+              const remainingSum = remainingBatches.reduce((sum, b) => sum + (parseInt(b.Qty) || 0), 0);
+              if (remainingSum < newStock) {
+                newStock = remainingSum;
+              }
+            } else if (batchesToDelete.length > 0 && batchesToDelete.length === existingBatches.length) {
+              // If all batches belonged to this deleted GRN, stock is 0
+              newStock = 0;
+            }
+
+            const activeBatches = remainingBatches.filter(b => (parseInt(b.Qty) || 0) > 0);
+            const earliestBatch = activeBatches.length > 0
+              ? [...activeBatches].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+              : remainingBatches[0];
+
             await db.collection('items').updateOne(
               { _id: matchedItem._id },
-              { $set: { CStock: newStock, Stock: newStock } }
+              {
+                $set: {
+                  CStock: newStock,
+                  Stock: newStock,
+                  Batches: remainingBatches,
+                  BatchNo: earliestBatch ? (earliestBatch.BatchNo || '') : '',
+                  MfgDate: earliestBatch ? (earliestBatch.MfgDate || '') : '',
+                  ExpDate: earliestBatch ? (earliestBatch.ExpDate || '') : '',
+                  ExpiryDate: earliestBatch ? (earliestBatch.ExpDate || '') : ''
+                }
+              }
             );
           }
         }
+      }
+
+      // Sweep for any other items in the database that had a batch tagged with this GRNID
+      const residualItems = await db.collection('items').find({
+        $or: [
+          { "Batches.GRNID": targetGrnId },
+          { "Batches.BatchID": { $regex: targetGrnId, $options: 'i' } }
+        ]
+      }).toArray();
+
+      for (const resItem of residualItems) {
+        if (processedItemIds.has(String(resItem.ItemID))) continue;
+        processedItemIds.add(String(resItem.ItemID));
+
+        const existingBatches = Array.isArray(resItem.Batches) ? resItem.Batches : [];
+        const batchesToDelete = existingBatches.filter(b =>
+          (b.GRNID && String(b.GRNID).trim().toLowerCase() === String(targetGrnId).trim().toLowerCase()) ||
+          (b.BatchID && String(b.BatchID).toLowerCase().includes(String(targetGrnId).toLowerCase()))
+        );
+
+        const remainingBatches = existingBatches.filter(b => !batchesToDelete.includes(b));
+        const removedBatchQty = batchesToDelete.reduce((sum, b) => sum + (parseInt(b.Qty) || 0), 0);
+        const currentStock = parseInt(resItem.CStock) || parseInt(resItem.Stock) || 0;
+        let newStock = Math.max(0, currentStock - removedBatchQty);
+
+        if (remainingBatches.length > 0) {
+          const remainingSum = remainingBatches.reduce((sum, b) => sum + (parseInt(b.Qty) || 0), 0);
+          if (remainingSum < newStock) newStock = remainingSum;
+        } else if (batchesToDelete.length > 0 && batchesToDelete.length === existingBatches.length) {
+          newStock = 0;
+        }
+
+        const activeBatches = remainingBatches.filter(b => (parseInt(b.Qty) || 0) > 0);
+        const earliestBatch = activeBatches.length > 0
+          ? [...activeBatches].sort((a, b) => (a.ExpDate || '9999').localeCompare(b.ExpDate || '9999'))[0]
+          : remainingBatches[0];
+
+        await db.collection('items').updateOne(
+          { _id: resItem._id },
+          {
+            $set: {
+              CStock: newStock,
+              Stock: newStock,
+              Batches: remainingBatches,
+              BatchNo: earliestBatch ? (earliestBatch.BatchNo || '') : '',
+              MfgDate: earliestBatch ? (earliestBatch.MfgDate || '') : '',
+              ExpDate: earliestBatch ? (earliestBatch.ExpDate || '') : '',
+              ExpiryDate: earliestBatch ? (earliestBatch.ExpDate || '') : ''
+            }
+          }
+        );
       }
 
       // 2. Revert Vendor Balance
@@ -3460,6 +3596,31 @@ app.post('/api/erp/grn/delete', async (req, res) => {
           { Description: { $regex: targetGrnId, $options: 'i' } }
         ]
       });
+
+      // 4. Reverse double-entry ledger postings if present
+      const relatedLedgerEntries = await db.collection('ac_ledger').find({
+        $or: [
+          { Remarks: { $regex: targetGrnId, $options: 'i' } },
+          { VchNo: { $regex: targetGrnId, $options: 'i' } }
+        ]
+      }).toArray();
+
+      for (const entry of relatedLedgerEntries) {
+        if (entry.Debit > 0) {
+          await db.collection('accounts').updateOne({ TLID: entry.TLID }, { $inc: { AcBalance: -entry.Debit } });
+        }
+        if (entry.Credit > 0) {
+          await db.collection('accounts').updateOne({ TLID: entry.TLID }, { $inc: { AcBalance: entry.Credit } });
+        }
+      }
+      if (relatedLedgerEntries.length > 0) {
+        await db.collection('ac_ledger').deleteMany({
+          $or: [
+            { Remarks: { $regex: targetGrnId, $options: 'i' } },
+            { VchNo: { $regex: targetGrnId, $options: 'i' } }
+          ]
+        });
+      }
 
       // 4. Update PO Status if linked to PO
       if (grn.POID) {
