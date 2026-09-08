@@ -6,69 +6,136 @@
 import { Item, ItemBatch } from '../types';
 
 /**
- * Normalizes any date string (YYYY-MM-DD, YYYY-MM, MM/YYYY, MM-YYYY, DD/MM/YYYY, etc.)
+ * Normalizes any date value (Excel serial number, Date object, YYYY-MM-DD, YYYY-MM, 
+ * MM/YYYY, MM-YYYY, MM/YY, MM-YY, DD/MM/YYYY, DD-MM-YYYY, DD/MM/YY, text months, etc.)
  * into standard Month-Year format "YYYY-MM" suitable for <input type="month"> and database storage.
  */
-export const toMonthYearInput = (dateStr?: string | null): string => {
-  if (!dateStr || typeof dateStr !== 'string') return '';
-  const trimmed = dateStr.trim();
-  if (!trimmed) return '';
+export const toMonthYearInput = (dateVal?: string | number | Date | null): string => {
+  if (dateVal === undefined || dateVal === null) return '';
 
-  // Already standard YYYY-MM
-  if (/^\d{4}-\d{2}$/.test(trimmed)) {
-    return trimmed;
+  // 1. Direct JavaScript Date object
+  if (dateVal instanceof Date) {
+    if (!isNaN(dateVal.getTime())) {
+      const y = dateVal.getFullYear();
+      const m = String(dateVal.getMonth() + 1).padStart(2, '0');
+      return `${y}-${m}`;
+    }
+    return '';
   }
 
-  // YYYY-MM-DD or YYYY/MM/DD
-  const ymdMatch = trimmed.match(/^(\d{4})[-/.](\d{1,2})(?:[-/.]\d{1,2})?/);
+  let str = String(dateVal).trim();
+  if (!str) return '';
+
+  // 2. Handle numeric values (Excel serial dates & integer date formats)
+  const num = Number(str);
+  if (!isNaN(num) && isFinite(num)) {
+    // 6-digit YYYYMM (e.g. 202605)
+    if (num >= 199001 && num <= 209912 && str.length === 6) {
+      return `${str.slice(0, 4)}-${str.slice(4, 6)}`;
+    }
+    // 8-digit YYYYMMDD (e.g. 20260515)
+    if (num >= 19900101 && num <= 20991231 && str.length === 8) {
+      return `${str.slice(0, 4)}-${str.slice(4, 6)}`;
+    }
+    // Excel date serial number (e.g. 25000 - 90000 -> years 1968 to 2146)
+    if (num >= 25000 && num <= 90000) {
+      const excelEpoch = new Date(Math.round((num - 25569) * 86400 * 1000));
+      if (!isNaN(excelEpoch.getTime())) {
+        const y = excelEpoch.getUTCFullYear();
+        const m = String(excelEpoch.getUTCMonth() + 1).padStart(2, '0');
+        return `${y}-${m}`;
+      }
+    }
+  }
+
+  // Strip trailing time like T00:00:00.000Z or 12:00:00 AM/PM
+  str = str.replace(/[T\s]\d{1,2}:\d{2}.*$/, '').trim();
+
+  // 3. Already standard YYYY-MM
+  if (/^\d{4}-\d{2}$/.test(str)) {
+    return str;
+  }
+
+  // 4. YYYY-MM-DD or YYYY/MM/DD or YYYY.MM.DD
+  const ymdMatch = str.match(/^(\d{4})[-/.](\d{1,2})(?:[-/.]\d{1,2})?$/);
   if (ymdMatch) {
     const year = ymdMatch[1];
     const month = ymdMatch[2].padStart(2, '0');
     return `${year}-${month}`;
   }
 
-  // MM/YYYY, MM-YYYY, DD/MM/YYYY, DD-MM-YYYY
-  const dmyMatch = trimmed.match(/^(?:(\d{1,2})[-/.])?(\d{1,2})[-/.](\d{4})/);
+  // 5. DD/MM/YYYY, DD-MM-YYYY, MM/YYYY, MM-YYYY, DD.MM.YYYY
+  const dmyMatch = str.match(/^(?:(\d{1,2})[-/.])?(\d{1,2})[-/.](\d{4})$/);
   if (dmyMatch) {
-    let month = dmyMatch[1] && !dmyMatch[3] ? dmyMatch[1] : dmyMatch[2];
+    const part1 = Number(dmyMatch[1]);
+    const part2 = Number(dmyMatch[2]);
     const year = dmyMatch[3];
-    // If format was DD/MM/YYYY
-    if (dmyMatch[1] && dmyMatch[2] && dmyMatch[3]) {
-      month = dmyMatch[2];
+    let month = part2;
+    // If format was MM/DD/YYYY where part1 <= 12 and part2 > 12
+    if (dmyMatch[1] && part1 <= 12 && part2 > 12) {
+      month = part1;
     }
-    return `${year}-${month.padStart(2, '0')}`;
+    return `${year}-${String(month).padStart(2, '0')}`;
   }
 
-  // Text month names: "May 2026", "05-May-2026", "May-26"
+  // 6. MM/YY, MM-YY, MM.YY, M/YY, M-YY (e.g. '05/26', '12-28', '5/27')
+  const mmyyMatch = str.match(/^(\d{1,2})[-/.](\d{2})$/);
+  if (mmyyMatch) {
+    const p1 = Number(mmyyMatch[1]);
+    const p2 = Number(mmyyMatch[2]);
+    if (p1 >= 1 && p1 <= 12) {
+      const year = p2 < 70 ? 2000 + p2 : 1900 + p2;
+      return `${year}-${String(p1).padStart(2, '0')}`;
+    } else if (p2 >= 1 && p2 <= 12 && p1 >= 20 && p1 <= 99) {
+      // YY/MM
+      const year = 2000 + p1;
+      return `${year}-${String(p2).padStart(2, '0')}`;
+    }
+  }
+
+  // 7. DD/MM/YY or DD-MM-YY (e.g. '15/05/26', '31-12-25')
+  const dmyShortMatch = str.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{2})$/);
+  if (dmyShortMatch) {
+    const m = Number(dmyShortMatch[2]);
+    const p3 = Number(dmyShortMatch[3]);
+    const year = p3 < 70 ? 2000 + p3 : 1900 + p3;
+    if (m >= 1 && m <= 12) {
+      return `${year}-${String(m).padStart(2, '0')}`;
+    }
+  }
+
+  // 8. Text month names: "May 2026", "05-May-2026", "May-26", "15-May-26", "May/26"
   const monthsMap: Record<string, string> = {
     jan: '01', feb: '02', mar: '03', apr: '04', may: '05', jun: '06',
     jul: '07', aug: '08', sep: '09', oct: '10', nov: '11', dec: '12'
   };
-  const textMonthMatch = trimmed.match(/([a-zA-Z]{3,9})[^\d]*(\d{2,4})/);
+  const textMonthMatch = str.match(/([a-zA-Z]{3,9})[^\d]*(\d{2,4})/);
   if (textMonthMatch) {
     const mStr = textMonthMatch[1].slice(0, 3).toLowerCase();
-    let year = textMonthMatch[2];
-    if (year.length === 2) {
-      year = Number(year) > 50 ? `19${year}` : `20${year}`;
-    }
     if (monthsMap[mStr]) {
+      let year = textMonthMatch[2];
+      if (year.length === 2) {
+        year = Number(year) < 70 ? `20${year}` : `19${year}`;
+      }
       return `${year}-${monthsMap[mStr]}`;
     }
   }
 
-  // Try standard Date parsing
+  // 9. Standard Date parsing fallback with sanity checking for 4-digit years
   try {
-    const d = new Date(trimmed);
+    const d = new Date(str);
     if (!isNaN(d.getTime())) {
       const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      return `${year}-${month}`;
+      if (year >= 1970 && year <= 2099) {
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        return `${year}-${month}`;
+      }
     }
   } catch {
     // ignore
   }
 
-  return trimmed;
+  return '';
 };
 
 /**

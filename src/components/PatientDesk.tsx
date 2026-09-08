@@ -6364,11 +6364,14 @@ Healing Naturally. Restoring Balance.`;
           pvSaveSuccess={pvSaveSuccess}
           setPvSaveSuccess={setPvSaveSuccess}
           pvSaveError={pvSaveError}
+          setPvSaveError={setPvSaveError}
           setPvLabTestModalOpen={setPvLabTestModalOpen}
           setHistoryAlertModalOpen={setHistoryAlertModalOpen}
           setIsClaimBillModalOpen={setIsClaimBillModalOpen}
           setIsMultiPatientModalOpen={setIsMultiPatientModalOpen}
           setExpireDateByWeeks={setExpireDateByWeeks}
+          visitMedicines={visitMedicines}
+          currentUser={currentUser}
         />
       )}
 

@@ -214,7 +214,9 @@ export const PharmacyClinicalLabelsTab: React.FC<PharmacyClinicalLabelsTabProps>
               {(() => {
                 const pat = allKnownPatients.find(p => p.PatientID === labelPatientId);
                 const vis = visits.find(v => v.VisitID === labelVisitId);
-                const cMeds = getVisitMedicinesList(vis || null);
+                const allMeds = getVisitMedicinesList(vis || null);
+                // STRICTLY Clinical medicines only (exclude patent / store items)
+                const cMeds = allMeds.filter(m => m.MedicineType === 'C' || (!m.MedicineType && !m.ItemID?.startsWith('PAT-')));
                 
                 if (pat && vis && cMeds.length > 0) {
                   return (
@@ -228,10 +230,11 @@ export const PharmacyClinicalLabelsTab: React.FC<PharmacyClinicalLabelsTabProps>
                           const qty = customLabelStates[m.ItemID]?.qty ?? String(m.Qty || 30);
                           const expiry = customLabelStates[m.ItemID]?.expiry ?? (m.ExpireDate || "No Expiry Specified");
                           
-                          return { name, instructions, notes, qty, expiry };
+                          return { name, instructions, notes, qty, expiry, medicineType: 'C' };
                         });
 
                         setLabelPrintData({
+                          patientId: pat.PatientID,
                           patientName: pat.PatientName,
                           patientAge: String(pat.AgeYears),
                           patientSex: pat.Sex,
@@ -244,7 +247,7 @@ export const PharmacyClinicalLabelsTab: React.FC<PharmacyClinicalLabelsTabProps>
                       className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-lg flex items-center shadow-md shadow-indigo-600/10 self-start cursor-pointer transition"
                     >
                       <Printer className="w-3.5 h-3.5 mr-1.5" />
-                      Print All ({cMeds.length}) Labels for This Visit
+                      Print All ({cMeds.length}) Clinical Labels for This Visit
                     </button>
                   );
                 }
@@ -264,12 +267,14 @@ export const PharmacyClinicalLabelsTab: React.FC<PharmacyClinicalLabelsTabProps>
 
               const pat = allKnownPatients.find(p => p.PatientID === labelPatientId);
               const vis = visits.find(v => v.VisitID === labelVisitId);
-              const clinicalMeds = getVisitMedicinesList(vis || null);
+              const allMeds = getVisitMedicinesList(vis || null);
+              // STRICTLY Clinical medicines only (exclude patent / store items)
+              const clinicalMeds = allMeds.filter(m => m.MedicineType === 'C' || (!m.MedicineType && !m.ItemID?.startsWith('PAT-')));
 
               if (clinicalMeds.length === 0) {
                 return (
                   <div className="p-12 text-center text-slate-400 italic text-xs bg-slate-50 border border-dashed rounded-xl">
-                    No prescribed medicines found in this visit.
+                    No prescribed clinical medicines found in this visit.
                   </div>
                 );
               }
@@ -416,6 +421,7 @@ export const PharmacyClinicalLabelsTab: React.FC<PharmacyClinicalLabelsTabProps>
                               <button
                                 onClick={() => {
                                   setLabelPrintData({
+                                    patientId: pat?.PatientID || "",
                                     patientName: pat?.PatientName || "Unknown",
                                     patientAge: String(pat?.AgeYears || ""),
                                     patientSex: pat?.Sex || "Male",
@@ -426,7 +432,8 @@ export const PharmacyClinicalLabelsTab: React.FC<PharmacyClinicalLabelsTabProps>
                                       instructions: instructionsValue,
                                       notes: notesValue,
                                       qty: qtyValue,
-                                      expiry: expiryValue
+                                      expiry: expiryValue,
+                                      medicineType: 'C'
                                     }]
                                   });
                                   setIsLabelPrintModalOpen(true);

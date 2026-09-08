@@ -157,6 +157,7 @@ export const ClinicalMedicinePrescriptionTab: React.FC<ClinicalMedicinePrescript
   const handlePrintBottleLabels = () => {
     if (!selectedPatient || !activeVisit) return;
     const labelData = {
+      patientId: selectedPatient.PatientID,
       patientName: selectedPatient.PatientName,
       patientAge: String(selectedPatient.AgeYears || ''),
       patientSex: selectedPatient.Sex || '',
@@ -175,7 +176,8 @@ export const ClinicalMedicinePrescriptionTab: React.FC<ClinicalMedicinePrescript
           instructions: cm.Dosage || 'As directed by Doctor',
           notes: cm.Notes50 || 'Store in cool dry place away from direct sunlight',
           qty: String(cm.Qty || 1),
-          expiry: exp
+          expiry: exp,
+          medicineType: 'C'
         };
       })
     };

@@ -15,7 +15,10 @@ import {
   LayoutGrid, 
   ChevronDown, 
   ChevronUp,
-  Check
+  Check,
+  ZoomIn,
+  Minus,
+  Plus
 } from 'lucide-react';
 
 interface PharmacyLabelPrintModalProps {
@@ -24,6 +27,7 @@ interface PharmacyLabelPrintModalProps {
   isLabelPrintModalOpen: boolean;
   setIsLabelPrintModalOpen: (open: boolean) => void;
   labelPrintData: {
+    patientId?: string;
     patientName: string;
     patientAge: string;
     patientSex: string;
@@ -35,6 +39,7 @@ interface PharmacyLabelPrintModalProps {
       notes: string;
       qty: string;
       expiry: string;
+      medicineType?: string;
     }[];
   } | null;
   clinicSettings?: any;
@@ -84,6 +89,10 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
   // Layout options
   const [columnsCount, setColumnsCount] = useState<number>(savedSettings?.columnsCount ?? 2);
   const [labelsPerPage, setLabelsPerPage] = useState<number>(savedSettings?.labelsPerPage ?? 4);
+  const [printScale, setPrintScale] = useState<number>(() => {
+    const s = savedSettings?.printScale ?? savedSettings?.scale;
+    return typeof s === 'number' && s >= 30 && s <= 250 ? s : 100;
+  });
   const [showSettingsPanel, setShowSettingsPanel] = useState<boolean>(true);
   const [showSuggestionsBox, setShowSuggestionsBox] = useState<boolean>(true);
 
@@ -100,12 +109,13 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
         labelWidth,
         labelHeight,
         columnsCount,
-        labelsPerPage
+        labelsPerPage,
+        printScale
       }));
     } catch (err) {
       // Ignore storage errors
     }
-  }, [marginTop, marginBottom, marginLeft, marginRight, colGap, rowGap, labelWidth, labelHeight, columnsCount, labelsPerPage]);
+  }, [marginTop, marginBottom, marginLeft, marginRight, colGap, rowGap, labelWidth, labelHeight, columnsCount, labelsPerPage, printScale]);
 
   const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
 
@@ -156,6 +166,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
     setRowGap(suggested.rowGap);
     setLabelWidth(suggested.labelWidth);
     setLabelHeight(suggested.labelHeight);
+    setPrintScale(100);
   };
 
   // Quick Action: Clear all inputs to blank as requested
@@ -168,6 +179,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
     setRowGap('');
     setLabelWidth('');
     setLabelHeight('');
+    setPrintScale(100);
     try {
       localStorage.removeItem(SETTINGS_STORAGE_KEY);
     } catch (err) {
@@ -178,9 +190,16 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
   // Check visibility and data availability after all hooks have been called
   if (!isLabelPrintModalOpen || !labelPrintData) return null;
 
-  // Pagination calculation based on user selection
-  const effectivePerPage = labelsPerPage === 0 ? labelPrintData.medicines.length : labelsPerPage;
-  const totalPages = Math.ceil(labelPrintData.medicines.length / (effectivePerPage || 1)) || 1;
+  // Filter strictly to clinical medicines (excluding any patent / store items)
+  const clinicalMedicines = (labelPrintData.medicines || []).filter((m: any) => 
+    m.medicineType !== 'P' && 
+    !m.name?.toLowerCase().startsWith('patent:') && 
+    !m.name?.toLowerCase().startsWith('store:')
+  );
+
+  // Pagination calculation based on clinical medicines count
+  const effectivePerPage = labelsPerPage === 0 ? clinicalMedicines.length : labelsPerPage;
+  const totalPages = Math.ceil(clinicalMedicines.length / (effectivePerPage || 1)) || 1;
 
   // Dedicated self-contained print function applying exact custom A5 landscape & custom margins
   const executePrint = () => {
@@ -196,7 +215,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
 
       // Build printable HTML pages based on pagination
       const printPagesHtml = Array.from({ length: totalPages }).map((_, pageIdx) => {
-        const pageMeds = labelPrintData.medicines.slice(pageIdx * effectivePerPage, pageIdx * effectivePerPage + effectivePerPage);
+        const pageMeds = clinicalMedicines.slice(pageIdx * effectivePerPage, pageIdx * effectivePerPage + effectivePerPage);
         return `
           <div class="label-grid-page">
             ${pageMeds.map((med) => `
@@ -204,18 +223,20 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                 <div class="label-row label-patient">
                   <span class="label-key">Patient:</span>
                   <strong class="label-val">${labelPrintData.patientName || 'Walk-in Patient'}</strong>
-                </div>
-                <div class="label-row label-med">
-                  <span class="label-key">Med:</span>
-                  <strong class="label-val">${med.name || 'Clinical Remedy'}</strong>
+                  ${labelPrintData.patientId ? `<span class="label-id" style="font-size: 8px; color: #1e293b; font-weight: 800; margin-left: 3px;">(ID: ${labelPrintData.patientId})</span>` : ''}
                 </div>
                 <div class="label-row label-usage">
                   <span class="label-key">Usage:</span>
                   <span class="label-val">${med.instructions || 'As directed by Doctor'}</span>
                 </div>
-                <div class="label-row label-footer">
-                  <span>Exp: <strong>${med.expiry || 'N/A'}</strong></span>
-                  <span class="clinic-sub">${clinicName}</span>
+                <div class="label-row label-exp">
+                  <span class="label-key">Exp:</span>
+                  <strong class="label-val">${med.expiry || 'N/A'}</strong>
+                </div>
+                <div class="label-clinic-footer">
+                  <div class="clinic-title">Punjab Homeopathic Clinic</div>
+                  <div class="doctor-title">Dr Ejaz Ahmad, D.H.M.S (Pak)</div>
+                  <div class="doctor-contact">0300-4202383</div>
                 </div>
               </div>
             `).join('')}
@@ -262,6 +283,13 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                 break-after: page;
                 margin: 0;
                 padding: 0;
+                zoom: ${printScale / 100};
+              }
+              @supports not (zoom: 1) {
+                .label-grid-page {
+                  transform: scale(${printScale / 100});
+                  transform-origin: top left;
+                }
               }
               .label-grid-page:last-child {
                 page-break-after: avoid;
@@ -300,23 +328,39 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                 color: #000000;
                 font-weight: 800;
               }
-              .label-footer {
+              .label-clinic-footer {
                 display: flex;
-                justify-content: space-between;
+                flex-direction: column;
                 align-items: center;
-                font-size: 7.5px;
-                color: #334155;
-                margin-top: 1px;
+                text-align: center;
+                margin-top: 2px;
                 border-top: 0.5px solid #cbd5e1;
-                padding-top: 1px;
+                padding-top: 1.5px;
+                line-height: 1.15;
               }
-              .clinic-sub {
-                font-size: 6.5px;
-                color: #64748b;
-                max-width: 1in;
+              .clinic-title {
+                font-size: 8.5px;
+                font-weight: 800;
+                color: #0f172a;
+                white-space: nowrap;
                 overflow: hidden;
                 text-overflow: ellipsis;
+              }
+              .doctor-title {
+                font-size: 8.5px;
+                font-weight: 700;
+                color: #1e293b;
                 white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
+              }
+              .doctor-contact {
+                font-size: 8.5px;
+                font-weight: 800;
+                color: #0f172a;
+                white-space: nowrap;
+                overflow: hidden;
+                text-overflow: ellipsis;
               }
             </style>
           </head>
@@ -426,6 +470,13 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
               break-after: page !important;
               margin-bottom: 0 !important;
               padding: 0 !important;
+              zoom: ${printScale / 100} !important;
+            }
+            @supports not (zoom: 1) {
+              .label-grid-page {
+                transform: scale(${printScale / 100}) !important;
+                transform-origin: top left !important;
+              }
             }
             .label-grid-page:last-child {
               page-break-after: avoid !important;
@@ -577,6 +628,85 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                   <option value={8}>8 Labels (2×4)</option>
                   <option value={0}>All on One Page</option>
                 </select>
+              </div>
+
+              {/* Print Scale Selector (Normal Printer Style) */}
+              <div className="flex items-center space-x-2">
+                <span className="font-bold text-slate-700 flex items-center space-x-1">
+                  <ZoomIn className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>Scale:</span>
+                </span>
+                
+                {/* Standard Printer Scale Presets */}
+                <select
+                  value={[80, 85, 90, 95, 100, 105, 110, 115, 120].includes(printScale) ? printScale : 'custom'}
+                  onChange={(e) => {
+                    if (e.target.value !== 'custom') {
+                      setPrintScale(Number(e.target.value));
+                    }
+                  }}
+                  className="px-2 py-1 bg-white border border-slate-300 rounded-lg text-xs font-bold text-slate-800 cursor-pointer focus:outline-hidden focus:ring-1 focus:ring-indigo-500"
+                >
+                  <option value={100}>100% (Default)</option>
+                  <option value={95}>95%</option>
+                  <option value={90}>90%</option>
+                  <option value={85}>85%</option>
+                  <option value={80}>80%</option>
+                  <option value={105}>105%</option>
+                  <option value={110}>110%</option>
+                  <option value={115}>115%</option>
+                  <option value={120}>120%</option>
+                  {![80, 85, 90, 95, 100, 105, 110, 115, 120].includes(printScale) && (
+                    <option value="custom">Custom ({printScale}%)</option>
+                  )}
+                </select>
+
+                {/* Stepper with +/- buttons and direct custom percentage input */}
+                <div className="flex items-center bg-slate-100 p-0.5 rounded-lg border border-slate-300">
+                  <button
+                    type="button"
+                    onClick={() => setPrintScale(prev => Math.max(30, prev - 2))}
+                    title="Decrease scale"
+                    className="w-6 h-6 flex items-center justify-center rounded bg-white hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-bold transition cursor-pointer shadow-2xs text-xs"
+                  >
+                    <Minus className="w-3 h-3" />
+                  </button>
+                  <div className="flex items-center px-1">
+                    <input
+                      type="number"
+                      min={30}
+                      max={250}
+                      value={printScale}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        if (!isNaN(val)) {
+                          setPrintScale(Math.min(250, Math.max(30, val)));
+                        }
+                      }}
+                      className="w-9 text-center bg-transparent text-xs font-black text-slate-900 focus:outline-hidden"
+                    />
+                    <span className="text-xxs font-bold text-slate-500">%</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPrintScale(prev => Math.min(250, prev + 2))}
+                    title="Increase scale"
+                    className="w-6 h-6 flex items-center justify-center rounded bg-white hover:bg-slate-200 active:bg-slate-300 text-slate-700 font-bold transition cursor-pointer shadow-2xs text-xs"
+                  >
+                    <Plus className="w-3 h-3" />
+                  </button>
+                </div>
+
+                {printScale !== 100 && (
+                  <button
+                    type="button"
+                    onClick={() => setPrintScale(100)}
+                    className="px-2 py-0.5 text-xxs font-bold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 rounded-md transition cursor-pointer"
+                    title="Reset scale to 100%"
+                  >
+                    100%
+                  </button>
+                )}
               </div>
 
             </div>
@@ -781,6 +911,8 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
             <span className="inline-flex items-center space-x-2 px-3 py-1 rounded-full bg-slate-800 text-white text-xxs font-mono shadow-xs">
               <span>📄 Sheet: <strong>A5 (Landscape)</strong></span>
               <span>•</span>
+              <span>Scale: <strong>{printScale}%</strong></span>
+              <span>•</span>
               <span>Margins: T:{resolvedMarginTop} B:{resolvedMarginBottom} L:{resolvedMarginLeft} R:{resolvedMarginRight}</span>
               <span>•</span>
               <span>Gap: {resolvedColGap}</span>
@@ -789,11 +921,11 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
 
           {/* Render Pages */}
           {Array.from({ length: totalPages }).map((_, pageIdx) => {
-            const pageMeds = labelPrintData.medicines.slice(pageIdx * effectivePerPage, pageIdx * effectivePerPage + effectivePerPage);
+            const pageMeds = clinicalMedicines.slice(pageIdx * effectivePerPage, pageIdx * effectivePerPage + effectivePerPage);
             return (
               <div 
                 key={pageIdx} 
-                className="bg-white border border-slate-300 rounded-xl shadow-md mb-6 print:mb-0 print:border-none print:shadow-none print:rounded-none w-full max-w-[620px] aspect-[210/148] transition-all"
+                className="bg-white border border-slate-300 rounded-xl shadow-md mb-6 print:mb-0 print:border-none print:shadow-none print:rounded-none w-full max-w-[620px] aspect-[210/148] transition-all overflow-hidden"
                 style={{
                   paddingTop: resolvedMarginTop,
                   paddingBottom: resolvedMarginBottom,
@@ -803,17 +935,18 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
               >
                 {/* Page Indicator Tag (Screen Only) */}
                 <div className="flex justify-between items-center pb-2 mb-2 border-b border-dashed border-slate-200 print:hidden text-xxs text-slate-400 font-semibold">
-                  <span>Page {pageIdx + 1} of {totalPages} (A5 Landscape)</span>
-                  <span>{pageMeds.length} Labels on Page</span>
+                  <span>Page {pageIdx + 1} of {totalPages} (A5 Landscape • Scale {printScale}%)</span>
+                  <span>{pageMeds.length} Clinical Labels on Page</span>
                 </div>
 
                 {/* The Labels Grid */}
                 <div 
-                  className="label-grid-page grid"
+                  className="label-grid-page grid origin-top transition-transform"
                   style={{
                     gridTemplateColumns: `repeat(${columnsCount}, minmax(0, 1fr))`,
                     columnGap: resolvedColGap,
                     rowGap: resolvedRowGap,
+                    zoom: printScale !== 100 ? `${printScale}%` : undefined,
                   }}
                 >
                   {pageMeds.map((med, idx) => (
@@ -828,20 +961,32 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
                         <div className="font-bold text-[9px] m-0 p-0 truncate">
                           <span className="text-slate-500 font-normal">Patient: </span>
                           <strong className="text-slate-900 font-black">{labelPrintData.patientName}</strong>
-                        </div>
-                        <div className="font-bold text-[9px] m-0 p-0 truncate">
-                          <span className="text-slate-500 font-normal">Med: </span>
-                          <strong className="text-slate-900 font-black">{med.name || "Clinical Remedy"}</strong>
+                          {labelPrintData.patientId && (
+                            <span className="text-slate-700 font-bold ml-1 text-[8px]">
+                              (ID: {labelPrintData.patientId})
+                            </span>
+                          )}
                         </div>
                         <div className="text-[8.5px] m-0 p-0 truncate text-slate-700">
                           <span className="text-slate-500 font-normal">Usage: </span>
                           <span className="font-bold text-slate-900">{med.instructions || "As directed by Doctor"}</span>
                         </div>
+                        <div className="font-bold text-[8px] m-0 p-0 truncate text-slate-700">
+                          <span className="text-slate-500 font-normal">Exp: </span>
+                          <strong className="font-black text-slate-900">{med.expiry || "N/A"}</strong>
+                        </div>
                       </div>
 
-                      <div className="font-bold text-[7.5px] m-0 p-0 truncate flex justify-between items-center border-t border-slate-200 pt-1 mt-1 text-slate-500">
-                        <span>Exp: <strong className="font-black text-slate-900">{med.expiry || "N/A"}</strong></span>
-                        <span className="text-[7px] text-slate-400 truncate max-w-[90px]">{clinicName}</span>
+                      <div className="border-t border-slate-200 pt-1 mt-0.5 text-center leading-tight">
+                        <div className="text-[9px] font-black text-slate-900 truncate">
+                          Punjab Homeopathic Clinic
+                        </div>
+                        <div className="text-[9px] font-bold text-slate-800 truncate">
+                          Dr Ejaz Ahmad, D.H.M.S (Pak)
+                        </div>
+                        <div className="text-[9px] font-black text-slate-900 tracking-wide truncate">
+                          0300-4202383
+                        </div>
                       </div>
                     </div>
                   ))}
@@ -873,7 +1018,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
               className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-xl shadow-md transition cursor-pointer flex items-center space-x-1.5"
             >
               <Printer className="w-4 h-4" />
-              <span>Print {labelPrintData.medicines.length} Labels (A5 Landscape)</span>
+              <span>Print {clinicalMedicines.length} Labels (A5 Landscape)</span>
             </button>
           </div>
         </div>

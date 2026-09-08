@@ -2829,14 +2829,81 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       try {
         const data = new Uint8Array(e.target?.result as ArrayBuffer);
         import('xlsx').then((XLSX) => {
-          const workbook = XLSX.read(data, { type: 'array' });
+          const workbook = XLSX.read(data, {
+            type: 'array',
+            cellDates: true,
+            dateNF: 'yyyy-mm-dd'
+          });
           const firstSheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[firstSheetName];
-          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 }) as any[][];
+
+          // Read both raw values (Date objects / serial numbers) and formatted strings
+          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: true }) as any[][];
+          const formattedData = XLSX.utils.sheet_to_json(worksheet, { header: 1, raw: false, dateNF: 'yyyy-mm-dd' }) as any[][];
 
           if (!rawData || rawData.length === 0) {
             setBulkGrnFileError('The uploaded sheet is empty.');
             return;
+          }
+
+          const isExpCol = (c: string) => {
+            const s = c.toLowerCase().trim();
+            if (s.includes('expected') || s.includes('expense') || s.includes('explain') || s.includes('export')) return false;
+            return (
+              s.includes('exp') ||
+              s.includes('expiry') ||
+              s.includes('expire') ||
+              s.includes('valid') ||
+              s.includes('best before') ||
+              s === 'doe' ||
+              s.includes('d.o.e') ||
+              s === 'e.date' ||
+              s === 'e/date' ||
+              s.includes('e_date') ||
+              s.includes('expdate') ||
+              s.includes('exp_date')
+            );
+          };
+
+          const isMfgCol = (c: string) => {
+            const s = c.toLowerCase().trim();
+            return (
+              s.includes('mfg') ||
+              s.includes('mfd') ||
+              s.includes('manufactur') ||
+              s.includes('prod') ||
+              s.includes('pkd') ||
+              s.includes('pack date') ||
+              s === 'dom' ||
+              s.includes('d.o.m') ||
+              s === 'm.date' ||
+              s === 'm/date' ||
+              s.includes('m_date') ||
+              s.includes('mfgdate') ||
+              s.includes('mfg_date')
+            );
+          };
+
+          // Search first 10 rows for the column header row
+          let headerRowIndex = -1;
+          for (let r = 0; r < Math.min(10, rawData.length); r++) {
+            const rowCells = (rawData[r] || []).map(c => String(c || '').toLowerCase().trim());
+            const countHeaders = rowCells.filter(c =>
+              c.includes('item') || c.includes('medicine') || c.includes('product') ||
+              c.includes('batch') || c.includes('lot') ||
+              isMfgCol(c) || isExpCol(c) ||
+              c.includes('qty') || c.includes('recv') || c.includes('received') ||
+              c.includes('rate') || c.includes('price') || c.includes('tp') || c.includes('cost') ||
+              c.includes('cat') || c.includes('category')
+            ).length;
+            const hasItemCol = rowCells.some(c =>
+              c.includes('item') || c.includes('medicine') || c.includes('product') ||
+              (c.includes('name') && !c.includes('vendor') && !c.includes('suppl') && !c.includes('company') && !c.includes('clinic'))
+            );
+            if (countHeaders >= 2 || (hasItemCol && countHeaders >= 1)) {
+              headerRowIndex = r;
+              break;
+            }
           }
 
           let nameIdx = 0;
@@ -2848,21 +2915,27 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           let categoryIdx = -1;
           let startRow = 0;
 
-          const firstRow = rawData[0].map(c => String(c || '').toLowerCase().trim());
-          const hasHeader = firstRow.some(c =>
-            c.includes('item') || c.includes('name') || c.includes('qty') ||
-            c.includes('mfg') || c.includes('exp') || c.includes('price') || c.includes('rate') || c.includes('cat') || c.includes('batch')
-          );
-
-          if (hasHeader) {
-            startRow = 1;
-            const foundName = firstRow.findIndex(c => c.includes('item') || c.includes('name') || c.includes('medicine') || c.includes('desc'));
-            const foundBatch = firstRow.findIndex(c => c.includes('batch') || c.includes('lot') || c.includes('ref'));
-            const foundMfg = firstRow.findIndex(c => c.includes('mfg') || c.includes('mfd') || c.includes('manufactur') || c.includes('prod'));
-            const foundExp = firstRow.findIndex(c => c.includes('exp') || c.includes('expiry') || c.includes('expiration') || c.includes('best before'));
-            const foundPrice = firstRow.findIndex(c => c.includes('price') || c.includes('rate') || c.includes('cost') || c.includes('unit') || c.includes('tp'));
-            const foundQty = firstRow.findIndex(c => c.includes('recv') || c.includes('received') || c.includes('qty') || c.includes('quantity') || c.includes('inward'));
-            const foundCategory = firstRow.findIndex(c => c.includes('cat') || c.includes('category') || c.includes('type') || c.includes('group') || c.includes('unit'));
+          if (headerRowIndex >= 0) {
+            startRow = headerRowIndex + 1;
+            const headerRow = (rawData[headerRowIndex] || []).map(c => String(c || '').toLowerCase().trim());
+            const foundName = headerRow.findIndex(c =>
+              c.includes('item') || c.includes('medicine') || c.includes('product') || c.includes('desc') ||
+              (c.includes('name') && !c.includes('vendor') && !c.includes('suppl') && !c.includes('company') && !c.includes('clinic'))
+            );
+            const foundBatch = headerRow.findIndex(c =>
+              c.includes('batch') || c.includes('lot') || c.includes('b.no') || c.includes('b#') || c.includes('b_no') || c === 'batchno' || c === 'batch_no'
+            );
+            const foundMfg = headerRow.findIndex(c => isMfgCol(c));
+            const foundExp = headerRow.findIndex(c => isExpCol(c));
+            const foundPrice = headerRow.findIndex(c =>
+              c.includes('price') || c.includes('rate') || c.includes('cost') || c.includes('unit') || c.includes('tp') || c.includes('p.rate')
+            );
+            const foundQty = headerRow.findIndex(c =>
+              c.includes('recv') || c.includes('received') || c.includes('inward') || c.includes('qty') || c.includes('quantity') || c.includes('units')
+            );
+            const foundCategory = headerRow.findIndex(c =>
+              c.includes('cat') || c.includes('category') || c.includes('type') || c.includes('group') || c.includes('unit')
+            );
 
             if (foundName >= 0) nameIdx = foundName;
             if (foundBatch >= 0) batchIdx = foundBatch;
@@ -2872,34 +2945,63 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             if (foundQty >= 0) qtyIdx = foundQty;
             if (foundCategory >= 0) categoryIdx = foundCategory;
           } else {
-            // Default 7-column order: Name (0), Batch (1), Mfg (2), Expiry (3), Price (4), QTY (5), Category (6)
-            if (rawData[0].length >= 7) {
+            // Default column index fallbacks based on row count
+            const sampleRow = rawData[0] || [];
+            if (sampleRow.length >= 7) {
               nameIdx = 0; batchIdx = 1; mfgIdx = 2; expIdx = 3; priceIdx = 4; qtyIdx = 5; categoryIdx = 6;
-            } else if (rawData[0].length === 6) {
+            } else if (sampleRow.length === 6) {
               nameIdx = 0; batchIdx = 1; mfgIdx = 2; expIdx = 3; priceIdx = 4; qtyIdx = 5;
-            } else if (rawData[0].length === 5) {
-              nameIdx = 0; mfgIdx = 1; expIdx = 2; priceIdx = 3; qtyIdx = 4;
+            } else if (sampleRow.length === 5) {
+              // In 5 columns, check if col 1 or col 2 is a date
+              const col1IsDate = Boolean(toMonthYearInput(sampleRow[1]));
+              const col2IsDate = Boolean(toMonthYearInput(sampleRow[2]));
+              if (col1IsDate && col2IsDate) {
+                nameIdx = 0; mfgIdx = 1; expIdx = 2; priceIdx = 3; qtyIdx = 4;
+              } else {
+                nameIdx = 0; batchIdx = 1; expIdx = 2; priceIdx = 3; qtyIdx = 4;
+              }
             }
           }
 
           const parsedRows: Array<{ name: string; batchNo?: string; mfgDate?: string; expiryDate?: string; price?: number; qty?: number; category?: string }> = [];
           for (let i = startRow; i < rawData.length; i++) {
             const row = rawData[i];
+            const fmtRow = formattedData[i] || [];
             if (!row || row.length === 0) continue;
-            const nameStr = String(row[nameIdx] || '').trim();
+            const nameStr = String(row[nameIdx] || fmtRow[nameIdx] || '').trim();
             if (!nameStr) continue;
 
-            const batchStr = batchIdx >= 0 && row[batchIdx] ? String(row[batchIdx]).trim() : undefined;
-            const mfgStr = mfgIdx >= 0 && row[mfgIdx] ? String(row[mfgIdx]).trim() : undefined;
-            const expStr = expIdx >= 0 && row[expIdx] ? String(row[expIdx]).trim() : undefined;
-            const priceRaw = priceIdx >= 0 && row[priceIdx] !== undefined && row[priceIdx] !== null ? parseFloat(String(row[priceIdx])) : NaN;
+            // Skip repeated header line if any
+            if (nameStr.toLowerCase() === 'item name' || nameStr.toLowerCase() === 'medicine' || nameStr.toLowerCase() === 'item') {
+              continue;
+            }
+
+            const batchStr = batchIdx >= 0 && (row[batchIdx] !== undefined || fmtRow[batchIdx] !== undefined)
+              ? String(row[batchIdx] ?? fmtRow[batchIdx] ?? '').trim()
+              : undefined;
+
+            // Date resolution: test formatted string first, then raw Date / serial number
+            const rawMfgCell = mfgIdx >= 0 ? (row[mfgIdx] ?? fmtRow[mfgIdx]) : undefined;
+            const fmtMfgCell = mfgIdx >= 0 ? (fmtRow[mfgIdx] ?? row[mfgIdx]) : undefined;
+            const mfgStr = mfgIdx >= 0 ? (toMonthYearInput(fmtMfgCell) || toMonthYearInput(rawMfgCell) || undefined) : undefined;
+
+            const rawExpCell = expIdx >= 0 ? (row[expIdx] ?? fmtRow[expIdx]) : undefined;
+            const fmtExpCell = expIdx >= 0 ? (fmtRow[expIdx] ?? row[expIdx]) : undefined;
+            const expStr = expIdx >= 0 ? (toMonthYearInput(fmtExpCell) || toMonthYearInput(rawExpCell) || undefined) : undefined;
+
+            const priceRaw = priceIdx >= 0 && row[priceIdx] !== undefined && row[priceIdx] !== null
+              ? parseFloat(String(row[priceIdx]))
+              : NaN;
             const priceVal = !isNaN(priceRaw) ? priceRaw : undefined;
-            const qtyVal = qtyIdx >= 0 ? (parseFloat(String(row[qtyIdx] || '0')) || 0) : 0;
-            const catStr = categoryIdx >= 0 && row[categoryIdx] ? String(row[categoryIdx]).trim() : undefined;
+
+            const qtyVal = qtyIdx >= 0 ? (parseFloat(String(row[qtyIdx] || fmtRow[qtyIdx] || '0')) || 0) : 0;
+            const catStr = categoryIdx >= 0 && (row[categoryIdx] || fmtRow[categoryIdx])
+              ? String(row[categoryIdx] ?? fmtRow[categoryIdx] ?? '').trim()
+              : undefined;
 
             parsedRows.push({
               name: nameStr,
-              batchNo: batchStr,
+              batchNo: batchStr || undefined,
               mfgDate: mfgStr,
               expiryDate: expStr,
               price: priceVal,
@@ -2924,113 +3026,198 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       return;
     }
 
-    const lines = text.split(/\r?\n/);
-    const parsedRows: Array<{ name: string; batchNo?: string; mfgDate?: string; expiryDate?: string; price?: number; qty?: number; category?: string }> = [];
+    const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+    if (lines.length === 0) {
+      setBulkGrnParsedItems([]);
+      return;
+    }
+
+    const splitLine = (l: string) => {
+      let parts = l.split('\t');
+      if (parts.length < 2) parts = l.split(',');
+      if (parts.length < 2) parts = l.split(';');
+      return parts.map(p => p.trim());
+    };
+
+    const isExpCol = (c: string) => {
+      const s = c.toLowerCase().trim();
+      if (s.includes('expected') || s.includes('expense') || s.includes('explain') || s.includes('export')) return false;
+      return (
+        s.includes('exp') ||
+        s.includes('expiry') ||
+        s.includes('expire') ||
+        s.includes('valid') ||
+        s.includes('best before') ||
+        s === 'doe' ||
+        s.includes('d.o.e') ||
+        s === 'e.date' ||
+        s === 'e/date' ||
+        s.includes('e_date')
+      );
+    };
+
+    const isMfgCol = (c: string) => {
+      const s = c.toLowerCase().trim();
+      return (
+        s.includes('mfg') ||
+        s.includes('mfd') ||
+        s.includes('manufactur') ||
+        s.includes('prod') ||
+        s.includes('pkd') ||
+        s.includes('pack date') ||
+        s === 'dom' ||
+        s.includes('d.o.m') ||
+        s === 'm.date' ||
+        s === 'm/date' ||
+        s.includes('m_date')
+      );
+    };
+
+    // Check if line 0 is a header
+    const firstParts = splitLine(lines[0]);
+    const firstPartsLower = firstParts.map(p => p.toLowerCase());
+    const hasHeader = firstPartsLower.some(c =>
+      c.includes('item') || c.includes('medicine') || c.includes('batch') || isMfgCol(c) || isExpCol(c) ||
+      c.includes('qty') || c.includes('price') || c.includes('rate') || c.includes('cat')
+    );
+
+    let nameIdx = 0;
+    let batchIdx = -1;
+    let mfgIdx = -1;
+    let expIdx = -1;
+    let priceIdx = -1;
+    let qtyIdx = -1;
+    let categoryIdx = -1;
+    let startLine = 0;
+
+    if (hasHeader) {
+      startLine = 1;
+      const foundName = firstPartsLower.findIndex(c =>
+        c.includes('item') || c.includes('medicine') || c.includes('desc') ||
+        (c.includes('name') && !c.includes('vendor') && !c.includes('suppl'))
+      );
+      const foundBatch = firstPartsLower.findIndex(c =>
+        c.includes('batch') || c.includes('lot') || c.includes('b.no') || c.includes('b#') || c === 'batchno'
+      );
+      const foundMfg = firstPartsLower.findIndex(c => isMfgCol(c));
+      const foundExp = firstPartsLower.findIndex(c => isExpCol(c));
+      const foundPrice = firstPartsLower.findIndex(c =>
+        c.includes('price') || c.includes('rate') || c.includes('cost') || c.includes('tp') || c.includes('unit')
+      );
+      const foundQty = firstPartsLower.findIndex(c =>
+        c.includes('recv') || c.includes('qty') || c.includes('quantity') || c.includes('units')
+      );
+      const foundCategory = firstPartsLower.findIndex(c =>
+        c.includes('cat') || c.includes('category') || c.includes('type') || c.includes('group')
+      );
+
+      if (foundName >= 0) nameIdx = foundName;
+      if (foundBatch >= 0) batchIdx = foundBatch;
+      if (foundMfg >= 0) mfgIdx = foundMfg;
+      if (foundExp >= 0) expIdx = foundExp;
+      if (foundPrice >= 0) priceIdx = foundPrice;
+      if (foundQty >= 0) qtyIdx = foundQty;
+      if (foundCategory >= 0) categoryIdx = foundCategory;
+    }
 
     const isNumericStr = (s: string) => !isNaN(parseFloat(s)) && isFinite(Number(s));
 
-    lines.forEach((line, idx) => {
-      const trimmed = line.trim();
-      if (!trimmed) return;
+    const parsedRows: Array<{ name: string; batchNo?: string; mfgDate?: string; expiryDate?: string; price?: number; qty?: number; category?: string }> = [];
 
-      let parts = trimmed.split('\t');
-      if (parts.length < 2) parts = trimmed.split(',');
-      if (parts.length < 2) parts = trimmed.split(';');
+    for (let i = startLine; i < lines.length; i++) {
+      const parts = splitLine(lines[i]);
+      if (parts.length === 0 || !parts[0]) continue;
 
-      if (parts.length >= 1) {
-        const col0 = parts[0].trim();
-        if (idx === 0 && (col0.toLowerCase().includes('item') || col0.toLowerCase().includes('name') || col0.toLowerCase().includes('medicine'))) {
-          return;
+      let nameStr = parts[0];
+      let batchNo: string | undefined;
+      let mfgDate: string | undefined;
+      let expiryDate: string | undefined;
+      let priceVal: number | undefined;
+      let qtyVal = 0;
+      let category: string | undefined;
+
+      if (hasHeader) {
+        nameStr = parts[nameIdx] || parts[0];
+        if (batchIdx >= 0 && parts[batchIdx]) batchNo = parts[batchIdx];
+        if (mfgIdx >= 0 && parts[mfgIdx]) mfgDate = toMonthYearInput(parts[mfgIdx]);
+        if (expIdx >= 0 && parts[expIdx]) expiryDate = toMonthYearInput(parts[expIdx]);
+        if (priceIdx >= 0 && parts[priceIdx]) {
+          const p = parseFloat(parts[priceIdx]);
+          if (!isNaN(p)) priceVal = p;
         }
-
-        // Supported order: Item name, batch, mfg, expiry, price, QTY, Category
-        let batchNo: string | undefined;
-        let mfgDate: string | undefined;
-        let expiryDate: string | undefined;
-        let priceVal: number | undefined;
-        let qtyVal = 0;
-        let category: string | undefined;
-
+        if (qtyIdx >= 0 && parts[qtyIdx]) {
+          qtyVal = parseFloat(parts[qtyIdx]) || 0;
+        }
+        if (categoryIdx >= 0 && parts[categoryIdx]) category = parts[categoryIdx];
+      } else {
+        // Fallback without headers
         if (parts.length >= 7) {
-          batchNo = parts[1].trim() || undefined;
-          mfgDate = parts[2].trim() || undefined;
-          expiryDate = parts[3].trim() || undefined;
-          const p = parseFloat(parts[4].trim());
+          batchNo = parts[1] || undefined;
+          mfgDate = toMonthYearInput(parts[2]) || undefined;
+          expiryDate = toMonthYearInput(parts[3]) || undefined;
+          const p = parseFloat(parts[4]);
           priceVal = !isNaN(p) ? p : undefined;
-          qtyVal = parseFloat(parts[5].trim()) || 0;
-          category = parts[6].trim() || undefined;
+          qtyVal = parseFloat(parts[5]) || 0;
+          category = parts[6] || undefined;
         } else if (parts.length === 6) {
-          const lastCol = parts[5].trim();
+          const lastCol = parts[5];
           if (!isNumericStr(lastCol) && lastCol.length > 0) {
-            batchNo = parts[1].trim() || undefined;
-            mfgDate = parts[2].trim() || undefined;
-            expiryDate = parts[3].trim() || undefined;
-            qtyVal = parseFloat(parts[4].trim()) || 0;
+            batchNo = parts[1] || undefined;
+            mfgDate = toMonthYearInput(parts[2]) || undefined;
+            expiryDate = toMonthYearInput(parts[3]) || undefined;
+            qtyVal = parseFloat(parts[4]) || 0;
             category = lastCol;
           } else {
-            batchNo = parts[1].trim() || undefined;
-            mfgDate = parts[2].trim() || undefined;
-            expiryDate = parts[3].trim() || undefined;
-            const p = parseFloat(parts[4].trim());
+            batchNo = parts[1] || undefined;
+            mfgDate = toMonthYearInput(parts[2]) || undefined;
+            expiryDate = toMonthYearInput(parts[3]) || undefined;
+            const p = parseFloat(parts[4]);
             priceVal = !isNaN(p) ? p : undefined;
-            qtyVal = parseFloat(parts[5].trim()) || 0;
+            qtyVal = parseFloat(parts[5]) || 0;
           }
         } else if (parts.length === 5) {
-          const lastCol = parts[4].trim();
-          if (!isNumericStr(lastCol) && lastCol.length > 0) {
-            batchNo = parts[1].trim() || undefined;
-            expiryDate = parts[2].trim() || undefined;
-            qtyVal = parseFloat(parts[3].trim()) || 0;
-            category = lastCol;
+          // Standard 5 cols: Item, Batch, Expiry, Qty/Price, Price/Qty OR Item, Mfg, Exp, Price, Qty
+          const col1IsDate = Boolean(toMonthYearInput(parts[1]));
+          const col2IsDate = Boolean(toMonthYearInput(parts[2]));
+          if (col1IsDate && col2IsDate) {
+            mfgDate = toMonthYearInput(parts[1]) || undefined;
+            expiryDate = toMonthYearInput(parts[2]) || undefined;
+            const p = parseFloat(parts[3]);
+            priceVal = !isNaN(p) ? p : undefined;
+            qtyVal = parseFloat(parts[4]) || 0;
           } else {
-            mfgDate = parts[1].trim() || undefined;
-            expiryDate = parts[2].trim() || undefined;
-            const num1 = parseFloat(parts[3].trim());
-            const num2 = parseFloat(parts[4].trim());
-            priceVal = !isNaN(num1) ? num1 : undefined;
-            qtyVal = !isNaN(num2) ? num2 : 0;
+            batchNo = parts[1] || undefined;
+            expiryDate = toMonthYearInput(parts[2]) || undefined;
+            const num1 = parseFloat(parts[3]);
+            const num2 = parseFloat(parts[4]);
+            if (!isNumericStr(parts[4]) && parts[4].length > 0) {
+              qtyVal = !isNaN(num1) ? num1 : 0;
+              category = parts[4];
+            } else {
+              priceVal = !isNaN(num1) ? num1 : undefined;
+              qtyVal = !isNaN(num2) ? num2 : 0;
+            }
           }
         } else if (parts.length === 4) {
-          const lastCol = parts[3].trim();
-          if (!isNumericStr(lastCol) && lastCol.length > 0) {
-            const p = parseFloat(parts[1].trim());
-            const q = parseFloat(parts[2].trim());
-            if (!isNaN(p) && !isNaN(q)) {
-              priceVal = p;
-              qtyVal = q;
-            } else {
-              batchNo = parts[1].trim() || undefined;
-              qtyVal = parseFloat(parts[2].trim()) || 0;
-            }
-            category = lastCol;
-          } else {
-            expiryDate = parts[1].trim() || undefined;
-            const p = parseFloat(parts[2].trim());
-            priceVal = !isNaN(p) ? p : undefined;
-            qtyVal = parseFloat(parts[3].trim()) || 0;
+          expiryDate = toMonthYearInput(parts[1]) || undefined;
+          if (!expiryDate) {
+            batchNo = parts[1] || undefined;
           }
+          const p = parseFloat(parts[2]);
+          priceVal = !isNaN(p) ? p : undefined;
+          qtyVal = parseFloat(parts[3]) || 0;
         } else if (parts.length === 3) {
-          const lastCol = parts[2].trim();
-          if (!isNumericStr(lastCol) && lastCol.length > 0) {
-            qtyVal = parseFloat(parts[1].trim()) || 0;
-            category = lastCol;
-          } else {
-            qtyVal = parseFloat(parts[1].trim()) || 0;
-            const p = parseFloat(parts[2].trim());
-            priceVal = !isNaN(p) ? p : undefined;
-          }
+          qtyVal = parseFloat(parts[1]) || 0;
+          const p = parseFloat(parts[2]);
+          priceVal = !isNaN(p) ? p : undefined;
         } else if (parts.length === 2) {
-          const col1 = parts[1].trim();
-          if (!isNumericStr(col1) && col1.length > 0) {
-            category = col1;
-            qtyVal = 0;
-          } else {
-            qtyVal = parseFloat(col1) || 0;
-          }
+          qtyVal = parseFloat(parts[1]) || 0;
         }
+      }
 
+      if (nameStr) {
         parsedRows.push({
-          name: col0,
+          name: nameStr,
           batchNo,
           mfgDate,
           expiryDate,
@@ -3039,7 +3226,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           category
         });
       }
-    });
+    }
 
     parseAndMatchBulkGrnData(parsedRows);
   };

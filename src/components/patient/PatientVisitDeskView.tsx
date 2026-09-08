@@ -61,6 +61,7 @@ import {
   isSamePatient,
   parseCleanVisitDate
 } from './patientDeskUtils';
+import PharmacyLabelPrintModal from '../pharmacy/PharmacyLabelPrintModal';
 
 export default function PatientVisitDeskView(props: any) {
   const {
@@ -155,12 +156,80 @@ export default function PatientVisitDeskView(props: any) {
     pvSaveSuccess,
     setPvSaveSuccess,
     pvSaveError,
+    setPvSaveError,
     setPvLabTestModalOpen,
     setHistoryAlertModalOpen,
     setIsClaimBillModalOpen,
     setIsMultiPatientModalOpen,
     setExpireDateByWeeks
   } = props;
+
+  const [isLabelPrintModalOpen, setIsLabelPrintModalOpen] = useState(false);
+  const [labelPrintData, setLabelPrintData] = useState<any>(null);
+
+  const handleOpenLabelPrintModal = () => {
+    const pt = selectedPvPatient || (props.patients || []).find((p: any) => p.PatientID === pvSelectedPatientId);
+    if (!pt) {
+      if (typeof setPvSaveError === 'function') {
+        setPvSaveError('Please select a patient first to print medicine labels.');
+      }
+      return;
+    }
+
+    // 1. Check for clinical items currently in the active desk
+    const validClinicalItems = (pvClinicalItems || [])
+      .filter((i: any) => (i.medicineName && i.medicineName.trim()) || (i.dosage && i.dosage.trim()))
+      .map((i: any) => ({
+        name: i.medicineName?.trim() || "Clinical Formula",
+        instructions: i.dosage?.trim() || "As directed by Doctor",
+        notes: "",
+        qty: "30",
+        expiry: pvClinicalMedicineExpireDate || "No Expiry Specified",
+        medicineType: 'C'
+      }));
+
+    let medsToPrint = validClinicalItems;
+
+    // 2. If no clinical items currently in the form, check saved visit medicines
+    if (medsToPrint.length === 0) {
+      const currentVisitId = editingVisitId || (visits || []).find((v: any) => v.PatientID === pt?.PatientID && v.VisitDate && v.VisitDate.startsWith(pvVisitDate))?.VisitID;
+      const allVMeds = props.visitMedicines || [];
+      const matchedVMeds = allVMeds.filter((vm: any) => vm.VisitID === currentVisitId && vm.MedicineType === 'C');
+      if (matchedVMeds.length > 0) {
+        medsToPrint = matchedVMeds.map((vm: any) => ({
+          name: vm.MedicineName || "Clinical Formula",
+          instructions: vm.Instructions || "As directed by Doctor",
+          notes: vm.Notes || "",
+          qty: String(vm.Quantity || 30),
+          expiry: vm.Expiry || pvClinicalMedicineExpireDate || "No Expiry Specified",
+          medicineType: 'C'
+        }));
+      }
+    }
+
+    // 3. Fallback: at least 1 label entry so label printer opens ready with patient details & clinic footer
+    if (medsToPrint.length === 0) {
+      medsToPrint = [{
+        name: "Clinical Remedy",
+        instructions: "As directed by Doctor",
+        notes: "",
+        qty: "30",
+        expiry: pvClinicalMedicineExpireDate || "No Expiry Specified",
+        medicineType: 'C'
+      }];
+    }
+
+    setLabelPrintData({
+      patientId: pt.PatientID || "",
+      patientName: pt.PatientName || "Patient",
+      patientAge: String(pt.AgeYears || ""),
+      patientSex: pt.Sex || "Male",
+      visitDate: pvVisitDate || new Date().toISOString().split('T')[0],
+      visitId: editingVisitId || "",
+      medicines: medsToPrint
+    });
+    setIsLabelPrintModalOpen(true);
+  };
 
   const pvPatientMedicine = (pvPatientItems || []).map((i: any) => i.medicineName).filter(Boolean).join('\n');
   const pvPatientDosage = (pvPatientItems || []).map((i: any) => i.dosage).filter(Boolean).join('\n');
@@ -1611,6 +1680,16 @@ export default function PatientVisitDeskView(props: any) {
 
                 <button
                   type="button"
+                  onClick={handleOpenLabelPrintModal}
+                  className="w-full sm:w-auto px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-950 text-xs font-bold rounded-lg border border-indigo-300 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
+                  title="Print Medicine Label Stickers (A5 Landscape)"
+                >
+                  <Tag className="w-3.5 h-3.5 text-indigo-700" />
+                  <span>Print Label</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => handleSendWhatsAppRx()}
                   className="w-full sm:w-auto px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg border border-emerald-700 transition flex items-center justify-center space-x-1.5 cursor-pointer shadow-2xs"
                   title="Send Patient Prescription & Visit Summary via WhatsApp"
@@ -1803,6 +1882,16 @@ export default function PatientVisitDeskView(props: any) {
                 >
                   <Receipt className="w-3.5 h-3.5" />
                   <span>Patient Invoice</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleOpenLabelPrintModal}
+                  className="px-3 py-1.5 text-xs font-bold rounded-md transition flex items-center space-x-1.5 cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white shadow-sm active:scale-95"
+                  title="Print Medicine Label Stickers (A5 Landscape)"
+                >
+                  <Tag className="w-3.5 h-3.5 text-indigo-200" />
+                  <span>Print Label</span>
                 </button>
               </div>
 
@@ -2856,6 +2945,18 @@ export default function PatientVisitDeskView(props: any) {
 
           </div>
         </div>
+      )}
+
+      {/* Medicine Label Sticker Printer Modal */}
+      {isLabelPrintModalOpen && labelPrintData && (
+        <PharmacyLabelPrintModal
+          isLabelPrintModalOpen={isLabelPrintModalOpen}
+          setIsLabelPrintModalOpen={setIsLabelPrintModalOpen}
+          labelPrintData={labelPrintData}
+          setLabelPrintData={setLabelPrintData}
+          clinicSettings={clinicSettings}
+          currentUser={props.currentUser}
+        />
       )}
     </div>
   );
