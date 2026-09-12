@@ -2127,6 +2127,9 @@ export default function PatientVisitDeskView(props: any) {
                         <p className="text-[10px] text-red-900 font-bold leading-tight">
                           Registered Homeopathic Medical Practitioner No: <strong className="text-red-900 font-black">48776</strong>
                         </p>
+                        <p className="text-[10.5px] text-red-900 font-black leading-tight">
+                          Doctor Cell: <strong className="text-red-950 font-black">+92-300-4202383</strong>
+                        </p>
                       </div>
 
                       {/* Right: Signature & Stamp Line */}
@@ -2171,7 +2174,7 @@ export default function PatientVisitDeskView(props: any) {
                           <div className="text-[11px] font-bold text-slate-800 mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
                             <span>{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</span>
                             <span className="text-slate-400">•</span>
-                            <span>📞 {clinicSettings?.PhoneMobile || '+92-311-4000608'}</span>
+                            <span>📞 {clinicSettings?.PhoneMobile && !clinicSettings?.PhoneMobile.includes('311') ? clinicSettings.PhoneMobile : '+92-300-4202383'}</span>
                             <span className="text-slate-400">•</span>
                             <span>🌐 {(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}</span>
                           </div>
@@ -2345,28 +2348,6 @@ export default function PatientVisitDeskView(props: any) {
                               ));
                             })()}
                           </div>
-
-                          {/* Advised Lab Investigations / Tests List (Numbered List: 1. CBC, 2. LFT etc.) */}
-                          {(() => {
-                            const labList = getLabTestList(pvLabTestAdvice);
-                            if (labList.length === 0) return null;
-                            return (
-                              <div className="pt-3 border-t border-slate-300 mt-4 space-y-1.5 font-sans">
-                                <h4 className="text-xs font-black text-teal-950 uppercase tracking-wider flex items-center font-serif">
-                                  <FlaskConical className="w-3.5 h-3.5 mr-1 text-teal-800" />
-                                  Advised Lab Tests / Investigations:
-                                </h4>
-                                <div className="pl-2 space-y-1 text-xs">
-                                  {labList.map((testName, idx) => (
-                                    <p key={idx} className="font-bold text-slate-900 uppercase flex items-baseline">
-                                      <span className="w-5 text-slate-800 font-mono shrink-0">{idx + 1}.</span>
-                                      <span>{testName}</span>
-                                    </p>
-                                  ))}
-                                </div>
-                              </div>
-                            );
-                          })()}
                         </div>
 
                         {/* Right 4 columns: Sidebar for Vitals, Urdu Contacts & Pill Badges */}
@@ -2439,6 +2420,7 @@ export default function PatientVisitDeskView(props: any) {
                           <p className="text-red-900 font-bold text-xs">Consultant Homeopathic Medical Practitioner</p>
                           <p className="text-red-900 font-semibold text-xs">D.H.M.S (Pak)</p>
                           <p className="text-[10px] text-red-900 font-medium">Registered Homeopathic Medical Practitioner No: <strong className="text-red-900 font-bold">48776</strong></p>
+                          <p className="text-[11px] text-red-900 font-black leading-tight">Doctor Cell / WhatsApp: <strong className="text-red-950 font-black">+92-300-4202383</strong></p>
                         </div>
 
                         {/* Signature Line */}
@@ -2483,7 +2465,7 @@ export default function PatientVisitDeskView(props: any) {
                           <div className="text-[11px] font-bold text-slate-800 mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
                             <span>{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</span>
                             <span className="text-slate-400">•</span>
-                            <span>📞 {clinicSettings?.PhoneMobile || '+92-311-4000608'}</span>
+                            <span>📞 {clinicSettings?.PhoneMobile && !clinicSettings?.PhoneMobile.includes('311') ? clinicSettings.PhoneMobile : '+92-300-4202383'}</span>
                             <span className="text-slate-400">•</span>
                             <span>🌐 {(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}</span>
                           </div>
@@ -2615,6 +2597,7 @@ export default function PatientVisitDeskView(props: any) {
                             <p className="text-red-900 font-bold text-xs">Consultant Homeopathic Medical Practitioner</p>
                             <p className="text-red-900 font-semibold text-xs">D.H.M.S (Pak)</p>
                             <p className="text-[10px] text-red-900 font-medium">Registered Homeopathic Medical Practitioner No: <strong className="text-red-900 font-bold">48776</strong></p>
+                            <p className="text-[11px] text-red-900 font-black leading-tight">Doctor Cell / WhatsApp: <strong className="text-red-950 font-black">+92-300-4202383</strong></p>
                           </div>
                         </div>
 
@@ -2672,7 +2655,7 @@ export default function PatientVisitDeskView(props: any) {
                             <div className="text-[11px] font-bold text-slate-800 mt-1 flex flex-wrap items-center justify-center gap-x-2 gap-y-0.5">
                               <span>{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</span>
                               <span className="text-slate-400">•</span>
-                              <span>📞 {clinicSettings?.PhoneMobile || '+92-311-4000608'}</span>
+                              <span>📞 {clinicSettings?.PhoneMobile && !clinicSettings?.PhoneMobile.includes('311') ? clinicSettings.PhoneMobile : '+92-300-4202383'}</span>
                               <span className="text-slate-400">•</span>
                               <span>🌐 {(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}</span>
                             </div>
@@ -2914,6 +2897,7 @@ export default function PatientVisitDeskView(props: any) {
                               <p className="text-red-900 font-bold text-xs">Consultant Homeopathic Medical Practitioner</p>
                               <p className="text-red-900 font-semibold text-xs">D.H.M.S (Pak)</p>
                               <p className="text-[10px] text-red-900 font-medium">Registered Homeopathic Medical Practitioner No: <strong className="text-red-900 font-bold">48776</strong></p>
+                              <p className="text-[11px] text-red-900 font-black leading-tight">Doctor Cell / Cashier: <strong className="text-red-950 font-black">+92-300-4202383</strong></p>
                             </div>
                           </div>
 

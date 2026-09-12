@@ -190,10 +190,10 @@ export const TransactionModal: React.FC<TransactionModalProps> = ({
               <div>
                 <label className="text-xs font-black text-purple-950 flex items-center gap-1">
                   <span className="w-2 h-2 rounded-full bg-purple-600"></span>
-                  P&amp;L Accounting Month (حساب کا مہینہ)
+                  P&amp;L Accounting Month
                 </label>
                 <p className="text-[10px] text-purple-700">
-                  Yeh transaction kis month ke P&amp;L report mein count ho?
+                  Select month for Profit &amp; Loss reporting
                 </p>
               </div>
               <input

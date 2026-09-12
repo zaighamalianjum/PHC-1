@@ -111,6 +111,31 @@ export default function LoginDesk({
 
   const handleConfirmShift = (shiftToSet: 1 | 2 | 'Both') => {
     if (!pendingUser) return;
+
+    // Trigger full screen automatically on login
+    try {
+      if (!document.fullscreenElement) {
+        const elem = document.documentElement as any;
+        if (elem.requestFullscreen) {
+          elem.requestFullscreen().catch(() => {});
+        } else if (elem.webkitRequestFullscreen) {
+          elem.webkitRequestFullscreen();
+        } else if (elem.mozRequestFullScreen) {
+          elem.mozRequestFullScreen();
+        } else if (elem.msRequestFullscreen) {
+          elem.msRequestFullscreen();
+        }
+      }
+    } catch {
+      // Browser or iframe security policy
+    }
+
+    try {
+      sessionStorage.setItem('phc_needs_fullscreen', 'true');
+    } catch {
+      // ignore
+    }
+
     onLoginSuccess({
       ...pendingUser,
       AssignedShift: shiftToSet

@@ -2,7 +2,7 @@ import React from 'react';
 import {
   Building2, Calendar, FileSpreadsheet, Plus, CreditCard,
   History, Eye, Printer, Edit, DollarSign, Boxes, Coins,
-  Pencil, RefreshCw, FileText, Trash2
+  Pencil, RefreshCw, FileText, Trash2, Banknote
 } from 'lucide-react';
 import { ErpVendor } from '../../../types';
 
@@ -25,7 +25,7 @@ interface VendorStatementTabProps {
   setShowPaymentHistoryModal: (show: boolean) => void;
   setVendorPrintModalOpen: (show: boolean) => void;
   handlePrintVendorStatement: (targetVendor?: ErpVendor) => void;
-  handlePayVendor?: (vendor: ErpVendor) => void;
+  handlePayVendor?: (vendor: ErpVendor, targetBillType?: 'Credit' | 'Cash') => void;
   handleOpenEditVendor?: (vendor: ErpVendor) => void;
   handleOpenAddVendor?: () => void;
   fetchErpData?: () => void;
@@ -51,7 +51,7 @@ export const VendorStatementTab: React.FC<VendorStatementTabProps> = ({
   setShowPaymentHistoryModal,
   setVendorPrintModalOpen,
   handlePrintVendorStatement,
-  handlePayVendor = (_vendor?: any) => {},
+  handlePayVendor = (_vendor?: any, _targetBillType?: any) => {},
   handleOpenEditVendor = (_vendor?: any) => {},
   handleOpenAddVendor = () => {},
   fetchErpData = () => {},
@@ -87,16 +87,33 @@ export const VendorStatementTab: React.FC<VendorStatementTabProps> = ({
               </button>
 
               <button
+                type="button"
                 onClick={() => {
                   if (selectedVendor) {
-                    handlePayVendor(selectedVendor);
+                    handlePayVendor(selectedVendor, 'Credit');
+                  }
+                }}
+                disabled={!selectedVendor}
+                className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                title="Settle Outstanding Credit Bill"
+              >
+                <CreditCard className="w-4 h-4" />
+                <span>Pay Credit Bill</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (selectedVendor) {
+                    handlePayVendor(selectedVendor, 'Cash');
                   }
                 }}
                 disabled={!selectedVendor}
                 className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-xl shadow-xs transition flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                title="Settle Spot Cash Purchase Bill"
               >
-                <Coins className="w-4 h-4" />
-                <span>Record Payment</span>
+                <Banknote className="w-4 h-4" />
+                <span>Pay Cash Bill</span>
               </button>
 
               <button
@@ -238,46 +255,112 @@ export const VendorStatementTab: React.FC<VendorStatementTabProps> = ({
             </div>
           </div>
 
-          {/* Metric Summary Cards */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-1">
+          {/* Metric Summary Cards (5-Grid with Split Credit vs Cash Balances) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+            {/* Card 1: Total Purchases */}
+            <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-1">
               <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
-                Total Invoiced / Goods Received (GRN)
+                Total Purchases (GRN)
               </span>
-              <p className="text-xl font-black text-amber-700 font-mono">
+              <p className="text-lg font-black text-amber-800 font-mono">
                 Rs. {(vendorStatement?.totalInvoiced || 0).toLocaleString()}
               </p>
-              <p className="text-[10px] text-slate-400">Total Goods Received (Credit Bills)</p>
+              <div className="text-[9px] text-slate-500 flex flex-col gap-0.5 pt-0.5">
+                <span>Credit: <strong className="text-indigo-700 font-mono">Rs. {(vendorStatement?.creditPurchased || 0).toLocaleString()}</strong></span>
+                <span>Cash: <strong className="text-emerald-700 font-mono">Rs. {(vendorStatement?.cashPurchased || 0).toLocaleString()}</strong></span>
+              </div>
             </div>
 
-            <div className="bg-emerald-50/70 p-4 rounded-xl border border-emerald-200 space-y-1">
+            {/* Card 2: Total Settled Payments */}
+            <div className="bg-emerald-50/70 p-3.5 rounded-xl border border-emerald-200 space-y-1">
               <div className="flex items-center justify-between">
                 <span className="text-[10px] font-bold text-emerald-800 uppercase tracking-wider block">
-                  Total Payments Cleared (Debit)
+                  Total Settled (Paid)
                 </span>
-                <span className="text-[9px] font-bold bg-emerald-200 text-emerald-900 px-1.5 py-0.2 rounded font-mono">Grand Total</span>
+                <span className="text-[8px] font-bold bg-emerald-200 text-emerald-900 px-1 py-0.2 rounded font-mono">Cleared</span>
               </div>
-              <p className="text-xl font-black text-emerald-700 font-mono">
+              <p className="text-lg font-black text-emerald-700 font-mono">
                 Rs. {(vendorStatement?.totalPaid || 0).toLocaleString()}
               </p>
-              <div className="flex items-center space-x-2 text-[10px] pt-0.5">
-                <span className="text-emerald-800 font-semibold bg-emerald-100/80 px-1.5 py-0.5 rounded border border-emerald-300">
-                  Cash: Rs. {(vendorStatement?.totalCashPaid || 0).toLocaleString()}
-                </span>
-                <span className="text-indigo-800 font-semibold bg-indigo-100/80 px-1.5 py-0.5 rounded border border-indigo-300">
-                  Credit/Bank: Rs. {(vendorStatement?.totalCreditPaid || 0).toLocaleString()}
-                </span>
+              <div className="text-[9px] text-slate-600 flex flex-col gap-0.5 pt-0.5">
+                <span>Credit Paid: <strong className="text-indigo-700 font-mono">Rs. {(vendorStatement?.creditPaid || 0).toLocaleString()}</strong></span>
+                <span>Cash Paid: <strong className="text-emerald-700 font-mono">Rs. {(vendorStatement?.cashPaid || 0).toLocaleString()}</strong></span>
               </div>
             </div>
 
-            <div className="bg-amber-500 text-white p-4 rounded-xl shadow-xs space-y-1">
-              <span className="text-[10px] font-bold text-amber-100 uppercase tracking-wider block">
-                Closing Accounts Payable Balance
-              </span>
-              <p className="text-xl font-black font-mono">
-                Rs. {(vendorStatement?.closingBalance || 0).toLocaleString()}
-              </p>
-              <p className="text-[10px] text-amber-100">Net Outstanding Amount Due</p>
+            {/* Card 3: Credit Balance Due */}
+            <div className="bg-indigo-50/90 p-3.5 rounded-xl border border-indigo-200 space-y-1 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-indigo-900 uppercase tracking-wider block">
+                    Credit Due
+                  </span>
+                  <CreditCard className="w-3.5 h-3.5 text-indigo-600" />
+                </div>
+                <p className="text-lg font-black text-indigo-700 font-mono mt-0.5">
+                  Rs. {(vendorStatement?.creditBalance || 0).toLocaleString()}
+                </p>
+                <p className="text-[9px] text-indigo-600/80">From Credit Purchases</p>
+              </div>
+              {selectedVendor && (vendorStatement?.creditBalance || 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handlePayVendor(selectedVendor, 'Credit')}
+                  className="mt-1 w-full py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold rounded-lg transition flex items-center justify-center space-x-1 cursor-pointer"
+                >
+                  <CreditCard className="w-3 h-3" />
+                  <span>Pay Credit</span>
+                </button>
+              )}
+            </div>
+
+            {/* Card 4: Cash Due */}
+            <div className="bg-emerald-50/90 p-3.5 rounded-xl border border-emerald-200 space-y-1 flex flex-col justify-between">
+              <div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-bold text-emerald-900 uppercase tracking-wider block">
+                    Cash Due
+                  </span>
+                  <Banknote className="w-3.5 h-3.5 text-emerald-600" />
+                </div>
+                <p className="text-lg font-black text-emerald-700 font-mono mt-0.5">
+                  Rs. {(vendorStatement?.cashBalance || 0).toLocaleString()}
+                </p>
+                <p className="text-[9px] text-emerald-600/80">Spot/Cash Purchases</p>
+              </div>
+              {selectedVendor && (vendorStatement?.cashBalance || 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handlePayVendor(selectedVendor, 'Cash')}
+                  className="mt-1 w-full py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg transition flex items-center justify-center space-x-1 cursor-pointer"
+                >
+                  <Banknote className="w-3 h-3" />
+                  <span>Pay Cash</span>
+                </button>
+              )}
+            </div>
+
+            {/* Card 5: Net Closing Accounts Payable Balance */}
+            <div className="bg-gradient-to-br from-amber-500 to-amber-600 text-white p-3.5 rounded-xl shadow-xs space-y-1 flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-bold text-amber-100 uppercase tracking-wider block">
+                  Net Total Payable
+                </span>
+                <p className="text-lg font-black font-mono mt-0.5">
+                  Rs. {(vendorStatement?.closingBalance || 0).toLocaleString()}
+                </p>
+                <p className="text-[9px] text-amber-100">Credit + Cash Due</p>
+              </div>
+              {selectedVendor && (vendorStatement?.closingBalance || 0) > 0 && (
+                <button
+                  type="button"
+                  onClick={() => handlePayVendor(selectedVendor)}
+                  className="mt-1 w-full py-1 bg-white hover:bg-amber-50 text-amber-900 text-[10px] font-bold rounded-lg transition flex items-center justify-center space-x-1 cursor-pointer shadow-2xs"
+                >
+                  <Coins className="w-3 h-3 text-amber-700" />
+                  <span>Settle Bill</span>
+                </button>
+              )}
             </div>
           </div>
 

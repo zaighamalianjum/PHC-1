@@ -24,7 +24,7 @@ export const GrnPrintPreviewModal: React.FC<GrnPrintPreviewModalProps> = ({
   const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
   const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
   const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-  const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+  const cPhone = clinicSettings?.PhoneMobile || '+92-300-4202383';
   const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
   const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 

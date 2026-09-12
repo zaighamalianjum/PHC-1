@@ -1,4 +1,5 @@
 import React from 'react';
+import { ErpVendor, ErpGrn, ErpTransaction } from '../../types';
 
 export const WhatsAppIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -16,3 +17,122 @@ export const DEFAULT_EXPENSE_CATEGORIES = [
   'Salaries',
   'Other'
 ];
+
+export interface VendorBalanceBreakdown {
+  totalPurchased: number;
+  creditPurchased: number;
+  cashPurchased: number;
+  totalPaid: number;
+  creditPaid: number;
+  cashPaid: number;
+  outstandingBalance: number;
+  creditBalance: number;
+  cashBalance: number;
+}
+
+export const computeVendorBalanceBreakdown = (
+  vendor: ErpVendor,
+  grns: ErpGrn[] = [],
+  transactions: ErpTransaction[] = []
+): VendorBalanceBreakdown => {
+  if (!vendor) {
+    return {
+      totalPurchased: 0,
+      creditPurchased: 0,
+      cashPurchased: 0,
+      totalPaid: 0,
+      creditPaid: 0,
+      cashPaid: 0,
+      outstandingBalance: 0,
+      creditBalance: 0,
+      cashBalance: 0,
+    };
+  }
+
+  const vName = (vendor.VendorName || '').trim().toLowerCase();
+  const vId = (vendor.VendorID || vendor._id || '').trim().toLowerCase();
+
+  // 1. Find all GRNs for this vendor
+  const vGrns = (grns || []).filter(g => {
+    const sName = ((g as any).SupplierName || g.VendorName || '').trim().toLowerCase();
+    const sId = ((g as any).SupplierID || g.VendorID || '').trim().toLowerCase();
+    return (vName && sName === vName) || (vId && sId === vId) || (sName && vName.includes(sName));
+  });
+
+  let creditPurchased = 0;
+  let cashPurchased = 0;
+
+  vGrns.forEach(g => {
+    const amt = Number(g.TotalAmount || 0);
+    const isCash = String(g.PaymentMethod || (g as any).PaymentMode || '').toLowerCase() === 'cash';
+    if (isCash) {
+      cashPurchased += amt;
+    } else {
+      creditPurchased += amt;
+    }
+  });
+  const totalPurchased = creditPurchased + cashPurchased;
+
+  // 2. Find all payments for this vendor
+  const vTxns = (transactions || []).filter(t => {
+    const tVName = (t.VendorName || '').trim().toLowerCase();
+    const tVId = (t.VendorID || '').trim().toLowerCase();
+    const isVendorPay = t.Type === 'VendorPayment' || t.Category === 'Vendor Payment' || (t.Type === 'Expense' && tVName);
+    return isVendorPay && ((vName && tVName === vName) || (vId && tVId === vId) || (tVName && vName.includes(tVName)));
+  });
+
+  let creditPaid = 0;
+  let cashPaid = 0;
+
+  vTxns.forEach(t => {
+    const amt = Number(t.Amount || 0);
+    const target = String((t as any).TargetBillType || (t as any).BillType || '').toLowerCase();
+    const cat = String(t.Category || '').toLowerCase();
+    const desc = String(t.Description || '').toLowerCase();
+    const method = String(t.PaymentMethod || '').toLowerCase();
+
+    // Determine whether payment was against Cash Bill or Credit Bill
+    if (target === 'cash' || cat.includes('cash bill') || desc.includes('cash bill') || cat.includes('spot cash') || desc.includes('spot cash') || cat.includes('cash spot')) {
+      cashPaid += amt;
+    } else if (target === 'credit' || cat.includes('credit') || desc.includes('credit')) {
+      creditPaid += amt;
+    } else if (method === 'cash' && (cat.includes('spot') || desc.includes('spot'))) {
+      cashPaid += amt;
+    } else {
+      creditPaid += amt;
+    }
+  });
+
+  const totalPaid = creditPaid + cashPaid;
+
+  // 3. Compute balances
+  let computedCreditBalance = 0;
+  let computedCashBalance = 0;
+
+  if (vendor.CreditBalance !== undefined && vendor.CashBalance !== undefined) {
+    computedCreditBalance = Math.max(0, Number(vendor.CreditBalance) || 0);
+    computedCashBalance = Math.max(0, Number(vendor.CashBalance) || 0);
+  } else if (totalPurchased > 0 || totalPaid > 0) {
+    computedCreditBalance = Math.max(0, creditPurchased - creditPaid);
+    computedCashBalance = Math.max(0, cashPurchased - cashPaid);
+  } else {
+    // If no GRNs yet but vendor has an existing Balance:
+    computedCreditBalance = Math.max(0, Number(vendor.Balance) || 0);
+    computedCashBalance = 0;
+  }
+
+  const outstandingBalance = computedCreditBalance + computedCashBalance;
+
+  return {
+    totalPurchased,
+    creditPurchased,
+    cashPurchased,
+    totalPaid,
+    creditPaid,
+    cashPaid,
+    outstandingBalance,
+    creditBalance: computedCreditBalance,
+    cashBalance: computedCashBalance,
+  };
+};
+

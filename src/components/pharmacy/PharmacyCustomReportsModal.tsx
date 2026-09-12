@@ -638,7 +638,7 @@ export const PharmacyCustomReportsModal: React.FC<PharmacyCustomReportsModalProp
 
     const clinicName = clinicSettings?.ClinicName || 'Punjab Homeopathic Clinic';
     const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || 'Opposite State Bank, Mall Road, Lahore';
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || '042-3111222';
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || '+92-300-4202383';
     const clinicTagline = clinicSettings?.ClinicLogoText || 'Advanced Health Care & Clinical Pharmacy';
     const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
     const printDate = new Date().toLocaleDateString('en-GB', {

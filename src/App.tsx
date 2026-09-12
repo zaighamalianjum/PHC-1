@@ -393,19 +393,73 @@ export default function App() {
   // App-Wide Native Full Screen State & Listener
   const [isAppFullScreen, setIsAppFullScreen] = useState<boolean>(false);
 
+  const requestAppFullScreen = () => {
+    try {
+      if (!document.fullscreenElement) {
+        const elem = document.documentElement as any;
+        if (elem.requestFullscreen) {
+          elem.requestFullscreen().catch(() => {});
+        } else if (elem.webkitRequestFullscreen) {
+          elem.webkitRequestFullscreen();
+        } else if (elem.mozRequestFullScreen) {
+          elem.mozRequestFullScreen();
+        } else if (elem.msRequestFullscreen) {
+          elem.msRequestFullscreen();
+        }
+      }
+    } catch {
+      // Browser or iframe policy restriction
+    }
+  };
+
   useEffect(() => {
     const handleFsChange = () => {
       setIsAppFullScreen(!!document.fullscreenElement);
+      if (document.fullscreenElement) {
+        try {
+          sessionStorage.removeItem('phc_needs_fullscreen');
+        } catch {}
+      }
     };
     document.addEventListener('fullscreenchange', handleFsChange);
-    return () => document.removeEventListener('fullscreenchange', handleFsChange);
+    document.addEventListener('webkitfullscreenchange', handleFsChange);
+    document.addEventListener('mozfullscreenchange', handleFsChange);
+    document.addEventListener('MSFullscreenChange', handleFsChange);
+
+    // If user recently logged in and browser required an extra gesture, trigger on first click
+    const handleFirstGesture = () => {
+      try {
+        if (sessionStorage.getItem('phc_needs_fullscreen') === 'true' && !document.fullscreenElement) {
+          requestAppFullScreen();
+          sessionStorage.removeItem('phc_needs_fullscreen');
+        }
+      } catch {}
+    };
+
+    window.addEventListener('click', handleFirstGesture, { capture: true });
+    window.addEventListener('keydown', handleFirstGesture, { capture: true });
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      document.removeEventListener('webkitfullscreenchange', handleFsChange);
+      document.removeEventListener('mozfullscreenchange', handleFsChange);
+      document.removeEventListener('MSFullscreenChange', handleFsChange);
+      window.removeEventListener('click', handleFirstGesture, { capture: true });
+      window.removeEventListener('keydown', handleFirstGesture, { capture: true });
+    };
   }, []);
 
   const toggleAppFullScreen = () => {
     if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen().catch(() => {});
+      requestAppFullScreen();
     } else {
-      document.exitFullscreen().catch(() => {});
+      try {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        } else if ((document as any).webkitExitFullscreen) {
+          (document as any).webkitExitFullscreen();
+        }
+      } catch {}
     }
   };
 
@@ -437,8 +491,8 @@ export default function App() {
           if (!parsed.Website) {
             parsed.Website = 'https://punjabhomeopathic.pk';
           }
-          if (!parsed.PhoneMobile || parsed.PhoneMobile === '+92-300-4208323' || parsed.PhoneMobile === '0300-1234567') {
-            parsed.PhoneMobile = '+92-311-4000608';
+          if (!parsed.PhoneMobile || parsed.PhoneMobile === '+92-300-4208323' || parsed.PhoneMobile === '0300-1234567' || parsed.PhoneMobile.includes('311') || parsed.PhoneMobile.includes('4000608')) {
+            parsed.PhoneMobile = '+92-300-4202383';
           }
           if (!parsed.ClinicAddress || parsed.ClinicAddress === '10 Shalimar Road, Garhi Shahu, Lahore') {
             parsed.ClinicAddress = '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
@@ -456,7 +510,7 @@ export default function App() {
       DoctorName: 'Dr. Ejaz Ahmad, D.H.M.S (Pak)',
       DoctorSignatureText: 'Registered Homeopathic Medical Practitioner No: 48776',
       ClinicAddress: '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan',
-      PhoneMobile: '+92-311-4000608',
+      PhoneMobile: '+92-300-4202383',
       Website: 'https://punjabhomeopathic.pk',
       OPDFee: 1500,
       ClinicLogoImage: '/nhc_logo.svg'
@@ -2565,6 +2619,12 @@ export default function App() {
   };
 
   const handleLoginSuccess = (user: User, selectedShift?: 1 | 2 | 'Both') => {
+    // Automatically enter full screen on login
+    requestAppFullScreen();
+    try {
+      sessionStorage.setItem('phc_needs_fullscreen', 'true');
+    } catch {}
+
     const finalShift = selectedShift !== undefined ? selectedShift : (user.AssignedShift || 1);
     const userWithShift: User = {
       ...user,
@@ -2590,9 +2650,19 @@ export default function App() {
   };
 
   const handleLogout = () => {
+    try {
+      if (document.fullscreenElement) {
+        if (document.exitFullscreen) {
+          document.exitFullscreen().catch(() => {});
+        } else if ((document as any).webkitExitFullscreen) {
+          (document as any).webkitExitFullscreen();
+        }
+      }
+    } catch {}
     setIsAuthenticated(false);
     sessionStorage.removeItem('cms_is_authenticated');
     sessionStorage.removeItem('cms_current_user');
+    sessionStorage.removeItem('phc_needs_fullscreen');
     localStorage.removeItem('cms_is_authenticated');
     localStorage.removeItem('cms_current_user');
   };

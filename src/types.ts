@@ -529,6 +529,8 @@ export interface ErpVendor {
   Address: string;
   TaxID?: string;
   Balance: number;
+  CreditBalance?: number;
+  CashBalance?: number;
   Status: 'Active' | 'Inactive';
   LogoUrl?: string;
   LogoImage?: string;
@@ -609,6 +611,9 @@ export interface ErpTransaction {
   CreatedBy: string;
   VendorID?: string;
   VendorName?: string;
+  TargetBillType?: 'Credit' | 'Cash' | 'Combined';
+  BillType?: 'Credit' | 'Cash';
+  IsCashPurchase?: boolean;
 }
 
 export interface ErpEmployee {

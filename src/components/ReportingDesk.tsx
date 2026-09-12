@@ -2572,7 +2572,7 @@ export default function ReportingDesk({
 
     const cName = clinicSettings?.ClinicName || 'Punjab Homeopathic Clinic & Pharmacy';
     const cWeb = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
-    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-300-4202383';
     const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
 
     const clinicHeaderMeta = [
@@ -2612,7 +2612,7 @@ export default function ReportingDesk({
     const clinicName = savedSettings?.ClinicName || (clinicSettings as any)?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC';
     const logoSrc = savedSettings?.ClinicLogoImage || (clinicSettings as any)?.ClinicLogoImage || '/nhc_logo.svg';
     const clinicAddress = savedSettings?.ClinicAddress || (clinicSettings as any)?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-    const clinicPhone = savedSettings?.PhoneMobile || (clinicSettings as any)?.PhoneMobile || '+92-311-4000608';
+    const clinicPhone = savedSettings?.PhoneMobile || (clinicSettings as any)?.PhoneMobile || '+92-300-4202383';
     const clinicWebsite = savedSettings?.Website || (clinicSettings as any)?.Website || 'https://punjabhomeopathic.pk';
 
     const reportTitles: Record<ReportType, string> = {
@@ -4349,10 +4349,10 @@ export default function ReportingDesk({
                 <span>{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</span>
                 <span className="text-slate-400">•</span>
                 <a
-                  href={`tel:${(clinicSettings?.PhoneMobile || '+92-311-4000608').replace(/[^0-9+]/g, '')}`}
+                  href={`tel:${(clinicSettings?.PhoneMobile || '+92-300-4202383').replace(/[^0-9+]/g, '')}`}
                   className="text-emerald-800 hover:text-emerald-950 font-bold hover:underline inline-flex items-center gap-1"
                 >
-                  📞 {clinicSettings?.PhoneMobile || '+92-311-4000608'}
+                  📞 {clinicSettings?.PhoneMobile || '+92-300-4202383'}
                 </a>
                 <span className="text-slate-400">•</span>
                 <a
@@ -5632,10 +5632,10 @@ export default function ReportingDesk({
             </a>
             <span className="text-slate-300">•</span>
             <a
-              href={`tel:${(clinicSettings?.PhoneMobile || '+92-311-4000608').replace(/[^0-9+]/g, '')}`}
+              href={`tel:${(clinicSettings?.PhoneMobile || '+92-300-4202383').replace(/[^0-9+]/g, '')}`}
               className="text-emerald-700 hover:text-emerald-900 font-bold hover:underline font-mono"
             >
-              📞 {clinicSettings?.PhoneMobile || '+92-311-4000608'}
+              📞 {clinicSettings?.PhoneMobile || '+92-300-4202383'}
             </a>
           </div>
           <div>Authorized Administrator: <strong className="text-slate-800 font-bold">Mr. Zaigham Ali Anjum</strong></div>

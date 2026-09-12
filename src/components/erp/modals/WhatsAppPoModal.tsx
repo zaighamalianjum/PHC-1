@@ -127,7 +127,7 @@ export const WhatsAppPoModal: React.FC<WhatsAppPoModalProps> = ({
                 notes: whatsAppCustomPoNotes,
                 clinicName: clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY',
                 clinicAddress: clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan',
-                clinicPhone: clinicSettings?.PhoneMobile || '+92-311-4000608',
+                clinicPhone: clinicSettings?.PhoneMobile || '+92-300-4202383',
                 preparedBy: currentUser?.FullName || 'Mr. Zaigham Ali Anjum'
               })}
             </div>

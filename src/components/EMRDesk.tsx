@@ -2522,7 +2522,7 @@ export default function EMRDesk({
                       Cumulative Patient Medical History Ledger
                     </p>
                     <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
-                      {clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'} | Phone: {clinicSettings?.PhoneMobile || '+92-311-4000608'}
+                      {clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'} | Phone: {clinicSettings?.PhoneMobile || '+92-300-4202383'}
                     </p>
                   </div>
 
@@ -2636,7 +2636,7 @@ export default function EMRDesk({
                             🔬 LABORATORY & DIAGNOSTIC REQUISITION SLIP
                           </p>
                           <p className="text-[10px] text-slate-500 font-semibold mt-0.5">
-                            {clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'} | Phone: {clinicSettings?.PhoneMobile || '+92-311-4000608'}
+                            {clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'} | Phone: {clinicSettings?.PhoneMobile || '+92-300-4202383'}
                           </p>
                         </div>
 
@@ -2808,7 +2808,7 @@ export default function EMRDesk({
                         <div className="text-right text-[9px] text-slate-600 font-medium leading-relaxed">
                           <p className="font-extrabold text-slate-900 uppercase">{clinicSettings?.ClinicName || 'Punjab Homeopathic Clinic (PHC)'}</p>
                           <p className="text-slate-500">{clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</p>
-                          <p className="text-slate-500">Phone: {clinicSettings?.PhoneMobile || '+92-311-4000608'}</p>
+                          <p className="text-slate-500">Phone: {clinicSettings?.PhoneMobile || '+92-300-4202383'}</p>
                           <p className="text-slate-500">Email: punjabhomeopathic@gmail.com</p>
                         </div>
                       </div>

@@ -366,7 +366,7 @@ export function printThermalTestSlip(s: ThermalPrinterSettings, clinic: any, sam
   }
 
   const clinicName = clinic?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-  const cPhone = clinic?.PhoneMobile || clinic?.PhoneNo || '+92-311-4000608';
+  const cPhone = clinic?.PhoneMobile || clinic?.PhoneNo || '+92-300-4202383';
   const cAddress = clinic?.ClinicAddress || clinic?.Address || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
   const cWebsite = clinic?.Website || 'https://punjabhomeopathic.pk';
   const dateStr = new Date().toISOString().split('T')[0];
@@ -503,7 +503,7 @@ export function printThermalTestSlip(s: ThermalPrinterSettings, clinic: any, sam
       </div>
       <div class="row-meta">
         <span><b>PHONE NO:</b></span>
-        <span>0311-4000608</span>
+        <span>0300-4202383</span>
       </div>
       <div class="row-meta">
         <span><b>DATE / TIME:</b></span>

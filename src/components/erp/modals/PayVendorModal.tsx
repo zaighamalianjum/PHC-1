@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { DollarSign, Printer, X, History, Coins, Calculator, CheckCircle2, Boxes, ChevronDown, ChevronUp, CreditCard, Banknote } from 'lucide-react';
 import { ErpVendor, ErpPurchaseOrder, ErpGrn, ErpTransaction } from '../../../types';
+import { computeVendorBalanceBreakdown } from '../erpUtils';
 
 interface PayVendorModalProps {
   payVendorModalData: {
@@ -9,6 +10,8 @@ interface PayVendorModalProps {
     invNo?: string;
     amount?: number;
     paymentMethod?: 'Cash' | 'Credit' | 'Bank' | 'Bank Transfer' | 'Cheque' | 'Online' | 'Online/Card';
+    targetBillType?: 'Credit' | 'Cash';
+    category?: string;
     date?: string;
     accountingMonth?: string; // e.g. "2026-08" for P&L posting
     description?: string;
@@ -94,6 +97,7 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
             {/* VENDOR FINANCIAL SUMMARY CARD (BASED ON GRN HISTORY & PAYMENTS) */}
             {(() => {
               const vVendor = payVendorModalData.vendor;
+              const vBreakdown = computeVendorBalanceBreakdown(vVendor, grns, transactions);
               const vName = (vVendor.VendorName || '').trim().toLowerCase();
               const vId = (vVendor.VendorID || vVendor._id || '').trim().toLowerCase();
 
@@ -103,7 +107,7 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                 return (vName && sName === vName) || (vId && sId === vId) || (sName && vName.includes(sName));
               });
 
-              const totalGrnBilled = vGrns.reduce((sum, g) => sum + Number(g.TotalAmount || 0), 0);
+              const totalGrnBilled = vBreakdown.totalPurchased;
               const totalGrnsCount = vGrns.length;
 
               const vTxns = (transactions || []).filter(t => {
@@ -113,36 +117,21 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                 return isVendorPay && ((vName && tVName === vName) || (vId && tVId === vId) || (tVName && vName.includes(tVName)));
               });
 
-              // Separate Cash vs Credit / Non-Cash Settlements
-              const cashTxns = vTxns.filter(t => {
-                const method = (t.PaymentMethod || '').toLowerCase();
-                const cat = (t.Category || '').toLowerCase();
-                const desc = (t.Description || '').toLowerCase();
-                return method === 'cash' || cat.includes('spot') || desc.includes('spot cash') || desc.includes('cash spot');
-              });
-
-              const creditTxns = vTxns.filter(t => {
-                const method = (t.PaymentMethod || '').toLowerCase();
-                const cat = (t.Category || '').toLowerCase();
-                const desc = (t.Description || '').toLowerCase();
-                return !(method === 'cash' || cat.includes('spot') || desc.includes('spot cash') || desc.includes('cash spot'));
-              });
-
-              const totalCashPaid = cashTxns.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
-              const totalCreditPaid = creditTxns.reduce((sum, t) => sum + Number(t.Amount || 0), 0);
-              const grandTotalPaid = totalCashPaid + totalCreditPaid;
-              const currentBalance = vVendor.Balance || 0;
+              const totalCashPaid = vBreakdown.cashPaid;
+              const totalCreditPaid = vBreakdown.creditPaid;
+              const grandTotalPaid = vBreakdown.totalPaid;
+              const currentBalance = vBreakdown.outstandingBalance;
 
               return (
-                <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-emerald-950 text-white rounded-xl p-4 shadow-md space-y-3">
+                <div className="bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white rounded-xl p-4 shadow-md space-y-3">
                   <div className="flex items-center justify-between border-b border-slate-700/80 pb-2.5">
                     <div className="flex items-center space-x-2">
-                      <div className="p-1.5 bg-emerald-500/20 text-emerald-400 rounded-lg border border-emerald-500/30">
+                      <div className="p-1.5 bg-indigo-500/20 text-indigo-400 rounded-lg border border-indigo-500/30">
                         <Coins className="w-4 h-4" />
                       </div>
                       <div>
-                        <span className="text-[11px] font-black uppercase tracking-wider text-emerald-400 block">Vendor Financial & Settlement Summary</span>
-                        <p className="text-[10px] text-slate-300">Detailed breakdown of GRN purchases, cash payments, credit clearances & balance</p>
+                        <span className="text-[11px] font-black uppercase tracking-wider text-indigo-300 block">Vendor Financial & Settlement Summary</span>
+                        <p className="text-[10px] text-slate-300">Separate balances for Credit Purchases &amp; Cash Purchases</p>
                       </div>
                     </div>
                     <span className={`text-[10px] font-extrabold px-2.5 py-1 rounded-full border ${
@@ -150,71 +139,73 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                         ? 'bg-amber-500/20 text-amber-300 border-amber-500/40'
                         : 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40'
                     }`}>
-                      {currentBalance > 0 ? `● Outstanding Due: Rs. ${currentBalance.toLocaleString()}` : '✓ Account Cleared'}
+                      {currentBalance > 0 ? `● Total Due: Rs. ${currentBalance.toLocaleString()}` : '✓ Account Cleared'}
                     </span>
                   </div>
 
-                  {/* 4-GRID FINANCIAL SNAPSHOT WITH CASH, CREDIT & GRAND TOTAL */}
+                  {/* 4-GRID FINANCIAL SNAPSHOT WITH CASH DUE, CREDIT DUE & TOTAL */}
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                    {/* Card 1: Total Outstanding Payable */}
-                    <div className="bg-white/10 backdrop-blur-xs border border-amber-500/30 rounded-lg p-2.5 space-y-0.5">
-                      <span className="text-[9px] font-bold text-amber-300 uppercase tracking-wider block">Remaining Payable (Due)</span>
-                      <div className="text-lg font-black font-mono text-amber-400">
-                        Rs. {(currentBalance || 0).toLocaleString()}
-                      </div>
-                      <span className="text-[9px] text-slate-400 block">Payable Balance</span>
-                    </div>
-
-                    {/* Card 2: Cash Payments Settled */}
-                    <div className="bg-white/10 backdrop-blur-xs border border-emerald-500/30 rounded-lg p-2.5 space-y-0.5">
+                    {/* Card 1: Credit Balance Due */}
+                    <div className="bg-indigo-950/50 backdrop-blur-xs border border-indigo-500/40 rounded-lg p-2.5 space-y-0.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-bold text-emerald-300 uppercase tracking-wider block">Cash Payments Paid</span>
-                        <span className="text-[8px] bg-emerald-500/30 text-emerald-200 px-1 rounded font-bold">{cashTxns.length} Vouchers</span>
-                      </div>
-                      <div className="text-lg font-black font-mono text-emerald-300">
-                        Rs. {(totalCashPaid || 0).toLocaleString()}
-                      </div>
-                      <span className="text-[9px] text-slate-400 block">Spot / Direct Cash</span>
-                    </div>
-
-                    {/* Card 3: Credit / Non-Cash Payments Settled */}
-                    <div className="bg-white/10 backdrop-blur-xs border border-indigo-500/30 rounded-lg p-2.5 space-y-0.5">
-                      <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-wider block">Credit / Bank Settled</span>
-                        <span className="text-[8px] bg-indigo-500/30 text-indigo-200 px-1 rounded font-bold">{creditTxns.length} Vouchers</span>
+                        <span className="text-[9px] font-bold text-indigo-300 uppercase tracking-wider block">Credit Balance Due</span>
+                        <CreditCard className="w-3.5 h-3.5 text-indigo-400" />
                       </div>
                       <div className="text-lg font-black font-mono text-indigo-300">
-                        Rs. {(totalCreditPaid || 0).toLocaleString()}
+                        Rs. {(vBreakdown.creditBalance || 0).toLocaleString()}
                       </div>
-                      <span className="text-[9px] text-slate-400 block">Ledger / Bank Clearance</span>
+                      <span className="text-[9px] text-slate-400 block">From Credit Purchases</span>
                     </div>
 
-                    {/* Card 4: Grand Total Settled Payments */}
-                    <div className="bg-teal-500/20 backdrop-blur-xs border border-teal-400/50 rounded-lg p-2.5 space-y-0.5">
+                    {/* Card 2: Cash Purchases Balance Due */}
+                    <div className="bg-emerald-950/50 backdrop-blur-xs border border-emerald-500/40 rounded-lg p-2.5 space-y-0.5">
                       <div className="flex items-center justify-between">
-                        <span className="text-[9px] font-black text-teal-300 uppercase tracking-wider block">Grand Total Settled</span>
-                        <span className="text-[8px] bg-teal-400/30 text-teal-100 px-1 rounded font-bold">{vTxns.length} Total</span>
+                        <span className="text-[9px] font-bold text-emerald-300 uppercase tracking-wider block">Cash Purchases Due</span>
+                        <Banknote className="w-3.5 h-3.5 text-emerald-400" />
                       </div>
-                      <div className="text-lg font-black font-mono text-teal-200">
+                      <div className="text-lg font-black font-mono text-emerald-300">
+                        Rs. {(vBreakdown.cashBalance || 0).toLocaleString()}
+                      </div>
+                      <span className="text-[9px] text-slate-400 block">From Cash Purchases</span>
+                    </div>
+
+                    {/* Card 3: Total Outstanding Payable */}
+                    <div className="bg-amber-950/40 backdrop-blur-xs border border-amber-500/40 rounded-lg p-2.5 space-y-0.5">
+                      <span className="text-[9px] font-bold text-amber-300 uppercase tracking-wider block">Total Payable Due</span>
+                      <div className="text-lg font-black font-mono text-amber-300">
+                        Rs. {(currentBalance || 0).toLocaleString()}
+                      </div>
+                      <span className="text-[9px] text-amber-200/70 block">Credit + Cash Due</span>
+                    </div>
+
+                    {/* Card 4: Total Settled Payments */}
+                    <div className="bg-white/10 backdrop-blur-xs border border-slate-700 rounded-lg p-2.5 space-y-0.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-[9px] font-black text-slate-300 uppercase tracking-wider block">Total Settled (Paid)</span>
+                        <span className="text-[8px] bg-slate-700 text-slate-200 px-1 rounded font-bold">{vTxns.length} Vouchers</span>
+                      </div>
+                      <div className="text-lg font-black font-mono text-white">
                         Rs. {(grandTotalPaid || 0).toLocaleString()}
                       </div>
-                      <span className="text-[9px] text-teal-300/80 block">Cash + Credit Cleared</span>
+                      <span className="text-[9px] text-slate-400 block">
+                        Cash: {totalCashPaid.toLocaleString()} | Credit: {totalCreditPaid.toLocaleString()}
+                      </span>
                     </div>
                   </div>
 
                   {/* Summary Bar showing Total GRN Invoiced vs Cleared */}
                   <div className="flex flex-wrap items-center justify-between text-[10px] text-slate-300 bg-black/30 p-2 rounded-lg border border-white/10 gap-y-1">
                     <div>
-                      <span>Total GRN Purchases: </span>
-                      <strong className="text-amber-300 font-mono">Rs. {(totalGrnBilled || 0).toLocaleString()}</strong>
-                      <span className="text-slate-400 ml-1">({totalGrnsCount} {totalGrnsCount === 1 ? 'GRN' : 'GRNs'})</span>
+                      <span>Total Purchases: </span>
+                      <strong className="text-white font-mono">Rs. {(totalGrnBilled || 0).toLocaleString()}</strong>
+                      <span className="text-slate-400 ml-1.5">
+                        (Credit: <strong className="text-indigo-300">Rs. {vBreakdown.creditPurchased.toLocaleString()}</strong> • Cash: <strong className="text-emerald-300">Rs. {vBreakdown.cashPurchased.toLocaleString()}</strong>)
+                      </span>
                     </div>
                     <div className="flex items-center space-x-3">
-                      <span>Cash Paid: <strong className="text-emerald-400 font-mono">Rs. {totalCashPaid.toLocaleString()}</strong></span>
+                      <span>Total Settled: <strong className="text-teal-300 font-mono">Rs. {grandTotalPaid.toLocaleString()}</strong></span>
                       <span>•</span>
-                      <span>Credit Paid: <strong className="text-indigo-400 font-mono">Rs. {totalCreditPaid.toLocaleString()}</strong></span>
-                      <span>•</span>
-                      <span>Grand Total Settled: <strong className="text-teal-300 font-mono">Rs. {grandTotalPaid.toLocaleString()}</strong></span>
+                      <span>Net Balance: <strong className="text-amber-300 font-mono">Rs. {currentBalance.toLocaleString()}</strong></span>
                     </div>
                   </div>
                 </div>
@@ -255,6 +246,7 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                       const matchGrn = vGrns.find(g => g.POID === po.POID);
                       const invStr = matchGrn?.SupplierInvoiceNo || po.POID;
                       const isSelected = payVendorModalData.invNo === invStr || payVendorModalData.poId === po.POID;
+                      const isCashPurchase = matchGrn?.PaymentMethod === 'Cash' || po.PaymentTerms === 'Cash';
 
                       const poTotal = po.TotalAmount || 0;
                       const alreadyPaidForPo = transactions
@@ -276,8 +268,10 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                               ...prev,
                               invNo: invStr,
                               poId: po.POID,
+                              targetBillType: isCashPurchase ? 'Cash' : 'Credit',
+                              paymentMethod: isCashPurchase ? 'Cash' : (prev.paymentMethod === 'Cash' ? 'Bank' : prev.paymentMethod),
                               amount: poOutstanding > 0 ? poOutstanding : poTotal,
-                              description: `Payment against PO #${po.POID} (Invoice #${invStr}) for ${prev.vendor.VendorName}`
+                              description: `Payment against PO #${po.POID} (${isCashPurchase ? 'Cash Purchase' : 'Credit Bill'} Inv #${invStr}) for ${prev.vendor.VendorName}`
                             }) : null);
                           }}
                           className={`p-2.5 rounded-lg border text-left transition flex items-center justify-between cursor-pointer ${
@@ -287,8 +281,17 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                           }`}
                         >
                           <div>
-                            <div className="flex items-center space-x-1.5">
+                            <div className="flex items-center space-x-1.5 flex-wrap gap-1">
                               <span className="font-mono text-xs font-black text-indigo-700">P.O. #{po.POID}</span>
+                              {isCashPurchase ? (
+                                <span className="text-[9px] bg-emerald-100 text-emerald-800 px-1.5 py-0.2 rounded font-bold border border-emerald-200">
+                                  💵 Cash Purchase
+                                </span>
+                              ) : (
+                                <span className="text-[9px] bg-indigo-100 text-indigo-800 px-1.5 py-0.2 rounded font-bold border border-indigo-200">
+                                  💳 Credit Bill
+                                </span>
+                              )}
                               {matchGrn?.SupplierInvoiceNo && (
                                 <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded border font-mono">
                                   Inv: {matchGrn.SupplierInvoiceNo}
@@ -310,6 +313,96 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                 );
               })()}
             </div>
+
+            {/* BILL CATEGORY SELECTION: CREDIT BILL VS CASH PURCHASE BILL */}
+            {(() => {
+              const vVendor = payVendorModalData.vendor;
+              const vBreakdown = computeVendorBalanceBreakdown(vVendor, grns, transactions);
+              const currentTarget = payVendorModalData.targetBillType || 'Credit';
+
+              return (
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-black text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>Select Bill / Ledger to Settle</span>
+                      <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[10px] font-bold text-slate-500">
+                      Total Due: <strong className="text-amber-800 font-mono">Rs. {vBreakdown.outstandingBalance.toLocaleString()}</strong>
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {/* Option 1: Credit Bill Payment */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPayVendorModalData(prev => prev ? ({
+                          ...prev,
+                          targetBillType: 'Credit',
+                          amount: vBreakdown.creditBalance > 0 ? vBreakdown.creditBalance : prev.amount
+                        }) : null);
+                      }}
+                      className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center justify-between relative overflow-hidden ${
+                        currentTarget === 'Credit'
+                          ? 'bg-indigo-600 text-white border-indigo-700 shadow-md ring-2 ring-indigo-300'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100/90'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-xs flex items-center gap-1.5">
+                          <CreditCard className={`w-4 h-4 ${currentTarget === 'Credit' ? 'text-indigo-200' : 'text-indigo-600'}`} />
+                          <span>Pay Credit Bill</span>
+                        </div>
+                        <p className={`text-[10px] ${currentTarget === 'Credit' ? 'text-indigo-100' : 'text-slate-500'}`}>
+                          Regular supplier credit ledger settlement
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[9px] uppercase font-bold block opacity-80">Credit Due</span>
+                        <span className={`text-sm font-black font-mono ${currentTarget === 'Credit' ? 'text-white' : 'text-indigo-700'}`}>
+                          Rs. {vBreakdown.creditBalance.toLocaleString()}
+                        </span>
+                      </div>
+                    </button>
+
+                    {/* Option 2: Cash Purchase Bill Payment */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPayVendorModalData(prev => prev ? ({
+                          ...prev,
+                          targetBillType: 'Cash',
+                          paymentMethod: 'Cash',
+                          amount: vBreakdown.cashBalance > 0 ? vBreakdown.cashBalance : prev.amount
+                        }) : null);
+                      }}
+                      className={`p-3 rounded-xl border text-left transition cursor-pointer flex items-center justify-between relative overflow-hidden ${
+                        currentTarget === 'Cash'
+                          ? 'bg-emerald-600 text-white border-emerald-700 shadow-md ring-2 ring-emerald-300'
+                          : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100/90'
+                      }`}
+                    >
+                      <div className="space-y-0.5">
+                        <div className="font-bold text-xs flex items-center gap-1.5">
+                          <Banknote className={`w-4 h-4 ${currentTarget === 'Cash' ? 'text-emerald-200' : 'text-emerald-600'}`} />
+                          <span>Pay Cash Purchase Bill</span>
+                        </div>
+                        <p className={`text-[10px] ${currentTarget === 'Cash' ? 'text-emerald-100' : 'text-slate-500'}`}>
+                          Settling spot/cash purchase bills
+                        </p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[9px] uppercase font-bold block opacity-80">Cash Due</span>
+                        <span className={`text-sm font-black font-mono ${currentTarget === 'Cash' ? 'text-white' : 'text-emerald-700'}`}>
+                          Rs. {vBreakdown.cashBalance.toLocaleString()}
+                        </span>
+                      </div>
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Payment Form */}
             <form onSubmit={handleSavePayVendorBill} className="space-y-4">
@@ -334,26 +427,30 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                       Payment Amount (PKR) <span className="text-rose-500">*</span>
                     </label>
                     
-                    {/* Quick percentage calculation buttons based on selected PO balance or vendor balance */}
+                    {/* Quick percentage calculation buttons based on selected target balance */}
                     {(() => {
+                      const vVendor = payVendorModalData.vendor;
+                      const vBreakdown = computeVendorBalanceBreakdown(vVendor, grns, transactions);
+                      const currentTarget = payVendorModalData.targetBillType || 'Credit';
+
                       const vPos = purchaseOrders.filter(po => 
-                        (po.VendorID && po.VendorID === payVendorModalData.vendor.VendorID) || 
-                        (po.VendorName && po.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())
+                        (po.VendorID && po.VendorID === vVendor.VendorID) || 
+                        (po.VendorName && po.VendorName.toLowerCase() === vVendor.VendorName.toLowerCase())
                       );
                       const vGrns = grns.filter(g => 
-                        (g.VendorID && g.VendorID === payVendorModalData.vendor.VendorID) || 
-                        (g.VendorName && g.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())
+                        (g.VendorID && g.VendorID === vVendor.VendorID) || 
+                        (g.VendorName && g.VendorName.toLowerCase() === vVendor.VendorName.toLowerCase())
                       );
                       const selectedPo = vPos.find(p => p.POID === payVendorModalData.poId || p.POID === payVendorModalData.invNo);
                       
-                      let maxAmt = payVendorModalData.vendor.Balance;
+                      let maxAmt = currentTarget === 'Cash' ? vBreakdown.cashBalance : vBreakdown.creditBalance;
                       if (selectedPo) {
                         const poTotal = selectedPo.TotalAmount || 0;
                         const matchGrn = vGrns.find(g => g.POID === selectedPo.POID);
                         const invStr = matchGrn?.SupplierInvoiceNo || selectedPo.POID;
                         const alreadyPaid = transactions
                           .filter(t => 
-                            (t.VendorID === payVendorModalData.vendor.VendorID || (t.VendorName && t.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())) &&
+                            (t.VendorID === vVendor.VendorID || (t.VendorName && t.VendorName.toLowerCase() === vVendor.VendorName.toLowerCase())) &&
                             t.Type === 'VendorPayment' &&
                             (t.ReferenceNo === selectedPo.POID || t.ReferenceNo === invStr || (t.Description && t.Description.includes(selectedPo.POID)))
                           )
@@ -372,7 +469,7 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                                 type="button"
                                 onClick={() => setPayVendorModalData({ ...payVendorModalData, amount: calculated })}
                                 className="px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 text-[10px] font-black rounded border border-emerald-300 transition cursor-pointer"
-                                title={`Set ${pct}% of balance (Rs. ${(calculated || 0).toLocaleString()})`}
+                                title={`Set ${pct}% of ${currentTarget} balance (Rs. ${(calculated || 0).toLocaleString()})`}
                               >
                                 {pct}%
                               </button>
@@ -415,7 +512,7 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                 </div>
 
                 <div>
-                  <label className="text-xs font-bold text-slate-700 mb-1 block">Actual Payment Date (ادائیگی کی تاریخ)</label>
+                  <label className="text-xs font-bold text-slate-700 mb-1 block">Actual Payment Date</label>
                   <input
                     type="date"
                     required
@@ -424,7 +521,7 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                     className="w-full text-xs p-2.5 bg-white border border-slate-300 rounded-xl font-medium focus:ring-2 focus:ring-indigo-500 focus:outline-none"
                   />
                   <p className="text-[10px] text-slate-500 mt-1">
-                    Jis din physically cash/bank se payment di gayi.
+                    Date when payment was physically disbursed.
                   </p>
                 </div>
               </div>
@@ -435,10 +532,10 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                   <div>
                     <label className="text-xs font-black text-purple-950 flex items-center gap-1.5">
                       <span className="w-2 h-2 rounded-full bg-purple-600 animate-pulse"></span>
-                      Accounting Month / P&L Posting Period (حساب کا مہینہ)
+                      Accounting Month / P&amp;L Posting Period
                     </label>
                     <p className="text-[10px] text-purple-700 font-medium">
-                      Profit &amp; Loss report mein yeh expense kis month count hoga?
+                      Financial accounting month for Profit &amp; Loss reporting.
                     </p>
                   </div>
                   
@@ -499,7 +596,7 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                 <div className="text-[11px] text-purple-800 bg-white/70 p-2 rounded-lg border border-purple-100 flex items-start gap-1.5">
                   <span className="font-bold text-purple-900 shrink-0">💡 Note:</span>
                   <span>
-                    Agar credit bill <strong>August</strong> ka ho aur payment <strong>September</strong> mein ki ja rahi ho, to yahan se <strong>August</strong> select karen. Is se monthly P&amp;L aur Cash Outflow mein yeh expense August ke hisab mein hi count hoga.
+                    If a purchase bill belongs to <strong>August</strong> but payment is made in <strong>September</strong>, select <strong>August</strong> here to correctly attribute the expense to the August accounting period.
                   </span>
                 </div>
               </div>
@@ -670,43 +767,22 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                 );
               })()}
 
-              {/* LIVE PO & PAYABLE CALCULATION BREAKDOWN */}
+              {/* LIVE CREDIT VS CASH CALCULATION BREAKDOWN */}
               {(() => {
-                const vPos = purchaseOrders.filter(po => 
-                  (po.VendorID && po.VendorID === payVendorModalData.vendor.VendorID) || 
-                  (po.VendorName && po.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())
-                );
-                const vGrns = grns.filter(g => 
-                  (g.VendorID && g.VendorID === payVendorModalData.vendor.VendorID) || 
-                  (g.VendorName && g.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())
-                );
-                
-                const selectedPo = vPos.find(p => p.POID === payVendorModalData.poId || p.POID === payVendorModalData.invNo);
-                
-                let poTotal = 0;
-                let poPaid = 0;
-                let poOutstandingBefore = 0;
-
-                if (selectedPo) {
-                  poTotal = selectedPo.TotalAmount || 0;
-                  const matchGrn = vGrns.find(g => g.POID === selectedPo.POID);
-                  const invStr = matchGrn?.SupplierInvoiceNo || selectedPo.POID;
-                  poPaid = transactions
-                    .filter(t => 
-                      (t.VendorID === payVendorModalData.vendor.VendorID || (t.VendorName && t.VendorName.toLowerCase() === payVendorModalData.vendor.VendorName.toLowerCase())) &&
-                      t.Type === 'VendorPayment' &&
-                      (t.ReferenceNo === selectedPo.POID || t.ReferenceNo === invStr || (t.Description && t.Description.includes(selectedPo.POID)))
-                    )
-                    .reduce((sum, t) => sum + Number(t.Amount || 0), 0);
-                  poOutstandingBefore = Math.max(0, poTotal - poPaid);
-                } else {
-                  poTotal = payVendorModalData.vendor.Balance;
-                  poOutstandingBefore = payVendorModalData.vendor.Balance;
-                }
-
+                const vVendor = payVendorModalData.vendor;
+                const vBreakdown = computeVendorBalanceBreakdown(vVendor, grns, transactions);
+                const currentTarget = payVendorModalData.targetBillType || 'Credit';
                 const payingAmt = Number(payVendorModalData.amount || 0);
-                const poResidualAfter = Math.max(0, poOutstandingBefore - payingAmt);
-                const vendorPayableAfter = Math.max(0, payVendorModalData.vendor.Balance - payingAmt);
+
+                let creditAfter = vBreakdown.creditBalance;
+                let cashAfter = vBreakdown.cashBalance;
+
+                if (currentTarget === 'Credit') {
+                  creditAfter = Math.max(0, vBreakdown.creditBalance - payingAmt);
+                } else {
+                  cashAfter = Math.max(0, vBreakdown.cashBalance - payingAmt);
+                }
+                const totalAfter = creditAfter + cashAfter;
 
                 return (
                   <div className="bg-slate-900 text-white rounded-xl p-3.5 space-y-2.5 border border-slate-800 shadow-inner">
@@ -714,51 +790,72 @@ export const PayVendorModal: React.FC<PayVendorModalProps> = ({
                       <div className="flex items-center space-x-2">
                         <Calculator className="w-4 h-4 text-emerald-400" />
                         <span className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                          {selectedPo ? `P.O. #${selectedPo.POID} Payment Breakdown` : 'Vendor Payable Breakdown'}
+                          Balance Impact Preview
                         </span>
                       </div>
                       <span className="text-[10px] font-mono text-emerald-400 bg-emerald-950 px-2 py-0.5 rounded border border-emerald-800">
-                        Automatic Adjustment
+                        Paying towards {currentTarget === 'Credit' ? 'Credit Bill' : 'Cash Purchase Bill'}
                       </span>
                     </div>
 
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                      <div className="bg-slate-800/60 p-2 rounded-lg border border-slate-700/60">
-                        <span className="text-slate-400 text-[10px] uppercase font-semibold block">Total PO Bill</span>
-                        <span className="font-mono font-bold text-slate-100">
-                          Rs. {(poTotal || 0).toLocaleString()}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-xs">
+                      {/* Credit Balance */}
+                      <div className={`p-2.5 rounded-lg border ${currentTarget === 'Credit' ? 'bg-indigo-950/70 border-indigo-500/50' : 'bg-slate-800/60 border-slate-700/60'}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400 text-[10px] uppercase font-semibold">Credit Due</span>
+                          {currentTarget === 'Credit' && <span className="text-[9px] text-indigo-300 font-bold">Deducting</span>}
+                        </div>
+                        <div className="flex items-baseline space-x-2 mt-1">
+                          <span className="text-slate-400 font-mono text-xs line-through">
+                            Rs. {vBreakdown.creditBalance.toLocaleString()}
+                          </span>
+                          <span className="text-indigo-300 font-mono font-black text-sm">
+                            → Rs. {creditAfter.toLocaleString()}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-slate-400 block mt-0.5">
+                          {currentTarget === 'Credit' && payingAmt > 0
+                            ? `- Rs. ${payingAmt.toLocaleString()} paid from Credit`
+                            : 'Unchanged'}
                         </span>
                       </div>
 
-                      <div className="bg-slate-800/60 p-2 rounded-lg border border-slate-700/60">
-                        <span className="text-slate-400 text-[10px] uppercase font-semibold block">Already Settled</span>
-                        <span className="font-mono font-bold text-emerald-400">
-                          Rs. {(poPaid || 0).toLocaleString()}
+                      {/* Cash Balance */}
+                      <div className={`p-2.5 rounded-lg border ${currentTarget === 'Cash' ? 'bg-emerald-950/70 border-emerald-500/50' : 'bg-slate-800/60 border-slate-700/60'}`}>
+                        <div className="flex items-center justify-between">
+                          <span className="text-slate-400 text-[10px] uppercase font-semibold">Cash Due</span>
+                          {currentTarget === 'Cash' && <span className="text-[9px] text-emerald-300 font-bold">Deducting</span>}
+                        </div>
+                        <div className="flex items-baseline space-x-2 mt-1">
+                          <span className="text-slate-400 font-mono text-xs line-through">
+                            Rs. {vBreakdown.cashBalance.toLocaleString()}
+                          </span>
+                          <span className="text-emerald-300 font-mono font-black text-sm">
+                            → Rs. {cashAfter.toLocaleString()}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-slate-400 block mt-0.5">
+                          {currentTarget === 'Cash' && payingAmt > 0
+                            ? `- Rs. ${payingAmt.toLocaleString()} paid from Cash Bill`
+                            : 'Unchanged'}
                         </span>
                       </div>
 
-                      <div className="bg-slate-800/60 p-2 rounded-lg border border-slate-700/60">
-                        <span className="text-slate-400 text-[10px] uppercase font-semibold block">Paying Now</span>
-                        <span className="font-mono font-black text-amber-400">
-                          - Rs. {(payingAmt || 0).toLocaleString()}
+                      {/* Total Outstanding */}
+                      <div className="bg-amber-950/50 p-2.5 rounded-lg border border-amber-500/40">
+                        <span className="text-amber-300 text-[10px] uppercase font-bold block">Total Outstanding Balance</span>
+                        <div className="flex items-baseline space-x-2 mt-1">
+                          <span className="text-slate-400 font-mono text-xs line-through">
+                            Rs. {vBreakdown.outstandingBalance.toLocaleString()}
+                          </span>
+                          <span className="text-amber-400 font-mono font-black text-base">
+                            → Rs. {totalAfter.toLocaleString()}
+                          </span>
+                        </div>
+                        <span className="text-[9px] text-amber-200/80 block mt-0.5">
+                          Remaining Credit + Cash Due
                         </span>
                       </div>
-
-                      <div className="bg-slate-800/60 p-2 rounded-lg border border-slate-700/60">
-                        <span className="text-slate-400 text-[10px] uppercase font-bold block">
-                          {selectedPo ? 'Residual PO Balance' : 'Payable Remaining'}
-                        </span>
-                        <span className={`font-mono font-black ${poResidualAfter === 0 ? 'text-emerald-400' : 'text-amber-400'}`}>
-                          Rs. {(poResidualAfter || 0).toLocaleString()}
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="text-[11px] text-slate-300 bg-slate-800/90 p-2 rounded-lg border border-slate-700/80 flex items-center justify-between">
-                      <span className="font-medium">Total Vendor Payable After This Payment:</span>
-                      <strong className="font-mono text-emerald-400 font-black text-xs">
-                        Rs. {(vendorPayableAfter || 0).toLocaleString()}
-                      </strong>
                     </div>
                   </div>
                 );

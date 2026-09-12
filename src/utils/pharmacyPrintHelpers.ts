@@ -87,7 +87,7 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
 
     const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
     const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan";
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-311-4000608";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-300-4202383";
     const clinicWebsite = clinicSettings?.Website || "https://punjabhomeopathic.pk";
     const clinicTagline = clinicSettings?.ClinicLogoText || "HEALING NATURALLY. RESTORING BALANCE.";
     const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
@@ -539,7 +539,7 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
     }
 
     const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || '+92-311-4000608';
+    const cPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || '+92-300-4202383';
     const cAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const shiftText = billData.shift === 1 ? 'MORNING SHIFT (1)' : 'EVENING SHIFT (2)';
@@ -803,7 +803,7 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
 
     const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic & Pharmacy";
     const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan";
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-311-4000608";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-300-4202383";
     const clinicWebsite = clinicSettings?.Website || "https://punjabhomeopathic.pk";
     const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
     const printedBy = currentUser?.FullName || currentUser?.LoginName || 'Duty Pharmacist';
@@ -1254,7 +1254,7 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
 
     const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic";
     const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore";
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "042-3111222";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-300-4202383";
     const clinicTagline = clinicSettings?.ClinicLogoText || clinicSettings?.Tagline || "Advanced Health Care & Clinical Pharmacy";
     const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
     
@@ -1923,7 +1923,7 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
 
     const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic";
     const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore";
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "042-3111222";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-300-4202383";
     const logoSrc = clinicSettings?.ClinicLogoImage || clinicSettings?.Logo || '/logo.png';
     const printDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
@@ -2067,7 +2067,7 @@ export function createPharmacyPrintHelpers(ctx: PharmacyPrintContext) {
 
     const clinicName = clinicSettings?.ClinicName || "Punjab Homeopathic Clinic";
     const clinicAddress = clinicSettings?.ClinicAddress || clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore";
-    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "042-3111222";
+    const clinicPhone = clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-300-4202383";
     const printDate = new Date().toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: 'numeric' }) + ' ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
 
     const totalReorderUnits = reorderItems.reduce((acc, itm) => acc + (itm.ReorderQty || Math.max(1, (itm.MinStock || 1) * 2)), 0);

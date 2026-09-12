@@ -137,7 +137,7 @@ export const PharmacyPrintInvoiceModal: React.FC<PharmacyPrintInvoiceModalProps>
                         {clinicSettings?.ClinicName || "PUNJAB HOMEOPATHIC CLINIC & PHARMACY"}
                       </h2>
                       <p className="text-[10px] text-slate-500 font-medium">
-                        {clinicSettings?.Address || "Opposite State Bank, Mall Road, Lahore"} • Ph: {clinicSettings?.PhoneNo || "042-3111222"}
+                        {clinicSettings?.Address || clinicSettings?.ClinicAddress || "10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan"} • Ph: {clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-300-4202383"}
                       </p>
                     </div>
                     <div className="text-right">
@@ -259,7 +259,7 @@ export const PharmacyPrintInvoiceModal: React.FC<PharmacyPrintInvoiceModalProps>
                   <div className="text-center space-y-1">
                     <h3 className="font-bold text-xs uppercase">{clinicSettings?.ClinicName || "PUNJAB CLINIC & PHARMACY"}</h3>
                     <p className="text-[10px]">{clinicSettings?.Address || "Mall Road, Lahore"}</p>
-                    <p className="text-[10px]">Ph: {clinicSettings?.PhoneNo || "042-3111222"}</p>
+                    <p className="text-[10px]">Ph: {clinicSettings?.PhoneMobile || clinicSettings?.PhoneNo || "+92-300-4202383"}</p>
                     <div className="border-t border-b border-black py-0.5 my-1 font-bold text-[11px]">
                       *** CUSTOMER RECEIPT ***
                     </div>

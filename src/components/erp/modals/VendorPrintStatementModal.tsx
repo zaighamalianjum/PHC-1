@@ -62,7 +62,7 @@ export const VendorPrintStatementModal: React.FC<VendorPrintStatementModalProps>
             const cDoc = clinicSettings?.DoctorName || '';
             const cDocSub = clinicSettings?.DoctorSignatureText || '';
             const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-            const cPhone = clinicSettings?.PhoneMobile || clinicSettings?.ClinicPhone || '+92-311-4000608';
+            const cPhone = clinicSettings?.PhoneMobile || clinicSettings?.ClinicPhone || '+92-300-4202383';
             const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
             return (

@@ -114,6 +114,7 @@ import VendorPurchaseOrdersModal from './erp/modals/VendorPurchaseOrdersModal';
 import PoPaymentHistoryModal from './erp/modals/PoPaymentHistoryModal';
 import VendorPaymentHistoryStandaloneModal from './erp/modals/VendorPaymentHistoryStandaloneModal';
 import WhatsAppPoModal from './erp/modals/WhatsAppPoModal';
+import { computeVendorBalanceBreakdown } from './erp/erpUtils';
 
 const WhatsAppIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
   <svg className={className} fill="currentColor" viewBox="0 0 24 24">
@@ -741,14 +742,14 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     });
 
     vendorTxns.forEach(t => {
-      const isSpotPay = t.Category?.includes('Cash Spot') || t.Description?.includes('Spot Cash Payment');
+      const isCashPay = (t as any).TargetBillType === 'Cash' || (t as any).BillType === 'Cash' || (t as any).IsCashPurchase || t.Category?.includes('Cash Spot') || t.Description?.includes('Spot Cash Payment') || t.Category?.includes('Spot Cash');
       rows.push({
         id: t.TransactionID || t._id || `TXN-${Math.random()}`,
         date: t.Date || new Date().toISOString().split('T')[0],
-        type: isSpotPay ? 'Spot Cash Voucher (CPV)' : 'Vendor Bill Payment',
+        type: isCashPay ? 'Spot Cash Payment (Cash)' : 'Vendor Bill Payment (Credit)',
         refNo: t.TransactionID || 'PAY-N/A',
         poNo: t.ReferenceNo && t.ReferenceNo.toUpperCase().startsWith('PO') ? t.ReferenceNo : (t.ReferenceNo || 'N/A'),
-        description: isSpotPay ? `Instant Spot Cash Paid on Delivery (${t.Description})` : `Payment Settled via ${t.PaymentMethod || 'Cash'} - ${t.Description || 'Vendor Settlement'}`,
+        description: isCashPay ? `Spot Cash Paid on Delivery (${t.Description})` : `Payment Settled via ${t.PaymentMethod || 'Bank'} - ${t.Description || 'Credit Bill Settlement'}`,
         debit: Number(t.Amount || 0),
         credit: 0,
         rawItem: t
@@ -793,7 +794,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       totalInvoiced += r.credit;
       totalPaid += r.debit;
       if (r.debit > 0) {
-        const isCash = r.type?.includes('Spot Cash') || r.type?.includes('Cash') || (r.rawItem?.PaymentMethod || '').toLowerCase() === 'cash';
+        const isCash = r.type?.includes('Spot Cash') || r.type?.includes('(Cash)') || (r.rawItem as any)?.TargetBillType === 'Cash' || (r.rawItem as any)?.BillType === 'Cash';
         if (isCash) {
           totalCashPaid += r.debit;
         } else {
@@ -807,6 +808,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       };
     });
 
+    const breakdown = computeVendorBalanceBreakdown(selectedVendor, grns, transactions);
     const closingBalance = Math.max(0, selectedVendor.Balance ?? running);
 
     return {
@@ -815,7 +817,14 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       totalPaid,
       totalCashPaid,
       totalCreditPaid,
-      closingBalance
+      closingBalance,
+      breakdown,
+      creditBalance: selectedVendor.CreditBalance !== undefined ? Number(selectedVendor.CreditBalance) : breakdown.creditBalance,
+      cashBalance: selectedVendor.CashBalance !== undefined ? Number(selectedVendor.CashBalance) : breakdown.cashBalance,
+      creditPurchased: breakdown.creditPurchased,
+      cashPurchased: breakdown.cashPurchased,
+      creditPaid: breakdown.creditPaid,
+      cashPaid: breakdown.cashPaid,
     };
   }, [selectedVendor, grns, transactions, vendorDateFilter]);
 
@@ -1289,7 +1298,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cDoc = clinicSettings?.DoctorName || '';
     const cDocSub = clinicSettings?.DoctorSignatureText || '';
     const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-300-4202383';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
@@ -3739,7 +3748,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-300-4202383';
 
     const url = generateWhatsAppPurchaseOrderUrl({
       poId: selectedPoForWhatsApp.POID,
@@ -4755,7 +4764,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cTag = clinicSettings?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
     const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-300-4202383';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
     let totalOrderedQty = 0;
@@ -5201,7 +5210,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cDoc = clinicSettings?.DoctorName || '';
     const cDocSub = clinicSettings?.DoctorSignatureText || '';
     const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-300-4202383';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
@@ -5470,7 +5479,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cDoc = clinicSettings?.DoctorName || '';
     const cDocSub = clinicSettings?.DoctorSignatureText || '';
     const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-300-4202383';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
 
@@ -5631,7 +5640,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   };
 
   // HANDLERS FOR TRANSACTIONS & VENDOR BILL PAYMENTS
-  const handlePayVendor = (vendor: ErpVendor) => {
+  const handlePayVendor = (vendor: ErpVendor, targetBillType?: 'Credit' | 'Cash') => {
     const vendorPOs = purchaseOrders.filter(po => 
       (po.VendorID && po.VendorID === vendor.VendorID) || 
       (po.VendorName && po.VendorName.toLowerCase() === vendor.VendorName.toLowerCase())
@@ -5641,9 +5650,22 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       (g.VendorName && g.VendorName.toLowerCase() === vendor.VendorName.toLowerCase())
     );
 
+    const vBreakdown = computeVendorBalanceBreakdown(vendor, grns, transactions);
+    const currentCredit = vendor.CreditBalance !== undefined ? Number(vendor.CreditBalance) : vBreakdown.creditBalance;
+    const currentCash = vendor.CashBalance !== undefined ? Number(vendor.CashBalance) : vBreakdown.cashBalance;
+
+    // Determine target bill type
+    const determinedTarget: 'Credit' | 'Cash' = targetBillType 
+      ? targetBillType 
+      : (currentCredit > 0 ? 'Credit' : (currentCash > 0 ? 'Cash' : 'Credit'));
+
     let suggestedInv = '';
     let suggestedPoId = '';
-    let suggestedAmount = vendor.Balance > 0 ? vendor.Balance : 0;
+    let suggestedAmount = determinedTarget === 'Credit' ? currentCredit : currentCash;
+
+    if (suggestedAmount <= 0) {
+      suggestedAmount = vendor.Balance > 0 ? vendor.Balance : 0;
+    }
 
     if (vendorPOs.length > 0) {
       const topPo = vendorPOs[0];
@@ -5662,34 +5684,39 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         .reduce((sum, t) => sum + Number(t.Amount || 0), 0);
 
       const poOutstanding = Math.max(0, poTotal - alreadyPaidForPo);
-      if (poOutstanding > 0) {
+      if (poOutstanding > 0 && determinedTarget === 'Credit') {
         suggestedAmount = poOutstanding;
       }
     } else if (vendorGrns.length > 0) {
-      const latest = vendorGrns.find(g => g.SupplierInvoiceNo) || vendorGrns[0];
-      suggestedInv = latest.SupplierInvoiceNo || latest.ChallanNo || latest.GRNID || '';
+      const matchingGrns = vendorGrns.filter(g => {
+        const isCash = String(g.PaymentMethod || (g as any).PaymentMode || '').toLowerCase() === 'cash';
+        return determinedTarget === 'Cash' ? isCash : !isCash;
+      });
+      const latest = matchingGrns.find(g => g.SupplierInvoiceNo) || matchingGrns[0] || vendorGrns[0];
+      suggestedInv = latest?.SupplierInvoiceNo || latest?.ChallanNo || latest?.GRNID || '';
     }
 
     setPayVendorModalData({
       vendor,
-      invNo: suggestedInv,
+      invNo: suggestedInv || `INV-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}`,
       poId: suggestedPoId,
-      amount: suggestedAmount,
-      paymentMethod: 'Bank',
+      amount: suggestedAmount > 0 ? suggestedAmount : 0,
+      paymentMethod: determinedTarget === 'Cash' ? 'Cash' : 'Bank',
+      targetBillType: determinedTarget,
       date: new Date().toISOString().split('T')[0],
-      category: 'Supplier Sales Invoice Payment',
+      category: determinedTarget === 'Cash' ? 'Spot Cash Vendor Payment' : 'Supplier Credit Bill Payment',
       description: suggestedPoId 
-        ? `Payment against PO #${suggestedPoId} (Invoice #${suggestedInv}) for ${vendor.VendorName}`
+        ? `Payment against PO #${suggestedPoId} (Invoice #${suggestedInv}) for ${vendor.VendorName} [${determinedTarget} Bill]`
         : suggestedInv
-        ? `Payment against Vendor Invoice #${suggestedInv} for ${vendor.VendorName}`
-        : `Payment towards outstanding bill for Vendor ${vendor.VendorName}`
+        ? `Payment against Vendor Invoice #${suggestedInv} for ${vendor.VendorName} [${determinedTarget} Bill]`
+        : `Payment towards outstanding ${determinedTarget} bill for Vendor ${vendor.VendorName}`
     });
   };
 
   const handleConfirmPayVendor = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!payVendorModalData) return;
-    const { vendor, invNo, amount, paymentMethod, date, accountingMonth, description, category } = payVendorModalData;
+    const { vendor, invNo, amount, paymentMethod, date, accountingMonth, description, category, targetBillType } = payVendorModalData;
 
     if (!invNo || invNo.trim() === '') {
       return alert('Vendor Invoice Number is required to process vendor bill payment.');
@@ -5701,7 +5728,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     setIsSubmitting(true);
     try {
       const isCash = paymentMethod === 'Cash';
-      const defaultCat = isCash ? 'Spot Cash Vendor Payment' : 'Supplier Credit Bill Payment';
+      const targetType: 'Credit' | 'Cash' = targetBillType || (isCash ? 'Cash' : 'Credit');
+      const defaultCat = targetType === 'Cash' ? 'Spot Cash Vendor Payment' : 'Supplier Credit Bill Payment';
       const rawDate = date || new Date().toISOString().split('T')[0];
       const accMonth = accountingMonth || rawDate.slice(0, 7);
 
@@ -5718,7 +5746,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         ? ` [Accounting Month: ${monthName} | Paid Date: ${rawDate}]`
         : '';
 
-      const baseDesc = description || `Payment against Vendor Invoice #${invNo.trim()} for ${vendor.VendorName} (${isCash ? 'Cash Payment' : 'Credit Settlement'})`;
+      const baseDesc = description || `Payment against Vendor Invoice #${invNo.trim()} for ${vendor.VendorName} (${targetType === 'Cash' ? 'Spot Cash Bill Payment' : 'Credit Bill Settlement'})`;
 
       const newTxn: ErpTransaction = {
         TransactionID: `TXN-${Math.floor(10000 + Math.random() * 90000)}`,
@@ -5733,21 +5761,46 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         ActualPaymentDate: rawDate,
         CreatedBy: currentUser?.FullName || 'Admin',
         VendorID: vendor.VendorID || '',
-        VendorName: vendor.VendorName || ''
+        VendorName: vendor.VendorName || '',
+        TargetBillType: targetType,
+        BillType: targetType,
+        IsCashPurchase: targetType === 'Cash'
       };
 
       await saveToDatabase('erp_transactions', newTxn);
       setTransactions(prev => [newTxn, ...prev]);
 
-      // Settle Vendor's Outstanding Balance in DB
+      // Settle Vendor's Outstanding Split Balances in DB
       const pAmt = Number(amount);
-      const newBalance = Math.max(0, vendor.Balance - pAmt);
-      await saveToDatabase('erp_vendors', { ...vendor, Balance: newBalance });
-      setVendors(prev => prev.map(v => (v.VendorID === vendor.VendorID ? { ...v, Balance: newBalance } : v)));
+      const vBreakdown = computeVendorBalanceBreakdown(vendor, grns, transactions);
+
+      let currentCredit = vendor.CreditBalance !== undefined ? Number(vendor.CreditBalance) : vBreakdown.creditBalance;
+      let currentCash = vendor.CashBalance !== undefined ? Number(vendor.CashBalance) : vBreakdown.cashBalance;
+
+      let newCredit = currentCredit;
+      let newCash = currentCash;
+
+      if (targetType === 'Cash') {
+        newCash = Math.max(0, currentCash - pAmt);
+      } else {
+        newCredit = Math.max(0, currentCredit - pAmt);
+      }
+      const newTotalBalance = newCredit + newCash;
+
+      const updatedVendor: ErpVendor = {
+        ...vendor,
+        Balance: newTotalBalance,
+        CreditBalance: newCredit,
+        CashBalance: newCash
+      };
+
+      await saveToDatabase('erp_vendors', updatedVendor);
+      setVendors(prev => prev.map(v => (v.VendorID === vendor.VendorID ? updatedVendor : v)));
 
       setPayVendorModalData(null);
-      setSyncMessage('Vendor Bill Payment logged and balance updated successfully!');
-      setTimeout(() => setSyncMessage(null), 3000);
+      setSyncMessage(`Vendor ${targetType} Bill Payment of Rs. ${pAmt.toLocaleString()} logged! Remaining Credit: Rs. ${newCredit.toLocaleString()} | Cash: Rs. ${newCash.toLocaleString()}`);
+      setTimeout(() => setSyncMessage(null), 3500);
+      dispatchSafeCustomEvent('phc_db_updated');
     } catch (err: any) {
       alert('Error logging vendor payment: ' + err.message);
     } finally {
@@ -6240,7 +6293,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     const cTag = (clinicSettings?.ClinicLogoText && clinicSettings?.ClinicLogoText !== 'PHC') ? clinicSettings?.ClinicLogoText : 'HEALING NATURALLY. RESTORING BALANCE.';
     const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
     const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-300-4202383';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
     const isCashOrder = String(po.PaymentMethod || (po as any).PaymentTerms || '').trim().toLowerCase() === 'cash';

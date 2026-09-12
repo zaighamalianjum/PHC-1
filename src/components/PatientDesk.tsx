@@ -1227,7 +1227,7 @@ ${lab || 'Routine Homeopathic Treatment'}
 
 ----------------------------------------
 *Dr. Ejaz Ahmad* (PUNJAB HOMEOPATHIC CLINIC)
-*Contact:* +92-311-4000608
+*Contact:* +92-300-4202383
 Healing Naturally. Restoring Balance.`;
 
     // Format phone number
@@ -2670,7 +2670,7 @@ Healing Naturally. Restoring Balance.`;
     }
 
     const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
-    const cPhone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-300-4202383';
     const cAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
     const shiftText = data.shift === 1 ? 'MORNING SHIFT (08:30 AM - 12:00 PM)' : 'EVENING SHIFT (04:30 PM - 09:00 PM)';
@@ -3429,7 +3429,7 @@ Healing Naturally. Restoring Balance.`;
 
     const clinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const clinicAddress = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-    const phone = clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const phone = clinicSettings?.PhoneMobile || '+92-300-4202383';
     const website = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
     if (format === 'patient_shift_wise') {
@@ -4362,7 +4362,7 @@ Healing Naturally. Restoring Balance.`;
                 <h1 class="text-2xl sm:text-3xl font-black text-red-900 uppercase tracking-tight font-serif">${clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC'}</h1>
                 <p class="text-[10px] font-extrabold text-emerald-800 tracking-widest uppercase mt-0.5">HEALING NATURALLY. RESTORING BALANCE.</p>
                 <p class="text-[11px] font-bold text-slate-800 mt-1">${clinicSettings?.DoctorName || 'Dr. Ejaz Ahmad, D.H.M.S (Pak)'} &nbsp;|&nbsp; PHC Regd. Healthcare Facility</p>
-                <p class="text-[10px] text-slate-600 mt-0.5">${clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'} • Cell: ${clinicSettings?.PhoneMobile || '+92-311-4000608'} • Web: ${(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}</p>
+                <p class="text-[10px] text-slate-600 mt-0.5">${clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'} • Cell: ${clinicSettings?.PhoneMobile || '+92-300-4202383'} • Web: ${(clinicSettings?.Website || 'https://punjabhomeopathic.pk').replace(/^https?:\/\//, '')}</p>
                 <div class="inline-block mt-2 px-3 py-1 bg-slate-900 text-white font-black text-[11px] uppercase tracking-wider rounded">
                   OFFICIAL MEDICAL REIMBURSEMENT CLAIM BILL & CASH RECEIPT
                 </div>

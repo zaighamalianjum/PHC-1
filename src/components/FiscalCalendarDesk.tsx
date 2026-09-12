@@ -1022,7 +1022,7 @@ export default function FiscalCalendarDesk({
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cTag = (clinicSettings as any)?.ClinicLogoText || 'HEALING NATURALLY. RESTORING BALANCE.';
     const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-    const cPhone = (clinicSettings as any)?.PhoneNo || (clinicSettings as any)?.Phone || clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cPhone = (clinicSettings as any)?.PhoneNo || (clinicSettings as any)?.Phone || clinicSettings?.PhoneMobile || '+92-300-4202383';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
     const { metrics, isClosed, savedStatus } = monthObj;
@@ -1289,7 +1289,7 @@ export default function FiscalCalendarDesk({
 
     const cName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cAddress = (clinicSettings as any)?.Address || clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
-    const cPhone = (clinicSettings as any)?.PhoneNo || (clinicSettings as any)?.Phone || clinicSettings?.PhoneMobile || '+92-311-4000608';
+    const cPhone = (clinicSettings as any)?.PhoneNo || (clinicSettings as any)?.Phone || clinicSettings?.PhoneMobile || '+92-300-4202383';
     const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
 
     const rowsHtml = monthsData.map((m, idx) => `

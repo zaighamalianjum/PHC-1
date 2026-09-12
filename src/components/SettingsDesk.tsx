@@ -1162,7 +1162,7 @@ export default function SettingsDesk({
   const [doctorName, setDoctorName] = useState(clinicSettings.DoctorName);
   const [signature, setSignature] = useState(clinicSettings.DoctorSignatureText);
   const [address, setAddress] = useState(clinicSettings.ClinicAddress);
-  const [phone, setPhone] = useState(clinicSettings.PhoneMobile || '+92-311-4000608');
+  const [phone, setPhone] = useState(clinicSettings.PhoneMobile || '+92-300-4202383');
   const [website, setWebsite] = useState(clinicSettings.Website || 'https://punjabhomeopathic.pk');
   const [opdFee, setOpdFee] = useState(clinicSettings.OPDFee);
   const [clinicLogoImage, setClinicLogoImage] = useState<string>(clinicSettings.ClinicLogoImage || '');
@@ -1829,7 +1829,7 @@ export default function SettingsDesk({
                 required
                 value={phone}
                 onChange={(e) => setPhone(e.target.value)}
-                placeholder="+92-311-4000608"
+                placeholder="+92-300-4202383"
                 className="w-full bg-slate-50 border border-slate-200 rounded-lg p-2.5 font-medium focus:ring-1 focus:ring-blue-500 focus:outline-none"
               />
             </div>
@@ -2187,7 +2187,7 @@ export default function SettingsDesk({
                       <div className="text-[9px] text-slate-600 mt-0.5 flex flex-wrap items-center justify-center gap-x-1.5">
                         <span>{address || clinicSettings.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan'}</span>
                         <span>•</span>
-                        <span>📞 {phone || clinicSettings.PhoneMobile || '+92-311-4000608'}</span>
+                        <span>📞 {phone || clinicSettings.PhoneMobile || '+92-300-4202383'}</span>
                       </div>
                       <p className="text-[9px] font-bold text-teal-950 mt-0.5 uppercase tracking-tight">
                         Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM
