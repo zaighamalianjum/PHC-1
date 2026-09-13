@@ -1,6 +1,7 @@
 import React, { useRef } from 'react';
 import { Printer, X, FileText, CheckCircle2, ShieldCheck, Download } from 'lucide-react';
 import { ErpGrn } from '../types';
+import { silentPrintHtml } from '../utils/directPrintUtils';
 
 interface GrnPrintPreviewModalProps {
   isOpen: boolean;
@@ -48,15 +49,8 @@ export const GrnPrintPreviewModal: React.FC<GrnPrintPreviewModalProps> = ({
     ? Number(grn.TotalAmount)
     : computedGrandTotal;
 
-  // Dedicated Print Trigger using standalone print window with exact A4 styles
+  // Dedicated Print Trigger using direct silent iframe with exact A4 styles
   const handlePrintDocument = () => {
-    const printWin = window.open('', '_blank', 'width=950,height=950');
-    if (!printWin) {
-      // Fallback to window.print if popup blocked
-      window.print();
-      return;
-    }
-
     const itemsRows = items.map((item, idx) => {
       const ordQty = Number(item.OrderedQty) || 0;
       const recQty = Number(item.ReceivedQty) || 0;
@@ -81,7 +75,7 @@ export const GrnPrintPreviewModal: React.FC<GrnPrintPreviewModalProps> = ({
       `;
     }).join('');
 
-    printWin.document.write(`
+    const grnHtml = `
       <!DOCTYPE html>
       <html>
         <head>
@@ -482,8 +476,8 @@ export const GrnPrintPreviewModal: React.FC<GrnPrintPreviewModalProps> = ({
           </script>
         </body>
       </html>
-    `);
-    printWin.document.close();
+    `;
+    silentPrintHtml(grnHtml);
   };
 
   return (

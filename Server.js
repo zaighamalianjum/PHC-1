@@ -13,6 +13,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import XLSX from 'xlsx';
 import JSZip from 'jszip';
+import { GoogleGenAI } from '@google/genai';
 
 dotenv.config();
 
@@ -3378,6 +3379,255 @@ app.post('/api/erp/grn/approve', async (req, res) => {
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ==========================================================================================
+// 🚀 AI-POWERED GRN DOCUMENT SCANNER & AUTOMATIC INVENTORY MATCHER (Gemini Multimodal OCR)
+// Extracts: Qty, Item, Batch, Mfg Date, Expiry Date, Net Rate, Subtotal, Invoice No, Vendor, Date
+// Automatically matches item names against existing items in clinic database
+// ==========================================================================================
+app.post('/api/erp/scan-grn-invoice', async (req, res) => {
+  try {
+    const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+    if (!imageBase64) {
+      return res.status(400).json({ success: false, error: 'Image data is required.' });
+    }
+
+    if (!process.env.GEMINI_API_KEY) {
+      return res.status(500).json({ success: false, error: 'GEMINI_API_KEY is not configured on the server.' });
+    }
+
+    const ai = new GoogleGenAI({
+      apiKey: process.env.GEMINI_API_KEY,
+      httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
+    });
+
+    // Clean base64 string if it contains prefix data:image/...;base64,
+    const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+
+    const promptText = `
+You are an expert pharmaceutical document OCR and invoice parser.
+Analyze this vendor delivery document, bill, invoice, or Cash Memo (e.g. from medicine distributors like BM Pvt Ltd, Glaxo, Abbott, etc.).
+
+Carefully extract the header details and every line item in the product table.
+Look for columns such as:
+- Qty (Delivered / Inward Quantity)
+- Item / Description / Product Name (e.g. "CINERARIA MARITIMA EYE DROPS (15 ML)", "BM 1 (30 ML)")
+- Batch (Batch number, e.g. "011", "168", "176", "083")
+- Mfg / Mgf (Manufacturing date, e.g. "08/26", "07/26", "05/26")
+- Expiry / Exp (Expiration date, e.g. "08/28", "07/31", "05/31")
+- Net Rate / Rate / Unit Price (e.g. 165.00, 125.00)
+- Amount / Total (e.g. 495, 625, 250)
+
+IMPORTANT GUIDELINES:
+1. Ignore category headers, section dividers, or brand subheadings that are NOT individual items (e.g. ignore headers like "BM Nos 1-256 30 mL Sealed Pack", "BM General Items", "Tablets", "Syrups").
+2. Only include actual medicine line items that have a quantity, item name, batch, or rate.
+3. Standardize dates where possible (e.g. MM/YY like "08/26" or YYYY-MM like "2026-08"). Keep the original text if uncertain.
+4. Extract header details:
+   - vendorName: supplier/company name printed at the top (e.g. "BM (Pvt.) Limited")
+   - invoiceNo: invoice / bill number (e.g. "BM - 196,151")
+   - invoiceDate: date on document (e.g. "2026-09-10" or "10-09-26")
+   - orderNo: purchase order or sales order reference (e.g. "203725")
+   - challanNo: delivery challan number or tracking if present
+   - partyName: customer / consignee name
+   - paymentType: "Cash" if labeled "Cash Memo" or cash spot, "Credit" if invoice/credit bill, or "Unknown"
+
+Return ONLY a JSON object with this exact structure:
+{
+  "vendorName": string,
+  "invoiceNo": string,
+  "invoiceDate": string,
+  "orderNo": string,
+  "challanNo": string,
+  "partyName": string,
+  "paymentType": "Cash" | "Credit" | "Unknown",
+  "totalAmount": number,
+  "items": [
+    {
+      "rawItemName": string,
+      "quantity": number,
+      "batchNo": string,
+      "mfgDate": string,
+      "expiryDate": string,
+      "netRate": number,
+      "amount": number
+    }
+  ]
+}
+`;
+
+    const response = await ai.models.generateContent({
+      model: 'gemini-3.8-flash',
+      contents: [
+        {
+          role: 'user',
+          parts: [
+            {
+              inlineData: {
+                data: cleanBase64,
+                mimeType: mimeType || 'image/jpeg'
+              }
+            },
+            {
+              text: promptText
+            }
+          ]
+        }
+      ],
+      config: {
+        responseMimeType: 'application/json'
+      }
+    });
+
+    let parsedData = {};
+    try {
+      parsedData = JSON.parse(response.text || '{}');
+    } catch (parseErr) {
+      console.error('Failed to parse Gemini JSON output:', response.text);
+      return res.status(500).json({ success: false, error: 'Could not parse structured JSON from OCR response.' });
+    }
+
+    // Load existing items and vendors from database for intelligent matching
+    const existingItems = await db.collection('items').find({}).toArray();
+    const existingVendors = await db.collection('erp_vendors').find({}).toArray();
+
+    // Helper to normalize strings for comparison
+    const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const cleanWords = (s) => String(s || '').toLowerCase()
+      .replace(/\(.*?\)/g, '')
+      .replace(/[^a-z0-9\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Levenshtein similarity helper
+    const similarity = (s1, s2) => {
+      const a = norm(s1);
+      const b = norm(s2);
+      if (a === b) return 1.0;
+      if (!a || !b) return 0.0;
+      if (a.includes(b) || b.includes(a)) return 0.85;
+
+      const matrix = [];
+      for (let i = 0; i <= b.length; i++) matrix[i] = [i];
+      for (let j = 0; j <= a.length; j++) matrix[0][j] = j;
+
+      for (let i = 1; i <= b.length; i++) {
+        for (let j = 1; j <= a.length; j++) {
+          if (b.charAt(i - 1) === a.charAt(j - 1)) {
+            matrix[i][j] = matrix[i - 1][j - 1];
+          } else {
+            matrix[i][j] = Math.min(
+              matrix[i - 1][j - 1] + 1,
+              matrix[i][j - 1] + 1,
+              matrix[i - 1][j] + 1
+            );
+          }
+        }
+      }
+      const dist = matrix[b.length][a.length];
+      const maxLen = Math.max(a.length, b.length);
+      return Math.max(0, 1 - dist / maxLen);
+    };
+
+    // Match vendor
+    let matchedVendor = null;
+    if (parsedData.vendorName) {
+      const vNorm = norm(parsedData.vendorName);
+      matchedVendor = existingVendors.find(v => {
+        const targetNorm = norm(v.VendorName);
+        return targetNorm === vNorm || targetNorm.includes(vNorm) || vNorm.includes(targetNorm);
+      }) || null;
+    }
+
+    // Match each scanned line item against catalog
+    const matchedItems = (parsedData.items || []).map(item => {
+      const rawName = (item.rawItemName || '').trim();
+      const rawNorm = norm(rawName);
+      const rawClean = cleanWords(rawName);
+
+      let bestMatch = null;
+      let highestScore = 0;
+      let matchType = 'NONE';
+
+      for (const inv of existingItems) {
+        const invName = (inv.ItemName || '').trim();
+        const invNorm = norm(invName);
+        const invClean = cleanWords(invName);
+
+        // 1. Exact match
+        if (invNorm && rawNorm && invNorm === rawNorm) {
+          bestMatch = inv;
+          highestScore = 1.0;
+          matchType = 'EXACT';
+          break;
+        }
+
+        // 2. Cleaned text exact match (ignoring volume/parentheses)
+        if (invClean && rawClean && invClean === rawClean) {
+          bestMatch = inv;
+          highestScore = 0.95;
+          matchType = 'EXACT';
+          break;
+        }
+
+        // 3. Substring match
+        if ((invClean.length >= 4 && rawClean.includes(invClean)) || (rawClean.length >= 4 && invClean.includes(rawClean))) {
+          if (0.88 > highestScore) {
+            highestScore = 0.88;
+            bestMatch = inv;
+            matchType = 'FUZZY';
+          }
+        }
+
+        // 4. Fuzzy similarity
+        const sim = similarity(rawName, invName);
+        if (sim > 0.68 && sim > highestScore) {
+          highestScore = sim;
+          bestMatch = inv;
+          matchType = sim >= 0.85 ? 'EXACT' : 'FUZZY';
+        }
+      }
+
+      const qty = Number(item.quantity) || 0;
+      const rate = Number(item.netRate) || 0;
+      const lineTotal = Number(item.amount) || (qty * rate);
+
+      return {
+        ...item,
+        quantity: qty,
+        netRate: rate,
+        amount: lineTotal,
+        matchedItemId: bestMatch ? bestMatch.ItemID : null,
+        matchedItemName: bestMatch ? bestMatch.ItemName : rawName,
+        matchedCurrentStock: bestMatch ? (bestMatch.CStock ?? 0) : null,
+        matchedRetailPrice: bestMatch ? (bestMatch.Price ?? 0) : null,
+        matchConfidence: matchType,
+        matchScore: Number(highestScore.toFixed(2))
+      };
+    });
+
+    res.json({
+      success: true,
+      extracted: {
+        vendorName: parsedData.vendorName || '',
+        matchedVendor: matchedVendor ? {
+          VendorID: matchedVendor.VendorID,
+          VendorName: matchedVendor.VendorName
+        } : null,
+        invoiceNo: parsedData.invoiceNo || '',
+        invoiceDate: parsedData.invoiceDate || '',
+        orderNo: parsedData.orderNo || '',
+        challanNo: parsedData.challanNo || '',
+        partyName: parsedData.partyName || '',
+        paymentType: parsedData.paymentType || 'Unknown',
+        totalAmount: Number(parsedData.totalAmount) || matchedItems.reduce((acc, i) => acc + (i.amount || 0), 0),
+        items: matchedItems
+      }
+    });
+  } catch (err) {
+    console.error('Scan GRN Invoice Error:', err);
+    res.status(500).json({ success: false, error: err.message });
   }
 });
 

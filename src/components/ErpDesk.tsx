@@ -74,7 +74,8 @@ import {
   ErpAsset,
   User,
   UserRight,
-  ClinicSettings
+  ClinicSettings,
+  ScannedGrnDocument
 } from '../types';
 import {
   getEffectiveAppointmentFee,
@@ -114,6 +115,8 @@ import VendorPurchaseOrdersModal from './erp/modals/VendorPurchaseOrdersModal';
 import PoPaymentHistoryModal from './erp/modals/PoPaymentHistoryModal';
 import VendorPaymentHistoryStandaloneModal from './erp/modals/VendorPaymentHistoryStandaloneModal';
 import WhatsAppPoModal from './erp/modals/WhatsAppPoModal';
+import ScanGrnDocumentModal from './erp/modals/ScanGrnDocumentModal';
+import { silentPrintHtml } from '../utils/directPrintUtils';
 import { computeVendorBalanceBreakdown } from './erp/erpUtils';
 
 const WhatsAppIcon = ({ className = "w-4 h-4" }: { className?: string }) => (
@@ -1484,6 +1487,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   const [showAssetModal, setShowAssetModal] = useState(false);
   const [showQrScannerModal, setShowQrScannerModal] = useState(false);
   const [showQrGeneratorModal, setShowQrGeneratorModal] = useState(false);
+  const [showScanGrnModal, setShowScanGrnModal] = useState(false);
 
   // Quick Add / Edit Medicine in PO Modal State
   const [showQuickAddMedModal, setShowQuickAddMedModal] = useState(false);
@@ -4790,8 +4794,263 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
     setShowGrnPrintPreviewModal(true);
   };
 
+  const handleApplyScannedGrnDocument = useCallback((doc: ScannedGrnDocument, targetPoId?: string) => {
+    // 1. Identify matched Purchase Order if any
+    const matchedPo = targetPoId
+      ? purchaseOrders.find(p => p.POID === targetPoId)
+      : (doc.orderNo ? purchaseOrders.find(p => p.POID?.toLowerCase().includes(doc.orderNo.toLowerCase()) || doc.orderNo.toLowerCase().includes(p.POID?.toLowerCase())) : null);
+
+    // 2. Identify vendor
+    const vendorName = doc.matchedVendor?.VendorName || doc.vendorName || matchedPo?.VendorName || (vendors[0]?.VendorName || '');
+    const matchedVendorObj = vendors.find(v => v.VendorName?.toLowerCase().trim() === vendorName.toLowerCase().trim()) || doc.matchedVendor;
+
+    // 3. Map items to ErpGrnItem format
+    const grnItems: ErpGrnItem[] = doc.items.map((item, idx) => {
+      let poItem = matchedPo?.Items?.find(p =>
+        (item.matchedItemId && p.ItemID === item.matchedItemId) ||
+        (p.ItemName && item.matchedItemName && p.ItemName.toLowerCase().trim() === item.matchedItemName.toLowerCase().trim())
+      );
+
+      const ordQty = poItem ? Number(poItem.Quantity) || item.quantity : item.quantity;
+      const alreadyRec = poItem ? Number(poItem.AlreadyReceivedQty) || 0 : 0;
+      const pendingQty = Math.max(0, ordQty - alreadyRec);
+
+      return {
+        ItemID: item.matchedItemId || `NEW-${Math.floor(1000 + Math.random() * 9000)}`,
+        ItemName: item.matchedItemName || item.rawItemName,
+        OrderedQty: ordQty,
+        AlreadyReceivedQty: alreadyRec,
+        PendingQty: pendingQty,
+        ReceivedQty: item.quantity,
+        UnitPrice: item.netRate,
+        LineTotal: item.amount,
+        BatchNo: item.batchNo || '',
+        MfgDate: item.mfgDate || '',
+        ExpiryDate: item.expiryDate || ''
+      };
+    });
+
+    const totalAmt = grnItems.reduce((acc, itm) => acc + (Number(itm.LineTotal) || 0), 0);
+
+    setGrnForm({
+      POID: matchedPo ? matchedPo.POID : (targetPoId || ''),
+      VendorID: matchedVendorObj?.VendorID || (matchedPo?.VendorID || (vendors[0]?.VendorID || 'VEND-DIRECT')),
+      VendorName: vendorName,
+      ReceivedDate: doc.invoiceDate && doc.invoiceDate.length === 10 ? doc.invoiceDate : new Date().toISOString().split('T')[0],
+      ChallanNo: doc.challanNo || doc.orderNo || '',
+      SupplierInvoiceNo: doc.invoiceNo || '',
+      TotalAmount: totalAmt,
+      Items: grnItems,
+      Remarks: `Scanned from delivery document via AI OCR. Inv: ${doc.invoiceNo || 'N/A'}, Ref: ${doc.orderNo || 'N/A'}`,
+      PaymentMethod: doc.paymentType === 'Cash' ? 'Cash' : 'Credit',
+      PaymentStatus: 'Unpaid'
+    });
+
+    setShowScanGrnModal(false);
+    setShowGrnModal(true);
+  }, [purchaseOrders, vendors]);
+
+  const generateGrnPrintHtml = (grn: ErpGrn | any) => {
+    const rawClinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
+    const cName = rawClinicName.replace(/\s*\(PHC\)/gi, '').replace(/\bPHC\b/g, '').trim();
+    const cTag = (clinicSettings?.ClinicLogoText && clinicSettings?.ClinicLogoText !== 'PHC') ? clinicSettings?.ClinicLogoText : 'HEALING NATURALLY. RESTORING BALANCE.';
+    const logoSrc = clinicSettings?.ClinicLogoImage || '/nhc_logo.svg';
+    const cAddr = clinicSettings?.ClinicAddress || '10 Shalimar Road, Garhi Shahu, Lahore 39 Pakistan';
+    const cPhone = clinicSettings?.PhoneMobile || '+92-300-4202383';
+    const cWebsite = clinicSettings?.Website || 'https://punjabhomeopathic.pk';
+
+    const items = grn.Items || [];
+    let totalOrderedQty = 0;
+    let totalReceivedQty = 0;
+    let totalGrnAmount = 0;
+
+    const itemsRows = items.map((item: any, idx: number) => {
+      const ordQty = Number(item.OrderedQty) || 0;
+      const recQty = Number(item.ReceivedQty) || 0;
+      const uPrice = Number(item.UnitPrice) || 0;
+      const lineSubtotal = item.LineTotal !== undefined ? Number(item.LineTotal) : (recQty * uPrice);
+
+      totalOrderedQty += ordQty;
+      totalReceivedQty += recQty;
+      totalGrnAmount += lineSubtotal;
+
+      return `
+      <tr style="border-bottom: 1px solid #e2e8f0; font-size: 11px;">
+        <td style="text-align: center; padding: 6px 5px; font-weight: bold; font-family: monospace; color: #64748b;">${idx + 1}</td>
+        <td style="padding: 6px 5px; font-family: monospace; font-weight: bold; color: #475569;">${item.ItemID}</td>
+        <td style="padding: 6px 5px; font-weight: bold; color: #0f172a;">${item.ItemName}</td>
+        <td style="text-align: center; padding: 6px 5px; font-family: monospace; font-weight: bold; color: #b45309; background: #fffbeb;">${item.BatchNo || 'N/A'}</td>
+        <td style="text-align: center; padding: 6px 5px; font-family: monospace; font-size: 10px; color: #475569;">${item.MfgDate || '-'}</td>
+        <td style="text-align: center; padding: 6px 5px; font-family: monospace; font-size: 10px; font-weight: bold; color: #b91c1c;">${item.ExpiryDate || '-'}</td>
+        <td style="text-align: center; padding: 6px 5px; font-weight: bold; color: #475569;">${ordQty}</td>
+        <td style="text-align: center; padding: 6px 5px; font-weight: 800; color: #15803d; background: #f0fdf4;">${recQty}</td>
+        <td style="text-align: right; padding: 6px 5px; font-weight: 700; color: #334155; font-family: monospace;">Rs. ${uPrice.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+        <td style="text-align: right; padding: 6px 5px; font-weight: 800; color: #0f172a; font-family: monospace; background: #f8fafc;">Rs. ${lineSubtotal.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+      </tr>
+      `;
+    }).join('');
+
+    const calculatedGrandTotal = grn.TotalAmount || totalGrnAmount;
+
+    return `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="utf-8">
+          <title>GRN - ${grn.GRNID || 'Draft'}</title>
+          <style>
+            @page { size: A4 portrait; margin: 10mm; }
+            body { font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 12px; }
+            .letterhead-header { display: flex; align-items: center; justify-content: space-between; border-bottom: 2.5px solid #0f172a; padding-bottom: 12px; margin-bottom: 14px; }
+            .logo-col { width: 100px; }
+            .logo-img { max-height: 80px; max-width: 100px; object-fit: contain; }
+            .clinic-info { text-align: center; flex: 1; }
+            .clinic-name { font-family: Georgia, "Times New Roman", serif; font-size: 24px; font-weight: 900; color: #881337; text-transform: uppercase; margin: 0; letter-spacing: -0.5px; line-height: 1.1; }
+            .clinic-tagline { font-size: 10px; font-weight: 800; color: #be123c; letter-spacing: 1.5px; text-transform: uppercase; margin-top: 2px; }
+            .clinic-timings { font-size: 10px; font-weight: 600; color: #0f766e; margin-top: 2px; }
+            .report-banner { background: #0f172a; color: #ffffff; padding: 7px 12px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px; }
+            .report-banner-title { font-size: 13px; font-weight: 900; text-transform: uppercase; letter-spacing: 1px; color: #ffffff; }
+            .report-banner-ref { font-family: monospace; font-size: 11px; font-weight: 800; background: #334155; padding: 2px 8px; border-radius: 4px; color: #38bdf8; }
+            .meta-grid { background: #f8fafc; border: 1.5px solid #cbd5e1; border-radius: 8px; padding: 10px 14px; margin-bottom: 14px; display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; font-size: 11px; }
+            .meta-item { display: flex; flex-direction: column; }
+            .meta-label { font-size: 9px; font-weight: 800; color: #64748b; text-transform: uppercase; letter-spacing: 0.5px; }
+            .meta-value { font-size: 11px; font-weight: 700; color: #0f172a; margin-top: 1px; }
+            .report-table { width: 100%; border-collapse: collapse; margin-top: 6px; font-size: 11px; }
+            .report-table th { background: #0f172a; color: #ffffff; font-weight: 800; text-align: left; padding: 6px 5px; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; border: 1px solid #0f172a; }
+            .report-table td { border: 1px solid #e2e8f0; }
+            .signature-section { margin-top: 25px; padding-top: 15px; border-top: 2px solid #cbd5e1; display: flex; justify-content: space-between; align-items: flex-end; page-break-inside: avoid; }
+            .sig-box { text-align: center; width: 220px; }
+            .sig-line-text { border-bottom: 1.5px dashed #475569; height: 35px; margin-bottom: 6px; display: flex; align-items: flex-end; justify-content: center; font-size: 11px; font-weight: 700; color: #334155; }
+            .sig-line-manager { border-bottom: 2px solid #881337; height: 35px; margin-bottom: 6px; display: flex; align-items: flex-end; justify-content: center; font-family: "Brush Script MT", cursive, serif; font-size: 20px; font-weight: 700; color: #881337; }
+            .sig-title-primary { font-size: 10px; font-weight: 800; color: #0f172a; text-transform: uppercase; }
+            .sig-title-sub { font-size: 8.5px; font-weight: 800; color: #0f172a; text-transform: uppercase; }
+            .sig-title-dept { font-size: 9px; font-weight: 700; color: #047857; }
+            .stamp-box { text-align: center; width: 130px; height: 65px; border: 2px dashed #94a3b8; border-radius: 8px; display: flex; flex-direction: column; align-items: center; justify-content: center; color: #64748b; font-size: 8px; font-weight: 800; text-transform: uppercase; background: #fafafa; }
+            .official-footer { margin-top: 15px; border-top: 1px solid #e2e8f0; padding-top: 8px; display: flex; justify-content: space-between; align-items: center; font-size: 9px; color: #64748b; font-weight: 600; }
+          </style>
+        </head>
+        <body>
+          <div class="letterhead-header">
+            <div class="logo-col"><img src="${logoSrc}" alt="PHC Logo" class="logo-img" /></div>
+            <div class="clinic-info">
+              <h1 class="clinic-name">${cName}</h1>
+              <div class="clinic-tagline">${cTag}</div>
+              <div class="clinic-address" style="font-size: 11px; font-weight: 700; color: #1e293b; margin-top: 2px;">${cAddr} &nbsp;|&nbsp; 📞 ${cPhone} &nbsp;|&nbsp; 🌐 ${cWebsite.replace(/^https?:\/\//, '')}</div>
+              <div class="clinic-timings">Clinic Timings: Morning 8:30 AM to 12:00 PM &nbsp;|&nbsp; Evening 4:30 PM to 9:00 PM</div>
+            </div>
+            <div class="logo-col" style="visibility: hidden;"><img src="${logoSrc}" alt="PHC Logo" class="logo-img" /></div>
+          </div>
+          <div class="report-banner">
+            <span class="report-banner-title">GOODS RECEIVED NOTE (GRN) — OFFICIAL INWARD RECEIPT</span>
+            <span class="report-banner-ref">REF: ${grn.GRNID || 'GRN-DRAFT'}</span>
+          </div>
+          <div class="meta-grid">
+            <div class="meta-item"><span class="meta-label">GRN Number</span><span class="meta-value" style="color: #047857; font-weight: 800;">${grn.GRNID || 'N/A'}</span></div>
+            <div class="meta-item"><span class="meta-label">Received Date</span><span class="meta-value">${grn.ReceivedDate || new Date().toISOString().split('T')[0]}</span></div>
+            <div class="meta-item"><span class="meta-label">Vendor / Supplier</span><span class="meta-value" style="color: #0f172a; font-weight: 800;">${grn.VendorName || 'Selected Vendor'}</span></div>
+            <div class="meta-item"><span class="meta-label">PO Order Reference</span><span class="meta-value" style="color: #4338ca; font-weight: 800;">${grn.POID || 'PO-DIRECT'}</span></div>
+            <div class="meta-item"><span class="meta-label">Challan / DC Number</span><span class="meta-value">${grn.ChallanNo || 'N/A'}</span></div>
+            <div class="meta-item"><span class="meta-label">Supplier Invoice No.</span><span class="meta-value">${grn.SupplierInvoiceNo || 'N/A'}</span></div>
+            <div class="meta-item"><span class="meta-label">Received By</span><span class="meta-value">${grn.CreatedBy || currentUser?.FullName || 'Store Auditor'}</span></div>
+            <div class="meta-item"><span class="meta-label">Payment Mode</span><span class="meta-value" style="color: ${grn.PaymentMethod === 'Cash' ? '#047857' : '#4338ca'}; font-weight: 800;">${grn.PaymentMethod === 'Cash' ? '💵 Cash Spot Paid' : '💳 Credit (Payable)'}</span></div>
+            <div class="meta-item"><span class="meta-label">Authorized Administrator</span><span class="meta-value" style="color: #881337;">Mr. Zaigham Ali Anjum</span></div>
+          </div>
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th style="width: 25px; text-align: center;">#</th>
+                <th style="width: 80px;">Item Code</th>
+                <th>Medicine Description</th>
+                <th style="width: 85px; text-align: center;">Batch No.</th>
+                <th style="width: 70px; text-align: center;">Mfg</th>
+                <th style="width: 70px; text-align: center;">Expiry</th>
+                <th style="width: 60px; text-align: center;">Ordered</th>
+                <th style="width: 65px; text-align: center;">Received</th>
+                <th style="width: 85px; text-align: right;">Unit Price</th>
+                <th style="width: 95px; text-align: right;">Sub Total</th>
+              </tr>
+            </thead>
+            <tbody>${itemsRows}</tbody>
+            <tfoot>
+              <tr style="background: #f1f5f9; font-weight: 800; font-size: 11px; border-top: 2px solid #0f172a;">
+                <td colspan="6" style="padding: 8px 10px; text-align: right; text-transform: uppercase; color: #475569;">Total Batch Quantity / Inward Summary:</td>
+                <td style="text-align: center; padding: 8px 6px; font-weight: 900; color: #475569;">${totalOrderedQty}</td>
+                <td style="text-align: center; padding: 8px 6px; font-weight: 900; color: #15803d; background: #dcfce7;">${totalReceivedQty}</td>
+                <td style="text-align: right; padding: 8px 6px; text-transform: uppercase; font-size: 10px; color: #475569;">Grand Total:</td>
+                <td style="text-align: right; padding: 8px 6px; font-weight: 900; color: #047857; font-size: 13px; font-family: monospace; background: #f0fdf4;">Rs. ${calculatedGrandTotal.toLocaleString('en-PK', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</td>
+              </tr>
+            </tfoot>
+          </table>
+          <div style="margin-top: 12px; padding: 10px 12px; background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 11px;">
+            <strong>Remarks / Physical Inspection Note:</strong> ${grn.Remarks || 'All received medicines verified for physical condition, batch integrity & quantity.'}
+          </div>
+          <div class="signature-section">
+            <div class="sig-box">
+              <div class="sig-line-text">${grn.CreatedBy || currentUser?.FullName || 'Accountant / Audit Officer'}</div>
+              <div class="sig-title-primary" style="color: #0f172a;">PREPARED BY</div>
+              <div class="sig-title-sub" style="font-size: 9px; color: #475569;">Warehouse & GRN Receiving Desk</div>
+            </div>
+            <div class="stamp-box">
+              <span>OFFICIAL SEAL & STAMP</span>
+              <span style="font-size: 7px; color: #94a3b8; margin-top: 2px;">[ AUTHORIZED SIGNATURE ]</span>
+            </div>
+            <div class="sig-box" style="width: 250px;">
+              <div class="sig-line-manager">Zaigham Ali Anjum</div>
+              <div class="sig-title-primary">MR. ZAIGHAM ALI ANJUM</div>
+              <div class="sig-title-sub">Manager Operations & Administrative Head</div>
+              <div class="sig-title-dept">Punjab Homeopathic Clinic & Pharmacy</div>
+            </div>
+          </div>
+          <div class="official-footer">
+            <span>Punjab Homeopathic Clinic & Pharmacy • Goods Received Note (GRN) Stock Audit • Confidential Document</span>
+            <span>Generated Date: ${new Date().toLocaleString('en-GB')}</span>
+          </div>
+        </body>
+      </html>
+    `;
+  };
+
+  // Direct Print GRN - prints straight to printer without preview modal or popup window
+  const handleDirectPrintGrn = (grn: ErpGrn) => {
+    const html = generateGrnPrintHtml(grn);
+    silentPrintHtml(html);
+  };
+
+  const handleDirectPrintCurrentGrnForm = () => {
+    if (!grnForm.Items || grnForm.Items.length === 0) {
+      alert('Please add or select at least one medicine item to print GRN.');
+      return;
+    }
+    const previewGrnObj: ErpGrn = {
+      GRNID: grnForm.GRNID || `GRN-${Math.floor(1000 + Math.random() * 9000)}`,
+      POID: grnForm.POID || 'PO-DIRECT',
+      VendorID: grnForm.VendorID || '',
+      VendorName: grnForm.VendorName || 'Selected Supplier',
+      ReceivedDate: grnForm.ReceivedDate || new Date().toISOString().split('T')[0],
+      ChallanNo: grnForm.ChallanNo,
+      SupplierInvoiceNo: grnForm.SupplierInvoiceNo,
+      Remarks: grnForm.Remarks,
+      CreatedBy: currentUser?.FullName || 'Warehouse Officer',
+      TotalAmount: grnForm.Items.reduce((acc: number, i: any) => acc + ((Number(i.ReceivedQty) || 0) * (Number(i.UnitPrice) || 0)), 0),
+      Status: 'Draft',
+      PaymentMethod: grnForm.PaymentMethod || 'Credit',
+      Items: grnForm.Items.map((i: any) => ({
+        ItemID: i.ItemID,
+        ItemName: i.ItemName,
+        OrderedQty: Number(i.OrderedQty) || 0,
+        ReceivedQty: Number(i.ReceivedQty) || 0,
+        UnitPrice: Number(i.UnitPrice) || 0,
+        LineTotal: (Number(i.ReceivedQty) || 0) * (Number(i.UnitPrice) || 0),
+        BatchNo: i.BatchNo,
+        MfgDate: i.MfgDate,
+        ExpiryDate: i.ExpiryDate
+      }))
+    };
+    handleDirectPrintGrn(previewGrnObj);
+  };
+
   const handlePrintGrn = (grn: ErpGrn) => {
-    handleOpenGrnPrintPreview(grn);
+    handleDirectPrintGrn(grn);
   };
 
   const handleLegacyPrintGrn = (grn: ErpGrn) => {
@@ -6365,9 +6624,6 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
   // PRINT PURCHASE ORDER FUNCTION (3 Columns Layout: Medicine Name & Required Qty / Received / Balance)
   const handlePrintPo = (po: ErpPurchaseOrder) => {
-    const printWin = window.open('', '_blank', 'width=950,height=900');
-    if (!printWin) return alert('Popup blocked. Allow popups to print Purchase Order.');
-
     const rawClinicName = clinicSettings?.ClinicName || 'PUNJAB HOMEOPATHIC CLINIC & PHARMACY';
     const cName = rawClinicName.replace(/\s*\(PHC\)/gi, '').replace(/\bPHC\b/g, '').trim();
     const cTag = (clinicSettings?.ClinicLogoText && clinicSettings?.ClinicLogoText !== 'PHC') ? clinicSettings?.ClinicLogoText : 'HEALING NATURALLY. RESTORING BALANCE.';
@@ -6564,7 +6820,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     // Note: GRN Received Goods Summary section removed per user request to keep PO printout focused on PO Order Items
 
-    printWin.document.write(`
+    const poHtml = `
       <!DOCTYPE html>
       <html>
         <head>
@@ -6999,10 +7255,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           </script>
         </body>
       </html>
-    `);
-    printWin.document.close();
-    printWin.focus();
-    setTimeout(() => printWin.print(), 300);
+    `;
+    silentPrintHtml(poHtml);
   };
 
   // CALCULATED ERP METRICS
@@ -7479,7 +7733,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             setShowUploadBulkGrnModal={setShowUploadBulkGrnModal}
             setShowQrScannerModal={setShowQrScannerModal}
             setShowQrGeneratorModal={setShowQrGeneratorModal}
+            setShowScanGrnModal={setShowScanGrnModal}
             handleOpenGrnPrintPreview={handleOpenGrnPrintPreview}
+            handleDirectPrintGrn={handleDirectPrintGrn}
             handleDeleteGrn={handleDeleteGrn}
             inventoryItems={inventoryItems}
             handleSelectAllLowStockMedicines={handleSelectAllLowStockMedicines}
@@ -7685,6 +7941,18 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         setBulkGrnRawText={setBulkGrnRawText}
         setBulkGrnParsedItems={setBulkGrnParsedItems}
         setBulkGrnFileError={setBulkGrnFileError}
+        setShowScanGrnModal={setShowScanGrnModal}
+        handleDirectPrintCurrentGrnForm={handleDirectPrintCurrentGrnForm}
+      />
+
+      {/* 7b. Scan GRN Document Modal (AI OCR & Item Match) */}
+      <ScanGrnDocumentModal
+        isOpen={showScanGrnModal}
+        onClose={() => setShowScanGrnModal(false)}
+        onApplyDocument={handleApplyScannedGrnDocument}
+        purchaseOrders={purchaseOrders}
+        vendors={vendors}
+        defaultPoId={grnForm?.POID || ''}
       />
 
       {/* 8. Log Transaction Modal */}

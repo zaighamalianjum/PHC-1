@@ -7,10 +7,12 @@ import {
   RotateCcw,
   CheckCircle2,
   FileSpreadsheet,
+  ScanLine,
   Coins,
   CreditCard,
   XCircle,
   Eye,
+  Printer,
   ShoppingCart,
   ArrowRightLeft,
   AlertCircle,
@@ -42,6 +44,8 @@ interface GrnModalProps {
   setBulkGrnRawText: (txt: string) => void;
   setBulkGrnParsedItems: (items: any[]) => void;
   setBulkGrnFileError: (err: string) => void;
+  setShowScanGrnModal?: (show: boolean) => void;
+  handleDirectPrintCurrentGrnForm?: () => void;
 }
 
 export const GrnModal: React.FC<GrnModalProps> = ({
@@ -67,6 +71,8 @@ export const GrnModal: React.FC<GrnModalProps> = ({
   setBulkGrnRawText,
   setBulkGrnParsedItems,
   setBulkGrnFileError,
+  setShowScanGrnModal,
+  handleDirectPrintCurrentGrnForm,
 }) => {
   if (!showGrnModal) return null;
 
@@ -95,6 +101,15 @@ export const GrnModal: React.FC<GrnModalProps> = ({
             </p>
           </div>
           <div className="flex items-center space-x-2">
+            <button
+              type="button"
+              onClick={() => setShowScanGrnModal?.(true)}
+              className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-indigo-600 to-indigo-700 hover:from-indigo-700 hover:to-indigo-800 text-white font-bold text-xs transition shadow-xs flex items-center space-x-1.5 cursor-pointer"
+              title="Scan Vendor GRN / Invoice Document Image with AI"
+            >
+              <ScanLine className="w-3.5 h-3.5" />
+              <span>Scan GRN Document</span>
+            </button>
             <button
               type="button"
               onClick={() => {
@@ -283,12 +298,14 @@ export const GrnModal: React.FC<GrnModalProps> = ({
             </div>
 
             <div className="border border-slate-200 rounded-xl overflow-x-auto w-full grn-summary-card">
-              <table className="w-full text-left text-xs min-w-[960px] grn-summary-table">
+              <table className="w-full text-left text-xs min-w-[1020px] grn-summary-table">
                 <thead>
                   <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                     <th className="p-2.5 w-24">Item ID</th>
                     <th className="p-2.5 min-w-[150px]">Medicine Description</th>
                     <th className="p-2.5 text-center w-24">Batch No.</th>
+                    <th className="p-2.5 text-center w-20">Mfg Date</th>
+                    <th className="p-2.5 text-center w-20">Exp Date</th>
                     <th className="p-2.5 text-center w-16">Ordered</th>
                     <th className="p-2.5 text-center w-16">Prev. Recv</th>
                     <th className="p-2.5 text-center w-16">Pending</th>
@@ -301,7 +318,7 @@ export const GrnModal: React.FC<GrnModalProps> = ({
                 <tbody className="divide-y divide-slate-100">
                   {grnForm.Items.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="p-6 text-center text-slate-400 font-medium">
+                      <td colSpan={12} className="p-6 text-center text-slate-400 font-medium">
                         No items in current GRN batch. {grnForm.POID ? 'All items were excluded from this inward delivery.' : 'Please select a Purchase Order from above!'}
                         {grnForm.POID && (
                           <div className="mt-2 flex items-center justify-center gap-3">
@@ -352,6 +369,38 @@ export const GrnModal: React.FC<GrnModalProps> = ({
                                 });
                               }}
                               className="w-22 p-1 border border-amber-200 rounded-lg text-xs text-center font-mono font-bold bg-amber-50 text-amber-900 focus:outline-hidden"
+                            />
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <input
+                              type="text"
+                              placeholder="MM/YY"
+                              value={item.MfgDate || ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setGrnForm((prev: any) => {
+                                  const updated = [...prev.Items];
+                                  updated[idx] = { ...updated[idx], MfgDate: val };
+                                  return { ...prev, Items: updated };
+                                });
+                              }}
+                              className="w-18 p-1 border border-slate-200 rounded-lg text-xs text-center font-mono bg-white text-slate-700 focus:outline-hidden"
+                            />
+                          </td>
+                          <td className="p-2.5 text-center">
+                            <input
+                              type="text"
+                              placeholder="MM/YY"
+                              value={item.ExpiryDate || item.ExpDate || ''}
+                              onChange={e => {
+                                const val = e.target.value;
+                                setGrnForm((prev: any) => {
+                                  const updated = [...prev.Items];
+                                  updated[idx] = { ...updated[idx], ExpiryDate: val, ExpDate: val };
+                                  return { ...prev, Items: updated };
+                                });
+                              }}
+                              className="w-18 p-1 border border-rose-200 rounded-lg text-xs text-center font-mono font-bold bg-rose-50/50 text-rose-900 focus:outline-hidden"
                             />
                           </td>
                           <td className="p-2.5 text-center font-bold text-slate-600">{item.OrderedQty}</td>
@@ -580,15 +629,27 @@ export const GrnModal: React.FC<GrnModalProps> = ({
             </div>
 
             <div className="flex items-center space-x-2">
+              {handleDirectPrintCurrentGrnForm && (
+                <button
+                  type="button"
+                  onClick={handleDirectPrintCurrentGrnForm}
+                  disabled={grnForm.Items.length === 0}
+                  className="px-4 py-2.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-bold text-xs transition border border-emerald-300 flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                  title="Direct Print GRN to Printer without opening preview window"
+                >
+                  <Printer className="w-4 h-4 text-emerald-600" />
+                  <span>Direct Print</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={handlePreviewCurrentGrnForm}
                 disabled={grnForm.Items.length === 0}
-                className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition border border-slate-300 flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
+                className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs transition border border-slate-300 flex items-center space-x-1.5 cursor-pointer disabled:opacity-50"
                 title="Preview Printable A4 GRN Document"
               >
-                <Eye className="w-4 h-4 text-slate-600" />
-                <span>Print Preview</span>
+                <Eye className="w-4 h-4 text-slate-500" />
+                <span>Preview</span>
               </button>
               <button
                 type="button"

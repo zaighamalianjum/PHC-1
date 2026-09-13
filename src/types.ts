@@ -577,6 +577,38 @@ export interface ErpGrnItem {
   ExpiryDate?: string;
 }
 
+export interface ScannedGrnItem {
+  rawItemName: string;
+  quantity: number;
+  batchNo: string;
+  mfgDate: string;
+  expiryDate: string;
+  netRate: number;
+  amount: number;
+  matchedItemId?: string | null;
+  matchedItemName?: string;
+  matchedCurrentStock?: number | null;
+  matchedRetailPrice?: number | null;
+  matchConfidence?: 'EXACT' | 'FUZZY' | 'NONE';
+  matchScore?: number;
+}
+
+export interface ScannedGrnDocument {
+  vendorName: string;
+  matchedVendor?: {
+    VendorID: string;
+    VendorName: string;
+  } | null;
+  invoiceNo: string;
+  invoiceDate: string;
+  orderNo: string;
+  challanNo: string;
+  partyName: string;
+  paymentType: 'Cash' | 'Credit' | 'Unknown';
+  totalAmount: number;
+  items: ScannedGrnItem[];
+}
+
 export interface ErpGrn {
   _id?: string;
   GRNID: string;
