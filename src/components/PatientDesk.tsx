@@ -2823,19 +2823,12 @@ Healing Naturally. Restoring Balance.`;
       ? "Patient Invoice"
       : "Prescription";
 
-    const printWin = window.open('', '_blank', 'width=1000,height=1200');
-    if (!printWin) {
-      // If popup is blocked by browser, fallback to current window printing
-      window.print();
-      return;
-    }
-
     // Extract all local stylesheets from current document
     const parentStyles = Array.from(document.querySelectorAll('style, link[rel="stylesheet"]'))
       .map(el => el.outerHTML)
       .join('\n');
 
-    printWin.document.write(`
+    const printHtml = `
       <!DOCTYPE html>
       <html lang="en">
         <head>
@@ -2856,76 +2849,24 @@ Healing Naturally. Restoring Balance.`;
             html, body {
               margin: 0 !important;
               padding: 0 !important;
-              background-color: #f1f5f9;
+              background-color: #ffffff;
               color: #0f172a;
               font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
               -webkit-print-color-adjust: exact !important;
               print-color-adjust: exact !important;
             }
-            
-            /* Screen Preview Toolbar */
-            .screen-preview-bar {
-              background: #0f172a;
-              color: #ffffff;
-              padding: 10px 16px;
-              display: flex;
-              align-items: center;
-              justify-content: space-between;
-              box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
-              position: sticky;
-              top: 0;
-              z-index: 9999;
-            }
-            .screen-preview-btn {
-              background: #059669;
-              color: #ffffff;
-              border: none;
-              padding: 8px 18px;
-              font-size: 13px;
-              font-weight: 800;
-              border-radius: 8px;
-              cursor: pointer;
-              display: inline-flex;
-              align-items: center;
-              gap: 6px;
-              box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-              transition: background 0.15s ease;
-            }
-            .screen-preview-btn:hover {
-              background: #047857;
-            }
-            .screen-close-btn {
-              background: #334155;
-              color: #e2e8f0;
-              border: none;
-              padding: 8px 14px;
-              font-size: 12px;
-              font-weight: 700;
-              border-radius: 8px;
-              cursor: pointer;
-              transition: background 0.15s ease;
-            }
-            .screen-close-btn:hover {
-              background: #475569;
-            }
-
-            .page-preview-wrapper {
-              display: flex;
-              justify-content: center;
-              padding: 20px 10px;
-              background-color: #f1f5f9;
-            }
-
             #printable-patient-doc, #print-container {
               background: #ffffff !important;
               color: #0f172a !important;
               visibility: visible !important;
               opacity: 1 !important;
-              display: flex !important;
-              justify-content: center !important;
-              box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+              display: block !important;
+              box-shadow: none !important;
+              border: none !important;
+              margin: 0 auto !important;
+              padding: 0 !important;
+              width: 100% !important;
             }
-
             img, svg {
               max-width: 100%;
             }
@@ -2934,7 +2875,6 @@ Healing Naturally. Restoring Balance.`;
               max-width: 100px !important;
               object-fit: contain !important;
             }
-
             @media print {
               .screen-preview-bar, .no-print, .print\\:hidden, button, header, nav {
                 display: none !important;
@@ -2950,12 +2890,6 @@ Healing Naturally. Restoring Balance.`;
                 visibility: visible !important;
                 display: block !important;
               }
-              .page-preview-wrapper {
-                padding: 0 !important;
-                margin: 0 !important;
-                background: transparent !important;
-                display: block !important;
-              }
               #printable-patient-doc, #print-container {
                 box-shadow: none !important;
                 border: none !important;
@@ -2969,7 +2903,6 @@ Healing Naturally. Restoring Balance.`;
                 page-break-after: avoid !important;
                 break-after: avoid !important;
               }
-              /* Explicitly enforce visibility so parentStyles cannot hide children */
               #printable-patient-doc *, #print-container * {
                 visibility: visible !important;
               }
@@ -2977,48 +2910,55 @@ Healing Naturally. Restoring Balance.`;
           </style>
         </head>
         <body>
-          <div class="screen-preview-bar no-print">
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <strong style="font-size: 14px; font-weight: 900; letter-spacing: 0.5px;">🖨️ ${titleStr} Print Preview</strong>
-              <span style="font-size: 11px; background: #1e293b; color: #38bdf8; padding: 2px 8px; border-radius: 4px; border: 1px solid #334155;">
-                ${selectedPvPatient?.PatientName || 'Patient'} (${selectedPvPatient?.PatientID || ''})
-              </span>
-            </div>
-            <div style="display: flex; align-items: center; gap: 8px;">
-              <button class="screen-preview-btn" onclick="window.focus(); window.print();">
-                <span>🖨️ Print Now (HP LaserJet / PDF)</span>
-              </button>
-              <button class="screen-close-btn" onclick="window.close();">
-                <span>✕ Close</span>
-              </button>
+          <div id="printable-patient-doc" class="printable-patient-doc">
+            <div id="print-container">
+              ${elem.innerHTML}
             </div>
           </div>
-
-          <div class="page-preview-wrapper">
-            <div id="printable-patient-doc" class="printable-patient-doc">
-              <div id="print-container">
-                ${elem.innerHTML}
-              </div>
-            </div>
-          </div>
-
-          <script>
-            // Ensure fonts and images are loaded before triggering print dialog
-            window.addEventListener('load', function() {
-              setTimeout(function() {
-                try {
-                  window.focus();
-                  window.print();
-                } catch(e) {
-                  console.warn("Auto print failed, click 'Print Now' button", e);
-                }
-              }, 450);
-            });
-          </script>
         </body>
       </html>
-    `);
-    printWin.document.close();
+    `;
+
+    // Silent / Direct printing via hidden iframe (prevents opening new blank tab/window)
+    try {
+      let printFrame = document.getElementById('patient-direct-print-iframe') as HTMLIFrameElement | null;
+      if (!printFrame) {
+        printFrame = document.createElement('iframe');
+        printFrame.id = 'patient-direct-print-iframe';
+        printFrame.style.position = 'fixed';
+        printFrame.style.right = '0';
+        printFrame.style.bottom = '0';
+        printFrame.style.width = '0px';
+        printFrame.style.height = '0px';
+        printFrame.style.border = '0';
+        printFrame.style.visibility = 'hidden';
+        printFrame.style.zIndex = '-9999';
+        document.body.appendChild(printFrame);
+      }
+
+      const frameDoc = printFrame.contentDocument || printFrame.contentWindow?.document;
+      if (frameDoc) {
+        frameDoc.open();
+        frameDoc.write(printHtml);
+        frameDoc.close();
+
+        setTimeout(() => {
+          try {
+            printFrame?.contentWindow?.focus();
+            printFrame?.contentWindow?.print();
+          } catch (e) {
+            console.error("Direct frame print error, falling back to window.print():", e);
+            window.print();
+          }
+        }, 300);
+        return;
+      }
+    } catch (err) {
+      console.warn("Direct iframe print error, using fallback:", err);
+    }
+
+    // Fallback if iframe fails
+    window.print();
   };
 
   const formatReportDate = (dateStr: string) => {

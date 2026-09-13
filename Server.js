@@ -222,7 +222,11 @@ class InMemoryDB {
             return cursor;
           },
           limit: (n) => {
-            results = results.slice(0, n);
+            if (n && n > 0) results = results.slice(0, n);
+            return cursor;
+          },
+          skip: (n) => {
+            if (n && n > 0) results = results.slice(n);
             return cursor;
           },
           count: async () => results.length

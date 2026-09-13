@@ -105,20 +105,34 @@ export const computeVendorBalanceBreakdown = (
 
   const totalPaid = creditPaid + cashPaid;
 
-  // 3. Compute balances
+  // 3. Compute balances with robust handling of Cash vs Credit
   let computedCreditBalance = 0;
   let computedCashBalance = 0;
 
-  if (vendor.CreditBalance !== undefined && vendor.CashBalance !== undefined) {
+  const hasExplicitCredit = vendor.CreditBalance !== undefined && vendor.CreditBalance !== null;
+  const hasExplicitCash = vendor.CashBalance !== undefined && vendor.CashBalance !== null;
+
+  if (hasExplicitCredit && hasExplicitCash) {
     computedCreditBalance = Math.max(0, Number(vendor.CreditBalance) || 0);
     computedCashBalance = Math.max(0, Number(vendor.CashBalance) || 0);
-  } else if (totalPurchased > 0 || totalPaid > 0) {
-    computedCreditBalance = Math.max(0, creditPurchased - creditPaid);
+  } else if (hasExplicitCredit && !hasExplicitCash) {
+    computedCreditBalance = Math.max(0, Number(vendor.CreditBalance) || 0);
     computedCashBalance = Math.max(0, cashPurchased - cashPaid);
+  } else if (!hasExplicitCredit && hasExplicitCash) {
+    computedCashBalance = Math.max(0, Number(vendor.CashBalance) || 0);
+    const totalVendorBal = Number(vendor.Balance || 0);
+    computedCreditBalance = Math.max(0, totalVendorBal > 0 ? totalVendorBal - computedCashBalance : creditPurchased - creditPaid);
   } else {
-    // If no GRNs yet but vendor has an existing Balance:
-    computedCreditBalance = Math.max(0, Number(vendor.Balance) || 0);
-    computedCashBalance = 0;
+    // Neither CreditBalance nor CashBalance is explicitly saved on the vendor record
+    const baseBalance = Number(vendor.Balance || 0);
+    const netCash = Math.max(0, cashPurchased - cashPaid);
+    computedCashBalance = netCash;
+
+    if (baseBalance > 0) {
+      computedCreditBalance = Math.max(0, baseBalance - netCash);
+    } else {
+      computedCreditBalance = Math.max(0, creditPurchased - creditPaid);
+    }
   }
 
   const outstandingBalance = computedCreditBalance + computedCashBalance;

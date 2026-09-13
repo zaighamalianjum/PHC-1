@@ -36,7 +36,9 @@ import {
   Database,
   Eye,
   EyeOff,
-  ListOrdered
+  ListOrdered,
+  HelpCircle,
+  Zap
 } from 'lucide-react';
 import {
   Patient,
@@ -166,6 +168,7 @@ export default function PatientVisitDeskView(props: any) {
 
   const [isLabelPrintModalOpen, setIsLabelPrintModalOpen] = useState(false);
   const [labelPrintData, setLabelPrintData] = useState<any>(null);
+  const [showKioskHelpModal, setShowKioskHelpModal] = useState(false);
 
   const handleOpenLabelPrintModal = () => {
     const pt = selectedPvPatient || (props.patients || []).find((p: any) => p.PatientID === pvSelectedPatientId);
@@ -1908,11 +1911,20 @@ export default function PatientVisitDeskView(props: any) {
                 <button
                   type="button"
                   onClick={() => handleCleanPrintTab(printDocType)}
-                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer"
-                  title="Open clean printable document in new tab with exact page sizing"
+                  className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer active:scale-95"
+                  title="Direct Print to Printer"
                 >
                   <Printer className="w-3.5 h-3.5" />
                   <span>Print Now ({printDocType === 'A5_VISIT_SLIP' ? '148x210mm on A4' : 'A4 Portrait'})</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowKioskHelpModal(true)}
+                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 hover:border-amber-400 text-xs font-bold rounded-lg transition flex items-center space-x-1 cursor-pointer"
+                  title="How to enable Direct Silent Print without Preview window"
+                >
+                  <Zap className="w-3.5 h-3.5 text-amber-400" />
+                  <span className="hidden sm:inline">Direct Print Setup</span>
                 </button>
                 <button
                   type="button"
@@ -2941,6 +2953,101 @@ export default function PatientVisitDeskView(props: any) {
           clinicSettings={clinicSettings}
           currentUser={props.currentUser}
         />
+      )}
+
+      {/* Direct Silent Print (Kiosk Printing) Setup Modal */}
+      {showKioskHelpModal && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center z-[60] p-3 sm:p-4 overflow-y-auto">
+          <div className="bg-white w-full max-w-xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden my-auto animate-in fade-in zoom-in-95 duration-150">
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center space-x-2.5">
+                <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl">
+                  <Zap className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-base">Direct Silent Printing Setup</h3>
+                  <p className="text-[11px] text-slate-300">بغیر پرنٹ ونڈو اور پری ویو کے ڈائریکٹ پرنٹر پر پرنٹ کرنے کا طریقہ</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowKioskHelpModal(false)}
+                className="p-1.5 text-slate-400 hover:text-white hover:bg-slate-800 rounded-lg transition"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-6 space-y-4 text-xs text-slate-700 max-h-[80vh] overflow-y-auto">
+              <div className="bg-emerald-50 border border-emerald-200 p-3 rounded-xl text-emerald-900">
+                <p className="font-bold text-xs flex items-center gap-1.5 mb-1">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <span>ایپ میں ڈائریکٹ پرنٹنگ فعال کر دی گئی ہے!</span>
+                </p>
+                <p className="text-[11px] leading-relaxed text-emerald-800">
+                  اب پرنٹ بٹن دبانے سے نیا بلینک ٹیب (about:blank) نہیں کھلے گا۔ پرنٹ سیدھا براؤزر کے ذریعے بیک گراؤنڈ میں جائے گا۔
+                </p>
+              </div>
+
+              <div className="space-y-3">
+                <h4 className="font-black text-slate-900 text-xs sm:text-sm uppercase tracking-wider flex items-center gap-1.5">
+                  <span>گوگل کروم (Google Chrome) میں ایک بار کی 1 منٹ کی سیٹنگ:</span>
+                </h4>
+                <p className="text-[11px] text-slate-600 leading-relaxed">
+                  دنیا کے تمام براؤزر سیکیورٹی کے تحت پرنٹ ونڈو دکھاتے ہیں۔ لیکن گوگل کروم میں کلینک اور POS کا آفیشل فیچر <strong>Kiosk Printing</strong> موجود ہے جس سے پرنٹ ونڈو مکمل طور پر غائب ہو جاتی ہے اور کاغذ فوری پرنٹر سے باہر آجاتا ہے:
+                </p>
+
+                <ol className="list-decimal list-inside space-y-2 bg-slate-50 p-3.5 rounded-xl border border-slate-200 text-[11px] leading-relaxed font-medium">
+                  <li>
+                    اپنے کمپیوٹر کے ڈیسک ٹاپ پر <strong>Google Chrome</strong> کے آئیکون پر رائٹ کلک (Right-Click) کریں اور <strong>Properties</strong> پر کلک کریں۔
+                  </li>
+                  <li>
+                    کھلنے والی ونڈو میں <strong>Shortcut</strong> ٹیب کے اندر <strong>Target</strong> والے خانے میں بالکل آخر پر جائیں۔
+                  </li>
+                  <li>
+                    آخری لفظ کے بعد ایک <strong>Space (فاصلہ)</strong> دیں اور یہ کوڈ لکھیں:
+                    <div className="mt-1.5 flex items-center gap-2 bg-slate-900 text-emerald-400 p-2 rounded-lg font-mono text-xs select-all">
+                      <span>--kiosk-printing</span>
+                    </div>
+                    <span className="text-[10px] text-slate-500 block mt-1">
+                      مثال کے طور پر ٹارگٹ ایسا بنے گا: <br />
+                      <code className="text-[10px] text-indigo-700 bg-indigo-50 px-1 py-0.5 rounded font-mono break-all">
+                        "C:\Program Files\Google\Chrome\Application\chrome.exe" --kiosk-printing
+                      </code>
+                    </span>
+                  </li>
+                  <li>
+                    نیچے <strong>Apply</strong> اور پھر <strong>OK</strong> کے بٹن پر کلک کریں۔
+                  </li>
+                  <li>
+                    تمام کروم ونڈوز بند کر کے اس ڈیسک ٹاپ والے کروم شارٹ کٹ سے دوبارہ کھولیں۔
+                  </li>
+                  <li>
+                    ونڈوز میں اپنا <strong>HP LaserJet Printer</strong> بطور Default Printer منتخب رکھیں۔
+                  </li>
+                </ol>
+              </div>
+
+              <div className="bg-amber-50 border border-amber-200 p-3 rounded-xl text-amber-900 flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="text-[11px] leading-relaxed">
+                  <strong className="font-bold block">نتیجہ:</strong>
+                  اب آپ جیسے ہی ایپ میں <strong>"Print Now"</strong> پر کلک کریں گے، کوئی پرنٹ پری ویو یا تصدیقی ونڈو نہیں کھلے گی اور پرنٹ فوری پرنٹر سے نکل آئے گا!
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowKioskHelpModal(false)}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs transition"
+                >
+                  سمجھ آ گئی (Got it)
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

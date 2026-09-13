@@ -2107,6 +2107,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       Address: '',
       TaxID: '',
       Balance: 0,
+      CreditBalance: 0,
+      CashBalance: 0,
       Status: 'Active',
       LogoUrl: '',
       LogoImage: ''
@@ -2115,6 +2117,11 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
   };
 
   const handleOpenEditVendor = (vendor: ErpVendor) => {
+    const vBreakdown = computeVendorBalanceBreakdown(vendor, grns, transactions);
+    const creditBal = vendor.CreditBalance !== undefined ? Number(vendor.CreditBalance) : vBreakdown.creditBalance;
+    const cashBal = vendor.CashBalance !== undefined ? Number(vendor.CashBalance) : vBreakdown.cashBalance;
+    const totalBal = (creditBal + cashBal > 0) ? (creditBal + cashBal) : Number(vendor.Balance || 0);
+
     setEditingVendor(vendor);
     setVendorForm({
       _id: vendor._id,
@@ -2125,7 +2132,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       Email: vendor.Email || '',
       Address: vendor.Address || '',
       TaxID: vendor.TaxID || '',
-      Balance: vendor.Balance || 0,
+      Balance: totalBal,
+      CreditBalance: creditBal,
+      CashBalance: cashBal,
       Status: vendor.Status || 'Active',
       LogoUrl: vendor.LogoUrl || vendor.LogoImage || '',
       LogoImage: vendor.LogoImage || vendor.LogoUrl || ''
@@ -2163,6 +2172,10 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
     setIsSubmitting(true);
     try {
+      const creditAmt = Number(vendorForm.CreditBalance ?? (vendorForm.Balance ?? 0));
+      const cashAmt = Number(vendorForm.CashBalance || 0);
+      const totalAmt = creditAmt + cashAmt;
+
       if (editingVendor) {
         // UPDATE EXISTING VENDOR
         const updatedVendor: ErpVendor = {
@@ -2173,7 +2186,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           Email: vendorForm.Email || '',
           Address: vendorForm.Address || 'Lahore, Pakistan',
           TaxID: vendorForm.TaxID || '',
-          Balance: Number(vendorForm.Balance) || 0,
+          Balance: totalAmt,
+          CreditBalance: creditAmt,
+          CashBalance: cashAmt,
           Status: (vendorForm.Status as 'Active' | 'Inactive') || 'Active',
           LogoUrl: vendorForm.LogoUrl || vendorForm.LogoImage || '',
           LogoImage: vendorForm.LogoImage || vendorForm.LogoUrl || ''
@@ -2199,7 +2214,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
 
         setShowVendorModal(false);
         setEditingVendor(null);
-        setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, Status: 'Active', LogoUrl: '', LogoImage: '' });
+        setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, CreditBalance: 0, CashBalance: 0, Status: 'Active', LogoUrl: '', LogoImage: '' });
         setSyncMessage('Vendor details updated successfully in database!');
         setTimeout(() => setSyncMessage(null), 3000);
       } else {
@@ -2212,7 +2227,9 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           Email: vendorForm.Email || '',
           Address: vendorForm.Address || 'Lahore, Pakistan',
           TaxID: vendorForm.TaxID || '',
-          Balance: Number(vendorForm.Balance) || 0,
+          Balance: totalAmt,
+          CreditBalance: creditAmt,
+          CashBalance: cashAmt,
           Status: (vendorForm.Status as 'Active' | 'Inactive') || 'Active',
           LogoUrl: vendorForm.LogoUrl || vendorForm.LogoImage || '',
           LogoImage: vendorForm.LogoImage || vendorForm.LogoUrl || ''
@@ -2222,7 +2239,7 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         setVendors(prev => [newVendor, ...prev]);
         setShowVendorModal(false);
         setEditingVendor(null);
-        setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, Status: 'Active', LogoUrl: '', LogoImage: '' });
+        setVendorForm({ VendorName: '', ContactPerson: '', Phone: '', Address: '', Balance: 0, CreditBalance: 0, CashBalance: 0, Status: 'Active', LogoUrl: '', LogoImage: '' });
         setSyncMessage('Vendor saved successfully!');
         setTimeout(() => setSyncMessage(null), 3000);
       }
@@ -4538,8 +4555,24 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         }
         if (Array.isArray(vendorsRes) && vendorsRes.length > 0) {
           setVendors(vendorsRes);
-        } else if (!isCashPurchase && (payload.VendorID || payload.VendorName)) {
-          setVendors(prev => prev.map(v => (v.VendorID === payload.VendorID || v.VendorName === payload.VendorName) ? { ...v, Balance: (v.Balance || 0) + totalAmount } : v));
+        } else if (payload.VendorID || payload.VendorName) {
+          setVendors(prev => prev.map(v => {
+            const isMatch = (payload.VendorID && (v.VendorID === payload.VendorID || v._id === payload.VendorID)) ||
+                            (payload.VendorName && v.VendorName && v.VendorName.trim().toLowerCase() === payload.VendorName.trim().toLowerCase());
+            if (isMatch) {
+              const prevCredit = Number(v.CreditBalance ?? v.Balance ?? 0);
+              const prevCash = Number(v.CashBalance || 0);
+              const newCredit = isCashPurchase ? prevCredit : prevCredit + totalAmount;
+              const newCash = isCashPurchase ? prevCash + totalAmount : prevCash;
+              return {
+                ...v,
+                Balance: newCredit + newCash,
+                CreditBalance: newCredit,
+                CashBalance: newCash
+              };
+            }
+            return v;
+          }));
         }
 
         if (Array.isArray(txnsRes) && txnsRes.length > 0) {
@@ -4672,8 +4705,13 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
           const isMatch = (grn.VendorID && (v.VendorID === grn.VendorID || v._id === grn.VendorID)) ||
                           (grn.VendorName && v.VendorName && v.VendorName.trim().toLowerCase() === grn.VendorName.trim().toLowerCase());
           if (isMatch) {
-            const newBalance = Math.max(0, Number(v.Balance || 0) - grnTotal);
-            return { ...v, Balance: newBalance };
+            const isCash = String(grn.PaymentMethod || (grn as any).PaymentMode || '').toLowerCase() === 'cash';
+            const prevCredit = Number(v.CreditBalance ?? v.Balance ?? 0);
+            const prevCash = Number(v.CashBalance || 0);
+            const newCredit = isCash ? prevCredit : Math.max(0, prevCredit - grnTotal);
+            const newCash = isCash ? Math.max(0, prevCash - grnTotal) : prevCash;
+            const newBalance = newCredit + newCash;
+            return { ...v, Balance: newBalance, CreditBalance: newCredit, CashBalance: newCash };
           }
           return v;
         }));
@@ -5774,16 +5812,28 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
       const pAmt = Number(amount);
       const vBreakdown = computeVendorBalanceBreakdown(vendor, grns, transactions);
 
-      let currentCredit = vendor.CreditBalance !== undefined ? Number(vendor.CreditBalance) : vBreakdown.creditBalance;
-      let currentCash = vendor.CashBalance !== undefined ? Number(vendor.CashBalance) : vBreakdown.cashBalance;
+      let currentCredit = vendor.CreditBalance !== undefined && vendor.CreditBalance !== null ? Number(vendor.CreditBalance) : vBreakdown.creditBalance;
+      let currentCash = vendor.CashBalance !== undefined && vendor.CashBalance !== null ? Number(vendor.CashBalance) : vBreakdown.cashBalance;
 
       let newCredit = currentCredit;
       let newCash = currentCash;
 
       if (targetType === 'Cash') {
-        newCash = Math.max(0, currentCash - pAmt);
+        if (currentCash >= pAmt) {
+          newCash = currentCash - pAmt;
+        } else {
+          const excess = pAmt - currentCash;
+          newCash = 0;
+          newCredit = Math.max(0, currentCredit - excess);
+        }
       } else {
-        newCredit = Math.max(0, currentCredit - pAmt);
+        if (currentCredit >= pAmt) {
+          newCredit = currentCredit - pAmt;
+        } else {
+          const excess = pAmt - currentCredit;
+          newCredit = 0;
+          newCash = Math.max(0, currentCash - excess);
+        }
       }
       const newTotalBalance = newCredit + newCash;
 
@@ -5860,10 +5910,40 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
         const pAmt = Number(txnForm.Amount);
         const targetVendor = vendors.find(v => v.VendorID === txnForm.VendorID || v.VendorName === txnForm.VendorName);
         if (targetVendor) {
-          const newBalance = Math.max(0, targetVendor.Balance - pAmt);
-          const targetId = targetVendor._id || targetVendor.VendorID;
-          await saveToDatabase('erp_vendors', { ...targetVendor, Balance: newBalance });
-          setVendors(prev => prev.map(v => (v.VendorID === targetVendor.VendorID ? { ...v, Balance: newBalance } : v)));
+          const vBreakdown = computeVendorBalanceBreakdown(targetVendor, grns, transactions);
+          const currentCredit = targetVendor.CreditBalance !== undefined && targetVendor.CreditBalance !== null ? Number(targetVendor.CreditBalance) : vBreakdown.creditBalance;
+          const currentCash = targetVendor.CashBalance !== undefined && targetVendor.CashBalance !== null ? Number(targetVendor.CashBalance) : vBreakdown.cashBalance;
+          
+          const isCash = String(txnForm.PaymentMethod || '').toLowerCase() === 'cash' || String(txnForm.Category || '').toLowerCase().includes('cash');
+          let newCredit = currentCredit;
+          let newCash = currentCash;
+
+          if (isCash) {
+            if (currentCash >= pAmt) {
+              newCash = currentCash - pAmt;
+            } else {
+              const excess = pAmt - currentCash;
+              newCash = 0;
+              newCredit = Math.max(0, currentCredit - excess);
+            }
+          } else {
+            if (currentCredit >= pAmt) {
+              newCredit = currentCredit - pAmt;
+            } else {
+              const excess = pAmt - currentCredit;
+              newCredit = 0;
+              newCash = Math.max(0, currentCash - excess);
+            }
+          }
+          const newBalance = newCredit + newCash;
+          const updatedTargetVendor: ErpVendor = {
+            ...targetVendor,
+            Balance: newBalance,
+            CreditBalance: newCredit,
+            CashBalance: newCash
+          };
+          await saveToDatabase('erp_vendors', updatedTargetVendor, 'PUT');
+          setVendors(prev => prev.map(v => (v.VendorID === targetVendor.VendorID ? updatedTargetVendor : v)));
         }
       }
 
@@ -7323,6 +7403,8 @@ export default function ErpDesk({ currentUser, rights, clinicSettings }: ErpDesk
             setPayVendorModalData={setPayVendorModalData}
             handlePrintVendorStatement={handlePrintVendorStatement}
             purchaseOrders={purchaseOrders}
+            grns={grns}
+            transactions={transactions}
             setHistoryVendorFilter={setHistoryVendorFilter}
             setHistoryStartDate={setHistoryStartDate}
             setHistoryEndDate={setHistoryEndDate}

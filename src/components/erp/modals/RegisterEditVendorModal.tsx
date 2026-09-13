@@ -277,28 +277,75 @@ export const RegisterEditVendorModal: React.FC<RegisterEditVendorModalProps> = (
                 </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3 rounded-xl border border-slate-200">
                 <div>
-                  <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide">Account Status</label>
-                  <select
-                    value={vendorForm.Status || 'Active'}
-                    onChange={e => setVendorForm({ ...vendorForm, Status: e.target.value as any })}
-                    className="w-full mt-1 p-2.5 border border-slate-200 bg-white rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
-                  >
-                    <option value="Active">Active Supplier</option>
-                    <option value="Inactive">Inactive / Suspended</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide">Outstanding Balance (Rs.)</label>
+                  <label className="text-xxs font-bold text-indigo-700 uppercase tracking-wide flex items-center gap-1">
+                    <span>Credit Balance</span>
+                  </label>
                   <input
                     type="number"
-                    value={vendorForm.Balance ?? 0}
-                    onChange={e => setVendorForm({ ...vendorForm, Balance: Number(e.target.value) || 0 })}
+                    min="0"
+                    value={vendorForm.CreditBalance ?? (vendorForm.Balance ?? 0)}
+                    onChange={e => {
+                      const newCredit = Math.max(0, Number(e.target.value) || 0);
+                      const currentCash = Number(vendorForm.CashBalance || 0);
+                      setVendorForm({
+                        ...vendorForm,
+                        CreditBalance: newCredit,
+                        Balance: newCredit + currentCash
+                      });
+                    }}
                     placeholder="0"
-                    className="w-full mt-1 p-2.5 border border-slate-200 bg-white rounded-xl text-xs font-mono font-bold text-amber-700 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                    className="w-full mt-1 p-2.5 border border-indigo-200 bg-white rounded-xl text-xs font-mono font-bold text-indigo-800 focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none"
                   />
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">Payable against credit terms</span>
                 </div>
+
+                <div>
+                  <label className="text-xxs font-bold text-emerald-700 uppercase tracking-wide flex items-center gap-1">
+                    <span>Cash Purchases Balance</span>
+                  </label>
+                  <input
+                    type="number"
+                    min="0"
+                    value={vendorForm.CashBalance ?? 0}
+                    onChange={e => {
+                      const newCash = Math.max(0, Number(e.target.value) || 0);
+                      const currentCredit = Number(vendorForm.CreditBalance ?? (vendorForm.Balance ?? 0));
+                      setVendorForm({
+                        ...vendorForm,
+                        CashBalance: newCash,
+                        Balance: currentCredit + newCash
+                      });
+                    }}
+                    placeholder="0"
+                    className="w-full mt-1 p-2.5 border border-emerald-200 bg-white rounded-xl text-xs font-mono font-bold text-emerald-800 focus:ring-2 focus:ring-emerald-500 focus:border-transparent outline-none"
+                  />
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">Pending spot cash bills</span>
+                </div>
+
+                <div>
+                  <label className="text-xxs font-bold text-amber-800 uppercase tracking-wide flex items-center gap-1">
+                    <span>Total Outstanding</span>
+                  </label>
+                  <div className="w-full mt-1 p-2.5 border border-amber-300 bg-amber-50/70 rounded-xl text-xs font-mono font-black text-amber-900 flex items-center justify-between">
+                    <span>Rs. {((Number(vendorForm.CreditBalance ?? (vendorForm.Balance ?? 0))) + (Number(vendorForm.CashBalance || 0))).toLocaleString()}</span>
+                    <span className="text-[9px] uppercase px-1.5 py-0.5 rounded bg-amber-200 text-amber-900 font-sans font-bold">Total</span>
+                  </div>
+                  <span className="text-[10px] text-slate-500 mt-0.5 block">Credit + Cash Purchases</span>
+                </div>
+              </div>
+
+              <div>
+                <label className="text-xxs font-bold text-slate-700 uppercase tracking-wide">Account Status</label>
+                <select
+                  value={vendorForm.Status || 'Active'}
+                  onChange={e => setVendorForm({ ...vendorForm, Status: e.target.value as any })}
+                  className="w-full mt-1 p-2.5 border border-slate-200 bg-white rounded-xl text-xs font-bold text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none"
+                >
+                  <option value="Active">Active Supplier</option>
+                  <option value="Inactive">Inactive / Suspended</option>
+                </select>
               </div>
 
               <div className="flex justify-end space-x-2 pt-4 border-t border-slate-100">
