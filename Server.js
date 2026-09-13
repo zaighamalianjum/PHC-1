@@ -3388,8 +3388,9 @@ app.post('/api/erp/grn/approve', async (req, res) => {
 // Automatically matches item names against existing items in clinic database
 // ==========================================================================================
 app.post('/api/erp/scan-grn-invoice', async (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
   try {
-    const { imageBase64, mimeType = 'image/jpeg' } = req.body;
+    const { imageBase64, mimeType = 'image/jpeg', catalogItems = [] } = req.body;
     if (!imageBase64) {
       return res.status(400).json({ success: false, error: 'Image data is required.' });
     }
@@ -3403,8 +3404,10 @@ app.post('/api/erp/scan-grn-invoice', async (req, res) => {
       httpOptions: { headers: { 'User-Agent': 'aistudio-build' } }
     });
 
-    // Clean base64 string if it contains prefix data:image/...;base64,
-    const cleanBase64 = imageBase64.replace(/^data:[^;]+;base64,/, '');
+    // Clean base64 string: remove header prefix and strip all whitespace/linebreaks
+    const cleanBase64 = String(imageBase64)
+      .replace(/^data:[^;]+;base64,/, '')
+      .replace(/\s+/g, '');
 
     const promptText = `
 You are an expert pharmaceutical document OCR and invoice parser.
@@ -3457,40 +3460,72 @@ Return ONLY a JSON object with this exact structure:
 }
 `;
 
-    const response = await ai.models.generateContent({
-      model: 'gemini-3.8-flash',
-      contents: [
-        {
-          role: 'user',
-          parts: [
+    // Multi-model resilience fallback: if any model has demand spike (503/429), automatically use fallback
+    const candidateModels = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.1-flash-lite'];
+    let responseText = '';
+    let lastError = null;
+
+    for (const modelName of candidateModels) {
+      try {
+        console.log(`🔍 GRN OCR: Requesting document parsing using ${modelName}...`);
+        const response = await ai.models.generateContent({
+          model: modelName,
+          contents: [
             {
-              inlineData: {
-                data: cleanBase64,
-                mimeType: mimeType || 'image/jpeg'
-              }
-            },
-            {
-              text: promptText
+              role: 'user',
+              parts: [
+                {
+                  inlineData: {
+                    data: cleanBase64,
+                    mimeType: mimeType || 'image/jpeg'
+                  }
+                },
+                {
+                  text: promptText
+                }
+              ]
             }
-          ]
+          ],
+          config: {
+            responseMimeType: 'application/json'
+          }
+        });
+
+        if (response && response.text) {
+          responseText = response.text;
+          console.log(`✅ GRN OCR: Document parsed successfully with model ${modelName}`);
+          break;
         }
-      ],
-      config: {
-        responseMimeType: 'application/json'
+      } catch (modelErr) {
+        console.warn(`⚠️ GRN OCR: Model ${modelName} encountered error:`, modelErr.message || modelErr);
+        lastError = modelErr;
       }
-    });
+    }
+
+    if (!responseText) {
+      const errMsg = lastError?.message || 'No response returned by AI Vision models.';
+      return res.status(500).json({ success: false, error: `OCR extraction failed: ${errMsg}` });
+    }
 
     let parsedData = {};
     try {
-      parsedData = JSON.parse(response.text || '{}');
+      let cleanText = responseText.trim();
+      cleanText = cleanText.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/\s*```$/i, '').trim();
+      const firstBrace = cleanText.indexOf('{');
+      const lastBrace = cleanText.lastIndexOf('}');
+      if (firstBrace !== -1 && lastBrace !== -1) {
+        cleanText = cleanText.substring(firstBrace, lastBrace + 1);
+      }
+      parsedData = JSON.parse(cleanText || '{}');
     } catch (parseErr) {
-      console.error('Failed to parse Gemini JSON output:', response.text);
-      return res.status(500).json({ success: false, error: 'Could not parse structured JSON from OCR response.' });
+      console.error('Failed to parse Gemini JSON output:', responseText);
+      return res.status(500).json({ success: false, error: 'Could not parse structured JSON from OCR response: ' + parseErr.message });
     }
 
-    // Load existing items and vendors from database for intelligent matching
-    const existingItems = await db.collection('items').find({}).toArray();
+    // Load existing items and vendors from database or passed catalog
+    const dbItems = await db.collection('items').find({}).toArray();
     const existingVendors = await db.collection('erp_vendors').find({}).toArray();
+    const existingItems = (Array.isArray(catalogItems) && catalogItems.length > 0) ? catalogItems : dbItems;
 
     // Helper to normalize strings for comparison
     const norm = (s) => String(s || '').toLowerCase().replace(/[^a-z0-9]/g, '');

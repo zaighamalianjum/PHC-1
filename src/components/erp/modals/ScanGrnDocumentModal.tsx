@@ -35,6 +35,48 @@ interface ScanGrnDocumentModalProps {
   currentPoId?: string;
 }
 
+// Helper to optimize large smartphone photos for OCR recognition without losing legibility
+const optimizeImageForOcr = (dataUrl: string, maxDim = 2048, quality = 0.88): Promise<{ base64: string; mimeType: string }> => {
+  return new Promise((resolve) => {
+    // If not a raster image (e.g. PDF data), return as-is
+    if (!dataUrl.startsWith('data:image/')) {
+      resolve({ base64: dataUrl, mimeType: 'image/jpeg' });
+      return;
+    }
+    const img = new Image();
+    img.onload = () => {
+      let { width, height } = img;
+      if (width > maxDim || height > maxDim) {
+        if (width > height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) {
+        resolve({ base64: dataUrl, mimeType: 'image/jpeg' });
+        return;
+      }
+      // Fill white background in case of transparent PNGs
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(img, 0, 0, width, height);
+      const optimized = canvas.toDataURL('image/jpeg', quality);
+      resolve({ base64: optimized, mimeType: 'image/jpeg' });
+    };
+    img.onerror = () => {
+      resolve({ base64: dataUrl, mimeType: 'image/jpeg' });
+    };
+    img.src = dataUrl;
+  });
+};
+
 export const ScanGrnDocumentModal: React.FC<ScanGrnDocumentModalProps> = ({
   isOpen,
   onClose,
@@ -89,23 +131,43 @@ export const ScanGrnDocumentModal: React.FC<ScanGrnDocumentModalProps> = ({
   const triggerOcrScan = async (base64Data: string, type: string) => {
     setIsScanning(true);
     setScanError(null);
-    setScanStep('Sending document image to Gemini Vision OCR...');
+    setScanStep('Optimizing document image for fast recognition...');
 
     try {
-      setScanStep('Reading table columns: Qty, Item, Batch, Mfg, Expiry, Net Rate...');
+      // Optimize image on canvas to avoid network bottlenecks and memory spikes on mobile
+      const { base64: optimizedData, mimeType: effectiveMime } = await optimizeImageForOcr(base64Data);
+
+      setScanStep('Connecting to AI Vision OCR & reading table columns...');
       const response = await fetch('/api/erp/scan-grn-invoice', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          imageBase64: base64Data,
-          mimeType: type
+          imageBase64: optimizedData,
+          mimeType: effectiveMime,
+          catalogItems: (inventoryItems || []).slice(0, 400).map(i => ({
+            ItemID: i.ItemID,
+            ItemName: i.ItemName,
+            CStock: i.CStock,
+            Price: i.Price
+          }))
         })
       });
 
-      const data = await response.json();
+      const responseText = await response.text();
+      let data: any = null;
+      try {
+        data = responseText ? JSON.parse(responseText) : null;
+      } catch (pErr) {
+        console.error('Non-JSON response from server:', responseText);
+        throw new Error(
+          responseText
+            ? `Server returned non-JSON error (${response.status}): ${responseText.slice(0, 150)}`
+            : `Server returned empty response (${response.status}). Please check network or try again.`
+        );
+      }
 
-      if (!response.ok || !data.success) {
-        throw new Error(data.error || 'Failed to scan document.');
+      if (!response.ok || !data?.success) {
+        throw new Error(data?.error || `Failed to scan document (HTTP ${response.status}).`);
       }
 
       setScanStep('Matching extracted items with Pharmacy Inventory database...');
