@@ -61,7 +61,8 @@ import {
   getWeeksLabel,
   WhatsAppIcon,
   isSamePatient,
-  parseCleanVisitDate
+  parseCleanVisitDate,
+  ensureAppFullScreen
 } from './patientDeskUtils';
 import PharmacyLabelPrintModal from '../pharmacy/PharmacyLabelPrintModal';
 
@@ -169,6 +170,24 @@ export default function PatientVisitDeskView(props: any) {
   const [isLabelPrintModalOpen, setIsLabelPrintModalOpen] = useState(false);
   const [labelPrintData, setLabelPrintData] = useState<any>(null);
   const [showKioskHelpModal, setShowKioskHelpModal] = useState(false);
+
+  // Automatically close print modal and enter fullscreen mode if not currently active
+  const handleClosePrintModal = () => {
+    setPvPrescriptionModalOpen(false);
+    ensureAppFullScreen();
+  };
+
+  // Keyboard shortcut listener for Escape key to close modal and ensure fullscreen
+  React.useEffect(() => {
+    if (!pvPrescriptionModalOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        handleClosePrintModal();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [pvPrescriptionModalOpen]);
 
   const handleOpenLabelPrintModal = () => {
     const pt = selectedPvPatient || (props.patients || []).find((p: any) => p.PatientID === pvSelectedPatientId);
@@ -1761,7 +1780,14 @@ export default function PatientVisitDeskView(props: any) {
 
       {/* PATIENT VISIT PRESCRIPTION PRINT MODAL */}
       {pvPrescriptionModalOpen && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto print:p-0 print:static print:bg-transparent print:overflow-visible">
+        <div
+          className="fixed inset-0 bg-slate-900/70 backdrop-blur-xs flex items-center justify-center z-50 p-2 sm:p-4 overflow-y-auto print:p-0 print:static print:bg-transparent print:overflow-visible"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) {
+              handleClosePrintModal();
+            }
+          }}
+        >
           
           {/* Style tag for print paper dimensions */}
           <style>{`
@@ -1928,10 +1954,12 @@ export default function PatientVisitDeskView(props: any) {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setPvPrescriptionModalOpen(false)}
-                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition cursor-pointer"
+                  onClick={handleClosePrintModal}
+                  className="px-3 py-1.5 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition cursor-pointer flex items-center space-x-1"
+                  title="Close document preview and return to Patient Desk (Auto Fullscreen)"
                 >
-                  Close
+                  <X className="w-3.5 h-3.5" />
+                  <span>Close</span>
                 </button>
               </div>
             </div>

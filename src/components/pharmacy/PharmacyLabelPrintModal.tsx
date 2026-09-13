@@ -20,6 +20,7 @@ import {
   Minus,
   Plus
 } from 'lucide-react';
+import { ensureAppFullScreen } from '../patient/patientDeskUtils';
 
 interface PharmacyLabelPrintModalProps {
   setLabelPrintData?: (data: any) => void;
@@ -548,6 +549,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
               onClick={() => {
                 setIsLabelPrintModalOpen(false);
                 setLabelPrintData?.(null);
+                ensureAppFullScreen();
               }}
               className="px-3 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
             >
@@ -1007,6 +1009,7 @@ export const PharmacyLabelPrintModal: React.FC<PharmacyLabelPrintModalProps> = (
               onClick={() => {
                 setIsLabelPrintModalOpen(false);
                 setLabelPrintData?.(null);
+                ensureAppFullScreen();
               }}
               className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold text-xs rounded-xl transition cursor-pointer"
             >
