@@ -38,7 +38,8 @@ import {
   EyeOff,
   ListOrdered,
   HelpCircle,
-  Zap
+  Zap,
+  UserPen
 } from 'lucide-react';
 import {
   Patient,
@@ -65,6 +66,7 @@ import {
   ensureAppFullScreen
 } from './patientDeskUtils';
 import PharmacyLabelPrintModal from '../pharmacy/PharmacyLabelPrintModal';
+import EditPatientDemographyModal from './EditPatientDemographyModal';
 
 export default function PatientVisitDeskView(props: any) {
   const {
@@ -170,6 +172,22 @@ export default function PatientVisitDeskView(props: any) {
   const [isLabelPrintModalOpen, setIsLabelPrintModalOpen] = useState(false);
   const [labelPrintData, setLabelPrintData] = useState<any>(null);
   const [showKioskHelpModal, setShowKioskHelpModal] = useState(false);
+  const [isEditDemographyModalOpen, setIsEditDemographyModalOpen] = useState(false);
+
+  const handleSaveDemography = (updatedPatient: Patient) => {
+    if (props.onUpdatePatient) {
+      props.onUpdatePatient(updatedPatient);
+    }
+    if (props.onAddPatient && !(props.patients || []).some((p: any) => p.PatientID === updatedPatient.PatientID)) {
+      props.onAddPatient(updatedPatient);
+    }
+    // Also push to server directly
+    fetch(`/api/patients/${updatedPatient.PatientID}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedPatient)
+    }).catch(() => {});
+  };
 
   // Automatically close print modal and enter fullscreen mode if not currently active
   const handleClosePrintModal = () => {
@@ -617,6 +635,24 @@ export default function PatientVisitDeskView(props: any) {
                     <span>Print Previous Rx</span>
                   </button>
 
+                  {/* Edit Demography Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!selectedPvPatient) {
+                        alert('Please select a patient first.');
+                        return;
+                      }
+                      setIsEditDemographyModalOpen(true);
+                    }}
+                    disabled={!selectedPvPatient}
+                    className="px-2 py-0.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border border-indigo-300 disabled:opacity-40 text-[10px] font-bold rounded-md transition flex items-center space-x-0.5 cursor-pointer shadow-2xs"
+                    title="Edit Demography: Update patient name, guardian, age, gender, mobile phone, or address"
+                  >
+                    <UserPen className="w-3 h-3 text-indigo-700" />
+                    <span>Edit Demography</span>
+                  </button>
+
                   {/* Search Record Button */}
                   <button
                     type="button"
@@ -668,8 +704,19 @@ export default function PatientVisitDeskView(props: any) {
                       </p>
                     </div>
                   </div>
-                  <div className="text-[10px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200 shrink-0">
-                    City: <span className="font-bold text-slate-800">{cities.find(c => c.CityID === selectedPvPatient.CityID)?.CityName || 'Lahore'}</span> | Reg: <span className="font-bold text-slate-800">{formatDisplayDate(selectedPvPatient.RegistrationDate)}</span>
+                  <div className="flex items-center space-x-1.5 shrink-0">
+                    <div className="text-[10px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
+                      City: <span className="font-bold text-slate-800">{cities.find(c => c.CityID === selectedPvPatient.CityID)?.CityName || 'Lahore'}</span> | Reg: <span className="font-bold text-slate-800">{formatDisplayDate(selectedPvPatient.RegistrationDate)}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsEditDemographyModalOpen(true)}
+                      className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white text-[11px] font-bold rounded-md shadow-2xs transition flex items-center space-x-1 cursor-pointer active:scale-95"
+                      title="Edit Patient Demography (Name, Guardian, Age, Gender, Mobile, Address, City)"
+                    >
+                      <UserPen className="w-3.5 h-3.5" />
+                      <span>Edit Demography</span>
+                    </button>
                   </div>
                 </div>
               );
@@ -1927,30 +1974,12 @@ export default function PatientVisitDeskView(props: any) {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => handleSendWhatsAppRx()}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer"
-                  title="Send current document/prescription to patient via WhatsApp"
-                >
-                  <WhatsAppIcon className="w-3.5 h-3.5 fill-current text-white" />
-                  <span>WhatsApp</span>
-                </button>
-                <button
-                  type="button"
                   onClick={() => handleCleanPrintTab(printDocType)}
                   className="px-4 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg transition shadow-md flex items-center space-x-1.5 cursor-pointer active:scale-95"
                   title="Direct Print to Printer"
                 >
                   <Printer className="w-3.5 h-3.5" />
-                  <span>Print Now ({printDocType === 'A5_VISIT_SLIP' ? '148x210mm on A4' : 'A4 Portrait'})</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setShowKioskHelpModal(true)}
-                  className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700 hover:border-amber-400 text-xs font-bold rounded-lg transition flex items-center space-x-1 cursor-pointer"
-                  title="How to enable Direct Silent Print without Preview window"
-                >
-                  <Zap className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="hidden sm:inline">Direct Print Setup</span>
+                  <span>Print Now ({printDocType === 'A5_VISIT_SLIP' ? '148×210mm on A4' : 'A4 Portrait'})</span>
                 </button>
                 <button
                   type="button"
@@ -3077,6 +3106,15 @@ export default function PatientVisitDeskView(props: any) {
           </div>
         </div>
       )}
+
+      {/* EDIT PATIENT DEMOGRAPHY POPUP MODAL */}
+      <EditPatientDemographyModal
+        isOpen={isEditDemographyModalOpen}
+        onClose={() => setIsEditDemographyModalOpen(false)}
+        patient={selectedPvPatient}
+        onSave={handleSaveDemography}
+        cities={cities || []}
+      />
     </div>
   );
 }

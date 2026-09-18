@@ -6312,6 +6312,8 @@ Healing Naturally. Restoring Balance.`;
           setExpireDateByWeeks={setExpireDateByWeeks}
           visitMedicines={visitMedicines}
           currentUser={currentUser}
+          onUpdatePatient={onUpdatePatient}
+          onAddPatient={onAddPatient}
         />
       )}
 
