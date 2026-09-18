@@ -39,7 +39,8 @@ import {
   ListOrdered,
   HelpCircle,
   Zap,
-  UserPen
+  UserPen,
+  FileCheck
 } from 'lucide-react';
 import {
   Patient,
@@ -67,6 +68,7 @@ import {
 } from './patientDeskUtils';
 import PharmacyLabelPrintModal from '../pharmacy/PharmacyLabelPrintModal';
 import EditPatientDemographyModal from './EditPatientDemographyModal';
+import PatientCertificateModal from './PatientCertificateModal';
 
 export default function PatientVisitDeskView(props: any) {
   const {
@@ -166,13 +168,15 @@ export default function PatientVisitDeskView(props: any) {
     setHistoryAlertModalOpen,
     setIsClaimBillModalOpen,
     setIsMultiPatientModalOpen,
-    setExpireDateByWeeks
+    setExpireDateByWeeks,
+    currentUser
   } = props;
 
   const [isLabelPrintModalOpen, setIsLabelPrintModalOpen] = useState(false);
   const [labelPrintData, setLabelPrintData] = useState<any>(null);
   const [showKioskHelpModal, setShowKioskHelpModal] = useState(false);
   const [isEditDemographyModalOpen, setIsEditDemographyModalOpen] = useState(false);
+  const [isCertificateModalOpen, setIsCertificateModalOpen] = useState(false);
 
   const handleSaveDemography = (updatedPatient: Patient) => {
     if (props.onUpdatePatient) {
@@ -624,6 +628,24 @@ export default function PatientVisitDeskView(props: any) {
                     <span>Claim Bill / Invoice</span>
                   </button>
 
+                  {/* Certificate Button */}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!selectedPvPatient && !pvSelectedPatientId) {
+                        alert('Please select a patient first.');
+                        return;
+                      }
+                      setIsCertificateModalOpen(true);
+                    }}
+                    disabled={!pvSelectedPatientId && !selectedPvPatient}
+                    className="px-1.5 py-0.5 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 disabled:opacity-40 text-[10px] font-bold rounded-md transition flex items-center space-x-0.5 cursor-pointer shadow-2xs"
+                    title="Issue Official Medical Rest & Fitness Certificate (A4 Letter Head)"
+                  >
+                    <FileCheck className="w-3 h-3 text-amber-700" />
+                    <span>Certificate</span>
+                  </button>
+
                   <button
                     type="button"
                     onClick={handlePrintPreviousRxDirect}
@@ -708,6 +730,15 @@ export default function PatientVisitDeskView(props: any) {
                     <div className="text-[10px] text-slate-600 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-200">
                       City: <span className="font-bold text-slate-800">{cities.find(c => c.CityID === selectedPvPatient.CityID)?.CityName || 'Lahore'}</span> | Reg: <span className="font-bold text-slate-800">{formatDisplayDate(selectedPvPatient.RegistrationDate)}</span>
                     </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsCertificateModalOpen(true)}
+                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white text-[11px] font-bold rounded-md shadow-2xs transition flex items-center space-x-1 cursor-pointer active:scale-95"
+                      title="Issue Official Medical Rest & Fitness Certificate (A4 Letter Head)"
+                    >
+                      <FileCheck className="w-3.5 h-3.5" />
+                      <span>Certificate</span>
+                    </button>
                     <button
                       type="button"
                       onClick={() => setIsEditDemographyModalOpen(true)}
@@ -3114,6 +3145,18 @@ export default function PatientVisitDeskView(props: any) {
         patient={selectedPvPatient}
         onSave={handleSaveDemography}
         cities={cities || []}
+      />
+
+      {/* MEDICAL FITNESS & REST CERTIFICATE A4 LETTERHEAD MODAL */}
+      <PatientCertificateModal
+        isOpen={isCertificateModalOpen}
+        onClose={() => setIsCertificateModalOpen(false)}
+        patient={selectedPvPatient}
+        clinicSettings={clinicSettings}
+        pvVisitDate={pvVisitDate}
+        pvSymptomsDiagnosis={pvSymptomsDiagnosis}
+        currentUser={currentUser}
+        onAddCertificate={props.onAddCertificate}
       />
     </div>
   );
