@@ -57,6 +57,7 @@ interface ExecutiveAuditReportViewProps {
     standaloneApptFees: number;
     totalOpdIncome: number;
     grossPosSales: number;
+    totalPosDiscounts?: number;
     totalSalesReturns: number;
     netPosIncome: number;
     pharmacyCogs: number;

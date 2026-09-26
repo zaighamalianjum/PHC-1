@@ -1056,11 +1056,11 @@ export default function ReportingDesk({
     const eveningStoreReturns = eveningReturns.reduce((acc, curr) => acc + (Number(curr.NetPaid ?? curr.RefundAmount ?? curr.TotalAmount ?? 0) || 0), 0);
     const eveningStoreCollection = Math.max(0, eveningStoreGross - eveningStoreReturns);
 
-    const grossPosSales = morningStoreGross + eveningStoreGross;
+    const rawStoreGross = morningStoreGross + eveningStoreGross;
     const totalSalesReturns = morningStoreReturns + eveningStoreReturns;
     const netPosIncome = morningStoreCollection + eveningStoreCollection;
 
-    // Calculate Pharmacy COGS (Purchase Cost of Goods Sold)
+    // Calculate Pharmacy COGS (Purchase Cost of Goods Sold) & True Gross Retail Sales before Discounts
     const itemMap = new Map<string, any>();
     effectiveItems.forEach((it: any) => {
       if (it.ItemID) itemMap.set(String(it.ItemID).toUpperCase(), it);
@@ -1078,26 +1078,48 @@ export default function ReportingDesk({
     });
 
     let pharmacyCogs = 0;
+    let computedGrossPosSales = 0;
+    let computedPosDiscounts = 0;
+
     targetInvoices.forEach((inv: any) => {
       if ((inv as any).Status === 3) return;
       const invNo = String(inv.InvoiceNo || inv.id || '');
       const details = detailsByInvoice.get(invNo);
 
       if (details && details.length > 0) {
+        let invGross = 0;
+        let invDisc = 0;
         details.forEach((d: any) => {
           const itemKey = String(d.ItemID || d.itemId || '').trim();
           const item = itemMap.get(itemKey.toUpperCase()) || itemMap.get(String(d.ItemName || '').toLowerCase());
           const unitPurCost = (item?.PurchasePrice && Number(item.PurchasePrice) > 0)
             ? Number(item.PurchasePrice)
             : (item?.TP && Number(item.TP) > 0 ? Number(item.TP) : (d.Price ? Math.round(d.Price * 0.75) : 0));
-          const lineQty = Number(d.Qty || d.qty) || 0;
+          const lineQty = Number(d.Qty || d.qty || d.quantity) || 1;
+          const linePrice = Number(d.Price || d.price || d.SalePrice || d.salePrice) || (Number(item?.Price ?? item?.SalePrice) || 0);
           pharmacyCogs += lineQty * unitPurCost;
+          invGross += (lineQty * linePrice);
+          if (d.Discount !== undefined && Number(d.Discount) > 0) {
+            invDisc += Number(d.Discount);
+          }
         });
+        if (invDisc === 0 && Number(inv.Discount || inv.discount || inv.DiscountAmount || 0) > 0) {
+          invDisc = Number(inv.Discount || inv.discount || inv.DiscountAmount || 0);
+        }
+        computedGrossPosSales += invGross;
+        computedPosDiscounts += invDisc;
       } else {
         const invNet = Number(inv.NetAmount ?? inv.NetPayable ?? inv.GrandTotal ?? inv.GAmount ?? 0);
+        const invDisc = Number(inv.Discount || inv.discount || inv.DiscountAmount || 0);
+        const invGross = Number(inv.GAmount || inv.GrossAmount || inv.grossAmount || inv.TotalAmount || (invNet + invDisc)) || (invNet + invDisc);
         pharmacyCogs += Math.round(invNet * 0.75);
+        computedGrossPosSales += invGross;
+        computedPosDiscounts += invDisc;
       }
     });
+
+    const grossPosSales = computedGrossPosSales > 0 ? computedGrossPosSales : rawStoreGross;
+    const totalPosDiscounts = computedPosDiscounts > 0 ? computedPosDiscounts : Math.max(0, grossPosSales - netPosIncome);
 
     const returnsCogs = Math.round(totalSalesReturns * 0.75);
     pharmacyCogs = Math.max(0, Math.round(pharmacyCogs - returnsCogs));
@@ -1303,6 +1325,7 @@ export default function ReportingDesk({
       standaloneApptFees: standaloneTokenFees,
       totalOpdIncome,
       grossPosSales,
+      totalPosDiscounts,
       totalSalesReturns,
       netPosIncome,
       pharmacyCogs,
@@ -3343,7 +3366,8 @@ export default function ReportingDesk({
                 <td style="color: #166534; font-size: 11px;">Subtotal OPD Inflows</td>
                 <td style="text-align: right; color: #166534; font-size: 11px; font-weight: bold;">Rs. ${pnlSummaryData.totalOpdIncome.toLocaleString()}</td>
               </tr>
-              <tr><td>Gross POS Pharmacy Counter Sales</td><td style="text-align: right; font-weight: bold;">Rs. ${(pnlSummaryData.grossPosSales || pnlSummaryData.posIncome).toLocaleString()}</td></tr>
+              <tr><td>Gross POS Pharmacy Retail Sales</td><td style="text-align: right; font-weight: bold;">Rs. ${(pnlSummaryData.grossPosSales || pnlSummaryData.posIncome).toLocaleString()}</td></tr>
+              ${pnlSummaryData.totalPosDiscounts > 0 ? `<tr><td style="color: #b45309;">Less: Customer Discounts Allowed</td><td style="text-align: right; font-weight: bold; color: #b45309;">- Rs. ${pnlSummaryData.totalPosDiscounts.toLocaleString()}</td></tr>` : ''}
               ${pnlSummaryData.totalSalesReturns > 0 ? `<tr><td style="color: #b91c1c;">Less: Pharmacy Sales Returns</td><td style="text-align: right; font-weight: bold; color: #b91c1c;">- Rs. ${pnlSummaryData.totalSalesReturns.toLocaleString()}</td></tr>` : ''}
               <tr style="background: #f0fdf4; font-weight: 700;">
                 <td style="color: #166534; font-size: 11px;">Net Pharmacy Realized Sales</td>
@@ -5323,9 +5347,15 @@ export default function ReportingDesk({
                   <div className="pt-2 border-t border-emerald-200/60"></div>
 
                   <div className="flex justify-between p-2.5 bg-white rounded-xl border border-emerald-100 hover:border-emerald-200 transition">
-                    <span className="font-medium text-slate-700">Gross POS Pharmacy Counter Sales</span>
+                    <span className="font-medium text-slate-700">Gross POS Pharmacy Retail Sales</span>
                     <span className="font-bold text-slate-900">Rs. {(pnlSummaryData.grossPosSales || pnlSummaryData.posIncome).toLocaleString()}</span>
                   </div>
+                  {pnlSummaryData.totalPosDiscounts > 0 && (
+                    <div className="flex justify-between p-2.5 bg-white rounded-xl border border-amber-100 text-amber-800 hover:border-amber-200 transition">
+                      <span className="font-medium">Less: Customer Discounts Allowed</span>
+                      <span className="font-bold">- Rs. {pnlSummaryData.totalPosDiscounts.toLocaleString()}</span>
+                    </div>
+                  )}
                   {pnlSummaryData.totalSalesReturns > 0 && (
                     <div className="flex justify-between p-2.5 bg-white rounded-xl border border-rose-100 text-rose-700 hover:border-rose-200 transition">
                       <span className="font-medium">Less: Customer Sales Returns / Refunds</span>
