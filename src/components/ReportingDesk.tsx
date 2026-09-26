@@ -33,7 +33,8 @@ import {
   CheckCheck,
   FileSpreadsheet,
   Phone,
-  CreditCard
+  CreditCard,
+  ShieldCheck
 } from 'lucide-react';
 
 import {
@@ -54,8 +55,10 @@ import {
   isAppointmentRevenueEligible
 } from '../utils/appointmentRevenue';
 import { INITIAL_TL_ACCOUNTS } from '../data/initialData';
+import ExecutiveAuditReportView from './reporting/ExecutiveAuditReportView';
 
 export type ReportType =
+  | 'comprehensive_audit'
   | 'pending_payments'
   | 'payroll_disbursement'
   | 'expense_analysis'
@@ -443,8 +446,8 @@ export default function ReportingDesk({
     return false;
   };
 
-  // Active Report Type Selection
-  const [activeReport, setActiveReport] = useState<ReportType>('pending_payments');
+  // Active Report Type Selection (Default to Comprehensive Master Audit)
+  const [activeReport, setActiveReport] = useState<ReportType>('comprehensive_audit');
 
   // Dynamic Date, Fiscal Year & Month Calculation
   const now = new Date();
@@ -2317,7 +2320,111 @@ export default function ReportingDesk({
     let headers: string[] = [];
     let rows: (string | number)[][] = [];
 
-    if (activeReport === 'pending_payments') {
+    if (activeReport === 'comprehensive_audit') {
+      filename = `Master_Financial_Audit_Stock_Expenses_PnL_${startDate}_to_${endDate}.csv`;
+      headers = [
+        'Report Section',
+        'Particular / Account / Item',
+        'Category / Subtype',
+        'Reference / Detail',
+        'Payment Mode / Status',
+        'Debit / Outflow (Rs.)',
+        'Credit / Inflow (Rs.)',
+        'Net Valuation / Margin (Rs.)'
+      ];
+
+      // 1. Stock valuation lines
+      rows.push(['--- 1. CURRENT MEDICINE STOCK AT PURCHASE COST ---', '', '', '', '', '', '', '']);
+      currentStockData.slice(0, 50).forEach(it => {
+        const cStock = getItemStock(it);
+        const pPrice = Number(it.PurchasePrice ?? it.purchasePrice ?? it.Price ?? it.price ?? 0);
+        const rPrice = Number(it.Price ?? it.price ?? 0);
+        rows.push([
+          '1. Medicine Stock',
+          it.ItemName || it.name,
+          getItemCategory(it),
+          `Stock: ${cStock} | Cost: Rs. ${pPrice} | Retail: Rs. ${rPrice}`,
+          cStock > 0 ? 'In Stock' : 'Out of Stock',
+          '',
+          '',
+          cStock * pPrice
+        ]);
+      });
+      rows.push([
+        '1. Medicine Stock Total',
+        `Total Stock Units: ${currentStockSummary.totalStockUnits}`,
+        `${currentStockSummary.totalItems} Items`,
+        `Retail Valuation: Rs. ${currentStockSummary.totalRetailValuation}`,
+        'Grand Purchase Cost',
+        '',
+        '',
+        currentStockSummary.totalPurchaseValuation
+      ]);
+
+      // 2. Clinic Cash Earnings
+      rows.push(['--- 2. CLINIC & PHARMACY CASH EARNINGS ---', '', '', '', '', '', '', '']);
+      rows.push(['2. Clinical Earning', 'Doctor OPD Consultation Fees', 'OPD Checkups', 'Consultation', 'Cash', '', pnlSummaryData.opdConsultationFees, '']);
+      rows.push(['2. Clinical Earning', 'Patient Card & File Registration Fees', 'Patient Registration', 'Registration Cards', 'Cash', '', pnlSummaryData.opdCardFees, '']);
+      rows.push(['2. Clinical Earning', 'Clinical Medicine Dispensing Charges', 'Medicine Dispensing', 'Clinic Dispensing', 'Cash', '', pnlSummaryData.opdDispensingFees, '']);
+      rows.push(['2. Pharmacy Earning', 'Gross POS Pharmacy Counter Sales', 'Pharmacy Sales', 'Counter Invoices', 'Cash / POS', '', pnlSummaryData.grossPosSales, '']);
+      if (pnlSummaryData.totalSalesReturns > 0) {
+        rows.push(['2. Pharmacy Return', 'Less: Customer Sales Returns & Refunds', 'Sales Return', 'Refunds', 'Cash', pnlSummaryData.totalSalesReturns, '', '']);
+      }
+      rows.push(['2. Pharmacy Earning', 'Net Realized Pharmacy Cash Sales', 'Pharmacy Net', 'Realized', 'Cash', '', pnlSummaryData.netPosIncome, '']);
+      rows.push(['2. Other Inflows', 'Other Direct Income / Receipts', 'Direct Deposits', 'Receipts', 'Cash/Bank', '', pnlSummaryData.otherIncome, '']);
+      rows.push(['2. Total Gross Inflow', 'TOTAL CLINIC & PHARMACY EARNED CASH', 'All Inflows', `Period: ${startDate} to ${endDate}`, 'Grand Total', '', pnlSummaryData.totalIncome, '']);
+
+      // 3. Detailed Expenses
+      rows.push(['--- 3. OPERATIONAL & CLINIC EXPENSES ---', '', '', '', '', '', '', '']);
+      expenseData.forEach(exp => {
+        rows.push([
+          '3. Operational Expense',
+          exp.Description || 'Clinic Expense',
+          exp.Category || 'General',
+          `Voucher: ${exp.ExpenseID || ''} | Payee: ${exp.Payee || 'Self'} | Date: ${exp.ExpenseDate || ''}`,
+          exp.PaymentMethod || 'Cash',
+          Number(exp.Amount || 0),
+          '',
+          ''
+        ]);
+      });
+      rows.push([
+        '3. Total Expenses',
+        'TOTAL OPERATIONAL EXPENSES',
+        `${expenseData.length} Records`,
+        'All categories combined',
+        'Grand Total',
+        expenseSummary.totalExpense,
+        '',
+        ''
+      ]);
+
+      // 4. Cash Flow Summary
+      rows.push(['--- 4. CASH INFLOW VS OUTFLOW SUMMARY ---', '', '', '', '', '', '', '']);
+      rows.push(['4. Cash Inflow', 'Total Inflows Received', 'Clinic + POS', 'Consultation, Pharmacy, Other', 'Receipts', '', pnlSummaryData.totalIncome, '']);
+      rows.push(['4. Cash Outflow', 'Vendor & Stock Procurements', 'Medicine Restocking', 'Spot Delivery & Credit', 'Disbursements', pnlSummaryData.vendorOutflows, '', '']);
+      rows.push(['4. Cash Outflow', 'Staff Salaries & Payroll', 'Employee Payroll', 'All staff salaries paid', 'Disbursements', pnlSummaryData.salaryOutflows, '', '']);
+      rows.push(['4. Cash Outflow', 'Operational & Clinic Expenses', 'Rent, Utilities, Maintenance', 'General operational costs', 'Disbursements', pnlSummaryData.totalOperatingExpenses, '', '']);
+      rows.push(['4. Cash Outflow Total', 'TOTAL CASH OUTFLOWS', 'All Outflows', 'Combined expenditures', 'Grand Total Outflows', pnlSummaryData.totalExpenses, '', '']);
+      rows.push(['4. Net Cash Flow', 'NET CASH SURPLUS / DEFICIT', 'Inflow - Outflow', 'Period cash position', pnlSummaryData.netProfit >= 0 ? 'Surplus' : 'Deficit', '', '', pnlSummaryData.netProfit]);
+
+      // 5. Final Net Profit & Loss
+      rows.push(['--- 5. FINAL NET PROFIT & LOSS (P&L) STATEMENT ---', '', '', '', '', '', '', '']);
+      rows.push(['5. P&L Gross Revenue', 'Total Gross Revenue', 'Inflow', 'OPD + Pharmacy Net', 'Revenue', '', pnlSummaryData.totalIncome, '']);
+      rows.push(['5. P&L COGS', 'Cost of Goods Sold (COGS)', 'Medicine Purchase Cost', 'Dispensed/Sold medicines cost', 'Cost of Sales', pnlSummaryData.pharmacyCogs, '', '']);
+      rows.push(['5. P&L Gross Margin', 'Gross Operational Profit', 'Margin', 'Revenue - COGS', 'Margin', '', '', pnlSummaryData.totalIncome - pnlSummaryData.pharmacyCogs]);
+      rows.push(['5. P&L Operating Expenses', 'Total Operating Expenses & Salaries', 'Overheads', 'Clinic Ops, Salaries, Rent, Bills', 'Overheads', pnlSummaryData.totalOperatingExpenses + pnlSummaryData.salaryOutflows, '', '']);
+      rows.push([
+        '5. P&L NET PROFIT',
+        pnlSummaryData.netProfit >= 0 ? 'NET PROFIT (SAAF BACHAT)' : 'NET DEFICIT / LOSS',
+        `Net Margin: ${pnlSummaryData.netMarginPct.toFixed(1)}%`,
+        `Calculated Period: ${startDate} to ${endDate}`,
+        pnlSummaryData.netProfit >= 0 ? 'PROFIT' : 'LOSS',
+        '',
+        '',
+        pnlSummaryData.netProfit
+      ]);
+    } else if (activeReport === 'pending_payments') {
       headers = ['Vendor ID', 'Vendor Name', 'Contact Person', 'Phone', 'Total GRN Purchases', 'Vendor Cash Paid', 'Vendor Credit Paid', 'Total Paid (Rs.)', 'Pending Balance (Rs.)', 'Status'];
       rows = pendingPaymentsData.map(v => [
         v.VendorID, v.VendorName, v.ContactPerson, v.Phone, v.totalGrnBills, v.vendorCashPaid, v.vendorCreditPaid, v.totalPaid, v.pendingBalance, v.pendingBalance > 0 ? 'Payable Due' : 'Clear'
@@ -2616,6 +2723,7 @@ export default function ReportingDesk({
     const clinicWebsite = savedSettings?.Website || (clinicSettings as any)?.Website || 'https://punjabhomeopathic.pk';
 
     const reportTitles: Record<ReportType, string> = {
+      comprehensive_audit: 'Executive Master Audit: Medicine Stock Cost, Expenses, Clinic Cash & P&L Statement',
       pending_payments: 'Pending Vendor Payments & Payable Balance Report',
       payroll_disbursement: 'Salary & Payroll Disbursement Audit Report',
       expense_analysis: 'Operational Expenses Analysis & Categorization Report',
@@ -2631,6 +2739,7 @@ export default function ReportingDesk({
     };
 
     const recordCountText =
+      activeReport === 'comprehensive_audit' ? `Executive Master Audit • ${currentStockSummary.totalItems} Medicines • ${expenseData.length} Expenses` :
       activeReport === 'pending_payments' ? `${pendingPaymentsData.length} Vendors` :
       activeReport === 'payroll_disbursement' ? `${payrollData.length} Disbursed Records` :
       activeReport === 'expense_analysis' ? `${expenseData.length} Expense Records` :
@@ -2645,7 +2754,320 @@ export default function ReportingDesk({
 
     let tableHtml = '';
 
-    if (activeReport === 'pending_payments') {
+    if (activeReport === 'comprehensive_audit') {
+      const totalInflow = pnlSummaryData.totalIncome || 1;
+      const vendorPct = Math.min(100, Math.max(0, (pnlSummaryData.vendorOutflows / totalInflow) * 100));
+      const salaryPct = Math.min(100, Math.max(0, (pnlSummaryData.salaryOutflows / totalInflow) * 100));
+      const opsPct = Math.min(100, Math.max(0, (pnlSummaryData.totalOperatingExpenses / totalInflow) * 100));
+      const profitPct = Math.max(0, (pnlSummaryData.netProfit / totalInflow) * 100);
+
+      tableHtml = `
+        <!-- EXECUTIVE 5-PILLAR FINANCIAL MATRIX -->
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 8px; margin-bottom: 20px;">
+          <div style="background: #f0fdfa; border: 1.5px solid #0d9488; padding: 10px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 9.5px; font-weight: bold; color: #0f766e; text-transform: uppercase;">1. Stock Purchase Cost</div>
+            <div style="font-size: 15px; font-weight: 900; color: #134e4a; margin-top: 2px;">Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}</div>
+            <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">${currentStockSummary.totalItems} SKUs (${currentStockSummary.totalStockUnits.toLocaleString()} Units)</div>
+          </div>
+          <div style="background: #f0fdf4; border: 1.5px solid #16a34a; padding: 10px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 9.5px; font-weight: bold; color: #15803d; text-transform: uppercase;">2. Clinic Cash Earned</div>
+            <div style="font-size: 15px; font-weight: 900; color: #14532d; margin-top: 2px;">Rs. ${pnlSummaryData.totalIncome.toLocaleString()}</div>
+            <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">OPD + POS Realized Cash</div>
+          </div>
+          <div style="background: #fff1f2; border: 1.5px solid #e11d48; padding: 10px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 9.5px; font-weight: bold; color: #be123c; text-transform: uppercase;">3. Operational Expenses</div>
+            <div style="font-size: 15px; font-weight: 900; color: #881337; margin-top: 2px;">Rs. ${expenseSummary.totalExpense.toLocaleString()}</div>
+            <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">${expenseData.length} Expense Records</div>
+          </div>
+          <div style="background: #eef2ff; border: 1.5px solid #6366f1; padding: 10px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 9.5px; font-weight: bold; color: #4338ca; text-transform: uppercase;">4. Total Cash Outflow</div>
+            <div style="font-size: 15px; font-weight: 900; color: #312e81; margin-top: 2px;">Rs. ${pnlSummaryData.totalExpenses.toLocaleString()}</div>
+            <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">Procurement + Salary + Ops</div>
+          </div>
+          <div style="background: ${pnlSummaryData.netProfit >= 0 ? '#ecfdf5' : '#fef2f2'}; border: 1.5px solid ${pnlSummaryData.netProfit >= 0 ? '#059669' : '#dc2626'}; padding: 10px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 9.5px; font-weight: bold; color: ${pnlSummaryData.netProfit >= 0 ? '#047857' : '#b91c1c'}; text-transform: uppercase;">5. Net Profit (Margin)</div>
+            <div style="font-size: 15px; font-weight: 900; color: ${pnlSummaryData.netProfit >= 0 ? '#064e3b' : '#7f1d1d'}; margin-top: 2px;">Rs. ${pnlSummaryData.netProfit.toLocaleString()}</div>
+            <div style="font-size: 8.5px; font-weight: bold; color: ${pnlSummaryData.netProfit >= 0 ? '#047857' : '#b91c1c'}; margin-top: 2px;">Net Margin: ${pnlSummaryData.netMarginPct.toFixed(1)}%</div>
+          </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- SECTION 1: MEDICINE STOCK VALUATION AT PURCHASE COST -->
+        <!-- ========================================== -->
+        <div style="margin-bottom: 22px; page-break-inside: avoid;">
+          <h3 style="background: #0f172a; color: #ffffff; padding: 7px 12px; margin: 0 0 8px 0; font-size: 12px; font-weight: bold; text-transform: uppercase; border-radius: 4px;">
+            Section 1: Current Medicine Stock Inventory & Total Purchase Cost Valuation
+          </h3>
+          <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px; font-weight: bold; color: #334155;">
+            <span>Physical Available Inventory: ${currentStockSummary.totalItems} Catalog SKUs (${currentStockSummary.totalStockUnits.toLocaleString()} Total Units)</span>
+            <span style="color: #0f766e;">Total Stock Valuation at Purchase Cost: Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}</span>
+          </div>
+          <table class="report-table">
+            <thead>
+              <tr style="background: #f1f5f9; font-size: 10px;">
+                <th style="width: 80px;">Item ID</th>
+                <th>Medicine / Item Name</th>
+                <th>Category</th>
+                <th style="text-align: center; width: 60px;">Stock</th>
+                <th style="text-align: right; width: 90px;">Unit Cost</th>
+                <th style="text-align: right; width: 90px;">Unit Retail</th>
+                <th style="text-align: right; width: 110px; background: #e6fffa; color: #047857;">Total Cost (Rs.)</th>
+                <th style="text-align: right; width: 110px;">Total Retail (Rs.)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${currentStockData.slice(0, 35).map((it, idx) => {
+                const cStock = getItemStock(it);
+                const pPrice = Number(it.PurchasePrice ?? it.purchasePrice ?? it.Price ?? it.price ?? 0);
+                const rPrice = Number(it.Price ?? it.price ?? 0);
+                return `
+                  <tr style="${idx % 2 === 0 ? '' : 'background: #f8fafc;'} font-size: 10.5px;">
+                    <td style="font-family: monospace; color: #475569;">${it.ItemID || `ITM-${idx+1}`}</td>
+                    <td><b>${it.ItemName || it.name}</b> ${it.Generic ? `<span style="font-size: 9px; color: #64748b;">(${it.Generic})</span>` : ''}</td>
+                    <td><span style="background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 9.5px;">${getItemCategory(it)}</span></td>
+                    <td style="text-align: center; font-weight: bold;">${cStock.toLocaleString()}</td>
+                    <td style="text-align: right; font-family: monospace;">Rs. ${pPrice.toLocaleString()}</td>
+                    <td style="text-align: right; font-family: monospace;">Rs. ${rPrice.toLocaleString()}</td>
+                    <td style="text-align: right; font-family: monospace; font-weight: bold; background: #f0fdfa; color: #047857;">Rs. ${(cStock * pPrice).toLocaleString()}</td>
+                    <td style="text-align: right; font-family: monospace; font-weight: bold;">Rs. ${(cStock * rPrice).toLocaleString()}</td>
+                  </tr>
+                `;
+              }).join('')}
+            </tbody>
+            <tfoot>
+              <tr style="background: #0f172a; color: #ffffff; font-weight: bold; font-size: 11px;">
+                <td colspan="3">GRAND TOTAL STOCK VALUATION</td>
+                <td style="text-align: center;">${currentStockSummary.totalStockUnits.toLocaleString()}</td>
+                <td colspan="2" style="text-align: right; color: #cbd5e1;">Grand Purchase Cost:</td>
+                <td style="text-align: right; color: #5eead4; font-size: 12px; font-family: monospace;">Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}</td>
+                <td style="text-align: right; color: #ffffff; font-size: 12px; font-family: monospace;">Rs. ${currentStockSummary.totalRetailValuation.toLocaleString()}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- SECTION 2: CLINIC CASH EARNING BREAKDOWN -->
+        <!-- ========================================== -->
+        <div style="margin-bottom: 22px; page-break-inside: avoid;">
+          <h3 style="background: #065f46; color: #ffffff; padding: 7px 12px; margin: 0 0 8px 0; font-size: 12px; font-weight: bold; text-transform: uppercase; border-radius: 4px;">
+            Section 2: Clinic & Pharmacy Cash Earnings Breakdown
+          </h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+            <table class="report-table">
+              <thead>
+                <tr style="background: #ecfdf5; color: #064e3b;"><th colspan="2">CLINICAL OPD EARNINGS</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Doctor OPD Consultation & Checkup Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdConsultationFees.toLocaleString()}</td></tr>
+                <tr><td>Patient Card, File & Registration Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdCardFees.toLocaleString()}</td></tr>
+                <tr><td>Clinical Medicine Dispensing Charges</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdDispensingFees.toLocaleString()}</td></tr>
+                ${pnlSummaryData.standaloneApptFees > 0 ? `<tr><td>Reception & Standalone Token Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.standaloneApptFees.toLocaleString()}</td></tr>` : ''}
+                <tr style="background: #d1fae5; font-weight: bold; color: #064e3b;">
+                  <td>Subtotal Clinical OPD Cash Received</td>
+                  <td style="text-align: right; font-family: monospace; font-size: 12px;">Rs. ${pnlSummaryData.totalOpdIncome.toLocaleString()}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table class="report-table">
+              <thead>
+                <tr style="background: #eff6ff; color: #1e40af;"><th colspan="2">PHARMACY COUNTER & OTHER INCOMES</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Gross POS Pharmacy Counter Sales</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.grossPosSales.toLocaleString()}</td></tr>
+                ${pnlSummaryData.totalSalesReturns > 0 ? `<tr><td style="color: #b91c1c;">Less: Customer Sales Returns & Refunds</td><td style="text-align: right; font-weight: bold; color: #b91c1c; font-family: monospace;">- Rs. ${pnlSummaryData.totalSalesReturns.toLocaleString()}</td></tr>` : ''}
+                <tr><td>Net Realized Pharmacy Cash Sales</td><td style="text-align: right; font-weight: bold; font-family: monospace; color: #047857;">Rs. ${pnlSummaryData.netPosIncome.toLocaleString()}</td></tr>
+                <tr><td>Other Direct Incomes / Capital Receipts</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.otherIncome.toLocaleString()}</td></tr>
+                <tr style="background: #dbeafe; font-weight: bold; color: #1e3a8a;">
+                  <td>Subtotal Pharmacy & Other Cash Receipts</td>
+                  <td style="text-align: right; font-family: monospace; font-size: 12px;">Rs. ${(pnlSummaryData.netPosIncome + pnlSummaryData.otherIncome).toLocaleString()}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="background: #047857; color: #ffffff; padding: 10px 14px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-weight: bold; font-size: 13px;">
+            <span>TOTAL GROSS CASH EARNED (CLINIC + PHARMACY):</span>
+            <span style="font-family: monospace; font-size: 16px;">Rs. ${pnlSummaryData.totalIncome.toLocaleString()}</span>
+          </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- SECTION 3: DETAILED EXPENSES BREAKDOWN -->
+        <!-- ========================================== -->
+        <div style="margin-bottom: 22px; page-break-inside: avoid;">
+          <h3 style="background: #881337; color: #ffffff; padding: 7px 12px; margin: 0 0 8px 0; font-size: 12px; font-weight: bold; text-transform: uppercase; border-radius: 4px;">
+            Section 3: Detailed Expenses Breakdown & Summary
+          </h3>
+          <table class="report-table">
+            <thead>
+              <tr style="background: #fff1f2; color: #881337; font-size: 10px;">
+                <th style="width: 80px;">Date</th>
+                <th style="width: 80px;">Voucher #</th>
+                <th>Category</th>
+                <th>Description / Purpose</th>
+                <th>Payee / Vendor</th>
+                <th style="text-align: center; width: 70px;">Mode</th>
+                <th style="text-align: right; width: 100px;">Amount (Rs.)</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${expenseData.length === 0 ? `
+                <tr><td colspan="7" style="text-align: center; color: #94a3b8; padding: 12px;">No operational expenses recorded for this period.</td></tr>
+              ` : expenseData.slice(0, 40).map((exp, idx) => `
+                <tr style="${idx % 2 === 0 ? '' : 'background: #f8fafc;'} font-size: 10.5px;">
+                  <td style="font-family: monospace;">${exp.ExpenseDate || '—'}</td>
+                  <td style="font-family: monospace; font-weight: bold; color: #be123c;">${exp.ExpenseID || `EXP-${idx+1}`}</td>
+                  <td><span style="background: #fecdd3; color: #881337; padding: 2px 6px; border-radius: 3px; font-size: 9.5px; font-weight: bold;">${exp.Category || 'General'}</span></td>
+                  <td>${exp.Description || 'Clinic Expense'}</td>
+                  <td>${exp.Payee || exp.VendorName || 'Self'}</td>
+                  <td style="text-align: center; font-size: 9.5px;">${exp.PaymentMethod || 'Cash'}</td>
+                  <td style="text-align: right; font-family: monospace; font-weight: bold; color: #be123c;">Rs. ${Number(exp.Amount || 0).toLocaleString()}</td>
+                </tr>
+              `).join('')}
+            </tbody>
+            <tfoot>
+              <tr style="background: #881337; color: #ffffff; font-weight: bold; font-size: 11px;">
+                <td colspan="6" style="text-align: right;">TOTAL OPERATIONAL EXPENSES (${expenseData.length} Records):</td>
+                <td style="text-align: right; font-family: monospace; font-size: 12px; color: #fecdd3;">Rs. ${expenseSummary.totalExpense.toLocaleString()}</td>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- SECTION 4: CASH INFLOW VS OUTFLOW STATEMENT -->
+        <!-- ========================================== -->
+        <div style="margin-bottom: 22px; page-break-inside: avoid;">
+          <h3 style="background: #312e81; color: #ffffff; padding: 7px 12px; margin: 0 0 8px 0; font-size: 12px; font-weight: bold; text-transform: uppercase; border-radius: 4px;">
+            Section 4: Comprehensive Cash Inflow vs Outflow Statement
+          </h3>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
+            <table class="report-table">
+              <thead>
+                <tr style="background: #047857; color: #ffffff;"><th colspan="2">CASH INFLOWS (CASH AAYA)</th></tr>
+              </thead>
+              <tbody>
+                <tr><td>Clinical OPD Consultation Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdConsultationFees.toLocaleString()}</td></tr>
+                <tr><td>Patient Card & Registration Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdCardFees.toLocaleString()}</td></tr>
+                <tr><td>Clinical Dispensing Charges</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdDispensingFees.toLocaleString()}</td></tr>
+                <tr><td>Pharmacy POS Counter Net Cash</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.netPosIncome.toLocaleString()}</td></tr>
+                <tr><td>Other Direct Receipts</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.otherIncome.toLocaleString()}</td></tr>
+                <tr style="background: #d1fae5; font-weight: 900; color: #064e3b; font-size: 11.5px;">
+                  <td>TOTAL INFLOWS</td>
+                  <td style="text-align: right; font-family: monospace; font-size: 12px;">Rs. ${pnlSummaryData.totalIncome.toLocaleString()}</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <table class="report-table">
+              <thead>
+                <tr style="background: #be123c; color: #ffffff;"><th colspan="2">CASH OUTFLOWS (CASH KHARCHA HUWA)</th></tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td>Medicine Purchases & Vendor Procurements</td>
+                  <td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.vendorOutflows.toLocaleString()}</td>
+                </tr>
+                <tr><td>Staff Salaries & Payroll Disbursements</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.salaryOutflows.toLocaleString()}</td></tr>
+                <tr><td>Operational, Clinic & Building Expenses</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.totalOperatingExpenses.toLocaleString()}</td></tr>
+                <tr style="background: #ffe4e6; font-weight: 900; color: #881337; font-size: 11.5px;">
+                  <td>TOTAL OUTFLOWS</td>
+                  <td style="text-align: right; font-family: monospace; font-size: 12px;">Rs. ${pnlSummaryData.totalExpenses.toLocaleString()}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <div style="background: #f8fafc; border: 2px solid #334155; padding: 10px 14px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-weight: bold; font-size: 13px;">
+            <span>NET CASH SURPLUS / DEFICIT (INFLOW − OUTFLOW):</span>
+            <span style="font-family: monospace; font-size: 16px; color: ${pnlSummaryData.netProfit >= 0 ? '#047857' : '#b91c1c'};">Rs. ${pnlSummaryData.netProfit.toLocaleString()}</span>
+          </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- SECTION 5: FINAL NET PROFIT & LOSS STATEMENT & CASH UTILIZATION -->
+        <!-- ========================================== -->
+        <div style="margin-bottom: 25px; page-break-inside: avoid;">
+          <h3 style="background: #0f172a; color: #ffffff; padding: 7px 12px; margin: 0 0 8px 0; font-size: 12px; font-weight: bold; text-transform: uppercase; border-radius: 4px;">
+            Section 5: Final Net Profit & Loss (P&L) Statement & Cash Utilization Flow
+          </h3>
+
+          <!-- Cash Utilization Percentages Summary -->
+          <div style="background: #f8fafc; border: 1px solid #cbd5e1; border-radius: 6px; padding: 10px; margin-bottom: 12px; font-size: 11px;">
+            <div style="font-weight: bold; color: #334155; margin-bottom: 6px; text-transform: uppercase;">
+              Cash Drainage & Utilization Flow (Kahan Kahan Cash Istemal Huwa):
+            </div>
+            <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px;">
+              <div style="background: #eef2ff; padding: 6px; border-radius: 4px; border: 1px solid #c7d2fe;">
+                <span style="font-size: 9.5px; color: #4338ca; display: block; font-weight: bold;">Medicine Restocking:</span>
+                <b style="font-family: monospace; color: #1e1b4b;">Rs. ${pnlSummaryData.vendorOutflows.toLocaleString()} (${vendorPct.toFixed(1)}%)</b>
+              </div>
+              <div style="background: #faf5ff; padding: 6px; border-radius: 4px; border: 1px solid #e9d5ff;">
+                <span style="font-size: 9.5px; color: #7e22ce; display: block; font-weight: bold;">Staff Salaries & Payroll:</span>
+                <b style="font-family: monospace; color: #3b0764;">Rs. ${pnlSummaryData.salaryOutflows.toLocaleString()} (${salaryPct.toFixed(1)}%)</b>
+              </div>
+              <div style="background: #fff1f2; padding: 6px; border-radius: 4px; border: 1px solid #fecdd3;">
+                <span style="font-size: 9.5px; color: #be123c; display: block; font-weight: bold;">Clinic Bills & Ops:</span>
+                <b style="font-family: monospace; color: #4c0519;">Rs. ${pnlSummaryData.totalOperatingExpenses.toLocaleString()} (${opsPct.toFixed(1)}%)</b>
+              </div>
+              <div style="background: #ecfdf5; padding: 6px; border-radius: 4px; border: 1px solid #a7f3d0;">
+                <span style="font-size: 9.5px; color: #047857; display: block; font-weight: bold;">★ Net Retained Profit:</span>
+                <b style="font-family: monospace; color: #064e3b;">Rs. ${pnlSummaryData.netProfit.toLocaleString()} (${profitPct.toFixed(1)}%)</b>
+              </div>
+            </div>
+          </div>
+
+          <table class="report-table">
+            <thead>
+              <tr style="background: #0f172a; color: #ffffff;"><th colspan="2">EXECUTIVE P&L RECONCILIATION</th></tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><b>1. Total Gross Revenue (Clinical Inflows + Pharmacy Sales)</b></td>
+                <td style="text-align: right; font-weight: bold; font-family: monospace; font-size: 11.5px; color: #047857;">Rs. ${pnlSummaryData.totalIncome.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td>2. Less: Cost of Goods Sold (COGS) for Medicines Dispensed & Sold</td>
+                <td style="text-align: right; font-family: monospace; color: #64748b;">- Rs. ${pnlSummaryData.pharmacyCogs.toLocaleString()}</td>
+              </tr>
+              <tr style="background: #f0fdf4; font-weight: bold;">
+                <td style="color: #064e3b;">3. Gross Realized Operational Margin</td>
+                <td style="text-align: right; font-family: monospace; color: #064e3b;">Rs. ${(pnlSummaryData.totalIncome - pnlSummaryData.pharmacyCogs).toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td>4. Less: Operating, Clinic & Building Expenses (Rent, Utilities, Maintenance)</td>
+                <td style="text-align: right; font-family: monospace; color: #be123c;">- Rs. ${pnlSummaryData.totalOperatingExpenses.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td>5. Less: Staff Salaries & Payroll Disbursements</td>
+                <td style="text-align: right; font-family: monospace; color: #be123c;">- Rs. ${pnlSummaryData.salaryOutflows.toLocaleString()}</td>
+              </tr>
+              <tr>
+                <td>6. Less: Direct Medicine Stock Procurement Outflows</td>
+                <td style="text-align: right; font-family: monospace; color: #be123c;">- Rs. ${pnlSummaryData.vendorOutflows.toLocaleString()}</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div style="background: ${pnlSummaryData.netProfit >= 0 ? '#064e3b' : '#7f1d1d'}; color: #ffffff; padding: 14px 18px; border-radius: 8px; margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #a7f3d0; letter-spacing: 0.5px;">FINAL NET OPERATIONAL AUDIT RESULT (SAAF BACHAT)</div>
+              <div style="font-size: 20px; font-weight: 900; margin-top: 2px;">
+                ${pnlSummaryData.netProfit >= 0 ? `NET PROFIT: Rs. ${pnlSummaryData.netProfit.toLocaleString()}` : `NET DEFICIT: - Rs. ${Math.abs(pnlSummaryData.netProfit).toLocaleString()}`}
+              </div>
+              <div style="font-size: 10px; color: #d1fae5; margin-top: 2px;">
+                Period: ${startDate} to ${endDate} | Net Profit Margin: ${pnlSummaryData.netMarginPct.toFixed(1)}%
+              </div>
+            </div>
+            <div style="text-align: right; font-size: 11px;">
+              <span style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 4px; font-weight: bold;">
+                ${pnlSummaryData.netProfit >= 0 ? '✓ Profitable Operation' : '⚠️ Operational Deficit'}
+              </span>
+            </div>
+          </div>
+        </div>
+      `;
+    } else if (activeReport === 'pending_payments') {
       tableHtml = `
         <table class="report-table">
           <thead>
@@ -3686,8 +4108,9 @@ export default function ReportingDesk({
         </div>
 
         {/* REPORT TYPE SELECTOR BUTTONS */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-12 gap-2 mt-6 pt-5 border-t border-slate-800">
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 xl:grid-cols-13 gap-2 mt-6 pt-5 border-t border-slate-800">
           {[
+            { id: 'comprehensive_audit', label: '★ Master Financial Audit', icon: ShieldCheck, badge: '5-in-1', isMaster: true },
             { id: 'ledger_postings', label: 'GL & Ledger Postings', icon: BookOpen, badge: filteredLedgerData.rows.length },
             { id: 'pending_payments', label: 'Pending Vendor Payments', icon: Building2, badge: pendingPaymentsSummary.vendorsWithDues },
             { id: 'payroll_disbursement', label: 'Salary Disbursement', icon: Users, badge: payrollSummary.recordCount },
@@ -3709,14 +4132,19 @@ export default function ReportingDesk({
                 onClick={() => setActiveReport(tab.id as ReportType)}
                 className={`p-2.5 rounded-xl transition flex flex-col items-center text-center space-y-1.5 cursor-pointer border ${
                   isActive
-                    ? 'bg-indigo-600 border-indigo-400 text-white shadow-md font-bold'
+                    ? tab.isMaster
+                      ? 'bg-gradient-to-r from-emerald-600 to-teal-700 border-emerald-400 text-white shadow-lg font-bold ring-2 ring-emerald-400/50'
+                      : 'bg-indigo-600 border-indigo-400 text-white shadow-md font-bold'
+                    : tab.isMaster
+                    ? 'bg-emerald-950/70 hover:bg-emerald-900/80 border-emerald-700/60 text-emerald-200 font-bold'
                     : 'bg-slate-800/80 hover:bg-slate-800 border-slate-700/80 text-slate-300 font-medium'
                 }`}
               >
                 <div className="relative">
-                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : tab.isAlert ? 'text-amber-400' : 'text-indigo-400'}`} />
-                  {tab.badge !== undefined && tab.badge > 0 && (
+                  <Icon className={`w-4 h-4 ${isActive ? 'text-white' : tab.isMaster ? 'text-emerald-300' : tab.isAlert ? 'text-amber-400' : 'text-indigo-400'}`} />
+                  {tab.badge !== undefined && (
                     <span className={`absolute -top-2 -right-3 px-1.5 py-0.2 text-[9px] font-bold rounded-full ${
+                      tab.isMaster ? 'bg-amber-400 text-slate-950 font-black shadow-xs' :
                       tab.isAlert ? 'bg-rose-500 text-white' : 'bg-slate-900 text-indigo-300 border border-slate-700'
                     }`}>
                       {tab.badge}
@@ -4386,6 +4814,7 @@ export default function ReportingDesk({
           <h3 className="font-bold text-slate-900 text-sm flex items-center space-x-2">
             <FileText className="w-4 h-4 text-indigo-600" />
             <span>
+              {activeReport === 'comprehensive_audit' && 'Comprehensive Master Audit: Medicine Stock Cost, Expenses, Clinic Cash & P&L'}
               {activeReport === 'pending_payments' && 'Pending Vendor Payments & Payable Balance Report'}
               {activeReport === 'payroll_disbursement' && 'Salary & Payroll Disbursement Records'}
               {activeReport === 'expense_analysis' && 'Operational Expense Analysis'}
@@ -4402,6 +4831,26 @@ export default function ReportingDesk({
             Period: {startDate} to {endDate}
           </span>
         </div>
+
+        {/* REPORT TABLE 0: COMPREHENSIVE FINANCIAL, STOCK & P&L MASTER AUDIT */}
+        {activeReport === 'comprehensive_audit' && (
+          <ExecutiveAuditReportView
+            startDate={startDate}
+            endDate={endDate}
+            datePreset={datePreset}
+            clinicSettings={clinicSettings}
+            currentStockData={currentStockData}
+            currentStockSummary={currentStockSummary}
+            getItemStock={getItemStock}
+            getItemMinStock={getItemMinStock}
+            getItemCategory={getItemCategory}
+            pnlSummaryData={pnlSummaryData}
+            expenseData={expenseData}
+            expenseSummary={expenseSummary}
+            onPrintReport={handlePrintReport}
+            onExportCSV={handleExportCSV}
+          />
+        )}
 
         {/* REPORT TABLE 1: PENDING PAYMENTS */}
         {activeReport === 'pending_payments' && (
