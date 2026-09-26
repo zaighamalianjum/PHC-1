@@ -2415,7 +2415,8 @@ export default function ReportingDesk({
       rows.push(['4. Cash Outflow', 'Staff Salaries & Payroll', 'Employee Payroll', 'All staff salaries paid', 'Disbursements', pnlSummaryData.salaryOutflows, '', '']);
       rows.push(['4. Cash Outflow', 'Operational & Clinic Expenses', 'Rent, Utilities, Maintenance', 'General operational costs', 'Disbursements', pnlSummaryData.totalOperatingExpenses, '', '']);
       rows.push(['4. Cash Outflow Total', 'TOTAL CASH OUTFLOWS', 'All Outflows', 'Combined expenditures', 'Grand Total Outflows', pnlSummaryData.totalExpenses, '', '']);
-      rows.push(['4. Net Cash Flow', 'NET CASH SURPLUS / DEFICIT', 'Inflow - Outflow', 'Period cash position', pnlSummaryData.netProfit >= 0 ? 'Surplus' : 'Deficit', '', '', pnlSummaryData.netProfit]);
+      const netCashFlowVal = pnlSummaryData.netCashFlow !== undefined ? pnlSummaryData.netCashFlow : (pnlSummaryData.totalIncome - pnlSummaryData.totalExpenses);
+      rows.push(['4. Net Cash Flow', 'NET CASH SURPLUS / DEFICIT', 'Inflow - Outflow', 'Period cash position', netCashFlowVal >= 0 ? 'Surplus' : 'Deficit', '', '', netCashFlowVal]);
 
       // 5. Final Net Profit & Loss
       rows.push(['--- 5. FINAL NET PROFIT & LOSS (P&L) STATEMENT ---', '', '', '', '', '', '', '']);
@@ -2946,7 +2947,7 @@ export default function ReportingDesk({
           </div>
           <div style="background: #f8fafc; border: 2px solid #334155; padding: 10px 14px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-weight: bold; font-size: 13px;">
             <span>NET CASH SURPLUS / DEFICIT (INFLOW − OUTFLOW):</span>
-            <span style="font-family: monospace; font-size: 16px; color: ${pnlSummaryData.netProfit >= 0 ? '#047857' : '#b91c1c'};">Rs. ${pnlSummaryData.netProfit.toLocaleString()}</span>
+            <span style="font-family: monospace; font-size: 16px; color: ${netCashSurplus >= 0 ? '#047857' : '#b91c1c'};">Rs. ${netCashSurplus.toLocaleString()}</span>
           </div>
         </div>
 

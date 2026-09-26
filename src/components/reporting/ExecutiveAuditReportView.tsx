@@ -677,6 +677,14 @@ export default function ExecutiveAuditReportView({
               </div>
             </div>
           </div>
+
+          {/* NET CASH SURPLUS / DEFICIT (INFLOW - OUTFLOW) */}
+          <div className="bg-slate-100 border-2 border-slate-700 p-3.5 rounded-xl flex justify-between items-center text-xs font-bold mt-3">
+            <span className="text-slate-800 uppercase tracking-wide">Net Cash Surplus / Deficit (Inflow − Outflow):</span>
+            <span className={`font-mono text-base font-black ${netCashSurplus >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>
+              Rs. {netCashSurplus.toLocaleString()}
+            </span>
+          </div>
         </div>
       )}
 
