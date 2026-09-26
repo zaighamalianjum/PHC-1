@@ -2333,28 +2333,38 @@ export default function ReportingDesk({
         'Net Valuation / Margin (Rs.)'
       ];
 
-      // 1. Stock valuation lines
-      rows.push(['--- 1. CURRENT MEDICINE STOCK AT PURCHASE COST ---', '', '', '', '', '', '', '']);
-      currentStockData.slice(0, 50).forEach(it => {
-        const cStock = getItemStock(it);
-        const pPrice = Number(it.PurchasePrice ?? it.purchasePrice ?? it.Price ?? it.price ?? 0);
-        const rPrice = Number(it.Price ?? it.price ?? 0);
-        rows.push([
-          '1. Medicine Stock',
-          it.ItemName || it.name,
-          getItemCategory(it),
-          `Stock: ${cStock} | Cost: Rs. ${pPrice} | Retail: Rs. ${rPrice}`,
-          cStock > 0 ? 'In Stock' : 'Out of Stock',
-          '',
-          '',
-          cStock * pPrice
-        ]);
+      // 1. Stock valuation lines (Category total costs - no individual medicine names)
+      rows.push(['--- 1. CURRENT MEDICINE STOCK TOTAL COST VALUATION ---', '', '', '', '', '', '', '']);
+      const catMapCsv = new Map<string, { totalCost: number; totalRetail: number }>();
+      currentStockData.forEach(item => {
+        const cat = getItemCategory(item) || 'General';
+        const cStock = getItemStock(item);
+        const pPrice = Number(item.PurchasePrice ?? item.purchasePrice ?? item.Price ?? item.price ?? 0);
+        const rPrice = Number(item.Price ?? item.price ?? 0);
+        const existing = catMapCsv.get(cat) || { totalCost: 0, totalRetail: 0 };
+        existing.totalCost += cStock * pPrice;
+        existing.totalRetail += cStock * rPrice;
+        catMapCsv.set(cat, existing);
       });
+      Array.from(catMapCsv.entries())
+        .sort((a, b) => b[1].totalCost - a[1].totalCost)
+        .forEach(([cat, val]) => {
+          rows.push([
+            '1. Medicine Group Valuation',
+            cat,
+            'Category Cost',
+            `Retail Value: Rs. ${val.totalRetail} | Margin: +Rs. ${val.totalRetail - val.totalCost}`,
+            'Active Category',
+            '',
+            '',
+            val.totalCost
+          ]);
+        });
       rows.push([
         '1. Medicine Stock Total',
-        `Total Stock Units: ${currentStockSummary.totalStockUnits}`,
-        `${currentStockSummary.totalItems} Items`,
-        `Retail Valuation: Rs. ${currentStockSummary.totalRetailValuation}`,
+        'GRAND TOTAL PURCHASE COST OF MEDICINES',
+        'Current Time Stock Asset',
+        `Total Retail Value: Rs. ${currentStockSummary.totalRetailValuation} | Expected Margin: +Rs. ${currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation}`,
         'Grand Purchase Cost',
         '',
         '',
@@ -2792,55 +2802,74 @@ export default function ReportingDesk({
         </div>
 
         <!-- ========================================== -->
-        <!-- SECTION 1: MEDICINE STOCK VALUATION AT PURCHASE COST -->
+        <!-- SECTION 1: MEDICINE STOCK TOTAL COST VALUATION -->
         <!-- ========================================== -->
         <div style="margin-bottom: 22px; page-break-inside: avoid;">
           <h3 style="background: #0f172a; color: #ffffff; padding: 7px 12px; margin: 0 0 8px 0; font-size: 12px; font-weight: bold; text-transform: uppercase; border-radius: 4px;">
-            Section 1: Current Medicine Stock Inventory & Total Purchase Cost Valuation
+            Section 1: Current Medicine Stock Total Cost Valuation
           </h3>
-          <div style="display: flex; justify-content: space-between; font-size: 11px; margin-bottom: 6px; font-weight: bold; color: #334155;">
-            <span>Physical Available Inventory: ${currentStockSummary.totalItems} Catalog SKUs (${currentStockSummary.totalStockUnits.toLocaleString()} Total Units)</span>
-            <span style="color: #0f766e;">Total Stock Valuation at Purchase Cost: Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}</span>
+
+          <!-- Highlight Total Valuation Box -->
+          <div style="background: #f0fdfa; border: 2px solid #0d9488; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
+            <div>
+              <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #0f766e; letter-spacing: 0.5px;">TOTAL MEDICINE STOCK PURCHASE COST (CURRENT TIME)</div>
+              <div style="font-size: 22px; font-weight: 900; color: #134e4a; margin-top: 2px;">
+                Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}
+              </div>
+              <div style="font-size: 10.5px; color: #64748b; margin-top: 2px;">
+                Total Retail / Sale Value: Rs. ${currentStockSummary.totalRetailValuation.toLocaleString()} &nbsp;|&nbsp; Potential Margin: +Rs. ${(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()}
+              </div>
+            </div>
+            <div style="text-align: right; background: #ffffff; border: 1px solid #ccfbf1; padding: 6px 12px; border-radius: 6px;">
+              <span style="font-size: 9.5px; color: #0f766e; font-weight: bold; display: block;">INVENTORY ASSET</span>
+              <span style="font-size: 11px; font-weight: 900; color: #0f766e;">TOTAL VALUATION</span>
+            </div>
           </div>
+
+          <!-- Group-level Total Cost Breakdown Table -->
           <table class="report-table">
             <thead>
               <tr style="background: #f1f5f9; font-size: 10px;">
-                <th style="width: 80px;">Item ID</th>
-                <th>Medicine / Item Name</th>
-                <th>Category</th>
-                <th style="text-align: center; width: 60px;">Stock</th>
-                <th style="text-align: right; width: 90px;">Unit Cost</th>
-                <th style="text-align: right; width: 90px;">Unit Retail</th>
-                <th style="text-align: right; width: 110px; background: #e6fffa; color: #047857;">Total Cost (Rs.)</th>
-                <th style="text-align: right; width: 110px;">Total Retail (Rs.)</th>
+                <th>Medicine Category / Group</th>
+                <th style="text-align: right; width: 160px; background: #e6fffa; color: #047857;">Total Purchase Cost (Rs.)</th>
+                <th style="text-align: right; width: 160px;">Total Retail Value (Rs.)</th>
+                <th style="text-align: right; width: 150px; color: #059669;">Potential Margin (Rs.)</th>
+                <th style="text-align: right; width: 90px;">Share (%)</th>
               </tr>
             </thead>
             <tbody>
-              ${currentStockData.slice(0, 35).map((it, idx) => {
-                const cStock = getItemStock(it);
-                const pPrice = Number(it.PurchasePrice ?? it.purchasePrice ?? it.Price ?? it.price ?? 0);
-                const rPrice = Number(it.Price ?? it.price ?? 0);
-                return `
-                  <tr style="${idx % 2 === 0 ? '' : 'background: #f8fafc;'} font-size: 10.5px;">
-                    <td style="font-family: monospace; color: #475569;">${it.ItemID || `ITM-${idx+1}`}</td>
-                    <td><b>${it.ItemName || it.name}</b> ${it.Generic ? `<span style="font-size: 9px; color: #64748b;">(${it.Generic})</span>` : ''}</td>
-                    <td><span style="background: #f1f5f9; padding: 2px 6px; border-radius: 3px; font-size: 9.5px;">${getItemCategory(it)}</span></td>
-                    <td style="text-align: center; font-weight: bold;">${cStock.toLocaleString()}</td>
-                    <td style="text-align: right; font-family: monospace;">Rs. ${pPrice.toLocaleString()}</td>
-                    <td style="text-align: right; font-family: monospace;">Rs. ${rPrice.toLocaleString()}</td>
-                    <td style="text-align: right; font-family: monospace; font-weight: bold; background: #f0fdfa; color: #047857;">Rs. ${(cStock * pPrice).toLocaleString()}</td>
-                    <td style="text-align: right; font-family: monospace; font-weight: bold;">Rs. ${(cStock * rPrice).toLocaleString()}</td>
-                  </tr>
-                `;
-              }).join('')}
+              ${(() => {
+                const cMap = new Map<string, { totalCost: number; totalRetail: number }>();
+                currentStockData.forEach(item => {
+                  const cat = getItemCategory(item) || 'General';
+                  const cStock = getItemStock(item);
+                  const pPrice = Number(item.PurchasePrice ?? item.purchasePrice ?? item.Price ?? item.price ?? 0);
+                  const rPrice = Number(item.Price ?? item.price ?? 0);
+                  const existing = cMap.get(cat) || { totalCost: 0, totalRetail: 0 };
+                  existing.totalCost += cStock * pPrice;
+                  existing.totalRetail += cStock * rPrice;
+                  cMap.set(cat, existing);
+                });
+                return Array.from(cMap.entries())
+                  .sort((a, b) => b[1].totalCost - a[1].totalCost)
+                  .map(([cat, val], idx) => `
+                    <tr style="${idx % 2 === 0 ? '' : 'background: #f8fafc;'} font-size: 11px;">
+                      <td><b>${cat}</b></td>
+                      <td style="text-align: right; font-family: monospace; font-weight: bold; background: #f0fdfa; color: #047857;">Rs. ${val.totalCost.toLocaleString()}</td>
+                      <td style="text-align: right; font-family: monospace; font-weight: bold;">Rs. ${val.totalRetail.toLocaleString()}</td>
+                      <td style="text-align: right; font-family: monospace; font-weight: bold; color: #059669;">+Rs. ${(val.totalRetail - val.totalCost).toLocaleString()}</td>
+                      <td style="text-align: right; font-family: monospace;">${currentStockSummary.totalPurchaseValuation > 0 ? ((val.totalCost / currentStockSummary.totalPurchaseValuation) * 100).toFixed(1) : 0}%</td>
+                    </tr>
+                  `).join('');
+              })()}
             </tbody>
             <tfoot>
               <tr style="background: #0f172a; color: #ffffff; font-weight: bold; font-size: 11px;">
-                <td colspan="3">GRAND TOTAL STOCK VALUATION</td>
-                <td style="text-align: center;">${currentStockSummary.totalStockUnits.toLocaleString()}</td>
-                <td colspan="2" style="text-align: right; color: #cbd5e1;">Grand Purchase Cost:</td>
-                <td style="text-align: right; color: #5eead4; font-size: 12px; font-family: monospace;">Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}</td>
-                <td style="text-align: right; color: #ffffff; font-size: 12px; font-family: monospace;">Rs. ${currentStockSummary.totalRetailValuation.toLocaleString()}</td>
+                <td>GRAND TOTAL MEDICINES STOCK COST</td>
+                <td style="text-align: right; color: #5eead4; font-size: 13px; font-family: monospace;">Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}</td>
+                <td style="text-align: right; color: #ffffff; font-size: 13px; font-family: monospace;">Rs. ${currentStockSummary.totalRetailValuation.toLocaleString()}</td>
+                <td style="text-align: right; color: #34d399; font-size: 13px; font-family: monospace;">+Rs. ${(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()}</td>
+                <td style="text-align: right;">100.0%</td>
               </tr>
             </tfoot>
           </table>

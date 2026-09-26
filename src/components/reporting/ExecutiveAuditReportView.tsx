@@ -105,32 +105,36 @@ export default function ExecutiveAuditReportView({
 }: ExecutiveAuditReportViewProps) {
   // Navigation sub-tab inside the comprehensive audit report
   const [activeSubSection, setActiveSubSection] = useState<'all' | 'stock' | 'earnings' | 'expenses' | 'cashflow' | 'pnl'>('all');
-  const [stockSearch, setStockSearch] = useState('');
   const [expenseSearch, setExpenseSearch] = useState('');
-  const [stockCategoryFilter, setStockCategoryFilter] = useState('all');
 
-  // Filtered medicine stock items
-  const filteredStockItems = useMemo(() => {
-    return currentStockData.filter(item => {
-      const name = String(item.ItemName || item.name || '').toLowerCase();
-      const cat = getItemCategory(item).toLowerCase();
-      const id = String(item.ItemID || item._id || '').toLowerCase();
-      const q = stockSearch.toLowerCase().trim();
-      const matchesSearch = !q || name.includes(q) || cat.includes(q) || id.includes(q);
-      const matchesCat = stockCategoryFilter === 'all' || getItemCategory(item) === stockCategoryFilter;
-      return matchesSearch && matchesCat;
-    });
-  }, [currentStockData, stockSearch, stockCategoryFilter, getItemCategory]);
-
-  // Unique categories for stock
-  const uniqueStockCategories = useMemo(() => {
-    const cats = new Set<string>();
+  // Group stock valuation by broad categories (Total costs breakdown - no individual medicine names/items)
+  const categoryStockValuation = useMemo(() => {
+    const map = new Map<string, { totalCost: number; totalRetail: number; count: number }>();
     currentStockData.forEach(item => {
-      const c = getItemCategory(item);
-      if (c) cats.add(c);
+      const cat = getItemCategory(item) || 'General Medicines';
+      const cStock = getItemStock(item);
+      const pPrice = Number(item.PurchasePrice ?? item.purchasePrice ?? item.Price ?? item.price ?? 0);
+      const rPrice = Number(item.Price ?? item.price ?? 0);
+      const existing = map.get(cat) || { totalCost: 0, totalRetail: 0, count: 0 };
+      existing.totalCost += cStock * pPrice;
+      existing.totalRetail += cStock * rPrice;
+      existing.count += 1;
+      map.set(cat, existing);
     });
-    return Array.from(cats).sort();
-  }, [currentStockData, getItemCategory]);
+
+    return Array.from(map.entries())
+      .map(([category, data]) => ({
+        category,
+        totalCost: data.totalCost,
+        totalRetail: data.totalRetail,
+        count: data.count,
+        margin: data.totalRetail - data.totalCost,
+        sharePct: currentStockSummary.totalPurchaseValuation > 0
+          ? (data.totalCost / currentStockSummary.totalPurchaseValuation) * 100
+          : 0
+      }))
+      .sort((a, b) => b.totalCost - a.totalCost);
+  }, [currentStockData, currentStockSummary.totalPurchaseValuation, getItemCategory, getItemStock]);
 
   // Filtered expenses
   const filteredExpenseList = useMemo(() => {
@@ -299,7 +303,7 @@ export default function ExecutiveAuditReportView({
       </div>
 
       {/* ========================================================================= */}
-      {/* SECTION 1: CURRENT MEDICINE STOCK VALUATION AT PURCHASE COST */}
+      {/* SECTION 1: CURRENT MEDICINE STOCK TOTAL COST VALUATION */}
       {/* ========================================================================= */}
       {(activeSubSection === 'all' || activeSubSection === 'stock') && (
         <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden space-y-4 p-5">
@@ -310,164 +314,157 @@ export default function ExecutiveAuditReportView({
                   <Boxes className="w-4 h-4" />
                 </div>
                 <h3 className="font-black text-slate-900 text-base">
-                  Section 1: Current Medicine Stock & Purchase Cost Valuation
+                  Section 1: Current Medicine Stock Total Cost Valuation
                 </h3>
               </div>
               <p className="text-xs text-slate-500">
-                Clinic aur Pharmacy mein is waqt kitni cost (khareed laagat) ki medicines mojood hain.
+                Aap ke pass is time kitnay paison ki medicines mojood hain (Executive Total Cost & Financial Valuation).
               </p>
             </div>
 
-            {/* Quick KPI stats */}
-            <div className="flex items-center space-x-2 shrink-0">
-              <div className="bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-xl text-right">
-                <div className="text-[9.5px] font-bold uppercase text-teal-700">Total Stock at Purchase Cost</div>
-                <div className="text-sm font-black text-teal-950 font-mono">
-                  Rs. {currentStockSummary.totalPurchaseValuation.toLocaleString()}
-                </div>
-              </div>
-              <div className="bg-indigo-50 border border-indigo-200 px-3 py-1.5 rounded-xl text-right">
-                <div className="text-[9.5px] font-bold uppercase text-indigo-700">Stock at Retail / MRP</div>
-                <div className="text-sm font-black text-indigo-950 font-mono">
-                  Rs. {currentStockSummary.totalRetailValuation.toLocaleString()}
-                </div>
+            <div className="bg-teal-50 border border-teal-200 px-3 py-1.5 rounded-xl text-right shrink-0">
+              <div className="text-[9.5px] font-bold uppercase text-teal-700">Total Purchase Cost (Current Time)</div>
+              <div className="text-base font-black text-teal-950 font-mono">
+                Rs. {currentStockSummary.totalPurchaseValuation.toLocaleString()}
               </div>
             </div>
           </div>
 
-          {/* Search & Filter row */}
-          <div className="flex flex-col sm:flex-row gap-2">
-            <div className="relative flex-1">
-              <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
-              <input
-                type="text"
-                value={stockSearch}
-                onChange={e => setStockSearch(e.target.value)}
-                placeholder="Search medicine name, formula, or ID..."
-                className="w-full pl-9 pr-3 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:bg-white focus:outline-hidden focus:ring-2 focus:ring-teal-500"
-              />
+          {/* 3 BIG EXECUTIVE TOTAL VALUATION CARDS */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Card 1: Total Purchase Cost (Kitnay Paisay ki Medicines Mojood Hain) */}
+            <div className="bg-gradient-to-br from-teal-900 via-slate-900 to-teal-950 text-white rounded-2xl p-5 border border-teal-700/60 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-teal-300">
+                  Total Medicines Purchase Cost
+                </span>
+                <div className="p-2 bg-teal-500/20 text-teal-300 rounded-xl border border-teal-500/30">
+                  <Boxes className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="text-2xl sm:text-3xl font-black font-mono text-white tracking-tight">
+                Rs. {currentStockSummary.totalPurchaseValuation.toLocaleString()}
+              </div>
+              <p className="text-[11px] text-teal-200/80 font-medium">
+                ★ Is waqt clinic & pharmacy mein kul itnay rupay ki medicines khareed rate (cost) par mojood hain.
+              </p>
             </div>
-            <select
-              value={stockCategoryFilter}
-              onChange={e => setStockCategoryFilter(e.target.value)}
-              className="text-xs border border-slate-200 rounded-xl px-3 py-2 bg-slate-50/50 font-medium"
-            >
-              <option value="all">All Medicine Categories ({uniqueStockCategories.length})</option>
-              {uniqueStockCategories.map(c => (
-                <option key={c} value={c}>{c}</option>
-              ))}
-            </select>
+
+            {/* Card 2: Total Retail Value (Market Sale Price) */}
+            <div className="bg-gradient-to-br from-blue-900 via-slate-900 to-indigo-950 text-white rounded-2xl p-5 border border-blue-700/60 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-blue-300">
+                  Total Stock Retail / Sale Value
+                </span>
+                <div className="p-2 bg-blue-500/20 text-blue-300 rounded-xl border border-blue-500/30">
+                  <Coins className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="text-2xl sm:text-3xl font-black font-mono text-white tracking-tight">
+                Rs. {currentStockSummary.totalRetailValuation.toLocaleString()}
+              </div>
+              <p className="text-[11px] text-blue-200/80 font-medium">
+                Inhi medicines ki market sale rate (MRP) par kul farokht qeemat.
+              </p>
+            </div>
+
+            {/* Card 3: Expected Gross Stock Margin / Bachat */}
+            <div className="bg-gradient-to-br from-emerald-900 via-slate-900 to-teal-950 text-white rounded-2xl p-5 border border-emerald-700/60 shadow-sm space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
+                  Potential Gross Profit Margin
+                </span>
+                <div className="p-2 bg-emerald-500/20 text-emerald-300 rounded-xl border border-emerald-500/30">
+                  <TrendingUp className="w-5 h-5" />
+                </div>
+              </div>
+              <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-300 tracking-tight">
+                +Rs. {(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()}
+              </div>
+              <p className="text-[11px] text-emerald-200/80 font-medium">
+                Retail qeemat aur khareed laagat ke darmiyan mutawaqa gross munafa.
+              </p>
+            </div>
           </div>
 
-          {/* Table of Medicines with Purchase Cost */}
-          <div className="overflow-x-auto border border-slate-200 rounded-xl">
-            <table className="w-full text-left text-xs">
-              <thead>
-                <tr className="bg-slate-900 text-white font-bold text-[11px] uppercase tracking-wider">
-                  <th className="p-2.5">Item ID</th>
-                  <th className="p-2.5">Medicine Name & Details</th>
-                  <th className="p-2.5">Category</th>
-                  <th className="p-2.5 text-center">Available Stock</th>
-                  <th className="p-2.5 text-right">Unit Purchase Cost</th>
-                  <th className="p-2.5 text-right">Unit Retail Price</th>
-                  <th className="p-2.5 text-right bg-slate-800">Total Purchase Valuation</th>
-                  <th className="p-2.5 text-right">Total Retail Valuation</th>
-                  <th className="p-2.5 text-center">Status</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredStockItems.length === 0 ? (
-                  <tr>
-                    <td colSpan={9} className="p-6 text-center text-slate-400 italic">
-                      No medicine stock records found matching your search.
-                    </td>
+          {/* SUMMARY TABLE: CATEGORY-WISE TOTAL COSTS (NO MEDICINE NAMES) */}
+          <div className="space-y-2 pt-2">
+            <div className="flex items-center justify-between">
+              <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider flex items-center space-x-1.5">
+                <PieChart className="w-4 h-4 text-teal-600" />
+                <span>Medicine Groups Total Cost Breakdown</span>
+              </h4>
+              <span className="text-[11px] text-slate-500 font-medium">
+                (Individual medicines ke naamon ke baghair kul financial laagat)
+              </span>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-200 rounded-xl">
+              <table className="w-full text-left text-xs">
+                <thead>
+                  <tr className="bg-slate-900 text-white font-bold text-[11px] uppercase tracking-wider">
+                    <th className="p-3">Medicine Category / Group</th>
+                    <th className="p-3 text-right bg-slate-800 text-teal-300">Total Purchase Cost (Rs.)</th>
+                    <th className="p-3 text-right">Total Retail Value (Rs.)</th>
+                    <th className="p-3 text-right text-emerald-400">Potential Margin (Rs.)</th>
+                    <th className="p-3 text-right">Share of Total Stock (%)</th>
                   </tr>
-                ) : (
-                  filteredStockItems.slice(0, 50).map((it, idx) => {
-                    const cStock = getItemStock(it);
-                    const minStock = getItemMinStock(it);
-                    const pPrice = Number(it.PurchasePrice ?? it.purchasePrice ?? it.Price ?? it.price ?? 0);
-                    const rPrice = Number(it.Price ?? it.price ?? 0);
-                    const totalCost = cStock * pPrice;
-                    const totalRetail = cStock * rPrice;
-                    const isOut = cStock <= 0;
-                    const isLow = cStock > 0 && cStock <= minStock;
-
-                    return (
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {categoryStockValuation.length === 0 ? (
+                    <tr>
+                      <td colSpan={5} className="p-6 text-center text-slate-400 italic">
+                        No stock records available.
+                      </td>
+                    </tr>
+                  ) : (
+                    categoryStockValuation.map((cat, idx) => (
                       <tr
-                        key={it.ItemID || idx}
+                        key={cat.category || idx}
                         className={idx % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50/50 hover:bg-slate-100'}
                       >
-                        <td className="p-2.5 font-mono text-slate-600 font-bold">{it.ItemID || `ITM-${idx+1}`}</td>
-                        <td className="p-2.5 font-bold text-slate-900">
-                          <div>{it.ItemName || it.name}</div>
-                          {it.Generic && <div className="text-[10px] text-slate-400 font-normal">{it.Generic}</div>}
+                        <td className="p-3 font-bold text-slate-900 flex items-center space-x-2">
+                          <span className="w-2 h-2 rounded-full bg-teal-600 shrink-0"></span>
+                          <span>{cat.category}</span>
                         </td>
-                        <td className="p-2.5">
-                          <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 text-[10px] font-bold border border-slate-200">
-                            {getItemCategory(it)}
-                          </span>
+                        <td className="p-3 text-right font-mono font-black text-teal-800 bg-teal-50/40 text-sm">
+                          Rs. {cat.totalCost.toLocaleString()}
                         </td>
-                        <td className="p-2.5 text-center font-bold font-mono">
-                          <span className={isOut ? 'text-rose-600' : isLow ? 'text-amber-600' : 'text-slate-800'}>
-                            {cStock.toLocaleString()}
-                          </span>
+                        <td className="p-3 text-right font-mono font-bold text-slate-800">
+                          Rs. {cat.totalRetail.toLocaleString()}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-slate-700">
-                          Rs. {pPrice.toLocaleString()}
+                        <td className="p-3 text-right font-mono font-bold text-emerald-700">
+                          +Rs. {cat.margin.toLocaleString()}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-slate-700">
-                          Rs. {rPrice.toLocaleString()}
-                        </td>
-                        <td className="p-2.5 text-right font-mono font-black text-teal-800 bg-teal-50/40">
-                          Rs. {totalCost.toLocaleString()}
-                        </td>
-                        <td className="p-2.5 text-right font-mono font-bold text-slate-800">
-                          Rs. {totalRetail.toLocaleString()}
-                        </td>
-                        <td className="p-2.5 text-center">
-                          {isOut ? (
-                            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-800 text-[9.5px] font-extrabold">Out of Stock</span>
-                          ) : isLow ? (
-                            <span className="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[9.5px] font-extrabold">Low Stock</span>
-                          ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[9.5px] font-extrabold">In Stock</span>
-                          )}
+                        <td className="p-3 text-right font-mono font-bold text-slate-600">
+                          {cat.sharePct.toFixed(1)}%
                         </td>
                       </tr>
-                    );
-                  })
-                )}
-              </tbody>
-              <tfoot>
-                <tr className="bg-slate-900 text-white font-black text-xs">
-                  <td colSpan={3} className="p-3">
-                    TOTAL STOCK VALUATION ({currentStockSummary.totalItems} SKUs)
-                  </td>
-                  <td className="p-3 text-center font-mono">
-                    {currentStockSummary.totalStockUnits.toLocaleString()} Units
-                  </td>
-                  <td colSpan={2} className="p-3 text-right text-slate-300">
-                    Grand Purchase Cost:
-                  </td>
-                  <td className="p-3 text-right font-mono text-teal-300 bg-slate-800 text-sm">
-                    Rs. {currentStockSummary.totalPurchaseValuation.toLocaleString()}
-                  </td>
-                  <td className="p-3 text-right font-mono text-white text-sm">
-                    Rs. {currentStockSummary.totalRetailValuation.toLocaleString()}
-                  </td>
-                  <td className="p-3 text-center text-emerald-400 font-mono">
-                    +Rs. {(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()}
-                  </td>
-                </tr>
-              </tfoot>
-            </table>
+                    ))
+                  )}
+                </tbody>
+                <tfoot>
+                  <tr className="bg-slate-900 text-white font-black text-xs">
+                    <td className="p-3 uppercase">
+                      GRAND TOTAL MEDICINES STOCK COST:
+                    </td>
+                    <td className="p-3 text-right font-mono text-teal-300 bg-slate-800 text-base">
+                      Rs. {currentStockSummary.totalPurchaseValuation.toLocaleString()}
+                    </td>
+                    <td className="p-3 text-right font-mono text-white text-base">
+                      Rs. {currentStockSummary.totalRetailValuation.toLocaleString()}
+                    </td>
+                    <td className="p-3 text-right font-mono text-emerald-400 text-base">
+                      +Rs. {(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()}
+                    </td>
+                    <td className="p-3 text-right font-mono text-slate-300">
+                      100.0%
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
           </div>
-          {filteredStockItems.length > 50 && (
-            <p className="text-[11px] text-slate-500 italic text-right">
-              Showing top 50 medicines for quick preview. Full list of all {filteredStockItems.length} medicines prints on official A4 document.
-            </p>
-          )}
         </div>
       )}
 
