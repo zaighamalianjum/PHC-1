@@ -27,7 +27,8 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   RefreshCw,
-  Database
+  Database,
+  Info
 } from 'lucide-react';
 import {
   FiscalMonthPeriod,
@@ -39,7 +40,10 @@ import {
   ErpExpense,
   ErpPayroll
 } from '../types';
-import { getEffectiveAppointmentFee } from '../utils/appointmentRevenue';
+import {
+  getEffectiveAppointmentFee,
+  isAppointmentRevenueEligible
+} from '../utils/appointmentRevenue';
 
 interface FiscalCalendarDeskProps {
   currentUser: User | null;
@@ -134,6 +138,7 @@ export default function FiscalCalendarDesk({
   const [dbTransactions, setDbTransactions] = useState<any[]>([]);
   const [dbGrns, setDbGrns] = useState<any[]>([]);
   const [dbVendors, setDbVendors] = useState<any[]>([]);
+  const [dbSalesReturns, setDbSalesReturns] = useState<any[]>([]);
 
   // Closed/Open periods state stored in localStorage + synced with DB
   const [periodStatuses, setPeriodStatuses] = useState<{ [periodId: string]: FiscalMonthPeriod }>(() => {
@@ -204,7 +209,8 @@ export default function FiscalCalendarDesk({
         payData,
         txnData,
         grnData,
-        vendorsData
+        vendorsData,
+        returnsData
       ] = await Promise.all([
         safeFetch('/api/billing/invoices'),
         safeFetch('/api/appointments'),
@@ -215,7 +221,8 @@ export default function FiscalCalendarDesk({
         safeFetch('/api/query/erp_payroll'),
         safeFetch('/api/query/erp_transactions'),
         safeFetch('/api/query/erp_grn'),
-        safeFetch('/api/query/erp_vendors')
+        safeFetch('/api/query/erp_vendors'),
+        safeFetch('/api/billing/returns')
       ]);
 
       // 1. Invoices
@@ -341,6 +348,18 @@ export default function FiscalCalendarDesk({
         } catch (e) {}
       }
       setDbVendors(vendorsList);
+
+      // 11. Sales Returns
+      let returnsList: any[] = [];
+      if (Array.isArray(returnsData)) {
+        returnsList = returnsData;
+      } else {
+        try {
+          const local = localStorage.getItem('cms_sales_returns') || localStorage.getItem('phc_sales_returns');
+          if (local) returnsList = JSON.parse(local);
+        } catch (e) {}
+      }
+      setDbSalesReturns(returnsList);
 
       showNotification('✅ Database financial records synchronized successfully!');
     } catch (err) {
@@ -479,68 +498,79 @@ export default function FiscalCalendarDesk({
     };
 
     // 1. INFLOWS
-    // OPD Appointments & Tokens
-    let opdTokensSum = 0;
-    let appointmentsCount = 0;
-
-    allAppointments.forEach(app => {
+    // Target Appointments in range
+    const targetApps = allAppointments.filter(app => {
       const d = app.AppointmentDate || app.BookingDate || app.Date || app.CreatedAt;
-      if (isDateInRange(d)) {
-        if (app.Status !== 3 && app.Status !== 'Cancelled') {
-          const fee = getEffectiveAppointmentFee(app, allVisits);
-          if (fee > 0) {
-            opdTokensSum += fee;
-            appointmentsCount += 1;
-          }
-        }
-      }
+      return isDateInRange(d) && app.Status !== 3 && app.Status !== 'Cancelled';
     });
 
-    // Also check Tokens collection (avoid duplicate if already counted)
+    // Target Visits in range
+    const targetVisits = allVisits.filter(vis => {
+      const d = vis.VisitDate || vis.Date || vis.CreatedAt;
+      return isDateInRange(d) && (vis as any).Status !== 3;
+    });
+
+    // Check appointment revenue eligibility (prevents unserved / unbooked inflated revenues)
+    const eligibleApps = targetApps.filter(app => isAppointmentRevenueEligible(app, allVisits));
+    const opdAppointmentFees = eligibleApps.reduce((acc, app) => acc + getEffectiveAppointmentFee(app, allVisits), 0);
+
+    // Doctor Consultation Fees from Patient Visits:
+    // Strictly prevent double-counting if patient already paid appointment fee
+    const visitConsultationFees = targetVisits.reduce((acc, vis) => {
+      const fee = Number(vis.ConsultationFee) || Number(vis.DoctorFee) || (vis.FeeReceived !== undefined ? Number(vis.FeeReceived) : 0);
+      const alreadyPaidInApp = eligibleApps.some(a => a.PatientID === vis.PatientID && getEffectiveAppointmentFee(a, allVisits) > 0);
+      return acc + (alreadyPaidInApp ? 0 : fee);
+    }, 0);
+
+    const doctorConsultationSum = opdAppointmentFees + visitConsultationFees;
+    const appointmentsCount = eligibleApps.length;
+    const visitsCount = targetVisits.length;
+
+    // Tokens collection (standalone only, avoiding duplicates)
+    let opdTokensSum = 0;
     allTokens.forEach(tok => {
       const d = tok.Date || tok.TokenDate || tok.CreatedAt;
-      if (isDateInRange(d)) {
-        const alreadyIn = allAppointments.some(a => a.AppointmentID === tok.AppointmentID || a.TokenNo === tok.TokenNo);
+      if (isDateInRange(d) && (tok as any).Status !== 3) {
+        const alreadyIn = targetApps.some(a => a.PatientID === tok.PatientID || a.TokenNo === tok.TokenNo) ||
+                          targetVisits.some(v => v.PatientID === tok.PatientID);
         if (!alreadyIn) {
           const fee = Number(tok.Fee) || Number(tok.FeeCharged) || Number(tok.Amount) || 0;
           opdTokensSum += fee;
-          appointmentsCount += 1;
         }
       }
     });
 
-    // Doctor Consultation, Card Fees & Clinical Compounding from Patient Visits
-    let doctorConsultationSum = 0;
+    // Card Fees & Clinical Compounding from Patient Visits
     let clinicCardFeesSum = 0;
     let clinicalCompoundingSum = 0;
-    let visitsCount = 0;
-
-    allVisits.forEach(vis => {
-      const d = vis.VisitDate || vis.Date || vis.CreatedAt;
-      if (isDateInRange(d)) {
-        const consult = Number(vis.ConsultationFee) || Number(vis.DoctorFee) || Number(vis.Fee) || 0;
-        const card = Number(vis.CardFee) || Number(vis.CardPkr) || Number(vis.FileFee) || Number(vis.FilePkr) || 0;
-        const clinical = Number(vis.ClinicalMedicinePayment) || Number(vis.ClinicalMedicineFee) || Number(vis.ClinicalMedicinePkr) || 0;
-
-        doctorConsultationSum += consult;
-        clinicCardFeesSum += card;
-        clinicalCompoundingSum += clinical;
-        visitsCount += 1;
-      }
+    targetVisits.forEach(vis => {
+      const card = Number(vis.CardFee || vis.cardFee || vis.CardsPayment || 0) + Number(vis.FileFee || vis.fileFee || vis.FilePkr || vis.RegFee || 0);
+      const clinical = Number(vis.ClinicalMedicinePayment || vis.ClinicalMedicineCharges || vis.ClinicalMedicinePkr || vis.clinicMedicineCharges || vis.ClinicalPayment || 0);
+      clinicCardFeesSum += card;
+      clinicalCompoundingSum += clinical;
     });
 
-    // Pharmacy Store POS Sales
-    let pharmacyPosSalesSum = 0;
+    // Pharmacy Store POS Sales & Returns
+    let pharmacyGrossPosSales = 0;
     let posInvoicesCount = 0;
-
     allPosSales.forEach(sale => {
       const d = sale.InvoiceDate || sale.Date || sale.CreatedAt || sale.InvDate;
-      if (isDateInRange(d)) {
-        const net = Number(sale.NetAmount) || Number(sale.GAmount) || Number(sale.TotalAmount) || Number(sale.GrandTotal) || Number(sale.Total) || 0;
-        pharmacyPosSalesSum += net;
+      if (isDateInRange(d) && (sale as any).Status !== 3) {
+        const net = Number(sale.NetAmount ?? sale.NetPayable ?? sale.GrandTotal ?? sale.GAmount ?? sale.totalAmount ?? sale.TotalAmount ?? 0);
+        pharmacyGrossPosSales += net;
         posInvoicesCount += 1;
       }
     });
+
+    let salesReturnsSum = 0;
+    dbSalesReturns.forEach(ret => {
+      const d = ret.ReturnDate || ret.Date || ret.CreatedAt;
+      if (isDateInRange(d)) {
+        salesReturnsSum += (Number(ret.NetPaid ?? ret.RefundAmount ?? ret.TotalAmount ?? 0) || 0);
+      }
+    });
+
+    const pharmacyNetPosSales = Math.max(0, pharmacyGrossPosSales - salesReturnsSum);
 
     // Direct Cash Receipts (CRV, BRV Vouchers / General Ledger Inflows)
     let miscInflowsSum = 0;
@@ -559,11 +589,16 @@ export default function FiscalCalendarDesk({
       }
     });
 
-    const totalOpdInflow = opdTokensSum + doctorConsultationSum + clinicCardFeesSum;
-    const totalGrossInflow = totalOpdInflow + clinicalCompoundingSum + pharmacyPosSalesSum + miscInflowsSum;
+    const totalOpdInflow = doctorConsultationSum + opdTokensSum + clinicCardFeesSum;
+    const totalGrossInflow = totalOpdInflow + clinicalCompoundingSum + pharmacyNetPosSales + miscInflowsSum;
 
-    // 2. OUTFLOWS
-    // Clinic Expenses
+    // 2. MEDICINE COGS (Cost of Goods Sold for Sold & Dispensed Medicines)
+    const pharmacyCogs = Math.round(pharmacyNetPosSales * 0.75);
+    const clinicalCogs = Math.round(clinicalCompoundingSum * 0.60);
+    const totalCogs = pharmacyCogs + clinicalCogs;
+    const grossOperationalMargin = Math.max(0, totalGrossInflow - totalCogs);
+
+    // 3. OUTFLOWS & EXPENSES
     let operationalExpensesSum = 0;
     let expensesCount = 0;
 
@@ -582,7 +617,6 @@ export default function FiscalCalendarDesk({
       const d = v.VchDate || v.VDate || v.Date || v.CreatedAt;
       if (isDateInRange(d) && (v.VchType === 'CPV' || v.VchType === 'BPV')) {
         const amt = Number(v.Amount) || Number(v.VAmount) || Number(v.TotalAmount) || 0;
-        // Exclude if already matched in allExpenses
         const alreadyIn = allExpenses.some(e => e.ExpenseID === v.VchNo || e._id === v._id);
         if (!alreadyIn) {
           operationalExpensesSum += amt;
@@ -614,7 +648,7 @@ export default function FiscalCalendarDesk({
       const d = t.Date || t.TransactionDate || t.CreatedAt;
       const isPeriodMatch = isDateInRange(d) || (t.AccountingMonth && startDate.startsWith(t.AccountingMonth));
       if (isPeriodMatch) {
-        const isVendor = t.Type === 'VendorPayment' || t.Type === 'VENDOR_PAYMENT' || (t.Category && t.Category.toLowerCase().includes('supplier'));
+        const isVendor = t.Type === 'VendorPayment' || t.Type === 'VENDOR_PAYMENT' || (t.Category && t.Category.toLowerCase().includes('supplier')) || (t.Category && t.Category.toLowerCase().includes('vendor'));
         if (isVendor) {
           vendorPaymentsSum += (Number(t.Amount) || 0);
           vendorPaymentsCount += 1;
@@ -623,9 +657,19 @@ export default function FiscalCalendarDesk({
     });
 
     const totalGrossOutflow = operationalExpensesSum + payrollsSum + vendorPaymentsSum;
-    const netOperatingSurplus = totalGrossInflow - totalGrossOutflow;
 
-    // 3. Stock Procurement (GRN Inward)
+    // 4. ACCURATE FINANCIAL DUAL AUDIT METRICS:
+    // A) Net Cash Flow (Drawer Cash Surplus): Inflows minus Total Outflows
+    const netCashFlow = totalGrossInflow - totalGrossOutflow;
+
+    // B) Pure Accounting Net Profit (True Munafa):
+    // Revenue minus COGS (only consumed/sold medicine cost) minus Operating Expenses minus Staff Salaries
+    // (Unsold medicine bulk restock is an Asset in stock on the shelves, not an expense!)
+    const accountingNetProfit = totalGrossInflow - totalCogs - operationalExpensesSum - payrollsSum;
+    const netProfitMarginPct = totalGrossInflow > 0 ? (accountingNetProfit / totalGrossInflow) * 100 : 0;
+    const netOperatingSurplus = accountingNetProfit;
+
+    // 5. Stock Procurement (GRN Inward)
     let grnTotalAmount = 0;
     let grnCount = 0;
 
@@ -641,13 +685,21 @@ export default function FiscalCalendarDesk({
     return {
       totalGrossInflow,
       totalGrossOutflow,
+      netCashFlow,
+      accountingNetProfit,
+      netProfitMarginPct,
       netOperatingSurplus,
+      totalCogs,
+      pharmacyCogs,
+      clinicalCogs,
+      grossOperationalMargin,
       opdTokensSum,
       doctorConsultationSum,
       clinicCardFeesSum,
       totalOpdInflow,
       clinicalCompoundingSum,
-      pharmacyPosSalesSum,
+      pharmacyPosSalesSum: pharmacyNetPosSales,
+      salesReturnsSum,
       miscInflowsSum,
       operationalExpensesSum,
       payrollsSum,
@@ -697,6 +749,7 @@ export default function FiscalCalendarDesk({
     let totalYearOutflow = 0;
     let totalYearOpd = 0;
     let totalYearPharmacy = 0;
+    let totalYearCogs = 0;
     let totalYearExpenses = 0;
     let totalYearVendorPayments = 0;
     let totalYearGrn = 0;
@@ -707,20 +760,28 @@ export default function FiscalCalendarDesk({
       totalYearOutflow += m.metrics.totalGrossOutflow;
       totalYearOpd += m.metrics.totalOpdInflow;
       totalYearPharmacy += (m.metrics.pharmacyPosSalesSum + m.metrics.clinicalCompoundingSum);
+      totalYearCogs += m.metrics.totalCogs;
       totalYearExpenses += (m.metrics.operationalExpensesSum + m.metrics.payrollsSum);
       totalYearVendorPayments += m.metrics.vendorPaymentsSum;
       totalYearGrn += m.metrics.grnTotalAmount;
       if (m.isClosed) closedMonthsCount += 1;
     });
 
-    const netYearSurplus = totalYearInflow - totalYearOutflow;
+    const netYearCashFlow = totalYearInflow - totalYearOutflow;
+    const netYearProfit = totalYearInflow - totalYearCogs - totalYearExpenses;
+    const netYearProfitMargin = totalYearInflow > 0 ? (netYearProfit / totalYearInflow) * 100 : 0;
+    const netYearSurplus = netYearProfit; // aligned with net profit
 
     return {
       totalYearInflow,
       totalYearOutflow,
+      netYearCashFlow,
+      netYearProfit,
+      netYearProfitMargin,
       netYearSurplus,
       totalYearOpd,
       totalYearPharmacy,
+      totalYearCogs,
       totalYearExpenses,
       totalYearVendorPayments,
       totalYearGrn,
@@ -1059,11 +1120,12 @@ export default function FiscalCalendarDesk({
             .tot-row { background: #f8fafc; font-weight: 900; }
             .tot-row td { border-top: 1.5px solid #0f172a; border-bottom: 1.5px solid #0f172a; font-size: 11px; }
 
-            .kpi-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin: 12px 0; }
-            .kpi-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; }
+            .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 12px 0; }
+            .kpi-card { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 9px; }
             .kpi-inflow { background: #f0fdf4; border-color: #86efac; }
             .kpi-outflow { background: #fef2f2; border-color: #fca5a5; }
-            .kpi-net { background: #eef2ff; border-color: #a5b4fc; }
+            .kpi-net-cash { background: #ecfdf5; border-color: #6ee7b7; }
+            .kpi-net-profit { background: #eef2ff; border-color: #a5b4fc; }
 
             .sig-section { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 30px; padding-top: 15px; border-top: 1px solid #cbd5e1; }
             .sig-box { text-align: center; width: 160px; }
@@ -1117,27 +1179,35 @@ export default function FiscalCalendarDesk({
 
           <div class="kpi-row">
             <div class="kpi-card kpi-inflow">
-              <span style="font-size: 8.5px; font-weight: 800; color: #166534; text-transform: uppercase;">Total Realized Inflows</span>
-              <div style="font-size: 15px; font-weight: 900; color: #14532d; font-family: monospace; margin-top: 2px;">
-                Rs. ${metrics.totalGrossInflow.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+              <span style="font-size: 8px; font-weight: 800; color: #166534; text-transform: uppercase;">Total Realized Inflows</span>
+              <div style="font-size: 14px; font-weight: 900; color: #14532d; font-family: monospace; margin-top: 2px;">
+                Rs. ${metrics.totalGrossInflow.toLocaleString('en-PK', { minimumFractionDigits: 0 })}
               </div>
-              <span style="font-size: 8.5px; color: #15803d;">OPD Tokens (${metrics.appointmentsCount}) + Doctor (${metrics.visitsCount}) + Pharmacy POS (${metrics.posInvoicesCount})</span>
+              <span style="font-size: 8px; color: #15803d;">OPD (${metrics.appointmentsCount}) + POS (${metrics.posInvoicesCount})</span>
             </div>
 
             <div class="kpi-card kpi-outflow">
-              <span style="font-size: 8.5px; font-weight: 800; color: #991b1b; text-transform: uppercase;">Total Realized Outflows</span>
-              <div style="font-size: 15px; font-weight: 900; color: #7f1d1d; font-family: monospace; margin-top: 2px;">
-                Rs. ${metrics.totalGrossOutflow.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+              <span style="font-size: 8px; font-weight: 800; color: #991b1b; text-transform: uppercase;">Total Realized Outflows</span>
+              <div style="font-size: 14px; font-weight: 900; color: #7f1d1d; font-family: monospace; margin-top: 2px;">
+                Rs. ${metrics.totalGrossOutflow.toLocaleString('en-PK', { minimumFractionDigits: 0 })}
               </div>
-              <span style="font-size: 8.5px; color: #b91c1c;">Expenses (${metrics.expensesCount}) + Vendor Payments (${metrics.vendorPaymentsCount}) + Payroll (${metrics.payrollCount})</span>
+              <span style="font-size: 8px; color: #b91c1c;">Expenses + Vendors + Payroll</span>
             </div>
 
-            <div class="kpi-card kpi-net">
-              <span style="font-size: 8.5px; font-weight: 800; color: #3730a3; text-transform: uppercase;">Net Operating Surplus / Margin</span>
-              <div style="font-size: 15px; font-weight: 900; color: #1e1b4b; font-family: monospace; margin-top: 2px;">
-                Rs. ${metrics.netOperatingSurplus.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+            <div class="kpi-card kpi-net-cash">
+              <span style="font-size: 8px; font-weight: 800; color: #047857; text-transform: uppercase;">Net Cash Flow (Drawer/Bank)</span>
+              <div style="font-size: 14px; font-weight: 900; color: ${metrics.netCashFlow >= 0 ? '#065f46' : '#991b1b'}; font-family: monospace; margin-top: 2px;">
+                Rs. ${metrics.netCashFlow.toLocaleString('en-PK', { minimumFractionDigits: 0 })}
               </div>
-              <span style="font-size: 8.5px; color: #4338ca;">Gross Inflows Minus Total Outflows</span>
+              <span style="font-size: 8px; color: #059669;">Inflows Minus Total Cash Outflows</span>
+            </div>
+
+            <div class="kpi-card kpi-net-profit">
+              <span style="font-size: 8px; font-weight: 800; color: #3730a3; text-transform: uppercase;">Operational Net Profit (P&L)</span>
+              <div style="font-size: 14px; font-weight: 900; color: ${metrics.accountingNetProfit >= 0 ? '#1e1b4b' : '#991b1b'}; font-family: monospace; margin-top: 2px;">
+                Rs. ${metrics.accountingNetProfit.toLocaleString('en-PK', { minimumFractionDigits: 0 })}
+              </div>
+              <span style="font-size: 8px; color: #4338ca;">Revenue - COGS - OpEx - Salaries (${metrics.netProfitMarginPct.toFixed(1)}%)</span>
             </div>
           </div>
 
@@ -1247,6 +1317,50 @@ export default function FiscalCalendarDesk({
             </tbody>
           </table>
 
+          <!-- Section 4: Dual Audit Reconciliation (Cash Flow vs P&L Profit) -->
+          <div class="section-head">4. Financial Reconciliation (Net Cash Flow vs. Accounting Net Profit)</div>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 10px;">
+            <div style="background: #f0fdf4; border: 1px solid #86efac; border-radius: 6px; padding: 8px 10px;">
+              <strong style="color: #166534; font-size: 10px; text-transform: uppercase; display: block; margin-bottom: 4px;">
+                💵 Cash Flow Movement (Drawer / Bank)
+              </strong>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                <span>Total Cash Receipts:</span>
+                <span class="num">Rs. ${metrics.totalGrossInflow.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px; color: #991b1b;">
+                <span>Minus Total Cash Outflows:</span>
+                <span class="num">- Rs. ${metrics.totalGrossOutflow.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-weight: 800; border-top: 1.5px dashed #86efac; padding-top: 4px; margin-top: 4px; color: #14532d;">
+                <span>Net Cash Balance (Surplus):</span>
+                <span class="num">Rs. ${metrics.netCashFlow.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+              </div>
+            </div>
+
+            <div style="background: #eef2ff; border: 1px solid #a5b4fc; border-radius: 6px; padding: 8px 10px;">
+              <strong style="color: #3730a3; font-size: 10px; text-transform: uppercase; display: block; margin-bottom: 4px;">
+                📈 Realized Operational Profit (P&L Munafa)
+              </strong>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px;">
+                <span>Gross Realized Revenue:</span>
+                <span class="num">Rs. ${metrics.totalGrossInflow.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px; color: #991b1b;">
+                <span>Minus Dispensed COGS:</span>
+                <span class="num">- Rs. ${metrics.totalCogs.toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; margin-bottom: 2px; color: #991b1b;">
+                <span>Minus OpEx & Staff Salaries:</span>
+                <span class="num">- Rs. ${(metrics.operationalExpensesSum + metrics.payrollsSum).toLocaleString('en-PK', { minimumFractionDigits: 2 })}</span>
+              </div>
+              <div style="display: flex; justify-content: space-between; font-weight: 800; border-top: 1.5px dashed #a5b4fc; padding-top: 4px; margin-top: 4px; color: #1e1b4b;">
+                <span>Accounting Net Profit (Munafa):</span>
+                <span class="num">Rs. ${metrics.accountingNetProfit.toLocaleString('en-PK', { minimumFractionDigits: 2 })} (${metrics.netProfitMarginPct.toFixed(1)}%)</span>
+              </div>
+            </div>
+          </div>
+
           ${savedStatus?.Notes ? `
           <div style="margin-top: 10px; padding: 6px 10px; background: #fffbeb; border: 1px solid #fef08a; border-radius: 4px; font-size: 9.5px;">
             <strong>Period Audit Remarks / Auditor Notes:</strong> ${savedStatus.Notes}
@@ -1307,7 +1421,9 @@ export default function FiscalCalendarDesk({
         <td class="num">Rs. ${(m.metrics.operationalExpensesSum + m.metrics.payrollsSum).toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
         <td class="num">Rs. ${m.metrics.vendorPaymentsSum.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
         <td class="num" style="font-weight: 800; color: #7f1d1d; background: #fef2f2;">Rs. ${m.metrics.totalGrossOutflow.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
-        <td class="num" style="font-weight: 900; color: ${m.metrics.netOperatingSurplus >= 0 ? '#14532d' : '#991b1b'};">Rs. ${m.metrics.netOperatingSurplus.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
+        <td class="num" style="font-weight: 900; color: ${m.metrics.netCashFlow >= 0 ? '#047857' : '#991b1b'}; background: ${m.metrics.netCashFlow >= 0 ? '#f0fdf4' : '#fff1f2'};">Rs. ${m.metrics.netCashFlow.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
+        <td class="num" style="color: #64748b;">Rs. ${m.metrics.totalCogs.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
+        <td class="num" style="font-weight: 900; color: ${m.metrics.accountingNetProfit >= 0 ? '#1e1b4b' : '#991b1b'}; background: ${m.metrics.accountingNetProfit >= 0 ? '#eef2ff' : '#fff1f2'};">Rs. ${m.metrics.accountingNetProfit.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
       </tr>
     `).join('');
 
@@ -1317,23 +1433,23 @@ export default function FiscalCalendarDesk({
         <head>
           <title>Annual Financial Audit Report - FY ${selectedYear}</title>
           <style>
-            @page { size: A4 landscape; margin: 10mm 12mm 12mm 12mm; }
-            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 0; font-size: 10px; line-height: 1.35; background: #fff; }
+            @page { size: A4 landscape; margin: 8mm 10mm 10mm 10mm; }
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif; color: #0f172a; margin: 0; padding: 0; font-size: 9.5px; line-height: 1.3; background: #fff; }
             * { box-sizing: border-box; }
-            .header-wrap { display: flex; justify-content: space-between; align-items: center; border-bottom: 2.5px solid #064e3b; padding-bottom: 6px; margin-bottom: 10px; }
+            .header-wrap { display: flex; justify-content: space-between; align-items: center; border-bottom: 2.5px solid #064e3b; padding-bottom: 5px; margin-bottom: 8px; }
             .clinic-title { font-size: 15px; font-weight: 900; color: #064e3b; text-transform: uppercase; margin: 0; }
-            .clinic-sub { font-size: 9px; color: #475569; }
-            .report-title-bar { background: #0f172a; color: #fff; padding: 5px 8px; font-weight: 800; font-size: 10px; text-transform: uppercase; display: flex; justify-content: space-between; margin-bottom: 10px; border-radius: 4px; }
-            table { width: 100%; border-collapse: collapse; margin-bottom: 10px; font-size: 9.5px; }
-            th { background: #f1f5f9; color: #334155; font-weight: 800; text-align: left; padding: 5px 6px; border-bottom: 1.5px solid #cbd5e1; text-transform: uppercase; font-size: 8px; }
-            td { padding: 4px 6px; border-bottom: 1px solid #e2e8f0; }
+            .clinic-sub { font-size: 8.5px; color: #475569; }
+            .report-title-bar { background: #0f172a; color: #fff; padding: 4px 8px; font-weight: 800; font-size: 9.5px; text-transform: uppercase; display: flex; justify-content: space-between; margin-bottom: 8px; border-radius: 4px; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 9px; }
+            th { background: #f1f5f9; color: #334155; font-weight: 800; text-align: left; padding: 4px 5px; border-bottom: 1.5px solid #cbd5e1; text-transform: uppercase; font-size: 7.5px; }
+            td { padding: 3.5px 5px; border-bottom: 1px solid #e2e8f0; }
             .num { text-align: right; font-family: monospace; }
             .tot-row { background: #f1f5f9; font-weight: 900; }
-            .tot-row td { border-top: 2px solid #0f172a; border-bottom: 2px solid #0f172a; font-size: 10px; }
-            .sig-section { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 20px; padding-top: 10px; border-top: 1px solid #cbd5e1; }
+            .tot-row td { border-top: 2px solid #0f172a; border-bottom: 2px solid #0f172a; font-size: 9.5px; }
+            .sig-section { display: flex; justify-content: space-between; align-items: flex-end; margin-top: 15px; padding-top: 8px; border-top: 1px solid #cbd5e1; }
             .sig-box { text-align: center; width: 150px; }
-            .sig-line { border-top: 1.5px solid #0f172a; padding-top: 3px; font-weight: 800; font-size: 9px; text-transform: uppercase; }
-            .sig-sub { font-size: 8px; color: #64748b; }
+            .sig-line { border-top: 1.5px solid #0f172a; padding-top: 3px; font-weight: 800; font-size: 8.5px; text-transform: uppercase; }
+            .sig-sub { font-size: 7.5px; color: #64748b; }
           </style>
         </head>
         <body>
@@ -1344,28 +1460,30 @@ export default function FiscalCalendarDesk({
             </div>
             <div style="text-align: right;">
               <span style="font-weight: 800; font-size: 11px; color: #064e3b;">ANNUAL FINANCIAL CALENDAR AUDIT</span>
-              <div style="font-size: 9px; color: #64748b;">Fiscal Year: <strong>${selectedYear}</strong> (${yearType === 'CALENDAR' ? 'Jan-Dec' : 'Jul-Jun'})</div>
+              <div style="font-size: 8.5px; color: #64748b;">Fiscal Year: <strong>${selectedYear}</strong> (${yearType === 'CALENDAR' ? 'Jan-Dec' : 'Jul-Jun'})</div>
             </div>
           </div>
 
           <div class="report-title-bar">
-            <span>12-Month Comparative Financial Revenue, Expenses & Surplus Audit</span>
+            <span>12-Month Comparative Financial Revenue, Expenses & Dual P&L Surplus Audit</span>
             <span>Closed Periods: ${yearSummary.closedMonthsCount} / 12 Months</span>
           </div>
 
           <table>
             <thead>
               <tr>
-                <th style="width: 25px; text-align: center;">#</th>
+                <th style="width: 20px; text-align: center;">#</th>
                 <th>Month & Year</th>
-                <th style="text-align: center; width: 55px;">Status</th>
+                <th style="text-align: center; width: 45px;">Status</th>
                 <th style="text-align: right;">OPD Inflow</th>
                 <th style="text-align: right;">Pharmacy Inflow</th>
-                <th style="text-align: right; background: #e2fbe8;">Total Inflows</th>
-                <th style="text-align: right;">Expenses & Salaries</th>
-                <th style="text-align: right;">Vendor Payments</th>
-                <th style="text-align: right; background: #fee2e2;">Total Outflows</th>
-                <th style="text-align: right;">Net Surplus</th>
+                <th style="text-align: right; background: #e2fbe8;">Total Inflows [A]</th>
+                <th style="text-align: right;">OpEx & Salaries [B]</th>
+                <th style="text-align: right;">Vendor Payments [C]</th>
+                <th style="text-align: right; background: #fee2e2;">Total Outflows [D]</th>
+                <th style="text-align: right; background: #ecfdf5;">Net Cash Flow [A-D]</th>
+                <th style="text-align: right;">Est. COGS [E]</th>
+                <th style="text-align: right; background: #eef2ff;">Net Profit [A-E-B]</th>
               </tr>
             </thead>
             <tbody>
@@ -1378,10 +1496,42 @@ export default function FiscalCalendarDesk({
                 <td class="num">Rs. ${yearSummary.totalYearExpenses.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
                 <td class="num">Rs. ${yearSummary.totalYearVendorPayments.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
                 <td class="num" style="color: #7f1d1d; background: #fee2e2;">Rs. ${yearSummary.totalYearOutflow.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
-                <td class="num" style="color: ${yearSummary.netYearSurplus >= 0 ? '#14532d' : '#991b1b'};">Rs. ${yearSummary.netYearSurplus.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
+                <td class="num" style="color: ${yearSummary.netYearCashFlow >= 0 ? '#047857' : '#991b1b'}; background: #d1fae5;">Rs. ${yearSummary.netYearCashFlow.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
+                <td class="num" style="color: #475569;">Rs. ${yearSummary.totalYearCogs.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
+                <td class="num" style="color: ${yearSummary.netYearProfit >= 0 ? '#1e1b4b' : '#991b1b'}; background: #e0e7ff;">Rs. ${yearSummary.netYearProfit.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</td>
               </tr>
             </tbody>
           </table>
+
+          <!-- Dual Audit Reconciliation Summary Boxes -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 6px; font-size: 8.5px;">
+            <div style="padding: 6px 8px; background: #f0fdf4; border: 1px solid #86efac; border-radius: 4px;">
+              <strong style="color: #166534; font-size: 9.5px; text-transform: uppercase; display: block; margin-bottom: 2px;">
+                💵 Annual Cash Movement Reconciliation (Drawer / Bank Balance)
+              </strong>
+              <div>Total Cash Receipts: <b>Rs. ${yearSummary.totalYearInflow.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</b></div>
+              <div>Minus Total Physical Outflows: <b>Rs. ${yearSummary.totalYearOutflow.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</b> (OpEx + Salaries + Vendor Outflows)</div>
+              <div style="font-weight: 800; color: #14532d; margin-top: 3px; border-top: 1px dashed #86efac; padding-top: 2px;">
+                = Net Cash Surplus in Drawer/Bank: Rs. ${yearSummary.netYearCashFlow.toLocaleString('en-PK', { maximumFractionDigits: 0 })}
+              </div>
+            </div>
+
+            <div style="padding: 6px 8px; background: #eef2ff; border: 1px solid #a5b4fc; border-radius: 4px;">
+              <strong style="color: #3730a3; font-size: 9.5px; text-transform: uppercase; display: block; margin-bottom: 2px;">
+                📈 Annual Operational Net Profit Reconciliation (P&L Munafa)
+              </strong>
+              <div>Total Gross Revenue: <b>Rs. ${yearSummary.totalYearInflow.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</b></div>
+              <div>Minus Cost of Dispensed Medicines (COGS): <b>Rs. ${yearSummary.totalYearCogs.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</b></div>
+              <div>Minus Clinic Operating Expenses & Salaries: <b>Rs. ${yearSummary.totalYearExpenses.toLocaleString('en-PK', { maximumFractionDigits: 0 })}</b></div>
+              <div style="font-weight: 800; color: #1e1b4b; margin-top: 3px; border-top: 1px dashed #a5b4fc; padding-top: 2px;">
+                = Operational Net Profit (Munafa): Rs. ${yearSummary.netYearProfit.toLocaleString('en-PK', { maximumFractionDigits: 0 })} (${yearSummary.netYearProfitMargin.toFixed(1)}% margin)
+              </div>
+            </div>
+          </div>
+
+          <div style="margin-top: 5px; padding: 4px 8px; background: #fffbeb; border: 1px solid #fef08a; border-radius: 4px; font-size: 8px; color: #78350f;">
+            <strong>Audit & Accounting Standard:</strong> Vendor Settlements (Rs. ${yearSummary.totalYearVendorPayments.toLocaleString('en-PK', { maximumFractionDigits: 0 })}) represent medicine stock procurement that sits as assets on shelves. Net Profit only expenses medicines actually dispensed to patients (COGS: Rs. ${yearSummary.totalYearCogs.toLocaleString('en-PK', { maximumFractionDigits: 0 })}). Net Cash Flow reflects cash balance changes in clinic accounts.
+          </div>
 
           <div class="sig-section">
             <div class="sig-box">
@@ -1502,7 +1652,7 @@ export default function FiscalCalendarDesk({
         </div>
 
         {/* ANNUAL MACRO FINANCIAL METRICS STRIP */}
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-2 border-t border-slate-100">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 pt-2 border-t border-slate-100">
           <div className="bg-slate-50 border border-slate-200 p-3 rounded-xl">
             <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider block">Closed Periods</span>
             <div className="text-lg font-black text-slate-900 mt-0.5 flex items-center space-x-1.5">
@@ -1532,12 +1682,20 @@ export default function FiscalCalendarDesk({
             </span>
           </div>
 
-          <div className="bg-indigo-50/70 border border-indigo-200 p-3 rounded-xl">
-            <span className="text-[10px] font-extrabold uppercase text-indigo-800 tracking-wider block">Net Operating Surplus</span>
-            <div className={`text-lg font-black mt-0.5 font-mono ${yearSummary.netYearSurplus >= 0 ? 'text-indigo-900' : 'text-rose-700'}`}>
-              Rs. {yearSummary.netYearSurplus.toLocaleString('en-PK', { maximumFractionDigits: 0 })}
+          <div className="bg-teal-50/70 border border-teal-200 p-3 rounded-xl">
+            <span className="text-[10px] font-extrabold uppercase text-teal-800 tracking-wider block">💵 Net Cash Surplus</span>
+            <div className={`text-lg font-black mt-0.5 font-mono ${yearSummary.netYearCashFlow >= 0 ? 'text-teal-950' : 'text-rose-700'}`}>
+              Rs. {yearSummary.netYearCashFlow.toLocaleString('en-PK', { maximumFractionDigits: 0 })}
             </div>
-            <span className="text-[10px] text-indigo-700 font-bold mt-0.5 block">Gross Profit Margin</span>
+            <span className="text-[10px] text-teal-700 font-bold mt-0.5 block">Inflows - All Outflows</span>
+          </div>
+
+          <div className="bg-indigo-50/70 border border-indigo-200 p-3 rounded-xl">
+            <span className="text-[10px] font-extrabold uppercase text-indigo-800 tracking-wider block">📈 Operational Net Profit</span>
+            <div className={`text-lg font-black mt-0.5 font-mono ${yearSummary.netYearProfit >= 0 ? 'text-indigo-900' : 'text-rose-700'}`}>
+              Rs. {yearSummary.netYearProfit.toLocaleString('en-PK', { maximumFractionDigits: 0 })}
+            </div>
+            <span className="text-[10px] text-indigo-700 font-bold mt-0.5 block">P&L ({yearSummary.netYearProfitMargin.toFixed(1)}% margin)</span>
           </div>
 
           <div className="bg-amber-50/70 border border-amber-200 p-3 rounded-xl col-span-2 sm:col-span-1">
@@ -1644,14 +1802,27 @@ export default function FiscalCalendarDesk({
                   </div>
                 </div>
 
-                {/* Net Balance Pill */}
-                <div className={`p-2.5 rounded-xl border flex items-center justify-between ${
-                  isSurplus ? 'bg-indigo-50/60 border-indigo-200 text-indigo-950' : 'bg-rose-50 border-rose-200 text-rose-950'
-                }`}>
-                  <span className="font-extrabold text-[11px]">Net Surplus:</span>
-                  <span className={`font-mono font-black text-sm ${isSurplus ? 'text-indigo-900' : 'text-rose-700'}`}>
-                    Rs. {metrics.netOperatingSurplus.toLocaleString('en-PK', { maximumFractionDigits: 0 })}
-                  </span>
+                {/* Dual Bottom-Line: Net Cash Flow vs Operational Net Profit */}
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  <div className={`p-2 rounded-xl border ${
+                    metrics.netCashFlow >= 0 ? 'bg-emerald-50/80 border-emerald-200 text-emerald-950' : 'bg-rose-50 border-rose-200 text-rose-950'
+                  }`}>
+                    <span className="text-[9px] font-black uppercase tracking-wider block text-emerald-800">💵 Net Cash</span>
+                    <span className={`font-mono font-black text-xs block mt-0.5 ${metrics.netCashFlow >= 0 ? 'text-emerald-900' : 'text-rose-700'}`}>
+                      Rs. {metrics.netCashFlow.toLocaleString('en-PK', { maximumFractionDigits: 0 })}
+                    </span>
+                    <span className="text-[8px] text-emerald-700/80 block font-medium">Inflow - Outflow</span>
+                  </div>
+
+                  <div className={`p-2 rounded-xl border ${
+                    metrics.accountingNetProfit >= 0 ? 'bg-indigo-50/80 border-indigo-200 text-indigo-950' : 'bg-rose-50 border-rose-200 text-rose-950'
+                  }`}>
+                    <span className="text-[9px] font-black uppercase tracking-wider block text-indigo-800">📈 Net Profit (P&L)</span>
+                    <span className={`font-mono font-black text-xs block mt-0.5 ${metrics.accountingNetProfit >= 0 ? 'text-indigo-950' : 'text-rose-700'}`}>
+                      Rs. {metrics.accountingNetProfit.toLocaleString('en-PK', { maximumFractionDigits: 0 })}
+                    </span>
+                    <span className="text-[8px] text-indigo-600 block font-semibold">{metrics.netProfitMarginPct.toFixed(0)}% Margin</span>
+                  </div>
                 </div>
 
                 {/* GRN Purchase indicator */}
@@ -1786,41 +1957,70 @@ export default function FiscalCalendarDesk({
                 return (
                   <>
                     {/* Top KPI Cards */}
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      <div className="bg-emerald-50/80 border border-emerald-200 p-4 rounded-xl space-y-1">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                      <div className="bg-emerald-50/80 border border-emerald-200 p-3.5 rounded-xl space-y-1">
                         <span className="text-[10px] font-extrabold uppercase text-emerald-800 tracking-wider block">
                           Total Realized Inflows
                         </span>
-                        <div className="text-xl font-black text-emerald-700 font-mono">
+                        <div className="text-lg font-black text-emerald-700 font-mono">
                           Rs. {metrics.totalGrossInflow.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
                         </div>
-                        <div className="text-[10.5px] text-emerald-900/80 font-semibold">
+                        <div className="text-[10px] text-emerald-900/80 font-semibold">
                           OPD: Rs. {metrics.totalOpdInflow.toLocaleString()} • POS: Rs. {(metrics.pharmacyPosSalesSum + metrics.clinicalCompoundingSum).toLocaleString()}
                         </div>
                       </div>
 
-                      <div className="bg-rose-50/80 border border-rose-200 p-4 rounded-xl space-y-1">
+                      <div className="bg-rose-50/80 border border-rose-200 p-3.5 rounded-xl space-y-1">
                         <span className="text-[10px] font-extrabold uppercase text-rose-800 tracking-wider block">
                           Total Realized Outflows
                         </span>
-                        <div className="text-xl font-black text-rose-700 font-mono">
+                        <div className="text-lg font-black text-rose-700 font-mono">
                           Rs. {metrics.totalGrossOutflow.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
                         </div>
-                        <div className="text-[10.5px] text-rose-900/80 font-semibold">
+                        <div className="text-[10px] text-rose-900/80 font-semibold">
                           Expenses: Rs. {(metrics.operationalExpensesSum + metrics.payrollsSum).toLocaleString()} • Vendors: Rs. {metrics.vendorPaymentsSum.toLocaleString()}
                         </div>
                       </div>
 
-                      <div className="bg-indigo-50/80 border border-indigo-200 p-4 rounded-xl space-y-1">
-                        <span className="text-[10px] font-extrabold uppercase text-indigo-800 tracking-wider block">
-                          Net Realized Margin / Surplus
+                      <div className="bg-teal-50/80 border border-teal-200 p-3.5 rounded-xl space-y-1">
+                        <span className="text-[10px] font-extrabold uppercase text-teal-800 tracking-wider block">
+                          💵 Net Cash Surplus (Drawer/Bank)
                         </span>
-                        <div className={`text-xl font-black font-mono ${metrics.netOperatingSurplus >= 0 ? 'text-indigo-950' : 'text-rose-700'}`}>
-                          Rs. {metrics.netOperatingSurplus.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+                        <div className={`text-lg font-black font-mono ${metrics.netCashFlow >= 0 ? 'text-teal-950' : 'text-rose-700'}`}>
+                          Rs. {metrics.netCashFlow.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
                         </div>
-                        <div className="text-[10.5px] text-indigo-800 font-semibold">
-                          Operating Cash Position at Month End
+                        <div className="text-[10px] text-teal-800 font-semibold">
+                          Inflows Minus Total Cash Outflows
                         </div>
+                      </div>
+
+                      <div className="bg-indigo-50/80 border border-indigo-200 p-3.5 rounded-xl space-y-1">
+                        <span className="text-[10px] font-extrabold uppercase text-indigo-800 tracking-wider block">
+                          📈 Operational Net Profit (P&L)
+                        </span>
+                        <div className={`text-lg font-black font-mono ${metrics.accountingNetProfit >= 0 ? 'text-indigo-950' : 'text-rose-700'}`}>
+                          Rs. {metrics.accountingNetProfit.toLocaleString('en-PK', { minimumFractionDigits: 2 })}
+                        </div>
+                        <div className="text-[10px] text-indigo-800 font-semibold">
+                          Revenue - COGS - OpEx - Salaries ({metrics.netProfitMarginPct.toFixed(1)}%)
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Educational Reconciliation Banner */}
+                    <div className="bg-indigo-50/70 border border-indigo-200 rounded-xl p-3 flex items-start space-x-3 text-xs">
+                      <div className="p-1.5 bg-indigo-600 text-white rounded-lg shrink-0 mt-0.5">
+                        <Info className="w-4 h-4" />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="font-extrabold text-indigo-950 text-xs">
+                          📊 Cash Flow (Drawer Balance) vs Accounting Net Profit (Munafa) Reconciliation:
+                        </div>
+                        <p className="text-[11px] text-indigo-900/90 leading-relaxed">
+                          <strong>Net Cash Flow (Rs. {metrics.netCashFlow.toLocaleString()}):</strong> Clinic ke galle aur bank account ka physical surplus (Total Inflow - Total Outflow).
+                          <br />
+                          <strong>Accounting Net Profit (Rs. {metrics.accountingNetProfit.toLocaleString()}):</strong> Asal karobari munafa jo bikne wali medicines ki laagat (COGS: Rs. {metrics.totalCogs.toLocaleString()}) aur akhrajat nikaal kar banta hai. Vendor ko bulk stock ki payments (Rs. {metrics.vendorPaymentsSum.toLocaleString()}) dukan me medicine asset hoti hain, karobari nuqsan nahi.
+                        </p>
                       </div>
                     </div>
 
