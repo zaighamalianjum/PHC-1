@@ -129,6 +129,8 @@ export default function FiscalCalendarDesk({
 
   // Live collections fetched directly from Database / API
   const [dbInvoices, setDbInvoices] = useState<any[]>([]);
+  const [dbInvoiceDetails, setDbInvoiceDetails] = useState<any[]>([]);
+  const [dbItems, setDbItems] = useState<any[]>([]);
   const [dbAppointments, setDbAppointments] = useState<any[]>([]);
   const [dbTokens, setDbTokens] = useState<any[]>([]);
   const [dbVisits, setDbVisits] = useState<any[]>([]);
@@ -210,7 +212,8 @@ export default function FiscalCalendarDesk({
         txnData,
         grnData,
         vendorsData,
-        returnsData
+        returnsData,
+        medicinesData
       ] = await Promise.all([
         safeFetch('/api/billing/invoices'),
         safeFetch('/api/appointments'),
@@ -222,13 +225,16 @@ export default function FiscalCalendarDesk({
         safeFetch('/api/query/erp_transactions'),
         safeFetch('/api/query/erp_grn'),
         safeFetch('/api/query/erp_vendors'),
-        safeFetch('/api/billing/returns')
+        safeFetch('/api/billing/returns'),
+        safeFetch('/api/medicines')
       ]);
 
-      // 1. Invoices
+      // 1. Invoices & Invoice Details
       let invoicesList: any[] = [];
+      let invoiceDetailsList: any[] = [];
       if (invData && Array.isArray(invData.headers)) {
         invoicesList = invData.headers;
+        if (Array.isArray(invData.details)) invoiceDetailsList = invData.details;
       } else if (Array.isArray(invData)) {
         invoicesList = invData;
       } else {
@@ -237,7 +243,26 @@ export default function FiscalCalendarDesk({
           if (local) invoicesList = JSON.parse(local);
         } catch (e) {}
       }
+      if (invoiceDetailsList.length === 0) {
+        try {
+          const local = localStorage.getItem('cms_invoice_details');
+          if (local) invoiceDetailsList = JSON.parse(local);
+        } catch (e) {}
+      }
       setDbInvoices(invoicesList);
+      setDbInvoiceDetails(invoiceDetailsList);
+
+      // 1B. Medicines / Items Catalog
+      let itemsList: any[] = [];
+      if (Array.isArray(medicinesData)) {
+        itemsList = medicinesData;
+      } else {
+        try {
+          const local = localStorage.getItem('cms_medicines') || localStorage.getItem('phc_medicines') || localStorage.getItem('medicines');
+          if (local) itemsList = JSON.parse(local);
+        } catch (e) {}
+      }
+      setDbItems(itemsList);
 
       // 2. Appointments
       let apptsList: any[] = [];
@@ -550,15 +575,67 @@ export default function FiscalCalendarDesk({
       clinicalCompoundingSum += clinical;
     });
 
-    // Pharmacy Store POS Sales & Returns
+    // Pharmacy Store POS Sales, Item-Level COGS & Discounts
+    const itemMap = new Map<string, any>();
+    dbItems.forEach((it: any) => {
+      if (it.ItemID) itemMap.set(String(it.ItemID).toUpperCase(), it);
+      if (it.ItemName) itemMap.set(String(it.ItemName).toLowerCase(), it);
+    });
+
+    const detailsByInvoice = new Map<string, any[]>();
+    dbInvoiceDetails.forEach((d: any) => {
+      const invNo = String(d.InvoiceNo || d.invoiceNo || '');
+      if (invNo) {
+        const existing = detailsByInvoice.get(invNo) || [];
+        existing.push(d);
+        detailsByInvoice.set(invNo, existing);
+      }
+    });
+
     let pharmacyGrossPosSales = 0;
+    let pharmacyNetPosSales = 0;
+    let posDiscountsSum = 0;
+    let pharmacyCogs = 0;
     let posInvoicesCount = 0;
+
     allPosSales.forEach(sale => {
       const d = sale.InvoiceDate || sale.Date || sale.CreatedAt || sale.InvDate;
       if (isDateInRange(d) && (sale as any).Status !== 3) {
-        const net = Number(sale.NetAmount ?? sale.NetPayable ?? sale.GrandTotal ?? sale.GAmount ?? sale.totalAmount ?? sale.TotalAmount ?? 0);
-        pharmacyGrossPosSales += net;
         posInvoicesCount += 1;
+        const invNo = String(sale.InvoiceNo || sale.SaleID || sale._id || '');
+        const details = detailsByInvoice.get(invNo);
+
+        const invNet = Number(sale.NetAmount ?? sale.NetPayable ?? sale.GrandTotal ?? sale.GAmount ?? sale.totalAmount ?? sale.TotalAmount ?? 0);
+        let invGross = 0;
+        let invDisc = 0;
+
+        if (details && details.length > 0) {
+          details.forEach((dt: any) => {
+            const itemKey = String(dt.ItemID || dt.itemId || '').trim();
+            const item = itemMap.get(itemKey.toUpperCase()) || itemMap.get(String(dt.ItemName || '').toLowerCase());
+            const unitPurCost = (item?.PurchasePrice && Number(item.PurchasePrice) > 0)
+              ? Number(item.PurchasePrice)
+              : (item?.TP && Number(item.TP) > 0 ? Number(item.TP) : (dt.Price ? Math.round(dt.Price * 0.75) : 0));
+            const lineQty = Number(dt.Qty || dt.qty || dt.quantity) || 1;
+            const linePrice = Number(dt.Price || dt.price || dt.SalePrice || dt.salePrice) || (Number(item?.Price ?? item?.SalePrice) || 0);
+            pharmacyCogs += lineQty * unitPurCost;
+            invGross += (lineQty * linePrice);
+            if (dt.Discount !== undefined && Number(dt.Discount) > 0) {
+              invDisc += Number(dt.Discount);
+            }
+          });
+          if (invDisc === 0 && Number(sale.Discount || sale.discount || sale.DiscountAmount || 0) > 0) {
+            invDisc = Number(sale.Discount || sale.discount || sale.DiscountAmount || 0);
+          }
+        } else {
+          invDisc = Number(sale.Discount || sale.discount || sale.DiscountAmount || 0);
+          invGross = Number(sale.GAmount || sale.GrossAmount || sale.grossAmount || (invNet + invDisc)) || (invNet + invDisc);
+          pharmacyCogs += Math.round(invNet * 0.75);
+        }
+
+        pharmacyGrossPosSales += (invGross > 0 ? invGross : invNet);
+        posDiscountsSum += invDisc;
+        pharmacyNetPosSales += invNet;
       }
     });
 
@@ -570,7 +647,9 @@ export default function FiscalCalendarDesk({
       }
     });
 
-    const pharmacyNetPosSales = Math.max(0, pharmacyGrossPosSales - salesReturnsSum);
+    const netRealizedPosSales = Math.max(0, pharmacyNetPosSales - salesReturnsSum);
+    const returnsCogs = Math.round(salesReturnsSum * 0.75);
+    pharmacyCogs = Math.max(0, Math.round(pharmacyCogs - returnsCogs));
 
     // Direct Cash Receipts (CRV, BRV Vouchers / General Ledger Inflows)
     let miscInflowsSum = 0;
@@ -590,12 +669,10 @@ export default function FiscalCalendarDesk({
     });
 
     const totalOpdInflow = doctorConsultationSum + opdTokensSum + clinicCardFeesSum;
-    const totalGrossInflow = totalOpdInflow + clinicalCompoundingSum + pharmacyNetPosSales + miscInflowsSum;
+    const totalGrossInflow = totalOpdInflow + clinicalCompoundingSum + netRealizedPosSales + miscInflowsSum;
 
-    // 2. MEDICINE COGS (Cost of Goods Sold for Sold & Dispensed Medicines)
-    const pharmacyCogs = Math.round(pharmacyNetPosSales * 0.75);
-    const clinicalCogs = Math.round(clinicalCompoundingSum * 0.60);
-    const totalCogs = pharmacyCogs + clinicalCogs;
+    // 2. MEDICINE COGS (Consistent with Financials & Store Medicine Sales Ledger)
+    const totalCogs = pharmacyCogs;
     const grossOperationalMargin = Math.max(0, totalGrossInflow - totalCogs);
 
     // 3. OUTFLOWS & EXPENSES
@@ -691,14 +768,16 @@ export default function FiscalCalendarDesk({
       netOperatingSurplus,
       totalCogs,
       pharmacyCogs,
-      clinicalCogs,
+      clinicalCogs: 0,
       grossOperationalMargin,
       opdTokensSum,
       doctorConsultationSum,
       clinicCardFeesSum,
       totalOpdInflow,
       clinicalCompoundingSum,
-      pharmacyPosSalesSum: pharmacyNetPosSales,
+      pharmacyGrossPosSales,
+      posDiscountsSum,
+      pharmacyPosSalesSum: netRealizedPosSales,
       salesReturnsSum,
       miscInflowsSum,
       operationalExpensesSum,
@@ -736,6 +815,8 @@ export default function FiscalCalendarDesk({
     allTokens,
     allVisits,
     allPosSales,
+    dbInvoiceDetails,
+    dbItems,
     allExpenses,
     allPayrolls,
     allTransactions,
