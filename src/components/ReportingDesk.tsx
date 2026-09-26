@@ -2333,56 +2333,38 @@ export default function ReportingDesk({
         'Net Valuation / Margin (Rs.)'
       ];
 
-      // 1. Stock valuation lines (Category total costs - no individual medicine names)
+      // 1. Stock valuation lines (Total costs only - no individual medicine names or groups breakdown)
       rows.push(['--- 1. CURRENT MEDICINE STOCK TOTAL COST VALUATION ---', '', '', '', '', '', '', '']);
-      const catMapCsv = new Map<string, { totalCost: number; totalRetail: number }>();
-      currentStockData.forEach(item => {
-        const cat = getItemCategory(item) || 'General';
-        const cStock = getItemStock(item);
-        const pPrice = Number(item.PurchasePrice ?? item.purchasePrice ?? item.Price ?? item.price ?? 0);
-        const rPrice = Number(item.Price ?? item.price ?? 0);
-        const existing = catMapCsv.get(cat) || { totalCost: 0, totalRetail: 0 };
-        existing.totalCost += cStock * pPrice;
-        existing.totalRetail += cStock * rPrice;
-        catMapCsv.set(cat, existing);
-      });
-      Array.from(catMapCsv.entries())
-        .sort((a, b) => b[1].totalCost - a[1].totalCost)
-        .forEach(([cat, val]) => {
-          rows.push([
-            '1. Medicine Group Valuation',
-            cat,
-            'Category Cost',
-            `Retail Value: Rs. ${val.totalRetail} | Margin: +Rs. ${val.totalRetail - val.totalCost}`,
-            'Active Category',
-            '',
-            '',
-            val.totalCost
-          ]);
-        });
       rows.push([
         '1. Medicine Stock Total',
-        'GRAND TOTAL PURCHASE COST OF MEDICINES',
-        'Current Time Stock Asset',
-        `Total Retail Value: Rs. ${currentStockSummary.totalRetailValuation} | Expected Margin: +Rs. ${currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation}`,
+        'TOTAL MEDICINES PURCHASE COST (GRAND TOTAL COST)',
+        'Current Stock Asset at Cost',
+        'Physical Inventory in Clinic/Pharmacy',
         'Grand Purchase Cost',
         '',
         '',
         currentStockSummary.totalPurchaseValuation
       ]);
+      rows.push([
+        '1. Medicine Stock Total',
+        'TOTAL STOCK RETAIL / SALE VALUE',
+        'Market Sales Value at MRP',
+        `Expected Profit Margin: +Rs. ${currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation}`,
+        'Grand Retail Value',
+        '',
+        '',
+        currentStockSummary.totalRetailValuation
+      ]);
 
-      // 2. Clinic Cash Earnings
-      rows.push(['--- 2. CLINIC & PHARMACY CASH EARNINGS ---', '', '', '', '', '', '', '']);
+      // 2. Clinic Cash Earnings (OPD Clinical collection only)
+      rows.push(['--- 2. CLINIC CASH EARNINGS ---', '', '', '', '', '', '', '']);
       rows.push(['2. Clinical Earning', 'Doctor OPD Consultation Fees', 'OPD Checkups', 'Consultation', 'Cash', '', pnlSummaryData.opdConsultationFees, '']);
       rows.push(['2. Clinical Earning', 'Patient Card & File Registration Fees', 'Patient Registration', 'Registration Cards', 'Cash', '', pnlSummaryData.opdCardFees, '']);
       rows.push(['2. Clinical Earning', 'Clinical Medicine Dispensing Charges', 'Medicine Dispensing', 'Clinic Dispensing', 'Cash', '', pnlSummaryData.opdDispensingFees, '']);
-      rows.push(['2. Pharmacy Earning', 'Gross POS Pharmacy Counter Sales', 'Pharmacy Sales', 'Counter Invoices', 'Cash / POS', '', pnlSummaryData.grossPosSales, '']);
-      if (pnlSummaryData.totalSalesReturns > 0) {
-        rows.push(['2. Pharmacy Return', 'Less: Customer Sales Returns & Refunds', 'Sales Return', 'Refunds', 'Cash', pnlSummaryData.totalSalesReturns, '', '']);
+      if (pnlSummaryData.standaloneApptFees > 0) {
+        rows.push(['2. Clinical Earning', 'Reception & Standalone Token Fees', 'Token Fees', 'Reception', 'Cash', '', pnlSummaryData.standaloneApptFees, '']);
       }
-      rows.push(['2. Pharmacy Earning', 'Net Realized Pharmacy Cash Sales', 'Pharmacy Net', 'Realized', 'Cash', '', pnlSummaryData.netPosIncome, '']);
-      rows.push(['2. Other Inflows', 'Other Direct Income / Receipts', 'Direct Deposits', 'Receipts', 'Cash/Bank', '', pnlSummaryData.otherIncome, '']);
-      rows.push(['2. Total Gross Inflow', 'TOTAL CLINIC & PHARMACY EARNED CASH', 'All Inflows', `Period: ${startDate} to ${endDate}`, 'Grand Total', '', pnlSummaryData.totalIncome, '']);
+      rows.push(['2. Total Clinical Cash', 'TOTAL CLINICAL OPD CASH RECEIVED', 'All Clinical OPD', `Period: ${startDate} to ${endDate}`, 'Grand Total', '', pnlSummaryData.totalOpdIncome, '']);
 
       // 3. Detailed Expenses
       rows.push(['--- 3. OPERATIONAL & CLINIC EXPENSES ---', '', '', '', '', '', '', '']);
@@ -2809,70 +2791,28 @@ export default function ReportingDesk({
             Section 1: Current Medicine Stock Total Cost Valuation
           </h3>
 
-          <!-- Highlight Total Valuation Box -->
-          <div style="background: #f0fdfa; border: 2px solid #0d9488; border-radius: 8px; padding: 12px 16px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
-            <div>
-              <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #0f766e; letter-spacing: 0.5px;">TOTAL MEDICINE STOCK PURCHASE COST (CURRENT TIME)</div>
-              <div style="font-size: 22px; font-weight: 900; color: #134e4a; margin-top: 2px;">
+          <!-- Highlight Total Valuation Box (2 Big Cards, No individual medicine names or groups breakdown) -->
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px; margin-bottom: 6px;">
+            <div style="background: #f0fdfa; border: 2px solid #0d9488; border-radius: 8px; padding: 14px 18px;">
+              <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #0f766e; letter-spacing: 0.5px;">TOTAL MEDICINES PURCHASE COST (GRAND TOTAL COST)</div>
+              <div style="font-size: 24px; font-weight: 900; color: #134e4a; margin-top: 2px;">
                 Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}
               </div>
               <div style="font-size: 10.5px; color: #64748b; margin-top: 2px;">
-                Total Retail / Sale Value: Rs. ${currentStockSummary.totalRetailValuation.toLocaleString()} &nbsp;|&nbsp; Potential Margin: +Rs. ${(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()}
+                Clinic & pharmacy mein is waqt mojood medicines ki kul khareed laagat (asset value)
               </div>
             </div>
-            <div style="text-align: right; background: #ffffff; border: 1px solid #ccfbf1; padding: 6px 12px; border-radius: 6px;">
-              <span style="font-size: 9.5px; color: #0f766e; font-weight: bold; display: block;">INVENTORY ASSET</span>
-              <span style="font-size: 11px; font-weight: 900; color: #0f766e;">TOTAL VALUATION</span>
+
+            <div style="background: #eff6ff; border: 2px solid #3b82f6; border-radius: 8px; padding: 14px 18px;">
+              <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #1d4ed8; letter-spacing: 0.5px;">TOTAL STOCK RETAIL / SALE VALUE</div>
+              <div style="font-size: 24px; font-weight: 900; color: #1e3a8a; margin-top: 2px;">
+                Rs. ${currentStockSummary.totalRetailValuation.toLocaleString()}
+              </div>
+              <div style="font-size: 10.5px; color: #64748b; margin-top: 2px;">
+                Market retail (MRP) sale rate par kul farokht qeemat (Expected Margin: +Rs. ${(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()})
+              </div>
             </div>
           </div>
-
-          <!-- Group-level Total Cost Breakdown Table -->
-          <table class="report-table">
-            <thead>
-              <tr style="background: #f1f5f9; font-size: 10px;">
-                <th>Medicine Category / Group</th>
-                <th style="text-align: right; width: 160px; background: #e6fffa; color: #047857;">Total Purchase Cost (Rs.)</th>
-                <th style="text-align: right; width: 160px;">Total Retail Value (Rs.)</th>
-                <th style="text-align: right; width: 150px; color: #059669;">Potential Margin (Rs.)</th>
-                <th style="text-align: right; width: 90px;">Share (%)</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${(() => {
-                const cMap = new Map<string, { totalCost: number; totalRetail: number }>();
-                currentStockData.forEach(item => {
-                  const cat = getItemCategory(item) || 'General';
-                  const cStock = getItemStock(item);
-                  const pPrice = Number(item.PurchasePrice ?? item.purchasePrice ?? item.Price ?? item.price ?? 0);
-                  const rPrice = Number(item.Price ?? item.price ?? 0);
-                  const existing = cMap.get(cat) || { totalCost: 0, totalRetail: 0 };
-                  existing.totalCost += cStock * pPrice;
-                  existing.totalRetail += cStock * rPrice;
-                  cMap.set(cat, existing);
-                });
-                return Array.from(cMap.entries())
-                  .sort((a, b) => b[1].totalCost - a[1].totalCost)
-                  .map(([cat, val], idx) => `
-                    <tr style="${idx % 2 === 0 ? '' : 'background: #f8fafc;'} font-size: 11px;">
-                      <td><b>${cat}</b></td>
-                      <td style="text-align: right; font-family: monospace; font-weight: bold; background: #f0fdfa; color: #047857;">Rs. ${val.totalCost.toLocaleString()}</td>
-                      <td style="text-align: right; font-family: monospace; font-weight: bold;">Rs. ${val.totalRetail.toLocaleString()}</td>
-                      <td style="text-align: right; font-family: monospace; font-weight: bold; color: #059669;">+Rs. ${(val.totalRetail - val.totalCost).toLocaleString()}</td>
-                      <td style="text-align: right; font-family: monospace;">${currentStockSummary.totalPurchaseValuation > 0 ? ((val.totalCost / currentStockSummary.totalPurchaseValuation) * 100).toFixed(1) : 0}%</td>
-                    </tr>
-                  `).join('');
-              })()}
-            </tbody>
-            <tfoot>
-              <tr style="background: #0f172a; color: #ffffff; font-weight: bold; font-size: 11px;">
-                <td>GRAND TOTAL MEDICINES STOCK COST</td>
-                <td style="text-align: right; color: #5eead4; font-size: 13px; font-family: monospace;">Rs. ${currentStockSummary.totalPurchaseValuation.toLocaleString()}</td>
-                <td style="text-align: right; color: #ffffff; font-size: 13px; font-family: monospace;">Rs. ${currentStockSummary.totalRetailValuation.toLocaleString()}</td>
-                <td style="text-align: right; color: #34d399; font-size: 13px; font-family: monospace;">+Rs. ${(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()}</td>
-                <td style="text-align: right;">100.0%</td>
-              </tr>
-            </tfoot>
-          </table>
         </div>
 
         <!-- ========================================== -->
@@ -2880,45 +2820,23 @@ export default function ReportingDesk({
         <!-- ========================================== -->
         <div style="margin-bottom: 22px; page-break-inside: avoid;">
           <h3 style="background: #065f46; color: #ffffff; padding: 7px 12px; margin: 0 0 8px 0; font-size: 12px; font-weight: bold; text-transform: uppercase; border-radius: 4px;">
-            Section 2: Clinic & Pharmacy Cash Earnings Breakdown
+            Section 2: Clinic Cash Earnings Breakdown
           </h3>
-          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 14px;">
-            <table class="report-table">
-              <thead>
-                <tr style="background: #ecfdf5; color: #064e3b;"><th colspan="2">CLINICAL OPD EARNINGS</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>Doctor OPD Consultation & Checkup Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdConsultationFees.toLocaleString()}</td></tr>
-                <tr><td>Patient Card, File & Registration Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdCardFees.toLocaleString()}</td></tr>
-                <tr><td>Clinical Medicine Dispensing Charges</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdDispensingFees.toLocaleString()}</td></tr>
-                ${pnlSummaryData.standaloneApptFees > 0 ? `<tr><td>Reception & Standalone Token Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.standaloneApptFees.toLocaleString()}</td></tr>` : ''}
-                <tr style="background: #d1fae5; font-weight: bold; color: #064e3b;">
-                  <td>Subtotal Clinical OPD Cash Received</td>
-                  <td style="text-align: right; font-family: monospace; font-size: 12px;">Rs. ${pnlSummaryData.totalOpdIncome.toLocaleString()}</td>
-                </tr>
-              </tbody>
-            </table>
-
-            <table class="report-table">
-              <thead>
-                <tr style="background: #eff6ff; color: #1e40af;"><th colspan="2">PHARMACY COUNTER & OTHER INCOMES</th></tr>
-              </thead>
-              <tbody>
-                <tr><td>Gross POS Pharmacy Counter Sales</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.grossPosSales.toLocaleString()}</td></tr>
-                ${pnlSummaryData.totalSalesReturns > 0 ? `<tr><td style="color: #b91c1c;">Less: Customer Sales Returns & Refunds</td><td style="text-align: right; font-weight: bold; color: #b91c1c; font-family: monospace;">- Rs. ${pnlSummaryData.totalSalesReturns.toLocaleString()}</td></tr>` : ''}
-                <tr><td>Net Realized Pharmacy Cash Sales</td><td style="text-align: right; font-weight: bold; font-family: monospace; color: #047857;">Rs. ${pnlSummaryData.netPosIncome.toLocaleString()}</td></tr>
-                <tr><td>Other Direct Incomes / Capital Receipts</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.otherIncome.toLocaleString()}</td></tr>
-                <tr style="background: #dbeafe; font-weight: bold; color: #1e3a8a;">
-                  <td>Subtotal Pharmacy & Other Cash Receipts</td>
-                  <td style="text-align: right; font-family: monospace; font-size: 12px;">Rs. ${(pnlSummaryData.netPosIncome + pnlSummaryData.otherIncome).toLocaleString()}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <div style="background: #047857; color: #ffffff; padding: 10px 14px; border-radius: 6px; display: flex; justify-content: space-between; align-items: center; margin-top: 10px; font-weight: bold; font-size: 13px;">
-            <span>TOTAL GROSS CASH EARNED (CLINIC + PHARMACY):</span>
-            <span style="font-family: monospace; font-size: 16px;">Rs. ${pnlSummaryData.totalIncome.toLocaleString()}</span>
-          </div>
+          <table class="report-table">
+            <thead>
+              <tr style="background: #ecfdf5; color: #064e3b;"><th colspan="2">CLINICAL OPD EARNINGS</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>Doctor OPD Consultation & Checkup Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdConsultationFees.toLocaleString()}</td></tr>
+              <tr><td>Patient Card, File & Registration Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdCardFees.toLocaleString()}</td></tr>
+              <tr><td>Clinical Medicine Dispensing Charges</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.opdDispensingFees.toLocaleString()}</td></tr>
+              ${pnlSummaryData.standaloneApptFees > 0 ? `<tr><td>Reception & Standalone Token Fees</td><td style="text-align: right; font-weight: bold; font-family: monospace;">Rs. ${pnlSummaryData.standaloneApptFees.toLocaleString()}</td></tr>` : ''}
+              <tr style="background: #d1fae5; font-weight: bold; color: #064e3b;">
+                <td style="font-size: 12px;">TOTAL CLINICAL OPD CASH RECEIVED</td>
+                <td style="text-align: right; font-family: monospace; font-size: 14px; font-weight: 900;">Rs. ${pnlSummaryData.totalOpdIncome.toLocaleString()}</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
         <!-- ========================================== -->

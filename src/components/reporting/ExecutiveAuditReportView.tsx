@@ -330,139 +330,42 @@ export default function ExecutiveAuditReportView({
             </div>
           </div>
 
-          {/* 3 BIG EXECUTIVE TOTAL VALUATION CARDS */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-            {/* Card 1: Total Purchase Cost (Kitnay Paisay ki Medicines Mojood Hain) */}
-            <div className="bg-gradient-to-br from-teal-900 via-slate-900 to-teal-950 text-white rounded-2xl p-5 border border-teal-700/60 shadow-sm space-y-2">
+          {/* 2 BIG EXECUTIVE TOTAL VALUATION CARDS (TOTAL COSTS ONLY) */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Card 1: Total Purchase Cost (GRAND TOTAL MEDICINES STOCK COST) */}
+            <div className="bg-gradient-to-br from-teal-900 via-slate-900 to-teal-950 text-white rounded-2xl p-6 border border-teal-700/60 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase tracking-wider text-teal-300">
-                  Total Medicines Purchase Cost
+                  Total Medicines Purchase Cost (Grand Total Cost)
                 </span>
-                <div className="p-2 bg-teal-500/20 text-teal-300 rounded-xl border border-teal-500/30">
-                  <Boxes className="w-5 h-5" />
+                <div className="p-2.5 bg-teal-500/20 text-teal-300 rounded-xl border border-teal-500/30">
+                  <Boxes className="w-6 h-6" />
                 </div>
               </div>
-              <div className="text-2xl sm:text-3xl font-black font-mono text-white tracking-tight">
+              <div className="text-3xl sm:text-4xl font-black font-mono text-white tracking-tight">
                 Rs. {currentStockSummary.totalPurchaseValuation.toLocaleString()}
               </div>
-              <p className="text-[11px] text-teal-200/80 font-medium">
+              <p className="text-xs text-teal-200/90 font-medium">
                 ★ Is waqt clinic & pharmacy mein kul itnay rupay ki medicines khareed rate (cost) par mojood hain.
               </p>
             </div>
 
             {/* Card 2: Total Retail Value (Market Sale Price) */}
-            <div className="bg-gradient-to-br from-blue-900 via-slate-900 to-indigo-950 text-white rounded-2xl p-5 border border-blue-700/60 shadow-sm space-y-2">
+            <div className="bg-gradient-to-br from-blue-900 via-slate-900 to-indigo-950 text-white rounded-2xl p-6 border border-blue-700/60 shadow-sm space-y-2">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-black uppercase tracking-wider text-blue-300">
                   Total Stock Retail / Sale Value
                 </span>
-                <div className="p-2 bg-blue-500/20 text-blue-300 rounded-xl border border-blue-500/30">
-                  <Coins className="w-5 h-5" />
+                <div className="p-2.5 bg-blue-500/20 text-blue-300 rounded-xl border border-blue-500/30">
+                  <Coins className="w-6 h-6" />
                 </div>
               </div>
-              <div className="text-2xl sm:text-3xl font-black font-mono text-white tracking-tight">
+              <div className="text-3xl sm:text-4xl font-black font-mono text-white tracking-tight">
                 Rs. {currentStockSummary.totalRetailValuation.toLocaleString()}
               </div>
-              <p className="text-[11px] text-blue-200/80 font-medium">
-                Inhi medicines ki market sale rate (MRP) par kul farokht qeemat.
+              <p className="text-xs text-blue-200/90 font-medium">
+                Inhi medicines ki market sale rate (MRP) par kul farokht qeemat (Expected Margin: +Rs. {(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()}).
               </p>
-            </div>
-
-            {/* Card 3: Expected Gross Stock Margin / Bachat */}
-            <div className="bg-gradient-to-br from-emerald-900 via-slate-900 to-teal-950 text-white rounded-2xl p-5 border border-emerald-700/60 shadow-sm space-y-2">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-black uppercase tracking-wider text-emerald-300">
-                  Potential Gross Profit Margin
-                </span>
-                <div className="p-2 bg-emerald-500/20 text-emerald-300 rounded-xl border border-emerald-500/30">
-                  <TrendingUp className="w-5 h-5" />
-                </div>
-              </div>
-              <div className="text-2xl sm:text-3xl font-black font-mono text-emerald-300 tracking-tight">
-                +Rs. {(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()}
-              </div>
-              <p className="text-[11px] text-emerald-200/80 font-medium">
-                Retail qeemat aur khareed laagat ke darmiyan mutawaqa gross munafa.
-              </p>
-            </div>
-          </div>
-
-          {/* SUMMARY TABLE: CATEGORY-WISE TOTAL COSTS (NO MEDICINE NAMES) */}
-          <div className="space-y-2 pt-2">
-            <div className="flex items-center justify-between">
-              <h4 className="text-xs font-black uppercase text-slate-800 tracking-wider flex items-center space-x-1.5">
-                <PieChart className="w-4 h-4 text-teal-600" />
-                <span>Medicine Groups Total Cost Breakdown</span>
-              </h4>
-              <span className="text-[11px] text-slate-500 font-medium">
-                (Individual medicines ke naamon ke baghair kul financial laagat)
-              </span>
-            </div>
-
-            <div className="overflow-x-auto border border-slate-200 rounded-xl">
-              <table className="w-full text-left text-xs">
-                <thead>
-                  <tr className="bg-slate-900 text-white font-bold text-[11px] uppercase tracking-wider">
-                    <th className="p-3">Medicine Category / Group</th>
-                    <th className="p-3 text-right bg-slate-800 text-teal-300">Total Purchase Cost (Rs.)</th>
-                    <th className="p-3 text-right">Total Retail Value (Rs.)</th>
-                    <th className="p-3 text-right text-emerald-400">Potential Margin (Rs.)</th>
-                    <th className="p-3 text-right">Share of Total Stock (%)</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {categoryStockValuation.length === 0 ? (
-                    <tr>
-                      <td colSpan={5} className="p-6 text-center text-slate-400 italic">
-                        No stock records available.
-                      </td>
-                    </tr>
-                  ) : (
-                    categoryStockValuation.map((cat, idx) => (
-                      <tr
-                        key={cat.category || idx}
-                        className={idx % 2 === 0 ? 'bg-white hover:bg-slate-50' : 'bg-slate-50/50 hover:bg-slate-100'}
-                      >
-                        <td className="p-3 font-bold text-slate-900 flex items-center space-x-2">
-                          <span className="w-2 h-2 rounded-full bg-teal-600 shrink-0"></span>
-                          <span>{cat.category}</span>
-                        </td>
-                        <td className="p-3 text-right font-mono font-black text-teal-800 bg-teal-50/40 text-sm">
-                          Rs. {cat.totalCost.toLocaleString()}
-                        </td>
-                        <td className="p-3 text-right font-mono font-bold text-slate-800">
-                          Rs. {cat.totalRetail.toLocaleString()}
-                        </td>
-                        <td className="p-3 text-right font-mono font-bold text-emerald-700">
-                          +Rs. {cat.margin.toLocaleString()}
-                        </td>
-                        <td className="p-3 text-right font-mono font-bold text-slate-600">
-                          {cat.sharePct.toFixed(1)}%
-                        </td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-                <tfoot>
-                  <tr className="bg-slate-900 text-white font-black text-xs">
-                    <td className="p-3 uppercase">
-                      GRAND TOTAL MEDICINES STOCK COST:
-                    </td>
-                    <td className="p-3 text-right font-mono text-teal-300 bg-slate-800 text-base">
-                      Rs. {currentStockSummary.totalPurchaseValuation.toLocaleString()}
-                    </td>
-                    <td className="p-3 text-right font-mono text-white text-base">
-                      Rs. {currentStockSummary.totalRetailValuation.toLocaleString()}
-                    </td>
-                    <td className="p-3 text-right font-mono text-emerald-400 text-base">
-                      +Rs. {(currentStockSummary.totalRetailValuation - currentStockSummary.totalPurchaseValuation).toLocaleString()}
-                    </td>
-                    <td className="p-3 text-right font-mono text-slate-300">
-                      100.0%
-                    </td>
-                  </tr>
-                </tfoot>
-              </table>
             </div>
           </div>
         </div>
@@ -480,96 +383,56 @@ export default function ExecutiveAuditReportView({
                   <Coins className="w-4 h-4" />
                 </div>
                 <h3 className="font-black text-slate-900 text-base">
-                  Section 2: Clinic & Pharmacy Cash Earnings Breakdown
+                  Section 2: Clinic Cash Earnings Breakdown
                 </h3>
               </div>
               <p className="text-xs text-slate-500">
-                Clinic se kamaya gaya cash (OPD Consultation, Cards, Dispensing, Pharmacy Counter Sales).
+                Clinic se kamaya gaya cash (Doctor OPD Consultation, Patient Cards, Dispensing Fees).
               </p>
             </div>
 
             <div className="bg-emerald-50 border border-emerald-200 px-3 py-1.5 rounded-xl text-right shrink-0">
-              <div className="text-[9.5px] font-bold uppercase text-emerald-800">Total Gross Cash Revenue</div>
+              <div className="text-[9.5px] font-bold uppercase text-emerald-800">Total Clinical Cash Received</div>
               <div className="text-base font-black text-emerald-950 font-mono">
-                Rs. {pnlSummaryData.totalIncome.toLocaleString()}
+                Rs. {pnlSummaryData.totalOpdIncome.toLocaleString()}
               </div>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* Box A: Clinical OPD Revenue */}
-            <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <h4 className="font-bold text-slate-900 text-xs flex items-center space-x-1.5">
-                  <Stethoscope className="w-4 h-4 text-emerald-600" />
-                  <span>Clinical OPD Inflows (Consultation & Direct Care)</span>
-                </h4>
-                <span className="text-xs font-black text-emerald-800 font-mono">
-                  Rs. {pnlSummaryData.totalOpdIncome.toLocaleString()}
-                </span>
-              </div>
-
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-200/80">
-                  <span className="text-slate-600">Doctor OPD Consultation & Checkup Fees:</span>
-                  <span className="font-bold font-mono text-slate-900">Rs. {pnlSummaryData.opdConsultationFees.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-200/80">
-                  <span className="text-slate-600">Patient Card, File & Registration Fees:</span>
-                  <span className="font-bold font-mono text-slate-900">Rs. {pnlSummaryData.opdCardFees.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-200/80">
-                  <span className="text-slate-600">Clinical Medicine Dispensing Charges:</span>
-                  <span className="font-bold font-mono text-slate-900">Rs. {pnlSummaryData.opdDispensingFees.toLocaleString()}</span>
-                </div>
-                {pnlSummaryData.standaloneApptFees > 0 && (
-                  <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-200/80">
-                    <span className="text-slate-600">Reception & Standalone Token Fees:</span>
-                    <span className="font-bold font-mono text-slate-900">Rs. {pnlSummaryData.standaloneApptFees.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center p-2.5 bg-emerald-100/70 text-emerald-950 rounded-lg font-bold">
-                  <span>Subtotal Clinical OPD Collection:</span>
-                  <span className="font-mono text-sm font-black">Rs. {pnlSummaryData.totalOpdIncome.toLocaleString()}</span>
-                </div>
-              </div>
+          {/* Clinical OPD Revenue Details */}
+          <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 sm:p-5 space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+              <h4 className="font-bold text-slate-900 text-xs sm:text-sm flex items-center space-x-2">
+                <Stethoscope className="w-4 h-4 text-emerald-600" />
+                <span>Clinical OPD Inflows (Consultation, Registration & Dispensing)</span>
+              </h4>
+              <span className="text-sm font-black text-emerald-800 font-mono">
+                Rs. {pnlSummaryData.totalOpdIncome.toLocaleString()}
+              </span>
             </div>
 
-            {/* Box B: Pharmacy & Other Incomes */}
-            <div className="bg-slate-50/70 border border-slate-200 rounded-xl p-4 space-y-3">
-              <div className="flex items-center justify-between border-b border-slate-200 pb-2">
-                <h4 className="font-bold text-slate-900 text-xs flex items-center space-x-1.5">
-                  <Building2 className="w-4 h-4 text-blue-600" />
-                  <span>Pharmacy Counter Sales & Direct Incomes</span>
-                </h4>
-                <span className="text-xs font-black text-blue-800 font-mono">
-                  Rs. {(pnlSummaryData.netPosIncome + pnlSummaryData.otherIncome).toLocaleString()}
-                </span>
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between items-center p-2.5 bg-white rounded-lg border border-slate-200/80">
+                <span className="text-slate-700 font-medium">Doctor OPD Consultation & Checkup Fees:</span>
+                <span className="font-bold font-mono text-slate-900">Rs. {pnlSummaryData.opdConsultationFees.toLocaleString()}</span>
               </div>
-
-              <div className="space-y-2 text-xs">
-                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-200/80">
-                  <span className="text-slate-600">Gross POS Pharmacy Counter Sales:</span>
-                  <span className="font-bold font-mono text-slate-900">Rs. {pnlSummaryData.grossPosSales.toLocaleString()}</span>
+              <div className="flex justify-between items-center p-2.5 bg-white rounded-lg border border-slate-200/80">
+                <span className="text-slate-700 font-medium">Patient Card, File & Registration Fees:</span>
+                <span className="font-bold font-mono text-slate-900">Rs. {pnlSummaryData.opdCardFees.toLocaleString()}</span>
+              </div>
+              <div className="flex justify-between items-center p-2.5 bg-white rounded-lg border border-slate-200/80">
+                <span className="text-slate-700 font-medium">Clinical Medicine Dispensing Charges:</span>
+                <span className="font-bold font-mono text-slate-900">Rs. {pnlSummaryData.opdDispensingFees.toLocaleString()}</span>
+              </div>
+              {pnlSummaryData.standaloneApptFees > 0 && (
+                <div className="flex justify-between items-center p-2.5 bg-white rounded-lg border border-slate-200/80">
+                  <span className="text-slate-700 font-medium">Reception & Standalone Token Fees:</span>
+                  <span className="font-bold font-mono text-slate-900">Rs. {pnlSummaryData.standaloneApptFees.toLocaleString()}</span>
                 </div>
-                {pnlSummaryData.totalSalesReturns > 0 && (
-                  <div className="flex justify-between items-center p-2 bg-rose-50 text-rose-700 rounded-lg border border-rose-200/80">
-                    <span>Less: Customer Sales Returns & Refunds:</span>
-                    <span className="font-bold font-mono">- Rs. {pnlSummaryData.totalSalesReturns.toLocaleString()}</span>
-                  </div>
-                )}
-                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-200/80">
-                  <span className="text-slate-600">Net Realized Pharmacy Counter Cash:</span>
-                  <span className="font-bold font-mono text-emerald-700">Rs. {pnlSummaryData.netPosIncome.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center p-2 bg-white rounded-lg border border-slate-200/80">
-                  <span className="text-slate-600">Other Direct Receipts / Capital Inflow:</span>
-                  <span className="font-bold font-mono text-slate-900">Rs. {pnlSummaryData.otherIncome.toLocaleString()}</span>
-                </div>
-                <div className="flex justify-between items-center p-2.5 bg-blue-100/70 text-blue-950 rounded-lg font-bold">
-                  <span>Subtotal Pharmacy & Other Receipts:</span>
-                  <span className="font-mono text-sm font-black">Rs. {(pnlSummaryData.netPosIncome + pnlSummaryData.otherIncome).toLocaleString()}</span>
-                </div>
+              )}
+              <div className="flex justify-between items-center p-3 bg-emerald-100/80 text-emerald-950 rounded-lg font-bold border border-emerald-200 mt-2">
+                <span className="uppercase tracking-wider text-[11px]">Total Clinical OPD Cash Earned:</span>
+                <span className="font-mono text-base font-black">Rs. {pnlSummaryData.totalOpdIncome.toLocaleString()}</span>
               </div>
             </div>
           </div>
