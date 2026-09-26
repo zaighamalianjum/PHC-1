@@ -450,16 +450,18 @@ export default function ReportingDesk({
   const [activeReport, setActiveReport] = useState<ReportType>('comprehensive_audit');
 
   // Dynamic Date, Fiscal Year & Month Calculation
+  // Dynamic Date, Fiscal Year & Month Calculation (Timezone-Safe Local Strings)
   const now = new Date();
   const currentYear = now.getFullYear();
-  const currentMonthIdx = now.getMonth(); // 0 = Jan, 7 = Aug
+  const currentMonthIdx = now.getMonth(); // 0 = Jan, 8 = Sep
   const currentMonthNum = (currentMonthIdx + 1).toString().padStart(2, '0');
-  const currentYearMonth = `${currentYear}-${currentMonthNum}`; // e.g. "2026-08"
+  const currentYearMonth = `${currentYear}-${currentMonthNum}`; // e.g. "2026-09"
 
   const defaultFyKey = `CY ${currentYear}`;
   const firstDayOfCurrentMonth = `${currentYear}-${currentMonthNum}-01`;
-  const lastDayOfCurrentMonth = new Date(currentYear, currentMonthIdx + 1, 0).toISOString().split('T')[0];
-  const todayStr = now.toISOString().split('T')[0];
+  const lastDayNum = new Date(currentYear, currentMonthIdx + 1, 0).getDate();
+  const lastDayOfCurrentMonth = `${currentYear}-${currentMonthNum}-${lastDayNum.toString().padStart(2, '0')}`;
+  const todayStr = `${currentYear}-${currentMonthNum}-${now.getDate().toString().padStart(2, '0')}`;
 
   // Date Range & Fiscal Period Filters - Default to Current Year & Current Month
   const [datePreset, setDatePreset] = useState<'today' | 'this_week' | 'this_month' | 'last_30_days' | 'this_quarter' | 'this_fiscal_year' | 'last_fiscal_year' | 'this_year' | 'custom' | 'all'>('this_month');
@@ -597,8 +599,8 @@ export default function ReportingDesk({
       setEndDate(todayStr);
       setSelectedFiscalYear('custom');
     } else if (preset === 'this_month') {
-      setStartDate(new Date(now.getFullYear(), now.getMonth(), 1).toISOString().split('T')[0]);
-      setEndDate(todayStr);
+      setStartDate(firstDayOfCurrentMonth);
+      setEndDate(lastDayOfCurrentMonth);
       setSelectedFiscalYear('custom');
     } else if (preset === 'last_30_days') {
       const past30 = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -1279,8 +1281,19 @@ export default function ReportingDesk({
     }
 
     const totalExpenses = vendorOutflows + salaryOutflows + totalOperatingExpenses;
-    const netProfit = totalIncome - totalExpenses;
-    const netMarginPct = totalIncome > 0 ? (netProfit / totalIncome) * 100 : 0;
+    
+    // 1. Net Cash Movement (Cash Surplus / Deficit): Physical Cash Inflow minus Physical Cash Outflow
+    const netCashFlow = totalIncome - totalExpenses;
+    const netCashMarginPct = totalIncome > 0 ? (netCashFlow / totalIncome) * 100 : 0;
+
+    // 2. Pure Operational Accounting Net Profit (True Munafa):
+    // Revenue - COGS (Only sold/dispensed medicine cost) - Operating Expenses - Staff Salaries
+    // (Unsold medicine bulk restock is not an expense; it remains in clinic shelves as Stock Asset)
+    const accountingNetProfit = totalIncome - pharmacyCogs - salaryOutflows - totalOperatingExpenses;
+    const accountingNetMarginPct = totalIncome > 0 ? (accountingNetProfit / totalIncome) * 100 : 0;
+
+    const netProfit = accountingNetProfit;
+    const netMarginPct = accountingNetMarginPct;
     const expenseRatio = totalIncome > 0 ? (totalExpenses / totalIncome) * 100 : 0;
 
     return {
@@ -1304,6 +1317,10 @@ export default function ReportingDesk({
       expenseOutflows: totalOperatingExpenses,
       totalOperatingExpenses,
       totalExpenses,
+      netCashFlow,
+      netCashMarginPct,
+      accountingNetProfit,
+      accountingNetMarginPct,
       netProfit,
       netMarginPct,
       expenseRatio,
@@ -2751,7 +2768,9 @@ export default function ReportingDesk({
       const vendorPct = Math.min(100, Math.max(0, (pnlSummaryData.vendorOutflows / totalInflow) * 100));
       const salaryPct = Math.min(100, Math.max(0, (pnlSummaryData.salaryOutflows / totalInflow) * 100));
       const opsPct = Math.min(100, Math.max(0, (pnlSummaryData.totalOperatingExpenses / totalInflow) * 100));
-      const profitPct = Math.max(0, (pnlSummaryData.netProfit / totalInflow) * 100);
+      const netCashSurplus = pnlSummaryData.netCashFlow !== undefined ? pnlSummaryData.netCashFlow : (pnlSummaryData.totalIncome - pnlSummaryData.totalExpenses);
+      const operationalNetProfit = pnlSummaryData.accountingNetProfit !== undefined ? pnlSummaryData.accountingNetProfit : pnlSummaryData.netProfit;
+      const operationalNetMarginPct = pnlSummaryData.accountingNetMarginPct !== undefined ? pnlSummaryData.accountingNetMarginPct : pnlSummaryData.netMarginPct;
 
       tableHtml = `
         <!-- EXECUTIVE 5-PILLAR FINANCIAL MATRIX -->
@@ -2772,14 +2791,14 @@ export default function ReportingDesk({
             <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">${expenseData.length} Expense Records</div>
           </div>
           <div style="background: #eef2ff; border: 1.5px solid #6366f1; padding: 10px; border-radius: 8px; text-align: center;">
-            <div style="font-size: 9.5px; font-weight: bold; color: #4338ca; text-transform: uppercase;">4. Total Cash Outflow</div>
-            <div style="font-size: 15px; font-weight: 900; color: #312e81; margin-top: 2px;">Rs. ${pnlSummaryData.totalExpenses.toLocaleString()}</div>
-            <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">Procurement + Salary + Ops</div>
+            <div style="font-size: 9.5px; font-weight: bold; color: #4338ca; text-transform: uppercase;">4. Net Cash Flow</div>
+            <div style="font-size: 15px; font-weight: 900; color: ${netCashSurplus >= 0 ? '#312e81' : '#be123c'}; margin-top: 2px;">Rs. ${netCashSurplus.toLocaleString()}</div>
+            <div style="font-size: 8.5px; color: #64748b; margin-top: 2px;">Inflows − Outflows</div>
           </div>
-          <div style="background: ${pnlSummaryData.netProfit >= 0 ? '#ecfdf5' : '#fef2f2'}; border: 1.5px solid ${pnlSummaryData.netProfit >= 0 ? '#059669' : '#dc2626'}; padding: 10px; border-radius: 8px; text-align: center;">
-            <div style="font-size: 9.5px; font-weight: bold; color: ${pnlSummaryData.netProfit >= 0 ? '#047857' : '#b91c1c'}; text-transform: uppercase;">5. Net Profit (Margin)</div>
-            <div style="font-size: 15px; font-weight: 900; color: ${pnlSummaryData.netProfit >= 0 ? '#064e3b' : '#7f1d1d'}; margin-top: 2px;">Rs. ${pnlSummaryData.netProfit.toLocaleString()}</div>
-            <div style="font-size: 8.5px; font-weight: bold; color: ${pnlSummaryData.netProfit >= 0 ? '#047857' : '#b91c1c'}; margin-top: 2px;">Net Margin: ${pnlSummaryData.netMarginPct.toFixed(1)}%</div>
+          <div style="background: ${operationalNetProfit >= 0 ? '#ecfdf5' : '#fef2f2'}; border: 1.5px solid ${operationalNetProfit >= 0 ? '#059669' : '#dc2626'}; padding: 10px; border-radius: 8px; text-align: center;">
+            <div style="font-size: 9.5px; font-weight: bold; color: ${operationalNetProfit >= 0 ? '#047857' : '#b91c1c'}; text-transform: uppercase;">5. Pure Net Profit</div>
+            <div style="font-size: 15px; font-weight: 900; color: ${operationalNetProfit >= 0 ? '#064e3b' : '#7f1d1d'}; margin-top: 2px;">Rs. ${operationalNetProfit.toLocaleString()}</div>
+            <div style="font-size: 8.5px; font-weight: bold; color: ${operationalNetProfit >= 0 ? '#047857' : '#b91c1c'}; margin-top: 2px;">Net Margin: ${operationalNetMarginPct.toFixed(1)}%</div>
           </div>
         </div>
 
@@ -2958,15 +2977,15 @@ export default function ReportingDesk({
                 <b style="font-family: monospace; color: #4c0519;">Rs. ${pnlSummaryData.totalOperatingExpenses.toLocaleString()} (${opsPct.toFixed(1)}%)</b>
               </div>
               <div style="background: #ecfdf5; padding: 6px; border-radius: 4px; border: 1px solid #a7f3d0;">
-                <span style="font-size: 9.5px; color: #047857; display: block; font-weight: bold;">★ Net Retained Profit:</span>
-                <b style="font-family: monospace; color: #064e3b;">Rs. ${pnlSummaryData.netProfit.toLocaleString()} (${profitPct.toFixed(1)}%)</b>
+                <span style="font-size: 9.5px; color: #047857; display: block; font-weight: bold;">★ Net Cash Surplus:</span>
+                <b style="font-family: monospace; color: #064e3b;">Rs. ${netCashSurplus.toLocaleString()}</b>
               </div>
             </div>
           </div>
 
           <table class="report-table">
             <thead>
-              <tr style="background: #0f172a; color: #ffffff;"><th colspan="2">EXECUTIVE P&L RECONCILIATION</th></tr>
+              <tr style="background: #0f172a; color: #ffffff;"><th colspan="2">EXECUTIVE P&L RECONCILIATION (TRUE MUNAFFA)</th></tr>
             </thead>
             <tbody>
               <tr>
@@ -2989,26 +3008,22 @@ export default function ReportingDesk({
                 <td>5. Less: Staff Salaries & Payroll Disbursements</td>
                 <td style="text-align: right; font-family: monospace; color: #be123c;">- Rs. ${pnlSummaryData.salaryOutflows.toLocaleString()}</td>
               </tr>
-              <tr>
-                <td>6. Less: Direct Medicine Stock Procurement Outflows</td>
-                <td style="text-align: right; font-family: monospace; color: #be123c;">- Rs. ${pnlSummaryData.vendorOutflows.toLocaleString()}</td>
-              </tr>
             </tbody>
           </table>
 
-          <div style="background: ${pnlSummaryData.netProfit >= 0 ? '#064e3b' : '#7f1d1d'}; color: #ffffff; padding: 14px 18px; border-radius: 8px; margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
+          <div style="background: ${operationalNetProfit >= 0 ? '#064e3b' : '#7f1d1d'}; color: #ffffff; padding: 14px 18px; border-radius: 8px; margin-top: 12px; display: flex; justify-content: space-between; align-items: center;">
             <div>
-              <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #a7f3d0; letter-spacing: 0.5px;">FINAL NET OPERATIONAL AUDIT RESULT (SAAF BACHAT)</div>
+              <div style="font-size: 10px; font-weight: bold; text-transform: uppercase; color: #a7f3d0; letter-spacing: 0.5px;">FINAL OPERATIONAL NET PROFIT (ASAL MUNAFFA)</div>
               <div style="font-size: 20px; font-weight: 900; margin-top: 2px;">
-                ${pnlSummaryData.netProfit >= 0 ? `NET PROFIT: Rs. ${pnlSummaryData.netProfit.toLocaleString()}` : `NET DEFICIT: - Rs. ${Math.abs(pnlSummaryData.netProfit).toLocaleString()}`}
+                ${operationalNetProfit >= 0 ? `NET PROFIT: Rs. ${operationalNetProfit.toLocaleString()}` : `NET DEFICIT: - Rs. ${Math.abs(operationalNetProfit).toLocaleString()}`}
               </div>
               <div style="font-size: 10px; color: #d1fae5; margin-top: 2px;">
-                Period: ${startDate} to ${endDate} | Net Profit Margin: ${pnlSummaryData.netMarginPct.toFixed(1)}%
+                Period: ${startDate} to ${endDate} | Operational Margin: ${operationalNetMarginPct.toFixed(1)}% | Cash Surplus: Rs. ${netCashSurplus.toLocaleString()}
               </div>
             </div>
             <div style="text-align: right; font-size: 11px;">
               <span style="background: rgba(255,255,255,0.2); padding: 4px 10px; border-radius: 4px; font-weight: bold;">
-                ${pnlSummaryData.netProfit >= 0 ? '✓ Profitable Operation' : '⚠️ Operational Deficit'}
+                ${operationalNetProfit >= 0 ? '✓ Profitable Operation' : '⚠️ Operational Deficit'}
               </span>
             </div>
           </div>

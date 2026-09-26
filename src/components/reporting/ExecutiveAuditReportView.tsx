@@ -71,6 +71,10 @@ interface ExecutiveAuditReportViewProps {
     expenseOutflows: number;
     totalOperatingExpenses: number;
     totalExpenses: number;
+    netCashFlow?: number;
+    netCashMarginPct?: number;
+    accountingNetProfit?: number;
+    accountingNetMarginPct?: number;
     netProfit: number;
     netMarginPct: number;
     expenseRatio: number;
@@ -149,12 +153,20 @@ export default function ExecutiveAuditReportView({
     });
   }, [expenseData, expenseSearch]);
 
-  // Calculated Cash Utilization Percentages
+  // Calculated Cash Utilization Percentages & Separate Net Cash vs True Net Profit
   const totalInflow = pnlSummaryData.totalIncome || 1; // avoid / 0
   const vendorPct = Math.min(100, Math.max(0, (pnlSummaryData.vendorOutflows / totalInflow) * 100));
   const salaryPct = Math.min(100, Math.max(0, (pnlSummaryData.salaryOutflows / totalInflow) * 100));
   const operationalExpensePct = Math.min(100, Math.max(0, (pnlSummaryData.totalOperatingExpenses / totalInflow) * 100));
-  const netProfitPct = Math.max(0, (pnlSummaryData.netProfit / totalInflow) * 100);
+
+  // 1. Net Cash Movement (Surplus In Hand): Cash Inflows - Cash Outflows
+  const netCashSurplus = pnlSummaryData.netCashFlow !== undefined ? pnlSummaryData.netCashFlow : (pnlSummaryData.totalIncome - pnlSummaryData.totalExpenses);
+  const netCashSurplusPct = Math.max(0, (netCashSurplus / totalInflow) * 100);
+
+  // 2. Pure Operational Accounting Net Profit: Revenue - COGS - Ops - Salary
+  const operationalNetProfit = pnlSummaryData.accountingNetProfit !== undefined ? pnlSummaryData.accountingNetProfit : pnlSummaryData.netProfit;
+  const operationalNetMarginPct = pnlSummaryData.accountingNetMarginPct !== undefined ? pnlSummaryData.accountingNetMarginPct : pnlSummaryData.netMarginPct;
+  const operationalNetProfitPct = Math.max(0, (operationalNetProfit / totalInflow) * 100);
 
   return (
     <div className="space-y-6 pt-2">
@@ -243,31 +255,31 @@ export default function ExecutiveAuditReportView({
             </div>
           </div>
 
-          {/* Pillar 4: Inflow vs Outflow Net */}
+          {/* Pillar 4: Inflow vs Outflow Net Cash Flow */}
           <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/80">
             <div className="text-[10px] font-bold text-indigo-400 uppercase tracking-wider flex items-center justify-between">
-              <span>4. Cash Flow Net</span>
+              <span>4. Net Cash Flow</span>
               <Scale className="w-3.5 h-3.5 text-indigo-400" />
             </div>
-            <div className={`text-base sm:text-lg font-black mt-1 ${pnlSummaryData.netProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
-              Rs. {pnlSummaryData.netProfit.toLocaleString()}
+            <div className={`text-base sm:text-lg font-black mt-1 ${netCashSurplus >= 0 ? 'text-indigo-300' : 'text-rose-400'}`}>
+              Rs. {netCashSurplus.toLocaleString()}
             </div>
             <div className="text-[10.5px] text-slate-400 mt-0.5 font-medium">
               In: Rs. {pnlSummaryData.totalIncome.toLocaleString()} | Out: Rs. {pnlSummaryData.totalExpenses.toLocaleString()}
             </div>
           </div>
 
-          {/* Pillar 5: Net Profit Margin */}
+          {/* Pillar 5: True Operational Net Profit Margin */}
           <div className="bg-slate-800/80 rounded-xl p-3 border border-slate-700/80 col-span-2 sm:col-span-1">
             <div className="text-[10px] font-bold text-amber-400 uppercase tracking-wider flex items-center justify-between">
-              <span>5. Net P&L Margin</span>
+              <span>5. Pure Net Profit</span>
               <Percent className="w-3.5 h-3.5 text-amber-400" />
             </div>
-            <div className={`text-base sm:text-lg font-black mt-1 ${pnlSummaryData.netProfit >= 0 ? 'text-amber-300' : 'text-rose-400'}`}>
-              {pnlSummaryData.netMarginPct.toFixed(1)}%
+            <div className={`text-base sm:text-lg font-black mt-1 ${operationalNetProfit >= 0 ? 'text-emerald-400' : 'text-rose-400'}`}>
+              Rs. {operationalNetProfit.toLocaleString()}
             </div>
             <div className="text-[10.5px] text-slate-400 mt-0.5 font-medium">
-              {pnlSummaryData.netProfit >= 0 ? '✓ Net Operational Profit' : '⚠️ Net Operational Deficit'}
+              Margin: {operationalNetMarginPct.toFixed(1)}% {operationalNetProfit >= 0 ? '(Profit)' : '(Deficit)'}
             </div>
           </div>
         </div>
@@ -734,11 +746,11 @@ export default function ExecutiveAuditReportView({
                 {operationalExpensePct > 8 && `${operationalExpensePct.toFixed(0)}% Ops`}
               </div>
               <div
-                style={{ width: `${netProfitPct}%` }}
+                style={{ width: `${operationalNetProfitPct}%` }}
                 className="bg-emerald-500 transition-all text-white text-[10px] font-bold flex items-center justify-center overflow-hidden"
-                title={`Net Profit / Surplus: Rs. ${pnlSummaryData.netProfit.toLocaleString()} (${netProfitPct.toFixed(1)}%)`}
+                title={`Operational Net Profit: Rs. ${operationalNetProfit.toLocaleString()} (${operationalNetProfitPct.toFixed(1)}%)`}
               >
-                {netProfitPct > 8 && `${netProfitPct.toFixed(0)}% Profit`}
+                {operationalNetProfitPct > 8 && `${operationalNetProfitPct.toFixed(0)}% Profit`}
               </div>
             </div>
 
@@ -768,8 +780,8 @@ export default function ExecutiveAuditReportView({
               <div className="flex items-center space-x-2 bg-white p-2 rounded-lg border border-emerald-300 bg-emerald-50/50">
                 <span className="w-3 h-3 rounded-full bg-emerald-500 shrink-0"></span>
                 <div>
-                  <span className="text-[10px] text-emerald-700 font-bold block">★ Net Retained Profit</span>
-                  <span className="font-black text-emerald-950 font-mono">Rs. {pnlSummaryData.netProfit.toLocaleString()} ({netProfitPct.toFixed(1)}%)</span>
+                  <span className="text-[10px] text-emerald-700 font-bold block">★ Pure Net Profit</span>
+                  <span className="font-black text-emerald-950 font-mono">Rs. {operationalNetProfit.toLocaleString()} ({operationalNetProfitPct.toFixed(1)}%)</span>
                 </div>
               </div>
             </div>
@@ -778,8 +790,8 @@ export default function ExecutiveAuditReportView({
           {/* FINAL P&L CALCULATION AUDIT CARD */}
           <div className="border border-slate-300 rounded-xl overflow-hidden bg-slate-50/60">
             <div className="bg-slate-900 text-white p-3 font-bold text-xs uppercase tracking-wider flex justify-between items-center">
-              <span>Executive Profit & Loss Ledger Audit</span>
-              <span className="text-emerald-400 font-mono">Net Margin: {pnlSummaryData.netMarginPct.toFixed(1)}%</span>
+              <span>Executive Profit & Loss Ledger Audit (True Karobari Munafa)</span>
+              <span className="text-emerald-400 font-mono">Margin: {operationalNetMarginPct.toFixed(1)}%</span>
             </div>
 
             <div className="p-4 space-y-2 text-xs">
@@ -803,28 +815,24 @@ export default function ExecutiveAuditReportView({
                 <span className="text-slate-600">5. Less: Staff Salaries & Payroll Disbursements:</span>
                 <span className="font-bold font-mono text-rose-700">- Rs. {pnlSummaryData.salaryOutflows.toLocaleString()}</span>
               </div>
-              <div className="flex justify-between items-center p-2.5 bg-white rounded-lg border border-slate-200">
-                <span className="text-slate-600">6. Less: Direct Medicine Stock Procurement Outflows:</span>
-                <span className="font-bold font-mono text-rose-700">- Rs. {pnlSummaryData.vendorOutflows.toLocaleString()}</span>
-              </div>
 
-              {/* FINAL NET RESULT BANNER */}
+              {/* FINAL OPERATIONAL PROFIT BANNER */}
               <div className={`p-4 rounded-xl border flex flex-col sm:flex-row items-center justify-between gap-3 text-white shadow-md mt-4 ${
-                pnlSummaryData.netProfit >= 0
+                operationalNetProfit >= 0
                   ? 'bg-gradient-to-r from-emerald-800 via-teal-900 to-slate-900 border-emerald-600'
                   : 'bg-gradient-to-r from-rose-800 via-amber-900 to-slate-900 border-rose-600'
               }`}>
                 <div>
                   <div className="text-[10px] font-black uppercase tracking-wider text-emerald-300">
-                    Aap Ka Asal Net Profit / Cash Surplus
+                    Aap Ka Asal Karobari Net Profit (Pure Munafa)
                   </div>
                   <div className="text-2xl font-black font-mono mt-0.5">
-                    {pnlSummaryData.netProfit >= 0
-                      ? `NET PROFIT: Rs. ${pnlSummaryData.netProfit.toLocaleString()}`
-                      : `NET DEFICIT: - Rs. ${Math.abs(pnlSummaryData.netProfit).toLocaleString()}`}
+                    {operationalNetProfit >= 0
+                      ? `NET PROFIT: Rs. ${operationalNetProfit.toLocaleString()} (${operationalNetMarginPct.toFixed(1)}%)`
+                      : `NET DEFICIT: - Rs. ${Math.abs(operationalNetProfit).toLocaleString()}`}
                   </div>
                   <div className="text-[11px] text-slate-300 mt-0.5">
-                    Tamam clinical aur pharmacy ikhrajat nikalne ke bad asal bachat.
+                    Revenue mein se sirf sold medicines ki laagat (COGS), salaries aur clinic expenses nikal kar asal bachat.
                   </div>
                 </div>
 
@@ -835,6 +843,35 @@ export default function ExecutiveAuditReportView({
                   <Printer className="w-4 h-4 text-emerald-700" />
                   <span>Print Official A4 Report</span>
                 </button>
+              </div>
+
+              {/* DUAL COMPARISON & AUDIT EXPLANATION BOX */}
+              <div className="mt-4 p-4 rounded-xl bg-amber-50/80 border border-amber-200 text-slate-800 space-y-2">
+                <div className="flex items-center space-x-2 text-amber-900 font-extrabold text-xs">
+                  <Info className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span>Doctor & Audit Wazahat: Net Cash vs Net Profit ka Farq</span>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pt-1 text-[11.5px]">
+                  <div className="bg-white p-3 rounded-lg border border-amber-200/80 space-y-1">
+                    <div className="font-bold text-indigo-900 flex items-center justify-between">
+                      <span>1. Net Cash Flow (Drawer Balance):</span>
+                      <span className="font-mono text-indigo-700 font-black">Rs. {netCashSurplus.toLocaleString()}</span>
+                    </div>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      Yeh wo physical cash hai jo Inflows minus Total Outflows (stock khareedna, salaries, bills) ke bad drawer/bank mein mojood hai.
+                    </p>
+                  </div>
+
+                  <div className="bg-white p-3 rounded-lg border border-amber-200/80 space-y-1">
+                    <div className="font-bold text-emerald-900 flex items-center justify-between">
+                      <span>2. Pure Net Profit (Clinic Munafa):</span>
+                      <span className="font-mono text-emerald-700 font-black">Rs. {operationalNetProfit.toLocaleString()}</span>
+                    </div>
+                    <p className="text-slate-600 text-[11px] leading-relaxed">
+                      Stock khareedne ke liye diya gaya paisa (Rs. {pnlSummaryData.vendorOutflows.toLocaleString()}) loss nahi hota, balke wo <b>Medicine Stock Asset</b> ban kar clinic ke shelves par mojood hai (Current Stock Value: <b>Rs. {currentStockSummary.totalPurchaseValuation.toLocaleString()}</b>).
+                    </p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
